@@ -11,6 +11,11 @@ def _prod_patches(**overrides):
     base = {
         "app_env": "production",
         "database_url": "postgresql+psycopg://user:pass@example.test/db",
+        "redis_url": "rediss://redis.example.test/0",
+        "admin_api_key": "test-admin-key-at-least-32-bytes-long",
+        "admin_session_token_secret": "test-session-secret-at-least-32-bytes",
+        "enforce_admin_auth_for_writes": True,
+        "strict_startup_env_validation": False,
         "cors_allow_origins": "https://example.test",
         "statbotics_base_url": "https://statbotics.example.test",
         "video_tracking_require_primary_model_in_production": True,
