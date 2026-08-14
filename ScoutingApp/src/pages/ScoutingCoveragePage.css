@@ -1,0 +1,194 @@
+/* Scouting coverage dashboard styles */
+
+.coverage-grid-wrap {
+  overflow-x: auto;
+  max-height: 60vh;
+  overflow-y: auto;
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-soft) 86%, transparent);
+}
+
+.coverage-grid {
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  width: 100%;
+}
+
+.coverage-summary-grid {
+  margin-top: var(--space-3);
+}
+
+.coverage-view-tabs {
+  max-width: 100%;
+}
+
+.coverage-view-tabs .segmented-tabs__item {
+  white-space: nowrap;
+}
+
+.coverage-grid th {
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--color-surface-muted) 94%, transparent);
+  color: var(--color-text-muted);
+  padding: var(--space-2);
+  text-align: center;
+  z-index: 1;
+  font-size: var(--type-caption-size);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.coverage-match-label {
+  font-weight: 700;
+  padding: var(--space-2);
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.coverage-cell {
+  text-align: center;
+  padding: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2em;
+}
+
+.coverage-cell--red.coverage-cell--missing {
+  background: color-mix(in srgb, var(--color-danger-soft) 76%, transparent);
+  color: var(--color-danger);
+}
+
+.coverage-cell--blue.coverage-cell--missing {
+  background: color-mix(in srgb, var(--color-danger-soft) 76%, transparent);
+  color: var(--color-danger);
+}
+
+.coverage-cell--covered {
+  background: color-mix(in srgb, var(--color-success-soft) 78%, transparent);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.coverage-count {
+  font-size: 0.62rem;
+  opacity: 0.8;
+  margin-left: 1px;
+}
+
+.coverage-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.8rem;
+  height: 1.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.coverage-rank-badge--top1 {
+  border-color: color-mix(in srgb, var(--color-warning) 60%, var(--color-border));
+  color: var(--color-warning);
+}
+
+.coverage-rank-badge--top2,
+.coverage-rank-badge--top3 {
+  border-color: color-mix(in srgb, var(--color-info) 48%, var(--color-border));
+  color: var(--color-info);
+}
+
+.coverage-scout-name {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.coverage-streak-hot {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--space-1);
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-full);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.coverage-outliers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.coverage-outliers li {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-soft) 44%, var(--color-surface-soft));
+  font-size: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.coverage-outlier-kind {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+}
+
+.coverage-outlier-kind.kind-disagree {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.coverage-outlier-kind.kind-anomaly {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.coverage-outlier-detail {
+  flex-basis: 100%;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 720px) {
+  .coverage-mobile-tabs {
+    margin-bottom: var(--space-3);
+  }
+
+  .coverage-mobile-tabs .coverage-view-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1);
+    overflow: visible;
+  }
+
+  .coverage-mobile-tabs .segmented-tabs__item {
+    width: 100%;
+    padding-inline: var(--space-2);
+    font-size: 0.76rem;
+  }
+
+  .coverage-grid {
+    min-width: 620px;
+  }
+
+  .coverage-grid-wrap {
+    max-height: calc(100vh - 18rem);
+  }
+}

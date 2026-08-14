@@ -1,0 +1,52 @@
+.auto-scout-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0.28rem 0.65rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-1, #f4f7fb);
+}
+
+button.auto-scout-badge {
+  cursor: pointer;
+}
+
+.auto-scout-badge small {
+  opacity: 0.8;
+  font-size: 0.68rem;
+}
+
+.auto-scout-badge--auto {
+  background: rgba(88, 182, 141, 0.16);
+  border-color: rgba(88, 182, 141, 0.38);
+  color: #9fe7c3;
+}
+
+.auto-scout-badge--warning {
+  background: rgba(225, 177, 67, 0.14);
+  border-color: rgba(225, 177, 67, 0.34);
+  color: #f7d891;
+}
+
+.auto-scout-badge--review {
+  background: rgba(99, 171, 255, 0.14);
+  border-color: rgba(99, 171, 255, 0.32);
+  color: #b7d8ff;
+}
+
+.auto-scout-badge--manual {
+  background: rgba(176, 185, 198, 0.12);
+  border-color: rgba(176, 185, 198, 0.28);
+  color: #d7dee8;
+}
+
+.auto-scout-badge--blank {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(244, 247, 251, 0.72);
+}

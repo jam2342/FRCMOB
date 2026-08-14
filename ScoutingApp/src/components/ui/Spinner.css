@@ -1,0 +1,15 @@
+@keyframes ui-spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.ui-spinner {
+  display: block;
+  animation: ui-spinner-rotate 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-spinner {
+    animation: none;
+  }
+}

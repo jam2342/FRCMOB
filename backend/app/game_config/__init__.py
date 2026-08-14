@@ -1,0 +1,1 @@
+"Season game configuration package."

@@ -1,0 +1,36 @@
+.rating-trend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 0.12em 0.4em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.rating-trend-badge.is-new {
+  color: var(--color-text-muted, #94a3b8);
+  background: var(--color-surface-soft, rgba(148, 163, 184, 0.12));
+}
+
+.rating-trend-badge.is-up {
+  color: var(--color-success, #16a34a);
+  background: var(--color-success-soft, rgba(22, 163, 74, 0.12));
+}
+
+.rating-trend-badge.is-down {
+  color: var(--color-danger, #dc2626);
+  background: var(--color-danger-soft, rgba(220, 38, 38, 0.12));
+}
+
+.rating-trend-badge.is-flat {
+  color: var(--color-text-muted, #94a3b8);
+  background: var(--color-surface-soft, rgba(148, 163, 184, 0.12));
+}
+
+.rating-trend-badge__arrow {
+  font-size: 0.7em;
+}

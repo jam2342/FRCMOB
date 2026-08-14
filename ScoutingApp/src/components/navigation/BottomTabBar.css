@@ -1,0 +1,246 @@
+/* ================================================================== */
+/*  BOTTOM TAB BAR — Native-feeling mobile navigation                 */
+/* ================================================================== */
+
+.btb {
+  display: none; /* Hidden on desktop */
+}
+
+@media (max-width: 1120px) {
+  .btb {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-bottom-bar, 40);
+    background: rgba(17, 26, 34, 0.92);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-top: 1px solid var(--color-border, #384756);
+    padding: 0 0 var(--safe-area-bottom, 0px);
+    justify-content: space-around;
+    align-items: stretch;
+    gap: 0;
+    transition: transform var(--motion-base, 220ms) var(--motion-ease, ease);
+    will-change: transform;
+  }
+
+  .btb--hidden {
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+
+  /* ── Individual tab ────────────────────────────────────────────── */
+  .btb__tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    flex: 1;
+    min-height: 48px;
+    padding: 6px 2px 8px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-dim, #73889c);
+    text-decoration: none;
+    font-size: 0.6875rem;
+    font-weight: 620;
+    letter-spacing: var(--letter-spacing-wide, 0.02em);
+    cursor: pointer;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      color var(--motion-fast, 140ms) var(--motion-ease, ease),
+      transform var(--motion-fast, 140ms) var(--motion-spring, ease);
+    user-select: none;
+  }
+
+  /* Tap press effect */
+  .btb__tab:active {
+    transform: scale(0.9);
+  }
+
+  /* ── Icon container ────────────────────────────────────────────── */
+  .btb__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-lg, 14px);
+    transition:
+      background var(--motion-fast, 140ms) var(--motion-ease, ease),
+      transform var(--motion-fast, 140ms) var(--motion-spring, ease),
+      box-shadow var(--motion-fast, 140ms) var(--motion-ease, ease);
+  }
+
+  .btb__icon svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* ── Label ─────────────────────────────────────────────────────── */
+  .btb__label {
+    line-height: 1;
+    white-space: nowrap;
+    transition: transform var(--motion-fast, 140ms) var(--motion-spring, ease);
+  }
+
+  /* ── Active indicator dot ──────────────────────────────────────── */
+  .btb__indicator {
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: var(--radius-full, 9999px);
+    background: var(--color-accent, #5ca88d);
+    animation: btb-indicator-in var(--motion-base, 220ms) var(--motion-spring, ease) both;
+  }
+
+  @keyframes btb-indicator-in {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) scale(0);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) scale(1);
+    }
+  }
+
+  /* ── Active state ──────────────────────────────────────────────── */
+  .btb__tab--active {
+    color: var(--color-accent, #5ca88d);
+  }
+
+  .btb__tab--active .btb__icon {
+    background: var(--color-accent-soft, rgba(92, 168, 141, 0.16));
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 4px 10px rgba(10, 22, 31, 0.2);
+  }
+
+  .btb__tab--active .btb__label {
+    transform: translateY(-1px);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .btb__tab:hover {
+      transform: translateY(-1px);
+    }
+  }
+
+  /* ── More button ───────────────────────────────────────────────── */
+  .btb__tab--more {
+    font-family: inherit;
+  }
+
+  /* ── Push content up so bottom bar doesn't overlay page ────────── */
+  .ps-content {
+    padding-bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px)) !important;
+  }
+
+  /* When bar is hidden, reduce padding smoothly */
+  .btb--hidden ~ .ps-content,
+  .btb--hidden + .ps-content {
+    padding-bottom: var(--safe-area-bottom, 0px) !important;
+  }
+
+  /* ── Mobile more sheet positioning above tab bar ────────────────── */
+  .ps-mobile-more-sheet {
+    bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px)) !important;
+    top: auto !important;
+    max-height: calc(100vh - 120px - var(--safe-area-bottom, 0px)) !important;
+    border-radius: var(--radius-xl, 18px) var(--radius-xl, 18px) 0 0;
+  }
+
+  .ps-mobile-more-backdrop {
+    bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px));
+  }
+
+  /* Hide old hamburger button — bottom bar replaces it */
+  .ps-mobile-burger-btn {
+    display: none !important;
+  }
+}
+
+/* ── Light theme ─────────────────────────────────────────────────── */
+.product-shell.theme-light .btb {
+  background: rgba(245, 247, 249, 0.92);
+  border-top-color: var(--color-border, #d7e0e9);
+}
+
+.product-shell.theme-light .btb__tab {
+  color: var(--color-text-dim, #8a99ab);
+}
+
+.product-shell.theme-light .btb__tab--active {
+  color: var(--color-accent, #4f9a82);
+}
+
+.product-shell.theme-light .btb__tab--active .btb__icon {
+  background: var(--color-accent-soft, rgba(79, 154, 130, 0.14));
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .btb {
+    transition: none !important;
+  }
+
+  .btb__tab {
+    transition: none !important;
+  }
+
+  .btb__icon,
+  .btb__label {
+    transition: none !important;
+  }
+
+  .btb__indicator {
+    animation: none !important;
+  }
+}
+
+/* ── Compact phone refinements ───────────────────────────────────── */
+@media (max-width: 480px) {
+  .btb__tab {
+    min-height: 44px;
+    padding: 5px 2px 6px;
+  }
+
+  .btb__icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .btb__label {
+    font-size: 0.6875rem;
+  }
+}
+
+@media (max-width: 320px), (max-height: 500px) {
+  .btb__tab {
+    min-height: 44px;
+    padding: 4px 1px 5px;
+    font-size: 0.6rem;
+    overflow: hidden;
+  }
+
+  .btb__icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .btb__icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .btb__label {
+    font-size: 0.625rem;
+  }
+}

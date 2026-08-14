@@ -1,0 +1,372 @@
+/* ================================================================== */
+/*  MOBILE TABLE HIDING — Show cards, hide tables on mobile           */
+/* ================================================================== */
+
+@media (max-width: 1120px) {
+  .mobile-only { display: block !important; }
+  .desktop-only { display: none !important; }
+}
+
+@media (min-width: 1121px) {
+  .mobile-only { display: none !important; }
+  .desktop-only { display: block !important; }
+}
+
+/* ================================================================== */
+/*  Compare Page — Mobile Summary Cards                                */
+/* ================================================================== */
+
+.compare-mobile-summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.compare-mobile-summary-card {
+  border: 1px solid var(--surface-border, #283440);
+  border-radius: 10px;
+  background: var(--surface-bg-2, #16212b);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.compare-mobile-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compare-mobile-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  font-size: 0.78rem;
+}
+
+.compare-mobile-summary-metrics span {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--surface-border, #1e2d3a);
+}
+
+.compare-mobile-summary-metrics strong {
+  color: var(--text-primary, #e2edf7);
+}
+
+.product-shell.theme-light .compare-mobile-summary-card {
+  background: #fff;
+  border-color: #dfe4ea;
+}
+
+.product-shell.theme-light .compare-mobile-summary-metrics span {
+  border-color: #eef0f3;
+}
+
+
+/* ================================================================== */
+/*  Strategy Briefing Page                                             */
+/* ================================================================== */
+
+/* Win probability bar */
+.briefing-win-bar-wrap {
+  margin: 0.75rem 0;
+}
+
+.briefing-win-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-border, #334155);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.briefing-win-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.briefing-win-fill.red {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.briefing-win-fill.blue {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+
+.briefing-win-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.text-red { color: #ef4444; }
+.text-blue { color: #3b82f6; }
+.text-muted { color: var(--text-muted, #94a3b8); }
+.text-sm { font-size: 0.8rem; }
+
+/* Alliance columns */
+.briefing-alliances {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0.75rem 0;
+}
+
+.briefing-alliance-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.briefing-alliance-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.briefing-alliance-label.red { color: #ef4444; }
+.briefing-alliance-label.blue { color: #3b82f6; }
+
+.briefing-team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.briefing-synergy-label {
+  font-size: 0.78rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+/* Tactics section */
+.briefing-tactics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: var(--surface-raised, rgba(255,255,255,0.03));
+  border-radius: 8px;
+  border: 1px solid var(--surface-border, #1e293b);
+}
+
+.briefing-tactic-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.briefing-tactic-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.briefing-tactic-item strong {
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 2px;
+}
+
+.briefing-tactic-item p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.35;
+}
+
+.briefing-rationale {
+  margin: 0.75rem 0;
+  padding: 0.7rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--surface-border, #1e293b);
+  background: var(--surface-raised, rgba(255, 255, 255, 0.02));
+}
+
+.briefing-rationale strong {
+  display: block;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary, #a3b3c4);
+}
+
+.briefing-rationale-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.briefing-rationale-list p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--text-secondary, #9eb0c3);
+}
+
+/* Warnings */
+.briefing-warnings {
+  margin-top: 0.25rem;
+}
+
+/* Expanded details */
+.briefing-expanded {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  border-top: 1px solid var(--surface-border, #1e293b);
+  padding-top: 1rem;
+}
+
+.briefing-section h4 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.5rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* Opponent deep-dive cards */
+.briefing-opponent-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.6rem;
+}
+
+.briefing-opponent-card {
+  background: var(--surface-raised, rgba(255,255,255,0.03));
+  border: 1px solid var(--surface-border, #1e293b);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.briefing-opponent-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.briefing-opponent-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.briefing-opponent-metrics strong {
+  color: var(--text-primary, #e2e8f0);
+  margin-left: 2px;
+}
+
+.briefing-signal-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* Climb plan */
+.briefing-climb-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.briefing-climb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.briefing-climb-team {
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-width: 50px;
+}
+
+/* Tone badges on match cards */
+.briefing-match-card.tone-green {
+  border-left: 3px solid #22c55e;
+}
+.briefing-match-card.tone-yellow {
+  border-left: 3px solid #eab308;
+}
+.briefing-match-card.tone-red {
+  border-left: 3px solid #ef4444;
+}
+
+/* KPI overview in briefing */
+.briefing-kpi-overview {
+  margin-top: 0.5rem;
+}
+
+/* freshness chip variants reused */
+.center-chip.freshness.fresh { background: rgba(34,197,94,0.15); color: #22c55e; }
+.center-chip.freshness.stale { background: rgba(239,68,68,0.15); color: #ef4444; }
+
+/* Light theme */
+.product-shell.theme-light .briefing-tactics {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.product-shell.theme-light .briefing-rationale {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.product-shell.theme-light .briefing-opponent-card {
+  background: #fff;
+  border-color: #e2e8f0;
+}
+
+.product-shell.theme-light .briefing-opponent-metrics strong {
+  color: #1e293b;
+}
+
+.product-shell.theme-light .briefing-win-bar {
+  background: #e2e8f0;
+}
+
+.product-shell.theme-light .briefing-match-card.tone-green {
+  border-left-color: #16a34a;
+}
+.product-shell.theme-light .briefing-match-card.tone-yellow {
+  border-left-color: #ca8a04;
+}
+.product-shell.theme-light .briefing-match-card.tone-red {
+  border-left-color: #dc2626;
+}
+
+/* ---- Mobile responsive ---- */
+@media (max-width: 1120px) {
+  .briefing-alliances {
+    grid-template-columns: 1fr;
+  }
+
+  .briefing-opponent-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .briefing-climb-row {
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .briefing-climb-row .text-sm {
+    flex-basis: 100%;
+  }
+}
+

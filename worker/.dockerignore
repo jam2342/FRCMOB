@@ -1,0 +1,14 @@
+# Keep worker Docker build context small for local/dev compose builds.
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+*.pyc
+*.pyo
+*.pt
+!yolo11n.pt
+*.log
+.env
+.env.*

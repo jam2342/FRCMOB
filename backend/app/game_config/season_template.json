@@ -1,0 +1,1215 @@
+{
+  "season_year": 2026,
+  "season_key": "frc2026_rebuilt",
+  "season_name": "REBUILT",
+  "version": "v3-field-dwg-2026-01-12",
+  "field": {
+    "length_m": 16.541,
+    "width_m": 8.0693
+  },
+  "phases": {
+    "total_sec": 160,
+    "auto_sec": 20,
+    "teleop_sec": 140,
+    "endgame_sec": 30
+  },
+  "shift_schedule": {
+    "countdown_based": true,
+    "windows": [
+      { "key": "auto", "start_sec": 0, "end_sec": 20, "active": "both" },
+      { "key": "transition", "start_sec": 20, "end_sec": 30, "active": "both" },
+      { "key": "shift_1", "start_sec": 30, "end_sec": 55, "active": "red" },
+      { "key": "shift_2", "start_sec": 55, "end_sec": 80, "active": "blue" },
+      { "key": "shift_3", "start_sec": 80, "end_sec": 105, "active": "red" },
+      { "key": "shift_4", "start_sec": 105, "end_sec": 130, "active": "blue" },
+      { "key": "endgame", "start_sec": 130, "end_sec": 160, "active": "both" }
+    ],
+    "role_zones": {
+      "attack": { "red": "red_alliance_scoring_zone", "blue": "blue_alliance_scoring_zone" },
+      "gather": { "red": "red_loading_depot_zone", "blue": "blue_loading_depot_zone" },
+      "defense": { "red": "blue_alliance_scoring_zone", "blue": "red_alliance_scoring_zone" },
+      "climb": { "red": "red_tower_endgame_zone", "blue": "blue_tower_endgame_zone" }
+    }
+  },
+  "zones": [
+    {
+      "key": "red_alliance_scoring_zone",
+      "label": "Red Alliance Scoring Zone",
+      "kind": "scoring",
+      "description": "Approximate alliance-side hub scoring area.",
+      "polygon": [
+        {
+          "x": 10.6883,
+          "y": 2.8082
+        },
+        {
+          "x": 13.1148,
+          "y": 2.8082
+        },
+        {
+          "x": 13.1148,
+          "y": 5.2344
+        },
+        {
+          "x": 10.6883,
+          "y": 5.2344
+        }
+      ]
+    },
+    {
+      "key": "red_loading_depot_zone",
+      "label": "Red Loading / Depot Zone",
+      "kind": "loading",
+      "description": "Approximate depot + human player feed region.",
+      "polygon": [
+        {
+          "x": 13.1374,
+          "y": 6.2659
+        },
+        {
+          "x": 16.541,
+          "y": 6.2659
+        },
+        {
+          "x": 16.541,
+          "y": 8.0693
+        },
+        {
+          "x": 13.1374,
+          "y": 8.0693
+        }
+      ]
+    },
+    {
+      "key": "neutral_transition_zone",
+      "label": "Neutral Transition Zone",
+      "kind": "neutral",
+      "description": "Center traffic region with obstacle crossings and fuel transitions.",
+      "polygon": [
+        {
+          "x": 4.6632,
+          "y": 0.0
+        },
+        {
+          "x": 11.8781,
+          "y": 0.0
+        },
+        {
+          "x": 11.8781,
+          "y": 8.0693
+        },
+        {
+          "x": 4.6632,
+          "y": 8.0693
+        }
+      ]
+    },
+    {
+      "key": "red_tower_endgame_zone",
+      "label": "Red Tower Zone",
+      "kind": "endgame",
+      "description": "Tower climb region active in endgame.",
+      "polygon": [
+        {
+          "x": 13.1374,
+          "y": 3.3726
+        },
+        {
+          "x": 16.541,
+          "y": 3.3726
+        },
+        {
+          "x": 16.541,
+          "y": 4.8204
+        },
+        {
+          "x": 13.1374,
+          "y": 4.8204
+        }
+      ]
+    },
+    {
+      "key": "blue_alliance_scoring_zone",
+      "label": "Blue Alliance Scoring Zone",
+      "kind": "scoring",
+      "description": "Approximate alliance-side hub scoring area.",
+      "polygon": [
+        {
+          "x": 3.3983,
+          "y": 2.8082
+        },
+        {
+          "x": 5.8247,
+          "y": 2.8082
+        },
+        {
+          "x": 5.8247,
+          "y": 5.2344
+        },
+        {
+          "x": 3.3983,
+          "y": 5.2344
+        }
+      ]
+    },
+    {
+      "key": "blue_loading_depot_zone",
+      "label": "Blue Loading / Depot Zone",
+      "kind": "loading",
+      "description": "Approximate depot + human player feed region.",
+      "polygon": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 3.4036,
+          "y": 0.0
+        },
+        {
+          "x": 3.4036,
+          "y": 1.8034
+        },
+        {
+          "x": 0.0,
+          "y": 1.8034
+        }
+      ]
+    },
+    {
+      "key": "blue_tower_endgame_zone",
+      "label": "Blue Tower Zone",
+      "kind": "endgame",
+      "description": "Tower climb region active in endgame.",
+      "polygon": [
+        {
+          "x": 0.0,
+          "y": 3.2222
+        },
+        {
+          "x": 3.4036,
+          "y": 3.2222
+        },
+        {
+          "x": 3.4036,
+          "y": 4.67
+        },
+        {
+          "x": 0.0,
+          "y": 4.67
+        }
+      ]
+    }
+  ],
+  "event_labels": [
+    {
+      "key": "auto_fuel_score",
+      "phase": "auto",
+      "description": "Fuel scored into active alliance hub during autonomous.",
+      "metric_bucket": "scoring"
+    },
+    {
+      "key": "auto_obstacle_cross",
+      "phase": "auto",
+      "description": "Robot crosses an obstacle during autonomous.",
+      "metric_bucket": "cycle"
+    },
+    {
+      "key": "teleop_fuel_score_attempt",
+      "phase": "teleop",
+      "description": "Robot attempts to score fuel into active hub.",
+      "metric_bucket": "scoring"
+    },
+    {
+      "key": "teleop_fuel_score_success",
+      "phase": "teleop",
+      "description": "Fuel score attempt succeeds in active hub.",
+      "metric_bucket": "scoring"
+    },
+    {
+      "key": "depot_intake",
+      "phase": "teleop",
+      "description": "Robot intakes fuel from depot zone.",
+      "metric_bucket": "cycle"
+    },
+    {
+      "key": "human_player_load",
+      "phase": "teleop",
+      "description": "Robot receives fuel from human player station.",
+      "metric_bucket": "cycle"
+    },
+    {
+      "key": "field_pickup_intake",
+      "phase": "teleop",
+      "description": "Robot picks up field fuel.",
+      "metric_bucket": "cycle"
+    },
+    {
+      "key": "defense_engagement",
+      "phase": "teleop",
+      "description": "Robot actively impedes opposing alliance movement.",
+      "metric_bucket": "defense"
+    },
+    {
+      "key": "climb_attempt",
+      "phase": "endgame",
+      "description": "Robot starts a climb attempt on tower.",
+      "metric_bucket": "scoring"
+    },
+    {
+      "key": "climb_success",
+      "phase": "endgame",
+      "description": "Robot reaches a valid climb state at end of match.",
+      "metric_bucket": "scoring"
+    },
+    {
+      "key": "robot_disabled",
+      "phase": "any",
+      "description": "Robot remains disabled or non-functional.",
+      "metric_bucket": "reliability"
+    },
+    {
+      "key": "protected_zone_interference",
+      "phase": "any",
+      "description": "Potential protected zone interference event.",
+      "metric_bucket": "penalty"
+    }
+  ],
+  "scoring_actions": [
+    {
+      "key": "auto_fuel_score",
+      "label": "Autonomous Fuel Score",
+      "phase": "auto",
+      "points": 1,
+      "description": "Fuel scored in an active HUB during autonomous."
+    },
+    {
+      "key": "teleop_fuel_score",
+      "label": "Teleop Fuel Score",
+      "phase": "teleop",
+      "points": 1,
+      "description": "Fuel scored in an active HUB during teleop."
+    },
+    {
+      "key": "low_climb",
+      "label": "Level 1 Climb (Teleop)",
+      "phase": "endgame",
+      "points": 10,
+      "description": "Robot ends at TOWER level 1 in teleop/endgame scoring."
+    },
+    {
+      "key": "mid_climb",
+      "label": "Level 2 Climb (Teleop)",
+      "phase": "endgame",
+      "points": 20,
+      "description": "Robot ends at TOWER level 2 in teleop/endgame scoring."
+    },
+    {
+      "key": "high_climb",
+      "label": "Level 3 Climb (Teleop)",
+      "phase": "endgame",
+      "points": 30,
+      "description": "Robot ends at TOWER level 3 in teleop/endgame scoring."
+    },
+    {
+      "key": "auto_level1_climb",
+      "label": "Level 1 Climb (Auto)",
+      "phase": "auto",
+      "points": 15,
+      "description": "Robot reaches TOWER level 1 during autonomous (max 2 robots/alliance)."
+    }
+  ],
+  "ranking_point_conditions": [
+    {
+      "key": "win_rp",
+      "label": "Win RP",
+      "description": "Win awards 3 RP."
+    },
+    {
+      "key": "tie_rp",
+      "label": "Tie RP",
+      "description": "Tie awards 1 RP."
+    },
+    {
+      "key": "bonus_scoring_threshold",
+      "label": "ENERGIZED RP",
+      "description": "Bonus RP at 100 total points (regional/district threshold)."
+    },
+    {
+      "key": "bonus_climb_threshold",
+      "label": "TRAVERSAL RP",
+      "description": "Bonus RP at 50 tower points (regional/district threshold)."
+    },
+    {
+      "key": "bonus_fuel_target",
+      "label": "SUPERCHARGED RP",
+      "description": "Bonus RP at 360 fuel points (regional/district threshold)."
+    }
+  ],
+  "penalty_rules": [
+    {
+      "key": "illegal_contact",
+      "label": "Illegal Contact",
+      "severity": "foul",
+      "description": "Minor FOUL: opponent receives +5 points."
+    },
+    {
+      "key": "protected_zone_interference",
+      "label": "Protected Zone Interference",
+      "severity": "foul",
+      "description": "Minor FOUL: opponent receives +5 points."
+    },
+    {
+      "key": "robot_rule_violation",
+      "label": "Robot Rule Violation",
+      "severity": "tech_foul",
+      "description": "Major FOUL / TECH FOUL behavior: opponent receives +15 points."
+    },
+    {
+      "key": "conduct_violation",
+      "label": "Conduct Violation",
+      "severity": "other",
+      "description": "May escalate to card penalties; referee authority final."
+    },
+    {
+      "key": "safety_violation",
+      "label": "Safety Violation",
+      "severity": "tech_foul",
+      "description": "Major FOUL / TECH FOUL behavior: opponent receives +15 points."
+    }
+  ],
+  "core_metrics": [
+    {
+      "key": "fuel_scoring_rate",
+      "label": "Fuel Scoring Rate",
+      "phase": "teleop",
+      "category": "scoring",
+      "description": "Estimated successful fuel scores per minute."
+    },
+    {
+      "key": "cycle_time_intake_to_score",
+      "label": "Cycle Time",
+      "phase": "teleop",
+      "category": "cycle",
+      "description": "Average time between intake and confirmed score."
+    },
+    {
+      "key": "auto_contribution",
+      "label": "Auto Contribution",
+      "phase": "auto",
+      "category": "scoring",
+      "description": "Autonomous contribution from obstacle crosses + fuel scoring."
+    },
+    {
+      "key": "climb_success_probability",
+      "label": "Climb Success Probability",
+      "phase": "endgame",
+      "category": "scoring",
+      "description": "Probability of successful climb attempt in endgame."
+    },
+    {
+      "key": "defensive_engagement_time",
+      "label": "Defensive Engagement Time",
+      "phase": "teleop",
+      "category": "defense",
+      "description": "Seconds actively engaged in defensive behavior."
+    },
+    {
+      "key": "reliability_mobility",
+      "label": "Reliability / Mobility",
+      "phase": "any",
+      "category": "reliability",
+      "description": "Breakdown risk from disables, stalls, and reduced mobility."
+    }
+  ],
+  "field_layout": {
+    "units": "meters",
+    "source_document": "2026-field-dimension-dwgs.pdf (FE-2026 Rev A, 2026-01-12, sheet 11)",
+    "coordinate_origin": "Top-right corner of the field as shown in FE-2026 sheet 11. X=0 aligns with the Blue Alliance station diamond plate (or AndyMark frame), Y=0 aligns with the scoring table side guardrail/frame, and Z=0 is carpet level.",
+    "x_axis": "+X points toward the Red Alliance station.",
+    "y_axis": "+Y points away from the scoring table side toward the audience side.",
+    "z_axis": "+Z points upward from carpet.",
+    "z_rotation": "Rotation about +Z in degrees where 0 faces Red Alliance station, 90 faces audience side, 180 faces Blue Alliance station, and 270 faces scoring table side.",
+    "notes": "Anchor coordinates are AprilTag face-center coordinates grouped by hosting field element and perimeter variant.",
+    "variants": [
+      {
+        "perimeter_type": "welded",
+        "anchor_points": [
+          {
+            "id": 1,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.8781,
+              "y": 7.4247,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 2,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.9154,
+              "y": 4.638,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 3,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.3119,
+              "y": 4.3901,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 4,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.3119,
+              "y": 4.0345,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 5,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.9154,
+              "y": 3.4313,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 6,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.8781,
+              "y": 0.6444,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 7,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.953,
+              "y": 0.6444,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 8,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.271,
+              "y": 3.4313,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 9,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.5192,
+              "y": 3.6789,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 10,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.5192,
+              "y": 4.0345,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 11,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.271,
+              "y": 4.638,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 12,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.953,
+              "y": 7.4247,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 13,
+            "element": "outpost",
+            "alliance": "red",
+            "position": {
+              "x": 16.5334,
+              "y": 7.4033,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 14,
+            "element": "outpost",
+            "alliance": "red",
+            "position": {
+              "x": 16.5334,
+              "y": 6.9715,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 15,
+            "element": "tower",
+            "alliance": "red",
+            "position": {
+              "x": 16.5329,
+              "y": 4.3236,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 16,
+            "element": "tower",
+            "alliance": "red",
+            "position": {
+              "x": 16.5329,
+              "y": 3.8918,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 17,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.6632,
+              "y": 0.6444,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 18,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.6256,
+              "y": 3.4313,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 19,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 5.2291,
+              "y": 3.6789,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 20,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 5.2291,
+              "y": 4.0345,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 21,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.6256,
+              "y": 4.638,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 22,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.6632,
+              "y": 7.4247,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 23,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.5883,
+              "y": 7.4247,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 24,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.27,
+              "y": 4.638,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 25,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.0218,
+              "y": 4.3901,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 26,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.0218,
+              "y": 4.0345,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 27,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.27,
+              "y": 3.4313,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 28,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.5883,
+              "y": 0.6444,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 29,
+            "element": "outpost",
+            "alliance": "blue",
+            "position": {
+              "x": 0.0076,
+              "y": 0.666,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 30,
+            "element": "outpost",
+            "alliance": "blue",
+            "position": {
+              "x": 0.0076,
+              "y": 1.0978,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 31,
+            "element": "tower",
+            "alliance": "blue",
+            "position": {
+              "x": 0.0081,
+              "y": 3.7457,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 32,
+            "element": "tower",
+            "alliance": "blue",
+            "position": {
+              "x": 0.0081,
+              "y": 4.1775,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          }
+        ]
+      },
+      {
+        "perimeter_type": "andymark",
+        "anchor_points": [
+          {
+            "id": 1,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.8638,
+              "y": 7.4115,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 2,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.9014,
+              "y": 4.6248,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 3,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.2979,
+              "y": 4.3769,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 4,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.2979,
+              "y": 4.0213,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 5,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 11.9014,
+              "y": 3.4178,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 6,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.8638,
+              "y": 0.6312,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 7,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.9388,
+              "y": 0.6312,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 8,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.257,
+              "y": 3.4178,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 9,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.5052,
+              "y": 3.6657,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 10,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.5052,
+              "y": 4.0213,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 11,
+            "element": "hub",
+            "alliance": "red",
+            "position": {
+              "x": 12.257,
+              "y": 4.6248,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 12,
+            "element": "trench",
+            "alliance": "red",
+            "position": {
+              "x": 11.9388,
+              "y": 7.4115,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 13,
+            "element": "outpost",
+            "alliance": "red",
+            "position": {
+              "x": 16.4993,
+              "y": 7.3919,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 14,
+            "element": "outpost",
+            "alliance": "red",
+            "position": {
+              "x": 16.4993,
+              "y": 6.9601,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 15,
+            "element": "tower",
+            "alliance": "red",
+            "position": {
+              "x": 16.4991,
+              "y": 4.3124,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 16,
+            "element": "tower",
+            "alliance": "red",
+            "position": {
+              "x": 16.4991,
+              "y": 3.8806,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 17,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.649,
+              "y": 0.6312,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 18,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.6116,
+              "y": 3.4178,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 19,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 5.2151,
+              "y": 3.6657,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 20,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 5.2151,
+              "y": 4.0213,
+              "z": 1.124
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 21,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.6116,
+              "y": 4.6248,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 22,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.649,
+              "y": 7.4115,
+              "z": 0.889
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 23,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.574,
+              "y": 7.4115,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 24,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.256,
+              "y": 4.6248,
+              "z": 1.124
+            },
+            "z_rotation_deg": 90.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 25,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.0079,
+              "y": 4.3769,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 26,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.0079,
+              "y": 4.0213,
+              "z": 1.124
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 27,
+            "element": "hub",
+            "alliance": "blue",
+            "position": {
+              "x": 4.256,
+              "y": 3.4178,
+              "z": 1.124
+            },
+            "z_rotation_deg": 270.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 28,
+            "element": "trench",
+            "alliance": "blue",
+            "position": {
+              "x": 4.574,
+              "y": 0.6312,
+              "z": 0.889
+            },
+            "z_rotation_deg": 180.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 29,
+            "element": "outpost",
+            "alliance": "blue",
+            "position": {
+              "x": 0.0137,
+              "y": 0.6507,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 30,
+            "element": "outpost",
+            "alliance": "blue",
+            "position": {
+              "x": 0.0137,
+              "y": 1.0825,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 31,
+            "element": "tower",
+            "alliance": "blue",
+            "position": {
+              "x": 0.014,
+              "y": 3.7302,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          },
+          {
+            "id": 32,
+            "element": "tower",
+            "alliance": "blue",
+            "position": {
+              "x": 0.014,
+              "y": 4.162,
+              "z": 0.5524
+            },
+            "z_rotation_deg": 0.0,
+            "source": "2026-field-dimension-dwgs.pdf#sheet11"
+          }
+        ]
+      }
+    ]
+  }
+}

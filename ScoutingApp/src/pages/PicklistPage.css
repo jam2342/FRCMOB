@@ -1,0 +1,253 @@
+/* Picklist builder styles */
+
+.picklist-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  align-items: center;
+}
+
+.picklist-select {
+  max-width: 220px;
+}
+
+.picklist-header-right {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.picklist-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.picklist-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--border-default);
+  background: color-mix(in srgb, var(--color-surface-soft) 86%, transparent);
+  color: var(--color-text);
+  cursor: grab;
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
+}
+
+.picklist-row--dragging {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.picklist-row--picked,
+.picklist-row--declined {
+  opacity: 0.45;
+}
+
+.picklist-row--picked .picklist-team,
+.picklist-row--declined .picklist-team {
+  text-decoration: line-through;
+}
+
+.picklist-row--dnp {
+  border-color: color-mix(in srgb, var(--color-danger) 56%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger-soft) 42%, var(--color-surface-soft));
+}
+
+.picklist-row--next {
+  border-color: color-mix(in srgb, var(--color-success) 76%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 46%, transparent);
+}
+
+.picklist-rank {
+  min-width: 2.15rem;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+}
+
+.picklist-photo {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  flex-shrink: 0;
+}
+
+.picklist-team {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+  min-height: var(--touch-target-compact);
+}
+
+.picklist-nickname {
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16rem;
+}
+
+.picklist-rating {
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--color-text);
+}
+
+.picklist-tier {
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  min-height: 30px;
+}
+
+.picklist-tier--first {
+  color: var(--color-info);
+}
+
+.picklist-tier--second {
+  color: var(--color-warning);
+}
+
+.picklist-tier--dnp {
+  color: var(--color-danger);
+}
+
+.picklist-status {
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
+.picklist-status.picked {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.picklist-status.declined {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.picklist-actions {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.picklist-mini-btn {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  min-height: 32px;
+}
+
+.picklist-detail {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.picklist-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 220px;
+  font-size: 0.8rem;
+}
+
+.picklist-note-preview {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picklist-mobile-spacer {
+  height: calc(var(--bottom-bar-height) + var(--space-3));
+}
+
+@media (hover: hover) {
+  .picklist-row:hover {
+    background: color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-surface-soft));
+  }
+}
+
+@media (max-width: 720px) {
+  .picklist-row {
+    align-items: stretch;
+  }
+
+  .picklist-team {
+    flex-basis: calc(100% - 6rem);
+  }
+
+  .picklist-nickname {
+    display: none;
+  }
+
+  .picklist-tier {
+    order: 4;
+  }
+
+  .picklist-actions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}
+
+@media print {
+  .picklist-row {
+    border-color: var(--color-border-strong) !important;
+    page-break-inside: avoid;
+  }
+
+  .picklist-actions,
+  .picklist-photo {
+    display: none !important;
+  }
+
+  .picklist-tier {
+    display: inline-block !important;
+  }
+}

@@ -1,0 +1,24 @@
+backend/media/
+backend/app/media/
+backend/manual_videos/
+backend/yolo11n.pt
+**/*.pt
+**/__pycache__/
+.env
+**/.env
+*.env
+.env.*
+**/.env.*
+!.env.example
+!.env.aws.example
+!.env.oci.example
+.DS_Store
+node_modules/
+worker/*.pt
+# FIRST game manuals are copyrighted and must be downloaded from FIRST.
+docs/game_manual.txt
+docs/game_manual.pdf
+
+# On-device ONNX model blobs (large, not tracked; set VITE_ONDEVICE_MODEL_URL or drop here locally)
+ScoutingApp/public/models/
+*.onnx

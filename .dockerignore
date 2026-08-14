@@ -1,0 +1,42 @@
+# Root context is used by docker-compose.prod.yml / aws / oci builds.
+# Ignore everything by default, then include only what those Dockerfiles copy.
+*
+
+!backend/
+!backend/**
+!worker/
+!worker/**
+
+# Exclude heavy and non-runtime backend artifacts.
+# Keep only tracked model artifacts under backend/media/models/.
+backend/media/*
+!backend/media/models/
+backend/media/models/*
+# Whitelist the currently-deployed detector(s). v2 is primary; v1 kept for
+# rollback. Bump these when versions change.
+!backend/media/models/frc_robot_detector_v2.pt
+!backend/media/models/frc_robot_detector_v1.pt
+backend/manual_videos/
+backend/*.pt
+backend/tests/
+backend/docs/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.mypy_cache/
+backend/.venv/
+backend/venv/
+backend/.env
+backend/.env.*
+backend/*.log
+
+# Exclude worker local artifacts.
+worker/__pycache__/
+worker/.pytest_cache/
+worker/.ruff_cache/
+worker/.venv/
+worker/venv/
+worker/*.pt
+worker/.env
+worker/.env.*
+worker/*.log

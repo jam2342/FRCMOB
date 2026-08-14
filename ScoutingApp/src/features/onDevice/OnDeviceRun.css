@@ -1,0 +1,449 @@
+/* On-device match-breakdown run screen. Mobile-first; uses the shared design tokens so it
+   follows light/dark like the rest of the product shell. No parallel style system. */
+
+.on-device-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* ── step indicator ─────────────────────────────────────────────────── */
+.odr-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.odr-steps::-webkit-scrollbar {
+  display: none;
+}
+.odr-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 0;
+  min-width: 56px;
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-dim);
+  font: inherit;
+  cursor: default;
+}
+.odr-step.is-clickable {
+  cursor: pointer;
+}
+/* connector line between step bubbles */
+.odr-step::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: calc(-50% + 14px);
+  width: calc(100% - 28px);
+  height: 2px;
+  background: var(--control-border);
+}
+.odr-step:first-child::before {
+  display: none;
+}
+.odr-step.is-done::before,
+.odr-step.is-active::before {
+  background: color-mix(in srgb, var(--color-accent) 60%, var(--control-border));
+}
+.odr-step__bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  z-index: 1;
+}
+.odr-step.is-active .odr-step__bubble {
+  border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+  background: var(--color-accent);
+  color: #f4fcf8;
+  box-shadow: 0 0 0 4px var(--color-accent-soft);
+}
+.odr-step.is-done .odr-step__bubble {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+.odr-step__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.odr-step.is-active .odr-step__label {
+  color: var(--color-text);
+}
+
+/* ── generic section bits ───────────────────────────────────────────── */
+.odr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.odr-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+.odr-error {
+  margin: 0;
+  color: #f08a8a;
+  font-size: var(--type-body-size);
+}
+
+/* ── forms ──────────────────────────────────────────────────────────── */
+.odr-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.odr-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.odr-label {
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.on-device-run .odr-input,
+.on-device-run .odr-select {
+  width: 100%;
+  min-height: var(--control-min-height);
+  padding: 0 var(--control-padding-inline);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-size: var(--type-body-size);
+  appearance: none;
+}
+.on-device-run .odr-input:focus-visible,
+.on-device-run .odr-select:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--control-border));
+}
+
+/* ── action button rows ─────────────────────────────────────────────── */
+.odr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.odr-actions .center-btn {
+  flex: 1 1 auto;
+}
+
+/* ── team chips ─────────────────────────────────────────────────────── */
+.odr-teams {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.odr-alliance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.odr-alliance__label {
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  width: 40px;
+}
+.odr-alliance--red .odr-alliance__label {
+  color: #d98a93;
+}
+.odr-alliance--blue .odr-alliance__label {
+  color: #8aa9d9;
+}
+.odr-team-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-size: var(--type-caption-size);
+  font-weight: 600;
+}
+.odr-alliance--red .odr-team-chip {
+  border-color: color-mix(in srgb, #d98a93 45%, var(--control-border));
+}
+.odr-alliance--blue .odr-team-chip {
+  border-color: color-mix(in srgb, #8aa9d9 45%, var(--control-border));
+}
+
+/* ── stabilize switch row ───────────────────────────────────────────── */
+.odr-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  font-size: var(--type-caption-size);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.odr-switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}
+.odr-switch__status {
+  margin-left: auto;
+  font-weight: 700;
+}
+.odr-switch__status.is-ready {
+  color: var(--color-accent-hover);
+}
+.odr-switch__status.is-error {
+  color: #e0a35c;
+}
+
+/* ── capture mode toggle (reuses segmented-tabs look) ───────────────── */
+.odr-mode {
+  align-self: flex-start;
+}
+
+/* ── identify: track rows ───────────────────────────────────────────── */
+.odr-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.odr-track {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--control-bg);
+}
+.odr-track--assigned {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--control-border));
+  background: var(--color-accent-soft);
+}
+.odr-track__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.odr-track__title {
+  font-size: var(--type-body-size);
+  font-weight: 700;
+  color: var(--color-text);
+}
+.odr-track__meta {
+  font-size: var(--type-caption-size);
+  color: var(--color-text-muted);
+}
+.odr-track .odr-select {
+  width: auto;
+  min-width: 124px;
+  flex: 0 0 auto;
+}
+
+/* ── result ─────────────────────────────────────────────────────────── */
+.odr-summary {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--control-border));
+  color: var(--color-text);
+  font-size: var(--type-body-size);
+}
+.odr-robots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.odr-robot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+}
+.odr-robot__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.odr-robot__team {
+  font-size: var(--type-heading-sm-size);
+  font-weight: 700;
+  color: var(--color-text);
+}
+.odr-badge {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+.odr-badge--red {
+  background: color-mix(in srgb, #d98a93 22%, transparent);
+  color: #e6a3ab;
+}
+.odr-badge--blue {
+  background: color-mix(in srgb, #8aa9d9 22%, transparent);
+  color: #a6c0e6;
+}
+.odr-meters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.odr-meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.odr-meter__label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--type-caption-size);
+  color: var(--color-text-muted);
+}
+.odr-meter__value {
+  font-weight: 700;
+  color: var(--color-text);
+}
+.odr-meter__bar {
+  display: flex;
+  gap: 3px;
+}
+.odr-meter__seg {
+  flex: 1 1 0;
+  height: 8px;
+  border-radius: var(--radius-xs);
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+}
+.odr-meter__seg.is-on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.odr-meter--defense .odr-meter__seg.is-on {
+  background: #d98a93;
+  border-color: #d98a93;
+}
+.odr-meter__na {
+  font-size: var(--type-caption-size);
+  color: var(--color-text-dim);
+}
+.odr-heatmaps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.odr-heatmap__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+/* ── mobile (scouting phones ~250–450px) ────────────────────────────── */
+@media (max-width: 560px) {
+  .odr-meters,
+  .odr-heatmaps {
+    grid-template-columns: 1fr; /* stack — never side-by-side on a phone */
+  }
+  .odr-actions .center-btn {
+    flex: 1 1 100%; /* full-width, easy thumb targets */
+    min-height: 44px;
+  }
+  .on-device-run .odr-input,
+  .on-device-run .odr-select {
+    min-height: 44px;
+    font-size: 16px; /* prevent iOS zoom-on-focus */
+  }
+  .odr-track {
+    flex-wrap: wrap;
+  }
+  .odr-track .odr-select {
+    width: 100%;
+    min-height: 44px;
+  }
+  .odr-step__label {
+    display: none; /* numbers-only stepper on very small screens */
+  }
+}
+
+/* ── field calibration ──────────────────────────────────────────────── */
+.field-calibration {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.field-calibration__prompt {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--type-body-size);
+  color: var(--color-text);
+}
+.field-calibration__error {
+  margin: 0;
+  font-size: var(--type-caption-size);
+  color: #d98a93;
+}
+.field-calibration canvas {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--control-bg);
+}
+
+/* Button-styled file picker — hides the bare native input but keeps it
+   keyboard-focusable; the label is the visible control. */
+.odr-file-btn {
+  position: relative;
+  cursor: pointer;
+}
+.odr-file-btn:focus-within {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.odr-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

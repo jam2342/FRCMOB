@@ -1,0 +1,247 @@
+/* ================================================================== */
+/*  AUTO PATH DRAWER                                                    */
+/* ================================================================== */
+
+.autopath-controls {
+  flex-wrap: wrap;
+}
+
+.autopath-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 10px;
+  flex-wrap: wrap;
+}
+
+.autopath-mode-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.autopath-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.autopath-mode-btn.active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.autopath-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.autopath-toggle-label input[type="checkbox"] {
+  accent-color: #3b82f6;
+}
+
+.autopath-loading {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+.autopath-draw-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 8px;
+  flex-wrap: wrap;
+}
+
+.autopath-label-input {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  width: 140px;
+}
+
+.autopath-draw-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+.autopath-canvas-container {
+  position: relative;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a2332;
+}
+
+.autopath-canvas {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+}
+
+/* saved paths list */
+.autopath-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.autopath-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+}
+
+.autopath-list-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.autopath-list-item.selected {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.autopath-list-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.autopath-list-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.autopath-list-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.autopath-list-meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.autopath-list-delete {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.autopath-list-delete:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.autopath-clear-btn {
+  margin-top: 8px;
+  padding: 7px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.12s;
+}
+
+.autopath-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.autopath-track-info {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.5;
+  padding: 4px 0;
+}
+
+/* light theme overrides for auto path */
+.product-shell.theme-light .autopath-mode-btn {
+  border-color: rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.product-shell.theme-light .autopath-mode-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.product-shell.theme-light .autopath-mode-btn.active {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.product-shell.theme-light .autopath-toggle-label {
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.product-shell.theme-light .autopath-label-input {
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.product-shell.theme-light .autopath-draw-hint {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.product-shell.theme-light .autopath-canvas-container {
+  background: #e8edf2;
+}
+
+.product-shell.theme-light .autopath-list-item {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.product-shell.theme-light .autopath-list-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.product-shell.theme-light .autopath-list-label {
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.product-shell.theme-light .autopath-list-meta {
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.product-shell.theme-light .autopath-track-info {
+  color: rgba(0, 0, 0, 0.5);
+}
+

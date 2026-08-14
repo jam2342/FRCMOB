@@ -1,0 +1,399 @@
+/* ================================================================== */
+/*  OFFLINE INDICATOR BANNER                                            */
+/* ================================================================== */
+
+.offline-banner {
+  position: sticky;
+  /* Stick just below the sticky topbar — top: 0 makes the banner paint
+     over the app header once the page scrolls. */
+  top: var(--ps-topbar-height, 0px);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-on-danger, #fff);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.offline-banner-warning {
+  background: var(--surface-warning, #5c4100);
+}
+
+.offline-banner-danger {
+  background: var(--surface-danger, #5c0000);
+}
+
+.offline-banner-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.offline-banner-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.offline-dot-warning {
+  background: #f5a623;
+}
+
+.offline-dot-danger {
+  background: #ff4d4f;
+}
+
+.offline-banner-sync-btn {
+  padding: 0.2rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: background 0.12s;
+}
+
+.offline-banner-sync-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.offline-banner-hint {
+  opacity: 0.8;
+  font-size: 0.75rem;
+}
+
+/* ================================================================== */
+/*  ERROR BOUNDARY FALLBACK                                             */
+/* ================================================================== */
+
+.error-boundary-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  min-height: 40vh;
+  gap: 1rem;
+}
+
+.error-boundary-heading {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.error-boundary-message {
+  margin: 0;
+  color: var(--text-secondary, #888);
+  max-width: 36rem;
+}
+
+.error-boundary-retry {
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #444);
+  background: var(--surface, #222);
+  color: var(--text, #eee);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.12s;
+}
+
+.error-boundary-retry:hover {
+  background: var(--surface-hover, #333);
+}
+
+.product-shell.theme-light .error-boundary-retry {
+  background: var(--surface, #f0f0f0);
+  color: var(--text, #222);
+  border-color: var(--border, #ccc);
+}
+
+.product-shell.theme-light .error-boundary-retry:hover {
+  background: var(--surface-hover, #e0e0e0);
+}
+
+/* ================================================================== */
+/*  MOBILE UX CLEANUP — Reduce noise, improve traversal               */
+/* ================================================================== */
+
+@media (max-width: 1120px) {
+  /* Hide network pill on mobile — the OfflineIndicator already covers this */
+  .ps-network-pill {
+    display: none;
+  }
+
+  /* Compact the topbar title area */
+  .ps-topbar-title {
+    font-size: 0.92rem;
+    gap: 6px;
+  }
+
+  /* Mobile event picker dropdown for home page */
+  .home-mobile-event-picker {
+    width: 100%;
+  }
+
+  .home-mobile-event-picker select {
+    width: 100%;
+    min-height: 38px;
+    font-size: 0.82rem;
+  }
+
+  /* Simplified toolbar on mobile */
+  .home-fotmob-toolbar {
+    padding: 10px;
+    gap: 8px;
+    border-radius: 12px;
+  }
+
+  .home-fotmob-toolbar-left h2 {
+    font-size: 1rem;
+  }
+
+  /* Match rows: better spacing on mobile */
+  .home-match-row {
+    border-radius: 10px;
+    padding: 8px;
+  }
+
+  .home-match-main {
+    gap: 8px;
+  }
+
+  /* Better touch targets for filter buttons */
+  .home-filter-btn {
+    min-height: 36px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+  }
+
+  /* Cleaner event section headers on mobile */
+  .home-event-section-head {
+    padding: 8px 0;
+  }
+
+  .home-event-section-foot {
+    font-size: 0.72rem;
+    padding-top: 6px;
+    opacity: 0.7;
+  }
+
+  /* Keep mobile toolbar actions visible (Calendar / Event Info). */
+  .home-fotmob-toolbar-actions .home-mini-tab-btn {
+    display: inline-flex;
+  }
+}
+
+/* ================================================================== */
+/*  HOME MOBILE EVENT PICKER — base styles                             */
+/* ================================================================== */
+
+.home-mobile-event-picker {
+  display: grid;
+  gap: 4px;
+}
+
+.home-mobile-event-picker select {
+  border-radius: 10px;
+}
+
+.home-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  border: 0;
+  background: rgba(7, 12, 18, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  cursor: default;
+}
+
+.home-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: auto;
+  z-index: 45;
+  width: min(320px, 85vw);
+  max-height: calc(100vh - env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, #151d27 0%, #111921 100%);
+  border-left: 1px solid #2e3b48;
+  border-bottom: 1px solid #2e3b48;
+  border-bottom-left-radius: 16px;
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.35);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  align-content: start;
+  gap: 0;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  animation: home-drawer-slide-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes home-drawer-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes home-drawer-slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.home-drawer.home-drawer-closing {
+  animation: home-drawer-slide-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+
+.home-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid #2a3744;
+  position: sticky;
+  top: 0;
+  background: inherit;
+  z-index: 1;
+}
+
+.home-drawer-header strong {
+  font-size: 0.95rem;
+  color: #f0f6fb;
+}
+
+.home-drawer-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #3a4856;
+  border-radius: 8px;
+  background: rgba(26, 38, 50, 0.8);
+  color: #b0c3d4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.home-drawer-close:hover {
+  border-color: #5ca88d;
+  color: #edf8f2;
+}
+
+.home-drawer-close svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.home-drawer-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid #242f3a;
+  display: grid;
+  gap: 8px;
+}
+
+.home-drawer-section:last-child {
+  border-bottom: none;
+}
+
+.home-drawer-section h4 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #d6e4f0;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.home-drawer-section small {
+  color: #8fa3b6;
+  font-size: 0.73rem;
+}
+
+.home-drawer-section .home-ranking-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.home-drawer-section .home-ranking-row {
+  min-height: 38px;
+  font-size: 0.8rem;
+}
+
+.home-drawer-section .home-fotmob-btn {
+  width: 100%;
+  min-height: 40px;
+  justify-content: center;
+  font-size: 0.82rem;
+}
+
+.home-drawer-links {
+  display: grid;
+  gap: 8px;
+}
+
+.home-drawer-links .home-fotmob-btn {
+  width: 100%;
+  text-align: center;
+}
+
+/* Light theme */
+.product-shell.theme-light .home-drawer {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f8 100%);
+  border-left-color: #d8dee5;
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.1);
+}
+
+.product-shell.theme-light .home-drawer-header {
+  border-bottom-color: #d8dee5;
+}
+
+.product-shell.theme-light .home-drawer-header strong {
+  color: #1c2832;
+}
+
+.product-shell.theme-light .home-drawer-close {
+  border-color: #c8d1da;
+  background: rgba(240, 244, 248, 0.8);
+  color: #4c6275;
+}
+
+.product-shell.theme-light .home-drawer-section {
+  border-bottom-color: #e4e9ee;
+}
+
+.product-shell.theme-light .home-drawer-section h4 {
+  color: #344860;
+}
+
+.product-shell.theme-light .home-drawer-section small {
+  color: #6b8097;
+}
+
+.product-shell.theme-light .home-drawer-backdrop {
+  background: rgba(240, 245, 250, 0.45);
+}

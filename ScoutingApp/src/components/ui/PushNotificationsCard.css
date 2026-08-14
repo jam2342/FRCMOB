@@ -1,0 +1,65 @@
+/* Match-alert settings card */
+
+.push-alerts-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-body-size);
+}
+
+.push-alerts-actions,
+.push-alerts-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.push-alerts-form {
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.push-alerts-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--type-body-size);
+  color: var(--color-text-muted);
+}
+
+.push-alerts-field--short {
+  max-width: 150px;
+}
+
+.push-alerts-field--room {
+  max-width: 210px;
+}
+
+.push-alerts-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-compact);
+  font-size: var(--type-body-size);
+  color: var(--color-text);
+}
+
+.push-alerts-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-accent);
+}
+
+@media (max-width: 640px) {
+  .push-alerts-actions,
+  .push-alerts-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .push-alerts-field,
+  .push-alerts-field--short,
+  .push-alerts-field--room {
+    max-width: none;
+  }
+}

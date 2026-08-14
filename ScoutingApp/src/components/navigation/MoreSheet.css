@@ -1,0 +1,219 @@
+/* ================================================================== */
+/*  MORE SHEET — Grid-based navigation drawer                         */
+/* ================================================================== */
+
+.ms__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-bottom-bar, 40) - 1);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  animation: ms-fade-in var(--motion-fast, 140ms) ease both;
+}
+
+@keyframes ms-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ms {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px));
+  z-index: calc(var(--z-bottom-bar, 40) + 1);
+  background: var(--color-bg-elevated, #151c24);
+  border-radius: var(--radius-xl, 18px) var(--radius-xl, 18px) 0 0;
+  padding: 6px 12px 12px;
+  max-height: calc(100vh - 122px);
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl, 0 12px 32px rgba(6, 10, 16, 0.32));
+  animation: ms-slide-up var(--motion-base, 220ms) var(--motion-snappy, ease) both;
+}
+
+@keyframes ms-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ms-slide-down {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+@keyframes ms-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.ms--closing {
+  animation: ms-slide-down 200ms var(--motion-snappy, ease) both;
+  pointer-events: none;
+}
+
+.ms__backdrop--closing {
+  animation: ms-fade-out 160ms ease both;
+  pointer-events: none;
+}
+
+/* ── Drag handle ─────────────────────────────────────────────────── */
+.ms__handle {
+  width: 36px;
+  height: 4px;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-border, #384756);
+  margin: var(--space-1, 4px) auto var(--space-3, 12px);
+  cursor: grab;
+  touch-action: none;
+}
+
+/* ── Section ─────────────────────────────────────────────────────── */
+.ms__section {
+  margin-bottom: var(--space-2, 8px);
+}
+
+.ms__section-title {
+  font-size: var(--font-size-2xs, 0.625rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-dim, #73889c);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 var(--space-2, 8px);
+  padding: 0 var(--space-1, 4px);
+}
+
+/* ── Grid of links ───────────────────────────────────────────────── */
+.ms__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.ms__link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 9px 6px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-surface, #1b2530);
+  border: 1px solid var(--color-border, #384756);
+  text-decoration: none;
+  color: var(--color-text, #e4edf5);
+  transition:
+    background var(--motion-fast, 140ms) ease,
+    border-color var(--motion-fast, 140ms) ease,
+    transform var(--motion-fast, 140ms) var(--motion-spring, ease),
+    box-shadow var(--motion-fast, 140ms) ease;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 58px;
+}
+
+.ms__link:active {
+  background: var(--color-surface-soft, #202c38);
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ms__link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 7px 14px rgba(5, 12, 19, 0.2);
+  }
+}
+
+.ms__link--active {
+  border-color: var(--color-accent, #5ca88d);
+  background: var(--color-accent-soft, rgba(92, 168, 141, 0.16));
+  box-shadow: 0 6px 12px rgba(16, 34, 27, 0.2);
+}
+
+.ms__link-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.ms__link-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ms__link-label {
+  font-size: 0.64rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Divider ─────────────────────────────────────────────────────── */
+.ms__divider {
+  height: 1px;
+  background: var(--color-border, #384756);
+  margin: var(--space-2, 8px) 0;
+}
+
+/* ── Light theme ─────────────────────────────────────────────────── */
+.product-shell.theme-light .ms {
+  background: var(--color-bg-elevated, #f7f9fc);
+}
+
+.product-shell.theme-light .ms__link {
+  background: var(--color-surface, #ffffff);
+  border-color: var(--color-border, #d7e0e9);
+}
+
+.product-shell.theme-light .ms__link:active {
+  background: var(--color-surface-muted, #edf2f7);
+}
+
+.product-shell.theme-light .ms__link--active {
+  border-color: var(--color-accent, #4f9a82);
+  background: var(--color-accent-soft, rgba(79, 154, 130, 0.14));
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .ms,
+  .ms--closing,
+  .ms__backdrop,
+  .ms__backdrop--closing {
+    animation: none !important;
+  }
+
+  .ms__link {
+    transition: none !important;
+  }
+}
+
+/* ── Compact phone — 2-col grid ──────────────────────────────────── */
+@media (max-width: 320px) {
+  .ms__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── Hide on desktop ─────────────────────────────────────────────── */
+@media (min-width: 1121px) {
+  .ms,
+  .ms__backdrop {
+    display: none !important;
+  }
+}

@@ -1,0 +1,105 @@
+/* ─── BottomSheet ─────────────────────────────────── */
+.bs__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: bs-fade-in var(--motion-fast) ease;
+}
+
+@keyframes bs-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.bs {
+  width: 100%;
+  max-width: 500px;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(0);
+  transition: height var(--motion-normal) cubic-bezier(.4, 0, .2, 1),
+              transform var(--motion-normal) cubic-bezier(.4, 0, .2, 1);
+  animation: bs-slide-up var(--motion-normal) cubic-bezier(.4, 0, .2, 1);
+}
+
+@keyframes bs-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* Handle */
+.bs__handle-area {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-3) 0 var(--space-1);
+  cursor: grab;
+  touch-action: none;
+}
+.bs__handle-area:active {
+  cursor: grabbing;
+}
+
+.bs__handle {
+  width: 36px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+/* Header */
+.bs__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.bs__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.bs__close {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.bs__close:active {
+  background: var(--color-surface-raised);
+}
+
+/* Content */
+.bs__content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 var(--space-4) var(--space-6);
+  padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ─── Light theme ─── */
+.product-shell.theme-light .bs {
+  background: var(--color-surface);
+}
+.product-shell.theme-light .bs__handle {
+  background: var(--color-border);
+}

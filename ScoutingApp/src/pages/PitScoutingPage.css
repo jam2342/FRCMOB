@@ -1,0 +1,201 @@
+/* Pit scouting styles */
+
+.pit-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: var(--space-2);
+}
+
+.pit-team-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-md);
+  border: var(--border-default);
+  background: color-mix(in srgb, var(--color-surface-soft) 88%, transparent);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  min-height: 44px;
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
+}
+
+.pit-team-cell--done {
+  border-color: color-mix(in srgb, var(--color-success) 62%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success-soft) 58%, var(--color-surface-soft));
+}
+
+.pit-team-cell--active {
+  border-color: color-mix(in srgb, var(--color-info) 74%, var(--color-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-info) 28%, transparent);
+}
+
+.pit-photo-indicator {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-info);
+  box-shadow: 0 0 0 3px var(--color-info-soft);
+}
+
+.pit-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.pit-photo-item {
+  position: relative;
+  margin: 0;
+}
+
+.pit-photo-item img {
+  width: 110px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  display: block;
+}
+
+.pit-photo-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 50%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 78%, var(--color-bg));
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.pit-photo-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 110px;
+  height: 110px;
+  border-radius: var(--radius-md);
+  border: 2px dashed color-mix(in srgb, var(--color-border) 90%, transparent);
+  background: color-mix(in srgb, var(--color-surface-soft) 80%, transparent);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-weight: 600;
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.pit-photo-add.busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.pit-photo-add input {
+  display: none;
+}
+
+.pit-section {
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  margin: 0 0 0.9rem;
+  padding: 0.65rem 0.8rem 0.8rem;
+  background: color-mix(in srgb, var(--color-surface-soft) 42%, transparent);
+}
+
+.pit-section legend {
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  padding: 0 0.35rem;
+  color: var(--color-text-muted);
+}
+
+.pit-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.pit-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.85rem;
+}
+
+.pit-field-label {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.pit-multiselect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.pit-chip-active {
+  background: var(--color-info-soft) !important;
+  border-color: color-mix(in srgb, var(--color-info) 72%, var(--color-border)) !important;
+  color: var(--color-text) !important;
+  font-weight: 700;
+}
+
+.pit-number-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pit-unit {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.pit-textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+.pit-save-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+@media (hover: hover) {
+  .pit-team-cell:hover,
+  .pit-photo-add:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent-soft) 42%, var(--color-surface-soft));
+  }
+}
+
+@media (max-width: 640px) {
+  .pit-team-grid {
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  }
+
+  .pit-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .pit-photo-item img,
+  .pit-photo-add {
+    width: 96px;
+    height: 96px;
+  }
+}

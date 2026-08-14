@@ -1,0 +1,480 @@
+/* ==========================================================================
+   Shared Control System
+   Single-owner styling for buttons, tabs, pills, shell nav, and mobile nav.
+   ========================================================================== */
+
+.product-shell {
+  --control-min-height: 38px;
+  --control-min-height-dense: 32px;
+  --control-padding-inline: 13px;
+  --control-padding-inline-dense: 10px;
+  --control-gap: 6px;
+  --control-radius: var(--radius-control);
+  --control-radius-pill: var(--radius-full);
+  --control-border: color-mix(in srgb, var(--color-border) 90%, transparent);
+  --control-border-strong: color-mix(in srgb, var(--color-border-strong) 72%, var(--color-accent));
+  --control-bg: color-mix(in srgb, var(--color-surface-soft) 92%, transparent);
+  --control-bg-hover: color-mix(in srgb, var(--color-surface-muted) 78%, var(--color-surface-soft));
+  --control-bg-active: color-mix(in srgb, var(--color-accent-soft) 62%, var(--color-surface-soft));
+  --control-text: var(--color-text);
+  --control-text-muted: var(--color-text-muted);
+  --control-shadow-active: 0 8px 16px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --control-shadow-soft: 0 4px 12px rgba(8, 15, 24, 0.12);
+}
+
+.product-shell .ps-topbar-tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: min(100%, 720px);
+  justify-self: end;
+}
+
+.product-shell .ps-topbar {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+}
+
+.product-shell .ps-topbar-search {
+  flex: 1 1 520px;
+}
+
+.product-shell .segmented-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+}
+
+.product-shell :where(.segmented-tabs, .page-view-bar, .center-tabs, .fm-tab-bar, .mobile-view-toggle, .fm-scout-panel-tabs) {
+  scrollbar-width: none;
+}
+
+.product-shell :where(.segmented-tabs, .page-view-bar, .center-tabs, .fm-tab-bar, .mobile-view-toggle, .fm-scout-panel-tabs)::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scroll affordance — fade the edge that has hidden tabs so users know the
+   bar scrolls (toggled by PageViewBar via .can-scroll-left/.can-scroll-right). */
+.product-shell .page-view-bar.can-scroll-right:not(.can-scroll-left) {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent 100%);
+}
+
+.product-shell .page-view-bar.can-scroll-left:not(.can-scroll-right) {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 30px);
+  mask-image: linear-gradient(to right, transparent 0, #000 30px);
+}
+
+.product-shell .page-view-bar.can-scroll-left.can-scroll-right {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 30px, #000 calc(100% - 30px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 30px, #000 calc(100% - 30px), transparent 100%);
+}
+
+/* Collapsed PageViewBar (mobile, collapseToMenuOnMobile) — the multi-item tool
+   switcher folds into one dropdown pill so it doesn't stack a second full-width
+   bar onto the bar-heavy scouting layout. The trigger/wrapper live inside
+   .product-shell; the popover is portaled to <body> (PageViewBar), so its rules
+   are unprefixed and use global --color-* tokens that theme from :root. */
+.product-shell .page-view-menu {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.product-shell .page-view-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--control-gap, 6px);
+  max-width: 100%;
+}
+
+.product-shell .page-view-menu-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-shell .page-view-menu-trigger > svg {
+  flex: 0 0 auto;
+  transition: transform var(--motion-fast, 140ms) var(--motion-ease, ease);
+}
+
+.product-shell .page-view-menu-trigger[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+
+.page-view-menu-popover {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px;
+  border: 1px solid var(--color-border, #33414d);
+  border-radius: 14px;
+  background: var(--color-bg-elevated, #151c24);
+  box-shadow: 0 16px 36px rgba(6, 10, 15, 0.42);
+}
+
+.page-view-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: var(--type-caption-size, 0.82rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--color-text-muted, #9fb0c1);
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.page-view-menu-item:where(:hover, :focus-visible) {
+  background: var(--color-surface-muted, #263341);
+  color: var(--color-text, #e7eef5);
+  outline: none;
+}
+
+.page-view-menu-item.active {
+  background: var(--color-accent-soft, rgba(92, 168, 141, 0.16));
+  color: var(--color-text, #e7eef5);
+}
+
+.product-shell .segmented-tabs__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+  min-width: 0;
+  font-family: inherit;
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  min-height: var(--control-min-height-dense);
+  padding: 0 var(--control-padding-inline);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--control-text-muted);
+  appearance: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
+}
+
+.product-shell .segmented-tabs__icon,
+.product-shell .segmented-tabs__label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.product-shell .segmented-tabs__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-shell .segmented-tabs__item:where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
+  border-color: var(--control-border-strong);
+  background: var(--control-bg-hover);
+  color: var(--control-text);
+}
+
+.product-shell .segmented-tabs__item:where(.active, [aria-selected='true']) {
+  border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+  background: var(--control-bg-active);
+  color: var(--control-text);
+  box-shadow: var(--control-shadow-active);
+}
+
+.product-shell :where(
+  .center-btn,
+  .home-fotmob-btn,
+  .center-tab-btn,
+  .page-view-tab,
+  .fm-tab,
+  .mobile-view-toggle-btn,
+  .fm-scout-mode-pill,
+  .fm-scout-section-tab,
+  .fm-scout-panel-pill,
+  .ps-nav-link,
+  .scout-sidebar-nav-pill,
+  .surface-card-collapse-btn,
+  .surface-card-compact-btn,
+  .surface-card-expand-btn,
+  .ps-sidebar-toggle,
+  .ps-finder-toggle,
+  .center-sort-chip,
+  .home-filter-btn,
+  .ms__link,
+  .btb__tab
+) {
+  font-family: inherit;
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.product-shell :where(
+  .center-tab-btn,
+  .page-view-tab,
+  .fm-tab,
+  .mobile-view-toggle-btn,
+  .fm-scout-mode-pill,
+  .fm-scout-section-tab,
+  .fm-scout-panel-pill,
+  .ps-nav-link,
+  .scout-sidebar-nav-pill,
+  .surface-card-collapse-btn,
+  .surface-card-compact-btn,
+  .surface-card-expand-btn,
+  .ps-sidebar-toggle,
+  .ps-finder-toggle,
+  .center-sort-chip,
+  .home-filter-btn,
+  .ms__link
+) {
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  color: var(--control-text-muted);
+  box-shadow: none;
+}
+
+.product-shell :where(
+  .center-btn:not(.ghost),
+  .home-fotmob-btn:not(.subtle),
+  .ps-topbar-search-btn
+) {
+  border: 1px solid color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 44%, var(--color-surface-soft));
+  color: #f4fcf8;
+  box-shadow: var(--control-shadow-soft);
+}
+
+.product-shell :where(.center-btn.ghost, .home-fotmob-btn.subtle) {
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  color: var(--control-text-muted);
+}
+
+.product-shell :where(.center-btn, .home-fotmob-btn, .ps-topbar-search-btn) {
+  min-height: var(--control-min-height);
+  padding: 0 var(--control-padding-inline);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+}
+
+.product-shell :where(
+  .surface-card-collapse-btn,
+  .surface-card-compact-btn,
+  .ps-sidebar-toggle,
+  .ps-finder-toggle,
+  .center-sort-chip,
+  .home-filter-btn
+) {
+  min-height: var(--control-min-height-dense);
+  padding: 0 var(--control-padding-inline-dense);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+}
+
+.product-shell :where(
+  .center-tab-btn,
+  .page-view-tab,
+  .fm-tab,
+  .mobile-view-toggle-btn,
+  .fm-scout-mode-pill,
+  .fm-scout-section-tab,
+  .fm-scout-panel-pill
+) {
+  min-height: var(--control-min-height-dense);
+  padding: 0 var(--control-padding-inline);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+}
+
+.product-shell .ps-nav-link {
+  min-height: var(--control-min-height);
+  padding: 0 var(--control-padding-inline);
+  border-radius: var(--radius-lg);
+}
+
+.product-shell .scout-sidebar-nav-pill {
+  min-height: 58px;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.product-shell :where(
+  .center-tab-btn,
+  .page-view-tab,
+  .fm-tab,
+  .mobile-view-toggle-btn,
+  .fm-scout-mode-pill,
+  .fm-scout-section-tab,
+  .fm-scout-panel-pill,
+  .ps-nav-link,
+  .scout-sidebar-nav-pill,
+  .surface-card-collapse-btn,
+  .surface-card-compact-btn,
+  .surface-card-expand-btn,
+  .ps-sidebar-toggle,
+  .ps-finder-toggle,
+  .center-sort-chip,
+  .home-filter-btn,
+  .ms__link
+):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
+  border-color: var(--control-border-strong);
+  background: var(--control-bg-hover);
+  color: var(--control-text);
+}
+
+.product-shell :where(
+  .center-btn:not(.ghost),
+  .home-fotmob-btn:not(.subtle),
+  .ps-topbar-search-btn
+):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.product-shell :where(
+  .center-tab-btn.active,
+  .page-view-tab.active,
+  .fm-tab.active,
+  .mobile-view-toggle-btn.active,
+  .fm-scout-mode-pill.active,
+  .fm-scout-section-tab.active,
+  .fm-scout-panel-pill.active,
+  .ps-nav-link.active,
+  .scout-sidebar-nav-pill.active,
+  .center-sort-chip.active,
+  .home-filter-btn.active,
+  .ms__link--active
+) {
+  border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+  background: var(--control-bg-active);
+  color: var(--control-text);
+  box-shadow: var(--control-shadow-active);
+}
+
+.product-shell :where(
+  .center-btn.ghost,
+  .home-fotmob-btn.subtle
+):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
+  transform: translateY(-1px);
+}
+
+.product-shell .btb__tab {
+  color: var(--control-text-muted);
+}
+
+.product-shell .btb__icon {
+  border-radius: var(--radius-lg);
+}
+
+.product-shell .btb__tab--active {
+  color: var(--color-accent);
+}
+
+.product-shell .btb__tab--active .btb__icon {
+  background: var(--control-bg-active);
+  box-shadow: var(--control-shadow-active);
+}
+
+.product-shell .ms__link {
+  min-height: 64px;
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-lg);
+}
+
+.product-shell .ps-finder-toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.product-shell .ps-finder-toggle.active {
+  border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+  color: var(--control-text);
+}
+
+.product-shell .ps-finder-toggle-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.product-shell .ps-finder-toggle-icon rect,
+.product-shell .ps-finder-toggle-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.product-shell .ps-finder-toggle-icon .panel-rail {
+  opacity: 0.55;
+}
+
+.product-shell.theme-light :where(
+  .center-btn:not(.ghost),
+  .home-fotmob-btn:not(.subtle),
+  .ps-topbar-search-btn
+) {
+  border-color: color-mix(in srgb, var(--color-accent) 74%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 30%, #f5fbf7);
+  color: #f8fffb;
+}
+
+@media (max-width: 1120px) {
+  .product-shell {
+    --control-min-height: 48px;
+    --control-min-height-dense: 44px;
+    --control-padding-inline: 12px;
+    --control-padding-inline-dense: 10px;
+  }
+
+  .product-shell .ps-topbar-tools {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .product-shell .scout-sidebar-nav-pill {
+    min-height: 52px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .product-shell .ms__link {
+    min-height: 60px;
+  }
+}

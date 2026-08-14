@@ -1,0 +1,314 @@
+/* ==========================================================================
+   Professional Polish Pass
+   ========================================================================== */
+
+/* ── Page Spinner (Suspense loading) ─────────────────────────────────────── */
+
+.page-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 80px 20px;
+  animation: uiFadeIn 400ms ease both;
+}
+
+.page-spinner-ring {
+  width: 36px;
+  height: 36px;
+  border: 3px solid color-mix(in srgb, var(--ui-border, #384756) 60%, transparent);
+  border-top-color: var(--ui-accent, #5ca88d);
+  border-radius: 50%;
+  animation: spinnerRotate 850ms linear infinite;
+}
+
+.page-spinner-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted, #9fb0c1);
+}
+
+@keyframes spinnerRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-spinner-ring {
+    animation: none;
+    border-color: var(--ui-accent, #5ca88d);
+    opacity: 0.5;
+  }
+}
+
+/* ── Type Scale & Typography Refinements ─────────────────────────────────── */
+
+.product-shell {
+  --type-xs: 0.69rem;      /* 11px */
+  --type-sm: 0.75rem;      /* 12px */
+  --type-base: 0.84rem;    /* ~13.5px */
+  --type-md: 0.92rem;      /* ~14.7px */
+  --type-lg: 1.05rem;      /* ~16.8px */
+  --type-xl: 1.18rem;      /* ~18.9px */
+  --type-2xl: 1.42rem;     /* ~22.7px */
+  --leading-tight: 1.28;
+  --leading-base: 1.45;
+  --leading-relaxed: 1.6;
+}
+
+.product-shell p,
+.product-shell li,
+.product-shell dd {
+  line-height: var(--leading-base);
+}
+
+.product-shell h1,
+.product-shell h2,
+.product-shell h3,
+.product-shell h4,
+.product-shell h5 {
+  line-height: var(--leading-tight);
+  font-weight: 700;
+}
+
+/* ── Smooth Scroll ───────────────────────────────────────────────────────── */
+
+.product-shell .ps-content,
+.product-shell .center-main,
+.product-shell .center-sidebar {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-shell .ps-content,
+  .product-shell .center-main,
+  .product-shell .center-sidebar {
+    scroll-behavior: auto;
+  }
+}
+
+/* ── Empty State Styling ─────────────────────────────────────────────────── */
+
+.product-shell .center-callout {
+  text-align: center;
+  padding: 32px 20px;
+  font-size: var(--type-base);
+  line-height: var(--leading-relaxed);
+  color: var(--ui-text-muted);
+  border-radius: var(--ui-radius-card);
+  border: 1px dashed color-mix(in srgb, var(--ui-border) 60%, transparent);
+  background: color-mix(in srgb, var(--ui-surface-soft) 40%, transparent);
+}
+
+.product-shell .center-callout.muted {
+  border-color: transparent;
+  background: transparent;
+  padding: 24px 16px;
+}
+
+/* ── Surface Card Elevation ──────────────────────────────────────────────── */
+
+.product-shell .surface-card {
+  box-shadow: var(--ui-shadow-soft);
+}
+
+.product-shell .surface-card:hover {
+  box-shadow: var(--ui-shadow);
+}
+
+.product-shell .surface-card--expanded {
+  box-shadow: 0 24px 54px rgba(4, 8, 14, 0.38);
+}
+
+.product-shell.theme-light .surface-card--expanded {
+  box-shadow: 0 24px 54px rgba(28, 52, 80, 0.16);
+}
+
+/* ── Better Badge / Chip Consistency ─────────────────────────────────────── */
+
+.product-shell .center-chip {
+  font-variant-numeric: tabular-nums;
+}
+
+.product-shell .center-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2bd171;
+  flex-shrink: 0;
+}
+
+/* ── Input placeholder opacity (uniform) ─────────────────────────────────── */
+
+.product-shell input::placeholder,
+.product-shell textarea::placeholder {
+  opacity: 0.62;
+}
+
+/* ── Subtle border-radius polish for nested elements ─────────────────────── */
+
+.product-shell .surface-card-body > :first-child {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* ── Alliance Color Consistency ──────────────────────────────────────────── */
+
+.product-shell {
+  --alliance-red: #cf5c68;
+  --alliance-blue: #5c8dcf;
+  --alliance-red-bg: rgba(207, 92, 104, 0.12);
+  --alliance-blue-bg: rgba(92, 141, 207, 0.12);
+  --alliance-red-border: rgba(207, 92, 104, 0.32);
+  --alliance-blue-border: rgba(92, 141, 207, 0.32);
+}
+
+.product-shell.theme-light {
+  --alliance-red: #c44b58;
+  --alliance-blue: #4a7cc4;
+  --alliance-red-bg: rgba(196, 75, 88, 0.08);
+  --alliance-blue-bg: rgba(74, 124, 196, 0.08);
+  --alliance-red-border: rgba(196, 75, 88, 0.24);
+  --alliance-blue-border: rgba(74, 124, 196, 0.24);
+}
+
+/* ── Link Underline Style ────────────────────────────────────────────────── */
+
+.product-shell a:not([class]) {
+  color: var(--ui-accent);
+  text-decoration-color: color-mix(in srgb, var(--ui-accent) 36%, transparent);
+  text-underline-offset: 2px;
+  transition: color 140ms ease, text-decoration-color 140ms ease;
+}
+
+.product-shell a:not([class]):hover {
+  color: color-mix(in srgb, var(--ui-accent) 80%, #fff);
+  text-decoration-color: var(--ui-accent);
+}
+
+/* ── Global Selection Color ──────────────────────────────────────────────── */
+
+.product-shell ::selection {
+  background: color-mix(in srgb, var(--ui-accent) 34%, transparent);
+  color: var(--ui-text);
+}
+
+/* ── Better Icon Button Consistency ──────────────────────────────────────── */
+
+.product-shell .surface-card-expand-btn,
+.product-shell .surface-card-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  transition:
+    transform var(--motion-fast, 140ms) ease,
+    background-color var(--motion-fast, 140ms) ease,
+    border-color var(--motion-fast, 140ms) ease;
+}
+
+.product-shell .surface-card-expand-btn:hover,
+.product-shell .surface-card-collapse-btn:hover {
+  transform: scale(1.06);
+}
+
+.product-shell .surface-card-expand-btn:active,
+.product-shell .surface-card-collapse-btn:active {
+  transform: scale(0.95);
+}
+
+/* ── Cards stagger entrance ──────────────────────────────────────────────── */
+
+.product-shell .surface-card:nth-child(1) { animation-delay: 0ms; }
+.product-shell .surface-card:nth-child(2) { animation-delay: 40ms; }
+.product-shell .surface-card:nth-child(3) { animation-delay: 80ms; }
+.product-shell .surface-card:nth-child(4) { animation-delay: 120ms; }
+.product-shell .surface-card:nth-child(5) { animation-delay: 160ms; }
+.product-shell .surface-card:nth-child(6) { animation-delay: 200ms; }
+.product-shell .surface-card:nth-child(7) { animation-delay: 240ms; }
+.product-shell .surface-card:nth-child(8) { animation-delay: 280ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .product-shell .surface-card {
+    animation-delay: 0ms !important;
+  }
+}
+
+/* ── Topbar polish ───────────────────────────────────────────────────────── */
+
+.product-shell .ps-topbar {
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  backdrop-filter: blur(8px) saturate(1.4);
+}
+
+/* ── Sidebar active indicator dash ───────────────────────────────────────── */
+
+.product-shell .ps-nav-link.active {
+  position: relative;
+}
+
+.product-shell .ps-nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ui-accent);
+  animation: uiFadeIn 200ms ease both;
+}
+
+.product-shell.sidebar-collapsed .ps-nav-link.active::before {
+  height: 14px;
+}
+
+/* ── Settings page ops chip row wrap ─────────────────────────────────────── */
+
+.product-shell .ops-chip-row,
+.product-shell .settings-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Mobile bottom safe area bump ────────────────────────────────────────── */
+
+@media (max-width: 1120px) {
+  .product-shell .ps-mobile-more-sheet {
+    padding-bottom: max(14px, calc(env(safe-area-inset-bottom, 0px) + 14px));
+  }
+}
+
+/* ── Print Cleanup ───────────────────────────────────────────────────────── */
+
+@media print {
+  .ps-sidebar,
+  .ps-topbar,
+  .ps-mobile-burger-btn,
+  .ps-mobile-more-root,
+  .ps-topbar-tutorial-btn,
+  .surface-card-expand-btn,
+  .surface-card-collapse-btn,
+  .surface-card-compact-btn {
+    display: none !important;
+  }
+
+  .product-shell {
+    grid-template-columns: 1fr !important;
+    background: #fff !important;
+    color: #222 !important;
+  }
+
+  .product-shell .surface-card {
+    break-inside: avoid;
+    box-shadow: none;
+    border-color: #ccc;
+  }
+}
+

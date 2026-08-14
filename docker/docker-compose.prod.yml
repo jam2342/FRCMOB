@@ -1,0 +1,77 @@
+services:
+  redis:
+    image: redis:7
+    container_name: scouting-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile.prod
+    container_name: scouting-backend
+    env_file:
+      - ../.env
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      STRICT_STARTUP_ENV_VALIDATION: ${STRICT_STARTUP_ENV_VALIDATION:-true}
+      ENFORCE_ADMIN_AUTH_FOR_WRITES: ${ENFORCE_ADMIN_AUTH_FOR_WRITES:-true}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?CORS_ALLOW_ORIGINS is required}
+      VIDEO_TRACKING_YOLO_MODEL_URL: ${VIDEO_TRACKING_YOLO_MODEL_URL:?VIDEO_TRACKING_YOLO_MODEL_URL is required}
+      VIDEO_TRACKING_YOLO_MODEL_SHA256: ${VIDEO_TRACKING_YOLO_MODEL_SHA256:?VIDEO_TRACKING_YOLO_MODEL_SHA256 is required}
+      # Candidate training/promotion is a release operation, never an implicit
+      # side effect of an event ingest. Use an intentional compose override for
+      # an offline training job if needed.
+      ML_SHADOW_AUTO_TRAIN_ON_EVENT_BREAKDOWN: "false"
+      ML_SHADOW_AUTO_TRAIN_ACTIVATE: "false"
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - backend_media:/app/media
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; payload=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/deep', timeout=3)); raise SystemExit(0 if payload.get('ok') else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile.prod
+    container_name: scouting-worker
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PYTHONPATH: /app
+      ML_SHADOW_AUTO_TRAIN_ON_EVENT_BREAKDOWN: "false"
+      ML_SHADOW_AUTO_TRAIN_ACTIVATE: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - backend_media:/app/media
+
+volumes:
+  redisdata:
+  backend_media:

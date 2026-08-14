@@ -1,0 +1,380 @@
+/* ==========================================================================
+   Motion / Interactivity Pass (Desktop + Mobile)
+   ========================================================================== */
+
+@keyframes uiPageFadeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes uiCardRiseIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes uiFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes uiSheetDropIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes uiFinderCardReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes uiListStaggerIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 7px, 0) scale(0.996);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes uiMicroPop {
+  0% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes uiLivePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(43, 209, 113, 0.46);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(43, 209, 113, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(43, 209, 113, 0);
+  }
+}
+
+.product-shell {
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-page: 280ms;
+  --motion-list: 250ms;
+  --motion-ease: cubic-bezier(0.2, 0.78, 0.24, 1);
+}
+
+.product-shell .ps-content > *,
+.product-shell .animate-page-in {
+  animation: uiPageFadeIn var(--motion-page) var(--motion-ease) both;
+}
+
+.product-shell .surface-card,
+.product-shell .home-fotmob-card,
+.product-shell .home-event-section,
+.product-shell .home-upcoming-epa-section,
+.product-shell .center-match-row,
+.product-shell .center-team-card,
+.product-shell .center-list-item-card,
+.product-shell .center-kpi-card,
+.product-shell .center-mobile-data-card {
+  animation: uiCardRiseIn var(--motion-base) var(--motion-ease) both;
+}
+
+.product-shell .surface-card-backdrop,
+.product-shell .ps-mobile-more-backdrop,
+.surface-card-backdrop {
+  animation: uiFadeIn var(--motion-fast) ease both;
+}
+
+.product-shell .surface-card--expanded,
+.product-shell .ps-mobile-more-sheet,
+.surface-card--expanded {
+  animation: uiSheetDropIn calc(var(--motion-fast) + 60ms) var(--motion-ease) both;
+  transform-origin: top center;
+}
+
+.product-shell .center-live-dot {
+  animation: uiLivePulse 1.55s ease-out infinite;
+}
+
+.product-shell .center-timer-progress-fill {
+  transition: width var(--motion-base) linear, background-color var(--motion-fast) ease;
+}
+
+.product-shell .ps-nav-link,
+.product-shell .center-btn,
+.product-shell .ps-topbar-search-btn,
+.product-shell .ps-link-btn,
+.product-shell .event-picker-item,
+.product-shell .home-event-item,
+.product-shell .home-match-row,
+.product-shell .home-ranking-row,
+.product-shell .home-team-pill,
+.product-shell .center-tab-btn,
+.product-shell .center-sort-chip,
+.product-shell .home-card-collapse-btn,
+.product-shell .home-fotmob-btn,
+.product-shell .surface-card-expand-btn,
+.product-shell .surface-card-collapse-btn,
+.product-shell .surface-card-compact-btn,
+.product-shell .ps-mobile-burger-btn {
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    filter var(--motion-fast) ease;
+  will-change: transform;
+}
+
+.product-shell .home-match-row {
+  position: relative;
+  overflow: hidden;
+}
+
+.product-shell .home-match-row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(108deg, transparent 24%, rgba(255, 255, 255, 0.075) 50%, transparent 76%);
+  transform: translate3d(-115%, 0, 0);
+  transition: transform 520ms var(--motion-ease);
+  pointer-events: none;
+}
+
+.product-shell .home-fotmob-event-list,
+.product-shell .center-list-scroll,
+.product-shell .home-ranking-list {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.product-shell .ps-nav .ps-nav-link {
+  animation: uiFinderCardReveal var(--motion-list) var(--motion-ease) both;
+}
+
+.product-shell .ps-nav .ps-nav-link:nth-child(1) { animation-delay: 24ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(2) { animation-delay: 44ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(3) { animation-delay: 64ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(4) { animation-delay: 84ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(5) { animation-delay: 104ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(6) { animation-delay: 124ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(7) { animation-delay: 144ms; }
+.product-shell .ps-nav .ps-nav-link:nth-child(8) { animation-delay: 164ms; }
+
+.product-shell .home-fotmob-event-list > :nth-child(-n + 12),
+.product-shell .center-list-scroll > :nth-child(-n + 10),
+.product-shell .home-ranking-list > :nth-child(-n + 8),
+.product-shell .ms__grid > :nth-child(-n + 6) {
+  --ui-item-delay: 0ms;
+  animation: uiListStaggerIn var(--motion-list) var(--motion-ease) both;
+  animation-delay: var(--ui-item-delay);
+  will-change: transform, opacity;
+}
+
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(1) { --ui-item-delay: 18ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(2) { --ui-item-delay: 36ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(3) { --ui-item-delay: 54ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(4) { --ui-item-delay: 72ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(5) { --ui-item-delay: 90ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(6) { --ui-item-delay: 108ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(7) { --ui-item-delay: 126ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(8) { --ui-item-delay: 144ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(9) { --ui-item-delay: 162ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(10) { --ui-item-delay: 180ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(11) { --ui-item-delay: 198ms; }
+.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(12) { --ui-item-delay: 216ms; }
+
+.product-shell .center-tab-btn.active,
+.product-shell .center-sort-chip.active,
+.product-shell .home-filter-btn.active,
+.product-shell .home-mini-tab-btn.active,
+.product-shell .btb__tab--active .btb__icon,
+.product-shell .ms__link--active {
+  animation: uiMicroPop 220ms var(--motion-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
+}
+
+.product-shell .ms,
+.product-shell .mso__content,
+.product-shell .surface-card--expanded,
+.product-shell .home-drawer {
+  will-change: transform, opacity;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-shell .ps-nav-link:hover,
+  .product-shell .center-btn:hover,
+  .product-shell .ps-topbar-search-btn:hover,
+  .product-shell .event-picker-item:hover,
+  .product-shell .home-event-item:hover,
+  .product-shell .home-ranking-row:hover,
+  .product-shell .home-team-pill:hover,
+  .product-shell .center-tab-btn:hover,
+  .product-shell .center-sort-chip:hover,
+  .product-shell .home-card-collapse-btn:hover,
+  .product-shell .home-fotmob-btn:hover {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: 0 8px 16px rgba(5, 12, 20, 0.18);
+  }
+
+  .product-shell .surface-card:hover,
+  .product-shell .home-event-item:hover,
+  .product-shell .event-picker-item:hover,
+  .product-shell .center-match-row:hover {
+    box-shadow: 0 10px 20px rgba(5, 12, 20, 0.2);
+  }
+
+  .product-shell .home-match-row:hover::before {
+    transform: translate3d(115%, 0, 0);
+  }
+}
+
+.product-shell .ps-nav-link:active,
+.product-shell .center-btn:active,
+.product-shell .ps-topbar-search-btn:active,
+.product-shell .event-picker-item:active,
+.product-shell .home-event-item:active,
+.product-shell .home-ranking-row:active,
+.product-shell .home-team-pill:active,
+.product-shell .center-tab-btn:active,
+.product-shell .center-sort-chip:active,
+.product-shell .home-card-collapse-btn:active,
+.product-shell .home-fotmob-btn:active,
+.product-shell .ps-mobile-burger-btn:active {
+  transform: scale(0.98);
+}
+
+.product-shell .center-tab-btn.active,
+.product-shell .center-sort-chip.active {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ui-accent) 40%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-shell .ps-content > *,
+  .product-shell .surface-card,
+  .product-shell .home-fotmob-card,
+  .product-shell .home-event-section,
+  .product-shell .home-upcoming-epa-section,
+  .product-shell .center-match-row,
+  .product-shell .center-team-card,
+  .product-shell .center-list-item-card,
+  .product-shell .center-kpi-card,
+  .product-shell .center-mobile-data-card,
+  .product-shell .surface-card-backdrop,
+  .product-shell .ps-mobile-more-backdrop,
+  .surface-card-backdrop,
+  .product-shell .surface-card--expanded,
+  .product-shell .ps-mobile-more-sheet,
+  .surface-card--expanded,
+  .product-shell .center-live-dot,
+  .product-shell .ps-nav .ps-nav-link,
+  .product-shell .home-fotmob-event-list > :nth-child(-n + 12),
+  .product-shell .center-list-scroll > :nth-child(-n + 10),
+  .product-shell .home-ranking-list > :nth-child(-n + 8),
+  .product-shell .ms__grid > :nth-child(-n + 6),
+  .product-shell .ms__link--active,
+  .product-shell .btb__tab--active .btb__icon {
+    animation: none !important;
+  }
+
+  .product-shell .home-match-row::before {
+    display: none;
+  }
+
+  .product-shell .ps-mobile-burger-btn .ps-burger-icon .line {
+    transition: none !important;
+  }
+
+  .product-shell .home-fotmob-event-list,
+  .product-shell .center-list-scroll,
+  .product-shell .home-ranking-list {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Low-end touch device optimizations (coarse pointer = touchscreen phones) */
+@media (pointer: coarse) {
+  /* Strip all backdrop-filter blurs — these are the #1 GPU killer on cheap Android */
+  .product-shell * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Without the blur, translucent sticky chrome lets scrolled content bleed
+     through legibly. Make the bars opaque on these devices instead.
+     --ui-surface re-resolves under .theme-light, so this tracks both themes. */
+  .product-shell .ps-topbar,
+  .product-shell .mobile-view-toggle {
+    background: var(--ui-surface);
+  }
+
+  /* Speed up all animations and transitions — fast enough to not feel broken */
+  .product-shell {
+    --motion-fast: 80ms;
+    --motion-base: 120ms;
+    --motion-page: 120ms;
+    --motion-list: 100ms;
+  }
+
+  /* Disable expensive stagger animations on list items — repaints every frame */
+  .product-shell .home-fotmob-event-list > :nth-child(-n + 12),
+  .product-shell .center-list-scroll > :nth-child(-n + 10),
+  .product-shell .home-ranking-list > :nth-child(-n + 8),
+  .product-shell .ms__grid > :nth-child(-n + 6) {
+    animation: none !important;
+    will-change: auto !important;
+  }
+
+  /* Remove will-change layers — on low-RAM devices these increase memory pressure */
+  .product-shell .ms,
+  .product-shell .mso__content,
+  .product-shell .surface-card--expanded,
+  .product-shell .home-drawer {
+    will-change: auto !important;
+  }
+
+  /* No shimmer sweep on match rows — saves a composite layer */
+  .product-shell .home-match-row::before {
+    display: none !important;
+  }
+
+  /* Instant scroll on slow devices */
+  .product-shell .home-fotmob-event-list,
+  .product-shell .center-list-scroll,
+  .product-shell .home-ranking-list {
+    scroll-behavior: auto !important;
+  }
+}

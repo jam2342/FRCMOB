@@ -1,0 +1,373 @@
+.tut-robot {
+  width: 76px;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 18px 18px rgba(0, 0, 0, 0.34));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-shadow {
+  fill: rgba(0, 0, 0, 0.24);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-antenna,
+.tut-robot-arm,
+.tut-robot-hand,
+.tut-robot-leg,
+.tut-robot-arm-swoosh,
+.tut-robot-talk-marks,
+.tut-robot-panel-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tut-robot-antenna,
+.tut-robot-arm,
+.tut-robot-hand,
+.tut-robot-leg {
+  stroke: #9fb3c9;
+  stroke-width: 6;
+}
+
+.tut-robot-antenna-light,
+.tut-robot-core {
+  fill: #39d98a;
+  filter: drop-shadow(0 0 8px rgba(57, 217, 138, 0.58));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-head {
+  fill: #dfeaf4;
+  stroke: #8ea3ba;
+  stroke-width: 2;
+}
+
+.tut-robot-face {
+  fill: #101b25;
+}
+
+.tut-robot-head-group,
+.tut-robot-body-group {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-eye {
+  fill: #f8fbff;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-panel-line {
+  stroke: #6f8295;
+  stroke-width: 3;
+}
+
+.tut-robot-cheek {
+  fill: #5ce2a0;
+  opacity: 0.72;
+}
+
+.tut-robot-body {
+  fill: #cbd8e6;
+  stroke: #8296ad;
+  stroke-width: 2;
+}
+
+.tut-robot-arm-group {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-arm-group-left {
+  transform-origin: 82% 18%;
+}
+
+.tut-robot-arm-group-right {
+  transform-origin: 18% 18%;
+}
+
+.tut-robot-arm-swoosh {
+  opacity: 0;
+  stroke: #52dfa0;
+  stroke-width: 2.5;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-arm-group.is-pointing {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot-talk-marks {
+  opacity: 0;
+  stroke: #52dfa0;
+  stroke-width: 3;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tut-robot.is-animated {
+  animation: tut-robot-bob 3.4s ease-in-out infinite;
+}
+
+.tut-robot.is-animated .tut-robot-shadow {
+  animation: tut-robot-shadow-breathe 3.4s ease-in-out infinite;
+}
+
+.tut-robot.is-animated .tut-robot-antenna-light {
+  animation: tut-robot-glow 1.8s ease-in-out infinite;
+}
+
+.tut-robot.is-animated .tut-robot-eye {
+  animation: tut-robot-blink 5.2s ease-in-out infinite;
+}
+
+.tut-robot.is-animated .tut-robot-cheek {
+  animation: tut-robot-cheek-pulse 2.6s ease-in-out infinite;
+}
+
+.tut-robot.is-animated .tut-robot-core {
+  animation: tut-robot-core-pulse 1.9s ease-in-out infinite;
+}
+
+.tut-robot.is-animated .tut-robot-panel-line {
+  stroke-dasharray: 18;
+  animation: tut-robot-panel-scan 2.2s linear infinite;
+}
+
+.tut-robot.is-animated .tut-robot-arm-group-right.is-waving {
+  animation: tut-robot-wave 1.45s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.tut-robot.is-animated .tut-robot-arm-group.is-pointing {
+  animation: tut-robot-point-nudge 1.55s ease-in-out infinite;
+}
+
+.tut-robot.is-animated.is-talking {
+  animation:
+    tut-robot-bob 3.4s ease-in-out infinite,
+    tut-robot-talk-tilt 1.05s steps(2, end) infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-head-group {
+  animation: tut-robot-head-talk 0.52s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-body-group {
+  animation: tut-robot-body-talk 0.52s ease-in-out infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-eye {
+  animation:
+    tut-robot-blink 5.2s ease-in-out infinite,
+    tut-robot-eye-pop 0.78s steps(2, end) infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-talk-marks {
+  opacity: 0.74;
+  animation: tut-robot-talk-marks 0.82s steps(3, end) infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-talk-marks-right {
+  animation-delay: 0.16s;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-core {
+  animation: tut-robot-core-talk 0.78s ease-in-out infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-arm-group-left:not(.is-pointing) {
+  animation: tut-robot-left-explain 1.12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-arm-group-right.is-waving {
+  animation: tut-robot-big-wave 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-arm-group-left.is-pointing {
+  animation: tut-robot-left-point 0.98s ease-in-out infinite;
+}
+
+.tut-robot.is-animated.is-talking .tut-robot-arm-group-right.is-pointing {
+  animation: tut-robot-right-point 0.98s ease-in-out infinite;
+}
+
+.tut-robot.is-animated.is-talking.is-wave .tut-robot-arm-swoosh-right,
+.tut-robot.is-animated.is-talking.is-point-right .tut-robot-arm-swoosh-right,
+.tut-robot.is-animated.is-talking.is-point-left .tut-robot-arm-swoosh-left {
+  opacity: 0.78;
+  animation: tut-robot-arm-swoosh 0.9s ease-in-out infinite;
+}
+
+@keyframes tut-robot-bob {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-4px) rotate(1deg); }
+}
+
+@keyframes tut-robot-shadow-breathe {
+  0%, 100% {
+    opacity: 0.78;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 0.52;
+    transform: scaleX(0.82);
+  }
+}
+
+@keyframes tut-robot-glow {
+  0%, 100% {
+    opacity: 0.78;
+    transform: scale(0.92);
+    filter: drop-shadow(0 0 6px rgba(57, 217, 138, 0.44));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.16);
+    filter: drop-shadow(0 0 12px rgba(57, 217, 138, 0.82));
+  }
+}
+
+@keyframes tut-robot-blink {
+  0%, 46%, 50%, 100% { transform: scaleY(1); }
+  48% { transform: scaleY(0.14); }
+}
+
+@keyframes tut-robot-cheek-pulse {
+  0%, 100% { opacity: 0.58; }
+  50% { opacity: 0.95; }
+}
+
+@keyframes tut-robot-core-pulse {
+  0%, 100% {
+    opacity: 0.78;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes tut-robot-panel-scan {
+  from { stroke-dashoffset: 18; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes tut-robot-wave {
+  0%, 100% { transform: rotate(0deg) translate(0, 0); }
+  35% { transform: rotate(-16deg) translate(1px, -2px); }
+  70% { transform: rotate(8deg) translate(-1px, 1px); }
+}
+
+@keyframes tut-robot-point-nudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2px); }
+}
+
+@keyframes tut-robot-left-explain {
+  0%, 100% { transform: rotate(0deg) translate(0, 0); }
+  35% { transform: rotate(10deg) translate(-1px, -1px); }
+  70% { transform: rotate(-6deg) translate(1px, 1px); }
+}
+
+@keyframes tut-robot-big-wave {
+  0%, 100% { transform: rotate(0deg) translate(0, 0); }
+  20% { transform: rotate(-22deg) translate(2px, -3px); }
+  42% { transform: rotate(14deg) translate(-1px, 1px); }
+  64% { transform: rotate(-18deg) translate(2px, -2px); }
+  82% { transform: rotate(8deg) translate(0, 1px); }
+}
+
+@keyframes tut-robot-left-point {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  45% { transform: translateX(-4px) rotate(-6deg); }
+}
+
+@keyframes tut-robot-right-point {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  45% { transform: translateX(4px) rotate(6deg); }
+}
+
+@keyframes tut-robot-arm-swoosh {
+  0% {
+    opacity: 0.22;
+    transform: scale(0.82) translateY(2px);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0.28;
+    transform: scale(1.12) translateY(-2px);
+  }
+}
+
+@keyframes tut-robot-talk-tilt {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-2px) rotate(2deg); }
+}
+
+@keyframes tut-robot-head-talk {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  35% { transform: translateY(-2px) rotate(-2deg) scale(1.03, 0.98); }
+  70% { transform: translateY(1px) rotate(2deg) scale(0.98, 1.02); }
+}
+
+@keyframes tut-robot-body-talk {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(1px) scale(1.02, 0.98); }
+}
+
+@keyframes tut-robot-eye-pop {
+  0%, 100% { filter: none; }
+  50% { filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.78)); }
+}
+
+@keyframes tut-robot-talk-marks {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.72) translateY(2px);
+  }
+  22%, 58% {
+    opacity: 0.95;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0.62;
+    transform: scale(1.22) translateY(-2px);
+  }
+}
+
+@keyframes tut-robot-core-talk {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(0.82);
+  }
+  32% {
+    opacity: 1;
+    transform: scale(1.28);
+  }
+  64% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tut-robot,
+  .tut-robot *,
+  .tut-robot::before,
+  .tut-robot::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

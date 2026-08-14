@@ -1,0 +1,10 @@
+tracker_type: bytetrack
+# Tuned for FRC webcast footage: moderate confidence gate, longer persistence through occlusions,
+# and slightly tighter association to reduce ID swaps.
+track_high_thresh: 0.24
+track_low_thresh: 0.08
+new_track_thresh: 0.32
+track_buffer: 80
+match_thresh: 0.82
+fuse_score: true
+gmc_method: none

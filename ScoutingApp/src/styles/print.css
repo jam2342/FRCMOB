@@ -1,0 +1,76 @@
+/*
+ * Print styles: turn any page into a clean clipboard one-pager.
+ *
+ * App chrome (sidebar, topbar, tab bars, banners) disappears; content cards
+ * print full-width in black-on-white. Mark anything else that should not
+ * print (pickers, button rows) with the `no-print` class.
+ */
+
+@media print {
+  .ps-sidebar,
+  .ps-topbar,
+  .ps-context-strip,
+  .ps-finder-toggle,
+  .page-view-bar,
+  .btb,
+  .offline-banner,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .ps-content {
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .center-page-container {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /* Cards: flatten to bordered black-on-white blocks that don't split. */
+  .surface-card,
+  .center-kpi-card,
+  .export-card {
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    border: 1px solid #bbb !important;
+    break-inside: avoid;
+  }
+
+  .surface-card *,
+  .center-kpi-card * {
+    color: #000 !important;
+  }
+
+  /* Interactive affordances make no sense on paper. */
+  button:not(.center-chip),
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+
+  /* Team chips render as plain labels. */
+  .center-chip {
+    display: inline !important;
+    border: none !important;
+    background: none !important;
+    padding: 0 0.35em 0 0 !important;
+    font-weight: 600;
+  }
+
+  a {
+    text-decoration: none !important;
+    color: #000 !important;
+  }
+}

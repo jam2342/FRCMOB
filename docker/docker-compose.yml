@@ -1,0 +1,121 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: scouting-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: frc
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d frc"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    container_name: scouting-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ../backend
+    container_name: scouting-backend
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+psycopg://postgres:postgres@postgres:5432/frc}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build:
+      context: ../worker
+    container_name: scouting-worker
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+psycopg://postgres:postgres@postgres:5432/frc}
+      REDIS_URL: redis://redis:6379/0
+      PYTHONPATH: /backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../worker:/app
+      - ../backend:/backend
+    command: python worker.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; r=redis.from_url('redis://redis:6379/0'); r.ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  automation:
+    image: curlimages/curl:8.11.1
+    container_name: scouting-automation
+    profiles: ["automation"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      AUTOMATION_EXTERNAL_DRIVER_ENABLED: ${AUTOMATION_EXTERNAL_DRIVER_ENABLED:-false}
+      AUTOMATION_REGIONAL_SEASON: ${AUTOMATION_REGIONAL_SEASON:-2026}
+      AUTOMATION_REGIONAL_INTERVAL_SECONDS: ${AUTOMATION_REGIONAL_INTERVAL_SECONDS:-43200}
+      AUTOMATION_REGIONAL_MIN_INTERVAL_MINUTES: ${AUTOMATION_REGIONAL_MIN_INTERVAL_MINUTES:-720}
+      AUTOMATION_ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${AUTOMATION_EXTERNAL_DRIVER_ENABLED}" != "true" ]; then
+          echo "[automation] external driver disabled; relying on backend scheduler"
+          sleep infinity
+        fi
+        while true; do
+          echo "[automation] regional tick $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ -n "$${AUTOMATION_ADMIN_API_KEY}" ]; then
+            curl -fsS -X POST \
+              -H "X-Admin-Key: $${AUTOMATION_ADMIN_API_KEY}" \
+              "http://backend:8000/analyze/automation/regional/season/$${AUTOMATION_REGIONAL_SEASON}/tick?min_interval_minutes=$${AUTOMATION_REGIONAL_MIN_INTERVAL_MINUTES}" || true
+          else
+            curl -fsS -X POST \
+              "http://backend:8000/analyze/automation/regional/season/$${AUTOMATION_REGIONAL_SEASON}/tick?min_interval_minutes=$${AUTOMATION_REGIONAL_MIN_INTERVAL_MINUTES}" || true
+          fi
+          sleep "$${AUTOMATION_REGIONAL_INTERVAL_SECONDS}"
+        done
+
+volumes:
+  pgdata:
+  redisdata:

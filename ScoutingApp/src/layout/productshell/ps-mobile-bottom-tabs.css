@@ -1,0 +1,17 @@
+/* ================================================================== */
+/*  BOTTOM TAB BAR — Mobile layout adjustments                        */
+/*  (Old tab styles removed; now using BottomTabBar.tsx component)     */
+/* ================================================================== */
+
+@media (max-width: 1120px) {
+  /* Push content up so bottom bar doesn't overlay page content */
+  .ps-content {
+    padding-bottom: calc(var(--bottom-bar-height, 56px) + 8px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Hide the old hamburger button since we have bottom bar "More" */
+  .ps-mobile-burger-btn {
+    display: none !important;
+  }
+}
+

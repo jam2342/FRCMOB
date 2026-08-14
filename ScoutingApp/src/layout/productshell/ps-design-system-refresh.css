@@ -1,0 +1,635 @@
+/* ==================================================================
+   Design System Refresh
+   Shared typography, card, and status foundations
+   ================================================================== */
+
+.product-shell {
+  --ui-card-padding-x: var(--space-4);
+  --ui-card-padding-y: var(--space-4);
+  --ui-card-gap: var(--space-3);
+  --ui-border-default: var(--border-default);
+  --ui-border-subtle: var(--border-width-1) var(--border-style-solid) color-mix(in srgb, var(--color-border) 78%, transparent);
+  --ui-shadow-card: var(--shadow-md);
+  --ui-shadow-card-hover: var(--shadow-lg);
+  --status-live-color: #2ccf77;
+  --status-live-soft: rgba(44, 207, 119, 0.18);
+  --status-upcoming-color: #4f96ea;
+  --status-upcoming-soft: rgba(79, 150, 234, 0.18);
+  --status-final-color: #d0a84e;
+  --status-final-soft: rgba(208, 168, 78, 0.18);
+  --status-warning-color: #e7b13c;
+  --status-warning-soft: rgba(231, 177, 60, 0.18);
+  --motion-fast: var(--motion-duration-fast);
+  --motion-base: var(--motion-duration-base);
+  --motion-slow: var(--motion-duration-slow);
+  --motion-ease: var(--motion-curve-standard);
+}
+
+.product-shell.theme-light {
+  --status-live-color: #0f8a53;
+  --status-live-soft: rgba(15, 138, 83, 0.14);
+  --status-upcoming-color: #2d6fb8;
+  --status-upcoming-soft: rgba(45, 111, 184, 0.14);
+  --status-final-color: #8a6115;
+  --status-final-soft: rgba(138, 97, 21, 0.16);
+  --status-warning-color: #995400;
+  --status-warning-soft: rgba(153, 84, 0, 0.16);
+}
+
+/* ── Typography: one display, two heading levels, one body, one caption */
+.product-shell .ps-content {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+
+.product-shell h1,
+.product-shell .type-display {
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  line-height: var(--type-display-line);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.product-shell h2,
+.product-shell .type-heading-lg,
+.product-shell .home-fotmob-toolbar h2 {
+  font-size: var(--type-heading-lg-size);
+  font-weight: var(--type-heading-lg-weight);
+  line-height: var(--type-heading-lg-line);
+}
+
+.product-shell h3,
+.product-shell .type-heading-sm,
+.product-shell .surface-card-head h3,
+.product-shell .home-card-head h3,
+.product-shell .home-event-section-head h3 {
+  font-size: var(--type-heading-sm-size);
+  font-weight: var(--type-heading-sm-weight);
+  line-height: var(--type-heading-sm-line);
+}
+
+.product-shell p,
+.product-shell li,
+.product-shell .home-fotmob-note,
+.product-shell .center-callout,
+.product-shell .center-label {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+
+.product-shell small,
+.product-shell .surface-card-head p,
+.product-shell .home-card-head small,
+.product-shell .center-chip,
+.product-shell .center-status-pill,
+.product-shell .center-tab-btn,
+.product-shell .page-view-tab,
+.product-shell .fm-tab {
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-caption-weight);
+  line-height: var(--type-caption-line);
+}
+
+/* ── Header signatures: subtle byline in both shell headers */
+.product-shell .ps-brand-signature,
+.product-shell .ps-topbar-signature {
+  font-size: 0.56rem;
+  line-height: 1.18;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+  opacity: 0.74;
+}
+
+.product-shell .ps-brand-signature {
+  display: block;
+  max-width: 22ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-shell .ps-topbar-brand-meta {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  max-width: clamp(118px, 28vw, 250px);
+}
+
+.product-shell .ps-topbar-brand-name {
+  display: block;
+  line-height: 1;
+}
+
+.product-shell .ps-topbar-signature {
+  display: block;
+  color: var(--color-text-muted);
+  text-transform: none;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Density balance: reduce visual crowding without oversized headlines */
+.product-shell h1,
+.product-shell .type-display {
+  font-size: clamp(1.2rem, 1.1vw + 0.95rem, 1.56rem);
+  max-width: 24ch;
+  text-wrap: balance;
+}
+
+.product-shell h2,
+.product-shell .type-heading-lg,
+.product-shell .home-fotmob-toolbar h2 {
+  font-size: clamp(0.98rem, 0.7vw + 0.8rem, 1.16rem);
+  text-wrap: balance;
+}
+
+.product-shell .surface-card-head > div,
+.product-shell .home-card-head > div,
+.product-shell .home-event-section-head > div {
+  min-width: 0;
+  max-width: min(100%, 56ch);
+}
+
+.product-shell .surface-card-head h3,
+.product-shell .home-card-head h3,
+.product-shell .home-event-section-head h3 {
+  max-width: 26ch;
+  text-wrap: balance;
+}
+
+.product-shell .surface-card-head p,
+.product-shell .home-card-head small {
+  max-width: 58ch;
+  overflow-wrap: anywhere;
+}
+
+/* ── Navigation hierarchy cleanup */
+.events-page .page-view-bar,
+.match-center-page .page-view-bar {
+  display: none;
+}
+
+.product-shell .page-view-bar,
+.product-shell .center-tabs,
+.product-shell .fm-tab-bar,
+.product-shell .home-fotmob-filters {
+  display: flex;
+  /* Not `center`: centering + overflow-x makes the leftmost tab
+     unreachable (scrollLeft cannot go negative). The auto margins on the
+     first/last children below center the group only when it fits. */
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.product-shell .page-view-bar > :first-child,
+.product-shell .center-tabs > :first-child,
+.product-shell .fm-tab-bar > :first-child,
+.product-shell .home-fotmob-filters > :first-child {
+  margin-inline-start: auto;
+}
+
+.product-shell .page-view-bar > :last-child,
+.product-shell .center-tabs > :last-child,
+.product-shell .fm-tab-bar > :last-child,
+.product-shell .home-fotmob-filters > :last-child {
+  margin-inline-end: auto;
+}
+
+.product-shell .page-view-bar::-webkit-scrollbar,
+.product-shell .center-tabs::-webkit-scrollbar,
+.product-shell .fm-tab-bar::-webkit-scrollbar,
+.product-shell .home-fotmob-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.product-shell .page-view-tab,
+.product-shell .center-tab-btn,
+.product-shell .fm-tab,
+.product-shell .home-filter-btn {
+  flex: 0 0 auto;
+  min-height: var(--touch-target-compact);
+  white-space: nowrap;
+  border-radius: var(--radius-md);
+}
+
+/* ── Cards: consistent structure + spacing */
+.product-shell .surface-card,
+.product-shell .home-fotmob-card,
+.product-shell .home-event-section,
+.product-shell .home-mini-panel {
+  border: var(--ui-border-subtle);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-bg-elevated));
+  box-shadow: var(--ui-shadow-card);
+}
+
+.product-shell .surface-card {
+  padding: var(--ui-card-padding-y) var(--ui-card-padding-x);
+}
+
+.product-shell .surface-card:hover,
+.product-shell .home-fotmob-card:hover,
+.product-shell .home-event-section:hover,
+.product-shell .home-mini-panel:hover {
+  box-shadow: var(--ui-shadow-card-hover);
+}
+
+.product-shell .surface-card-head,
+.product-shell .home-card-head,
+.product-shell .home-event-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-card-gap);
+  margin-bottom: var(--space-3);
+}
+
+.product-shell .surface-card-head-actions,
+.product-shell .home-card-head-actions,
+.product-shell .home-fotmob-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.product-shell .surface-card-body {
+  display: grid;
+  gap: var(--ui-card-gap);
+}
+
+/* ── Compact overflow menu for secondary actions */
+.product-shell .action-overflow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.product-shell .action-overflow-toggle {
+  min-height: var(--touch-target-compact);
+  gap: var(--space-1);
+}
+
+.product-shell .action-overflow-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  opacity: 0.72;
+}
+
+.product-shell .action-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  display: grid;
+  gap: 4px;
+  min-width: 148px;
+  padding: 6px;
+  border: var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-soft) 96%, transparent);
+  box-shadow: var(--shadow-lg);
+  animation: dsMenuIn var(--motion-fast) var(--motion-ease) both;
+}
+
+.product-shell .action-overflow.align-left .action-overflow-menu {
+  left: 0;
+  right: auto;
+}
+
+.product-shell .action-overflow-item {
+  min-height: 34px;
+  border: var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-decoration: none;
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-caption-weight);
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.product-shell .action-overflow-item:hover,
+.product-shell .action-overflow-item:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-surface-soft));
+}
+
+/* ── Status visuals: one consistent treatment */
+.product-shell .center-status-pill,
+.product-shell .home-match-state,
+.product-shell .center-chip.timer,
+.product-shell .fm-status-badge {
+  border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+  background: color-mix(in srgb, var(--color-surface-soft) 72%, transparent);
+  color: var(--color-text-muted);
+}
+
+.product-shell.theme-light .center-status-pill,
+.product-shell.theme-light .home-match-state,
+.product-shell.theme-light .center-chip.timer,
+.product-shell.theme-light .fm-status-badge {
+  border-color: color-mix(in srgb, var(--color-border-strong) 82%, transparent);
+  background: color-mix(in srgb, var(--color-surface-muted) 90%, #fff);
+  color: var(--color-text);
+}
+
+.product-shell .icon-status-live,
+.product-shell .center-status-pill.live,
+.product-shell .center-chip.timer.live,
+.product-shell .home-match-state.live,
+.product-shell .fm-status-badge.live {
+  color: var(--status-live-color);
+  border-color: color-mix(in srgb, var(--status-live-color) 58%, transparent);
+  background: color-mix(in srgb, var(--status-live-soft) 88%, transparent);
+}
+
+.product-shell .icon-status-upcoming,
+.product-shell .center-status-pill.upcoming,
+.product-shell .center-chip.timer.upcoming,
+.product-shell .home-match-state.upcoming,
+.product-shell .fm-status-badge.upcoming {
+  color: var(--status-upcoming-color);
+  border-color: color-mix(in srgb, var(--status-upcoming-color) 58%, transparent);
+  background: color-mix(in srgb, var(--status-upcoming-soft) 88%, transparent);
+}
+
+.product-shell .icon-status-final,
+.product-shell .center-status-pill.ended,
+.product-shell .center-chip.timer.ended,
+.product-shell .home-match-state.ended,
+.product-shell .fm-status-badge.ended {
+  color: var(--status-final-color);
+  border-color: color-mix(in srgb, var(--status-final-color) 58%, transparent);
+  background: color-mix(in srgb, var(--status-final-soft) 88%, transparent);
+}
+
+.product-shell .center-status-pill.unknown,
+.product-shell .center-chip.timer.unknown,
+.product-shell .home-match-state.unknown,
+.product-shell .fm-status-badge.unknown {
+  color: var(--color-text-muted);
+  border-color: color-mix(in srgb, var(--color-border-strong) 62%, transparent);
+  background: color-mix(in srgb, var(--color-surface-muted) 78%, transparent);
+}
+
+.product-shell .center-callout.warning,
+.product-shell .fm-team-hero-stat.warning {
+  color: var(--status-warning-color);
+  border-color: color-mix(in srgb, var(--status-warning-color) 56%, transparent);
+  background: color-mix(in srgb, var(--status-warning-soft) 86%, transparent);
+}
+
+.product-shell .fm-progress-fill.live,
+.product-shell .center-timer-progress-fill.live {
+  background: var(--status-live-color);
+}
+
+.product-shell .fm-progress-fill.ended,
+.product-shell .center-timer-progress-fill.ended {
+  background: var(--status-final-color);
+}
+
+/* ── Loading + empty states */
+.product-shell .skeleton-stack {
+  gap: var(--space-2);
+}
+
+.product-shell .skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+}
+
+.product-shell .center-loading-state {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.product-shell .center-callout,
+.product-shell .es {
+  border-radius: var(--radius-lg);
+  border: var(--ui-border-subtle);
+  background: color-mix(in srgb, var(--color-surface-soft) 65%, transparent);
+}
+
+.product-shell .es {
+  padding: var(--space-8) var(--space-4);
+}
+
+/* ── Reduced visual noise */
+.product-shell .helper-text,
+.product-shell .center-callout.helper-text {
+  color: var(--color-text-muted);
+  opacity: 0.82;
+}
+
+.product-shell .center-advanced-toggle {
+  margin-top: var(--space-2);
+}
+
+.product-shell .center-advanced-panel {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  animation: dsPanelIn var(--motion-fast) var(--motion-ease) both;
+}
+
+.product-shell .center-actions-row.primary-actions {
+  row-gap: var(--space-2);
+}
+
+.product-shell .fm-event-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.product-shell .fm-event-header-actions .fm-event-sync-btn {
+  width: auto;
+}
+
+.product-shell .home-teams-controls .center-btn {
+  width: 100%;
+}
+
+@keyframes dsMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dsPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Motion standards */
+.product-shell :where(
+  .center-btn,
+  .home-fotmob-btn,
+  .home-mini-tab-btn,
+  .event-picker-item,
+  .center-tab-btn,
+  .page-view-tab,
+  .fm-tab,
+  .surface-card-expand-btn,
+  .surface-card-collapse-btn,
+  .surface-card-compact-btn,
+  .home-card-collapse-btn,
+  .action-overflow-item,
+  .action-overflow-menu,
+  .btb__tab
+) {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--motion-ease);
+}
+
+@media (max-width: 1120px) {
+  .product-shell .ps-topbar-brand-meta {
+    max-width: min(44vw, 180px);
+  }
+
+  .product-shell .ps-topbar-signature {
+    font-size: 0.5rem;
+  }
+
+  .product-shell h1,
+  .product-shell .type-display {
+    font-size: clamp(1.08rem, 2.5vw, 1.32rem);
+    max-width: 20ch;
+  }
+
+  .product-shell h2,
+  .product-shell .type-heading-lg,
+  .product-shell .home-fotmob-toolbar h2 {
+    font-size: clamp(0.9rem, 2vw, 1.04rem);
+  }
+
+  .product-shell .surface-card-head h3,
+  .product-shell .home-card-head h3,
+  .product-shell .home-event-section-head h3 {
+    max-width: 100%;
+  }
+
+  .product-shell .page-view-tab,
+  .product-shell .center-tab-btn,
+  .product-shell .fm-tab,
+  .product-shell .home-filter-btn,
+  .product-shell .center-sort-chip,
+  .product-shell .center-btn {
+    min-height: var(--touch-target-min);
+  }
+
+  .product-shell .center-tabs-header {
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+.product-shell .surface-card,
+  .product-shell .home-fotmob-card,
+  .product-shell .home-event-section,
+  .product-shell .home-mini-panel {
+    border-radius: var(--radius-lg);
+  }
+
+  .product-shell .surface-card {
+    padding: var(--space-3);
+  }
+
+  .product-shell .mobile-finder-layout .center-actions-row.primary-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .product-shell .mobile-finder-layout .center-actions-row.primary-actions .action-overflow {
+    width: 100%;
+  }
+
+  .product-shell .mobile-finder-layout .center-actions-row.primary-actions .action-overflow-toggle {
+    width: 100%;
+  }
+
+  .product-shell .mobile-finder-layout .center-advanced-panel .center-actions-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .product-shell .action-overflow:not(.compact) .action-overflow-menu {
+    left: 0;
+    right: 0;
+    min-width: 0;
+  }
+
+  .product-shell .action-overflow.compact {
+    width: auto;
+  }
+
+  .product-shell .fm-event-header-actions {
+    width: 100%;
+    min-width: 0;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  .product-shell .fm-event-header-actions .action-overflow.compact .action-overflow-toggle {
+    min-width: 94px;
+  }
+
+  .product-shell .home-teams-controls {
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-shell :where(
+    .center-btn,
+    .home-fotmob-btn,
+    .home-mini-tab-btn,
+    .event-picker-item,
+    .center-tab-btn,
+    .page-view-tab,
+    .fm-tab,
+    .surface-card,
+    .surface-card-expand-btn,
+    .surface-card-collapse-btn,
+    .surface-card-compact-btn,
+    .home-card-collapse-btn,
+    .action-overflow-item,
+    .action-overflow-menu,
+    .btb__tab
+  ) {
+    transition: none !important;
+  }
+
+  .product-shell .center-advanced-panel,
+  .product-shell .action-overflow-menu {
+    animation: none !important;
+  }
+}

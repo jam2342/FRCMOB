@@ -1,0 +1,21 @@
+# Keep backend Docker build context small for local/dev compose builds.
+# Keep only tracked model artifacts under media/models/.
+media/*
+!media/models/
+media/models/*
+!media/models/frc_robot_detector_v1.pt
+manual_videos/
+*.pt
+tests/
+docs/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+*.pyc
+*.pyo
+*.log
+.env
+.env.*
