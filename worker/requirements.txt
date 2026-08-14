@@ -1,4 +1,4 @@
-redis==5.0.8
+redis==8.1.0
 rq==1.16.2
 python-dotenv==1.2.2
 sqlalchemy==2.0.34
