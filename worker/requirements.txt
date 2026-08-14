@@ -1,7 +1,7 @@
 redis==5.0.8
 rq==1.16.2
 python-dotenv==1.2.2
-sqlalchemy==2.0.34
+sqlalchemy==2.0.51
 psycopg[binary]==3.2.1
 pydantic-settings==2.15.0
 requests==2.34.2
