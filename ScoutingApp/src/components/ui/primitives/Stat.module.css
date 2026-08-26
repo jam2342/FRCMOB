@@ -1,0 +1,181 @@
+/* Stat — one labelled number. Replaces 47 metric/figure classes.
+
+   Two rules are non-negotiable here. Figures are always tabular, so a column
+   of them lines up and a changing value does not make the row jitter. And
+   `confidence` is a first-class slot rather than an afterthought: an
+   auto-scout value must never appear without its provenance. */
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.valueRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+/* The unit reads smaller and dimmer so the number lands first. */
+.unit {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-dim);
+}
+
+.sub {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Sizes ────────────────────────────────────────────────────────── */
+
+.sm .value {
+  font-size: var(--font-size-md);
+}
+
+.lg .value {
+  font-size: var(--font-size-3xl);
+}
+
+/* The hero. One per screen, named per route in src/styles/README.md.
+   `size="lg"` existed here from the day this primitive was written and had zero
+   call sites in the app — the display step was built and never used, which is
+   most of why every screen measured flat.
+
+   The label goes above and quiet: at this size the number identifies itself,
+   and a 12px uppercase label competing with a 36px figure is the thing that
+   makes a dashboard read as a wall. */
+.display .value {
+  font-size: var(--font-size-display);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.display .label {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-dim);
+}
+
+.display .sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* On a phone the hero steps down rather than wrapping. */
+@media (max-width: 700px) {
+  .display .value {
+    font-size: var(--font-size-3xl);
+  }
+}
+
+/* ── Value tones ──────────────────────────────────────────────────── */
+
+.toneAccent .value {
+  color: var(--color-accent-text);
+}
+
+.toneSuccess .value {
+  color: var(--color-success-text);
+}
+
+.toneWarning .value {
+  color: var(--color-warning-text);
+}
+
+.toneDanger .value {
+  color: var(--color-danger-text);
+}
+
+/* ── Trend ────────────────────────────────────────────────────────── */
+
+.trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.trendUp {
+  color: var(--color-success-text);
+}
+
+.trendDown {
+  color: var(--color-danger-text);
+}
+
+.trendFlat {
+  color: var(--color-text-dim);
+}
+
+.trend svg {
+  display: block;
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
+
+/* ── Confidence ───────────────────────────────────────────────────── */
+
+.confidence {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 2px;
+}
+
+.confidenceTrack {
+  flex: 1;
+  min-width: 24px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.confidenceFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.confidenceLow .confidenceFill {
+  background: var(--color-warning);
+}
+
+.confidenceText {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-dim);
+  flex: none;
+}

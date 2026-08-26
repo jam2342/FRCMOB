@@ -1,0 +1,249 @@
+/* Alliance Advisor layout. This page had 41 inline style blocks — more than
+   any other — which bypass tokens entirely and therefore cannot theme. All of
+   them are gone: the ones that were really layout live here, and the ones that
+   were really a component are now Table, Stat, Chip and Button. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-content: start;
+  align-items: start;
+  min-width: 0;
+}
+
+.eventSummary {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.eventSummary strong {
+  color: var(--color-text);
+}
+
+.note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.noteWarning {
+  color: var(--color-warning-text);
+}
+
+.notes {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.paramGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* ── Desirability bar ─────────────────────────────────────────────── */
+
+/* The bar and its figure sit on one baseline so a column of them scans as a
+   chart rather than as unaligned text. */
+.desirability {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* The bar needs a track. A percentage width on the bar itself resolves against
+   the whole cell, so a 100% bar ran out of its column and over the figure in
+   the one beside it. */
+.barTrack {
+  width: 64px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: var(--radius-full);
+}
+
+.barHigh { background: var(--color-success); }
+.barGood { background: var(--color-info); }
+.barFair { background: var(--color-warning); }
+.barLow  { background: var(--color-text-dim); }
+
+.desirabilityValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  flex: none;
+}
+
+/* ── Alliance board ───────────────────────────────────────────────── */
+
+.allianceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.allianceCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+
+  padding: var(--space-3);
+  border: var(--border-width-1) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  min-width: 0;
+}
+
+.allianceHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.allianceBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.allianceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* A chip that navigates is a button, not a span with an onClick — otherwise
+   it is unreachable by keyboard. */
+.chipButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+}
+
+.chipButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.pickChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.pickPct {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Pros / cons ──────────────────────────────────────────────────── */
+
+.prosConsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.prosConsCard {
+  padding: var(--space-3);
+  border: var(--border-width-1) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  min-width: 0;
+}
+
+.prosConsTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.prosList,
+.consList {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-2xs);
+}
+
+.prosList { color: var(--color-success-text); }
+.consList { color: var(--color-danger-text); }
+
+/* ── Table cells ──────────────────────────────────────────────────── */
+
+.teamLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-accent-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.teamLink:hover {
+  text-decoration: underline;
+}
+
+.teamLink:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+
+.captainRow {
+  font-weight: var(--font-weight-semibold);
+}
+
+.nowrap {
+  white-space: nowrap;
+}

@@ -1,0 +1,11 @@
+/* Export page. The ratings preview is one Table now; what is left is the two
+   cell treatments that used to be inline styles. */
+
+.teamCell {
+  font-weight: var(--font-weight-semibold);
+}
+
+.strengthCell {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

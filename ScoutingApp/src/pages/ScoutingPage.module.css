@@ -1,0 +1,79 @@
+/* ScoutingPage — the page operated one-handed, on a phone, under time
+   pressure, during a 160-second match. Migrated in two passes: review first
+   (read-mostly, no data at risk), then live entry.
+
+   Only page-level layout lives here. The controls come from the primitives. */
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.noteWarning {
+  color: var(--color-warning-text);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* A match cell carries the match name over its scheduled time — the pair
+   reads as one thing, so it is one cell rather than two columns. */
+.matchCell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.matchCell strong {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.matchCell small {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-dim);
+}
+
+.noteCell {
+  display: block;
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.rowActions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* Search plus the two scope filters. Wraps so all three stay reachable on a
+   phone, where they used to be hidden entirely. */
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  min-width: 0;
+}
+
+.filterRow > *:first-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}

@@ -200,6 +200,16 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
             ))}
           </div>
         </div>
+
+        <div className="ms__legal">
+          <NavLink to="/privacy" className="ms__legal-link" onClick={startClose}>
+            Privacy Policy
+          </NavLink>
+          <span className="ms__legal-sep" aria-hidden="true">·</span>
+          <NavLink to="/terms" className="ms__legal-link" onClick={startClose}>
+            Terms of Service
+          </NavLink>
+        </div>
       </section>
     </>
   );

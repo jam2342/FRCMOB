@@ -19,6 +19,8 @@ import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
+import { Chip } from '../components/ui/primitives';
+import styles from './ScoutingAssignPage.module.css';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
 
 /* ------------------------------------------------------------------ */
@@ -173,14 +175,66 @@ function autoAssign(
   return map;
 }
 
-const SCOUT_COLORS = [
-  '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7',
-  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-];
+/* Ten identity colours, cycled by index, as classes rather than an inline
+   background. The fill and the ink that goes on it are decided together in the
+   stylesheet — which is the fix: the old code set the fill from JS and left the
+   ink to whichever view you were in, so the phone forced white on all ten
+   (1.92:1 on the yellow) while the table left it inherited. */
+const SCOUT_COLOR_COUNT = 10;
 
-function scoutColor(scout: string, scouts: string[]): string {
+function scoutColorClass(scout: string, scouts: string[]): string {
   const idx = scouts.indexOf(scout);
-  return SCOUT_COLORS[idx % SCOUT_COLORS.length] || SCOUT_COLORS[0];
+  const slot = (idx < 0 ? 0 : idx % SCOUT_COLOR_COUNT) + 1;
+  return styles[`scout${slot}`];
+}
+
+/* One assignment control. The table cell and the phone card each had their own
+   copy of this select, and they had already drifted apart on the thing that
+   matters most: the phone forced white text onto the scout colour while the
+   table left it inherited, so the same assignment was unreadable in one view
+   or the other depending on which scout drew which colour. */
+function ScoutSelect({
+  matchKey,
+  teamKey,
+  scouts,
+  assignments,
+  onAssign,
+  onClear,
+  disabled,
+  className,
+}: {
+  matchKey: string;
+  teamKey: string;
+  scouts: string[];
+  assignments: AssignmentMap;
+  onAssign: (matchKey: string, teamKey: string, scout: string) => void;
+  onClear: (matchKey: string, teamKey: string) => void;
+  disabled: boolean;
+  className?: string;
+}) {
+  const assigned = assignments[assignKey(matchKey, teamKey)] || '';
+  return (
+    <select
+      className={[className, assigned && 'assigned', assigned && scoutColorClass(assigned, scouts)]
+        .filter(Boolean)
+        .join(' ')}
+      value={assigned}
+      onChange={(event) => {
+        const value = event.target.value;
+        if (value) onAssign(matchKey, teamKey, value);
+        else onClear(matchKey, teamKey);
+      }}
+      disabled={disabled}
+      aria-label={`Scout for ${teamNum(teamKey)}`}
+    >
+      <option value="">—</option>
+      {scouts.map((scout) => (
+        <option key={scout} value={scout}>
+          {scout}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -728,7 +782,6 @@ export function ScoutingAssignPage() {
         {/* ---- Event Selection ---- */}
         <SurfaceCard
           title="Scouting Assignments"
-          subtitle="Assign scouts to matches."
         >
           <EventPicker
             value={eventKey}
@@ -772,7 +825,6 @@ export function ScoutingAssignPage() {
         {/* ---- Scout Roster ---- */}
         <SurfaceCard
           title="Scout Roster"
-          subtitle="Add your scouts."
           right={<span className="center-chip">{scouts.length} scouts</span>}
         >
           <div className="center-input-row" style={{ marginBottom: '0.5rem' }}>
@@ -816,31 +868,18 @@ export function ScoutingAssignPage() {
           ) : null}
 
           {scouts.length > 0 ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+            <div className={styles.scoutLegend}>
               {scouts.map((scout) => (
-                <span
+                <Chip
                   key={scout}
-                  className="center-chip"
-                  style={{
-                    background: scoutColor(scout, scouts),
-                    color: '#fff',
-                    fontWeight: 600,
-                  }}
+                  /* The scout's identity colour, carrying the ink that passes
+                     on it — the same pair the assignment select uses. */
+                  className={`${styles.scoutChip} ${scoutColorClass(scout, scouts)}`}
+                  onRemove={canEditAssignments ? () => removeScout(scout) : undefined}
+                  removeLabel={`Remove ${scout}`}
                 >
-                  {scout}
-                  <span className="text-sm" style={{ opacity: 0.7 }}>
-                    ({scoutWorkload[scout] || 0})
-                  </span>
-                  <button
-                    type="button"
-                    className="scout-chip-remove"
-                    onClick={() => removeScout(scout)}
-                    title="Remove scout"
-                    disabled={!canEditAssignments}
-                  >
-                    x
-                  </button>
-                </span>
+                  {scout} <span className={styles.workload}>({scoutWorkload[scout] || 0})</span>
+                </Chip>
               ))}
             </div>
           ) : (
@@ -852,7 +891,7 @@ export function ScoutingAssignPage() {
 
         {/* ---- Coverage Overview ---- */}
         {matches.length > 0 && scouts.length > 0 ? (
-          <SurfaceCard title="Coverage" subtitle="Assignment coverage for upcoming matches.">
+          <SurfaceCard title="Coverage">
             <div className="center-kpi-grid">
               <div className={`center-kpi-card ${coverageStats.coverage >= 0.9 ? 'tone-green' : coverageStats.coverage >= 0.5 ? 'tone-yellow' : 'tone-red'}`}>
                 <span>Coverage</span>
@@ -923,8 +962,11 @@ export function ScoutingAssignPage() {
             title="Match Assignments"
             subtitle={`${visibleMatches.length} matches. ${!canEditAssignments ? 'Read-only view.' : isMobile ? 'Tap to assign scouts.' : 'Click a cell to assign a scout.'}`}
           >
-            {/* Desktop table */}
-            <div className="center-table-wrap desktop-only">
+            {/* One list in the DOM, not two. These were split with
+                .desktop-only / .mobile-only, which is CSS — so an 80-match
+                schedule mounted 960 <select> elements to show 480. */}
+            {!isMobile ? (
+            <div className="center-table-wrap">
               <table className="center-table">
                 <thead>
                   <tr>
@@ -952,9 +994,8 @@ export function ScoutingAssignPage() {
                 </tbody>
               </table>
             </div>
-
-            {/* Mobile card list */}
-            <div className="assign-mobile-list mobile-only">
+            ) : (
+            <div className="assign-mobile-list">
               {visibleMatches.map((match) => (
                 <MobileAssignmentCard
                   key={`m-${match.match_key}`}
@@ -967,6 +1008,7 @@ export function ScoutingAssignPage() {
                 />
               ))}
             </div>
+            )}
           </SurfaceCard>
         ) : null}
       </SurfaceCardGroup>
@@ -1003,36 +1045,21 @@ function MatchAssignmentRow({
         {match.display_name}
       </td>
       {allTeams.map((teamKey, idx) => {
-        const key = assignKey(match.match_key, teamKey);        const assigned = assignments[key] || '';
         return (
-          <td
-            key={teamKey}
-            style={{
-              padding: '0.25rem 0.35rem',
-              borderLeft: idx === 3 ? '2px solid var(--surface-border, #444)' : undefined,
-            }}
-          >
+          <td key={teamKey} className={idx === 3 ? `${styles.cell} ${styles.allianceSplit}` : styles.cell}>
             <div className="assign-cell-team-num">
               {teamNum(teamKey)}
             </div>
-            <select
-              className={`assign-cell-select${assigned ? ' assigned' : ''}`}
-              value={assigned}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val) onAssign(match.match_key, teamKey, val);
-                else onClear(match.match_key, teamKey);
-              }}
-              style={assigned ? { background: scoutColor(assigned, scouts) } : undefined}
+            <ScoutSelect
+              matchKey={match.match_key}
+              teamKey={teamKey}
+              scouts={scouts}
+              assignments={assignments}
+              onAssign={onAssign}
+              onClear={onClear}
               disabled={match.is_completed || !editable}
-            >
-              <option value="">—</option>
-              {scouts.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              className="assign-cell-select"
+            />
           </td>
         );
       })}
@@ -1060,27 +1087,18 @@ function MobileAssignmentCard({
   editable: boolean;
 }) {
   function renderTeamRow(teamKey: string) {
-    const key = assignKey(match.match_key, teamKey);
-    const assigned = assignments[key] || '';
     return (
       <div className="assign-mobile-team-row" key={teamKey}>
         <span className="assign-mobile-team-num">{teamNum(teamKey)}</span>
-        <select
-          className={assigned ? 'assigned' : ''}
-          value={assigned}
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val) onAssign(match.match_key, teamKey, val);
-            else onClear(match.match_key, teamKey);
-          }}
-          style={assigned ? { background: scoutColor(assigned, scouts), color: '#fff' } : undefined}
+        <ScoutSelect
+          matchKey={match.match_key}
+          teamKey={teamKey}
+          scouts={scouts}
+          assignments={assignments}
+          onAssign={onAssign}
+          onClear={onClear}
           disabled={match.is_completed || !editable}
-        >
-          <option value="">—</option>
-          {scouts.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+        />
       </div>
     );
   }

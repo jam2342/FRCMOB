@@ -1,0 +1,128 @@
+/* What is genuinely QR-specific. Everything else — the overlay, header, close
+   button, footer, actions, the paste field — now comes from the primitives,
+   which is why ps-qr-modals.css (202 lines, 20 classes) is gone. */
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.canvasWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: var(--space-3);
+
+  /* Deliberately light in both themes. The canvas below draws a dark-on-white
+     QR code because that is what scanners expect; a themed surface behind it
+     would leave a dark frame around a white code and hurt the read. */
+  border-radius: var(--radius-md);
+  background: #ffffff;
+}
+
+.canvasWrap canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.hint {
+  margin: var(--space-3) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.size {
+  font-size: var(--font-size-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-dim);
+}
+
+/* ── Import: camera scanning ──────────────────────────────────────── */
+
+.scanSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.videoWrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.video {
+  width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  object-fit: cover;
+}
+
+/* The reticle. Sized off the video box so it stays centred at any width. */
+.scanOverlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+
+  width: min(60%, 200px);
+  aspect-ratio: 1;
+  border: var(--border-width-2) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-text-dim);
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.pasteSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.status {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.statusError {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-text);
+}
+
+.statusSuccess {
+  background: var(--color-success-soft);
+  color: var(--color-success-text);
+}
+
+.successBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

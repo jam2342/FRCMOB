@@ -6,8 +6,10 @@ export const SCOUTING_VIEWS: ViewBarItem[] = [
   { label: 'Assignments', to: '/scouting/assignments', preserveSearch: true },
   { label: 'Coverage', to: '/scouting/coverage', preserveSearch: true },
   { label: 'Auto Paths', to: '/scouting/auto-paths', preserveSearch: true },
-  { label: 'Field Calibration', to: '/scouting/calibrate', preserveSearch: true },
-  { label: 'On-Device Breakdown', to: '/scouting/record', preserveSearch: true },
+  // Tools, not peer views: one calibrates a camera and one runs an offline
+  // breakdown on a phone. They sat beside Live Scouting as equals.
+  { label: 'Field Calibration', to: '/scouting/calibrate', preserveSearch: true, secondary: true },
+  { label: 'On-Device Breakdown', to: '/scouting/record', preserveSearch: true, secondary: true },
 ];
 
 export const EVENTS_VIEWS: ViewBarItem[] = [
@@ -23,7 +25,10 @@ export const COMPARE_VIEWS: ViewBarItem[] = [
 ];
 
 export const MATCH_HUB_VIEWS: ViewBarItem[] = [
-  { label: 'Match Hub', to: '/match-center' },
+  // "Match Hub" was a synonym for the section the sidebar calls "Match Center",
+  // so the same page had two names depending on where you clicked. Every other
+  // family names the landing page for what it shows, not for its section.
+  { label: 'Match', to: '/match-center' },
   { label: 'Predictions', to: '/match-center/predictions' },
   { label: 'Strategy', to: '/match-center/strategy' },
 ];

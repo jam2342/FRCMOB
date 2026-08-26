@@ -51,6 +51,20 @@ const OnDeviceRunPage = lazy(() =>
   import('./pages/OnDeviceRunPage').then((mod) => ({ default: mod.OnDeviceRunPage })),
 );
 
+// The primitives gallery. Lazy like every other page, so it costs nothing
+// unless visited — and it is the route guards 3 and 4 sweep to check that
+// every primitive holds contrast and does not overflow on a phone.
+const PrimitivesPage = lazy(() =>
+  import('./pages/PrimitivesPage').then((mod) => ({ default: mod.PrimitivesPage })),
+);
+
+const PrivacyPolicyPage = lazy(() =>
+  import('./pages/PrivacyPolicyPage').then((mod) => ({ default: mod.PrivacyPolicyPage })),
+);
+const TermsOfServicePage = lazy(() =>
+  import('./pages/TermsOfServicePage').then((mod) => ({ default: mod.TermsOfServicePage })),
+);
+
 function withPageSuspense(content: ReactNode, label?: string) {
   return (
     <ErrorBoundary label={label}>
@@ -93,6 +107,11 @@ export default function RootApp() {
           <Route path="/scouting-assignments" element={<Navigate to="/scouting/assignments" replace />} />
           <Route path="/favorites" element={withPageSuspense(<FavoritesPage />, 'Favorites')} />
           <Route path="/settings" element={withPageSuspense(<SettingsPage />, 'Settings')} />
+          <Route path="/primitives" element={withPageSuspense(<PrimitivesPage />, 'Primitives')} />
+          <Route path="/privacy" element={withPageSuspense(<PrivacyPolicyPage />, 'Privacy Policy')} />
+          <Route path="/terms" element={withPageSuspense(<TermsOfServicePage />, 'Terms of Service')} />
+          <Route path="/privacy-policy" element={<Navigate to="/privacy" replace />} />
+          <Route path="/terms-of-service" element={<Navigate to="/terms" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>

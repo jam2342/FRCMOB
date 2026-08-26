@@ -141,10 +141,10 @@ export function OfflineIndicator() {
     <div
       role="status"
       aria-live="polite"
-      className={`offline-banner ${online ? 'offline-banner-warning' : 'offline-banner-danger'}`}
+      className={`offline-banner ${online ? 'offline-banner-warning' : 'offline-banner-info'}`}
     >
       <span className="offline-banner-status">
-        <span className={`offline-banner-dot ${online ? 'offline-dot-warning' : 'offline-dot-danger'}`} />
+        <span className={`offline-banner-dot ${online ? 'offline-dot-warning' : 'offline-dot-info'}`} />
         {!online && 'You are offline'}
         {online && queueSize > 0 && `${queueSize} pending change${queueSize > 1 ? 's' : ''} to sync`}
       </span>

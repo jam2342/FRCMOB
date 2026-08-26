@@ -85,6 +85,10 @@ function normalizeQuickJumpRegion(value: string | null): QuickJumpRegion {
 }
 
 function normalizeLiveRefreshSec(value: string | null): number {
+  // `Number(null)` is 0, not NaN, so the isFinite check alone never reached the
+  // default — an unset key clamped to the 5s floor instead of the intended 60,
+  // and every fresh browser polled twelve times harder than designed.
+  if (value === null || value.trim() === '') return DEFAULTS.liveRefreshSec;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULTS.liveRefreshSec;
   return Math.max(5, Math.min(120, Math.round(parsed)));

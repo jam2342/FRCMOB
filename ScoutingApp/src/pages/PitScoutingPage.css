@@ -75,7 +75,7 @@
   background: color-mix(in srgb, var(--color-danger) 78%, var(--color-bg));
   color: var(--color-text);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--font-size-legacy-11);
   line-height: 1;
 }
 
@@ -116,7 +116,7 @@
 
 .pit-section legend {
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: var(--font-size-base);
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide);
   padding: 0 0.35rem;
@@ -133,7 +133,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: 0.85rem;
+  font-size: var(--font-size-base);
 }
 
 .pit-field-label {
@@ -162,7 +162,7 @@
 
 .pit-unit {
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
 }
 
 .pit-textarea {

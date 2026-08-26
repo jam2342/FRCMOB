@@ -32,7 +32,8 @@ import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
-import { useMobileLayout } from '../hooks/useMobileLayout';
+import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
+import { Stat, Table, type TableColumn } from '../components/ui/primitives';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import {
@@ -57,15 +58,23 @@ import {
 import {
   GridIcon, BarChartIcon, CalendarIcon, ImageIcon, CodeIcon,
   FlameIcon, StopwatchIcon, RobotIcon, MountainIcon, ShieldIcon,
-  ShieldCheckIcon, StarIcon, GaugeIcon, SteeringWheelIcon,
+  ShieldCheckIcon, GaugeIcon, SteeringWheelIcon,
   TrophyIcon, HashIcon,
   ClockIcon, CheckCircleIcon, ExternalLinkIcon, ChevronDownIcon,
   SearchIcon, ScoreboardIcon, EyeIcon, AwardIcon,
 } from '../components/ui/Icons';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
+import { ordinal } from '../utils/ordinal';
 import { cancelIdleWork, scheduleIdleWork } from '../utils/idle';
 
 const BASE_TEAM_TABS = ['overview', 'performance', 'events', 'media'] as const;
+/* titleizeKey turns 'events' into "Events", which is also the name of a
+   top-level nav section. Two visible controls reading "Events" on one screen,
+   meaning different things — all events, and this team's events. */
+const TEAM_TAB_LABELS: Record<string, string> = { events: 'Event history' };
+function teamTabLabel(tab: string): string {
+  return TEAM_TAB_LABELS[tab] ?? titleizeKey(tab);
+}
 const ALL_TEAM_TABS = ['overview', 'performance', 'events', 'media', 'advanced'] as const;
 type TeamTab = (typeof ALL_TEAM_TABS)[number];
 
@@ -464,6 +473,13 @@ function ratingFromIntel(
       consistency: parseNumber(subscores.consistency) ?? 50,
       penalty_discipline: parseNumber(subscores.penalty_discipline),
     },
+    // Carried straight through. The rank is computed server-side on the model
+    // rating, while the value above is that rating blended with Statbotics EPA
+    // for display — so the label below says "by model rating" rather than
+    // implying it ranks the number next to it.
+    rank: parseNumber(rating.rank),
+    field_size: parseNumber(rating.field_size),
+    rank_event_key: typeof rating.rank_event_key === 'string' ? rating.rank_event_key : null,
     pros: Array.isArray(rating.pros) ? (rating.pros as EventTeamRatingItem['pros']) : [],
     cons: Array.isArray(rating.cons) ? (rating.cons as EventTeamRatingItem['cons']) : [],
     evidence: Array.isArray(rating.evidence) ? (rating.evidence as EventTeamRatingItem['evidence']) : [],
@@ -592,7 +608,16 @@ export function TeamCenterPage() {
 
   const [loadingTeamData, setLoadingTeamData] = useState(false);
   const [statusText, setStatusText] = useState('Enter a team number.');
-  const [errorText, setErrorText] = useState('');
+  /* A list, not a pipe-joined string. This used to render as
+     "Intel: … | Intel: … | Intel: …" — a machine-joined line with its
+     delimiter showing, in the middle of the page. They are separate
+     messages, so they are separate list items. */
+  const [errorMessages, setErrorMessages] = useState<string[]>([]);
+
+  // Append without duplicating; several requests can report the same failure.
+  const addErrorMessage = useCallback((message: string) => {
+    setErrorMessages((current) => (current.includes(message) ? current : [...current, message]));
+  }, []);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [scheduleVisibleCount, setScheduleVisibleCount] = useState(TEAM_SCHEDULE_INITIAL_VISIBLE_COUNT);
   const [scheduleSortMode, setScheduleSortMode] = useState<TeamScheduleSortMode>('time');
@@ -688,7 +713,7 @@ export function TeamCenterPage() {
     setEventTeams(null);
     setTeamHeatmap(null);
     setTeamShiftPlay(null);
-    setErrorText('');
+    setErrorMessages([]);
     setStatusText('Enter a team number.');
     setLoadingTeamData(false);
   }, [selectedTeamKey]);
@@ -729,7 +754,7 @@ export function TeamCenterPage() {
     lastContextRef.current = contextKey;
 
     setLoadingTeamData(true);
-    setErrorText('');
+    setErrorMessages([]);
     setStatusText(
       contextChanged || reason === 'initial'
         ? `Loading ${selectedTeamKey}...`
@@ -811,11 +836,11 @@ export function TeamCenterPage() {
           ? intel.warnings.map((warning) => String(warning || '').trim()).filter(Boolean)
           : [];
         if (intelWarnings.length > 0) {
-          errors.push(...intelWarnings.map((warning) => `Intel: ${warning}`));
+          errors.push(...intelWarnings.map((warning) => String(warning)));
         }
       } else if (shouldRefreshStatic && intelResult.status === 'rejected') {
         if (!isTransientAbortLikeError(intelResult.reason)) {
-          errors.push(`Intel: ${intelResult.reason instanceof Error ? intelResult.reason.message : 'failed'}`);
+          errors.push(`Team intel: ${intelResult.reason instanceof Error ? intelResult.reason.message : 'failed'}`);
         }
       }
 
@@ -855,11 +880,7 @@ export function TeamCenterPage() {
             };
             if (isTransientAbortLikeError(error)) return;
             const detail = error instanceof Error ? error.message : 'failed';
-            setErrorText((current) => {
-              if (!current) return `Event teams: ${detail}`;
-              if (current.includes(`Event teams: ${detail}`)) return current;
-              return `${current} | Event teams: ${detail}`;
-            });
+            addErrorMessage(`Event teams: ${detail}`);
           });
       }
 
@@ -883,15 +904,11 @@ export function TeamCenterPage() {
             };
             if (isTransientAbortLikeError(error)) return;
             const detail = error instanceof Error ? error.message : 'failed';
-            setErrorText((current) => {
-              if (!current) return `Schedule: ${detail}`;
-              if (current.includes(`Schedule: ${detail}`)) return current;
-              return `${current} | Schedule: ${detail}`;
-            });
+            addErrorMessage(`Schedule: ${detail}`);
           });
       }
 
-      setErrorText(errors.join(' | '));
+      setErrorMessages(errors);
       setStatusText(
         errors.length > 0
           ? `Partial data for ${selectedTeamKey}.`
@@ -902,7 +919,7 @@ export function TeamCenterPage() {
     } finally {
       setLoadingTeamData(false);
     }
-  }, [activeTab, selectedEventKey, selectedTeamKey]);
+  }, [activeTab, addErrorMessage, selectedEventKey, selectedTeamKey]);
 
   const { triggerNow: triggerTeamReload } = useSingleFlightPolling({
     enabled: Boolean(selectedTeamKey),
@@ -1157,6 +1174,50 @@ export function TeamCenterPage() {
     [scheduleVisibleCount, sortedScheduleRowsWithDifficulty],
   );
 
+  /* Opponent-EPA range used to be desktop-only <small> text under the
+     difficulty pill and the phone showed only the average, so the two views
+     disagreed about what the difficulty was based on. It is one column now. */
+  const scheduleColumns: TableColumn<(typeof visibleScheduleRowsWithDifficulty)[number]>[] = [
+    {
+      key: 'match',
+      label: 'Match',
+      render: (row) => (
+        <button type="button" className="center-inline-link" onClick={() => openMatchCenter(row.match_key)}>
+          {row.display_name}
+        </button>
+      ),
+    },
+    { key: 'time', label: 'Time', render: (row) => fmtDateShort(row.scheduled_time) },
+    {
+      key: 'alliance',
+      label: 'Alliance',
+      render: (row) => (
+        <span className={`center-alliance-pill ${row.alliance.toLowerCase()}`}>
+          {row.alliance}
+          {row.station ? ` (${row.station})` : ''}
+        </span>
+      ),
+    },
+    { key: 'partners', label: 'Partners', render: (row) => row.partners.join(', ') || 'TBD' },
+    { key: 'opponents', label: 'Opponents', render: (row) => row.opponents.join(', ') || 'TBD' },
+    {
+      key: 'difficulty',
+      label: 'Difficulty',
+      render: (row) => (
+        <span className={`center-difficulty-pill ${row.difficulty_tier}`}>
+          {metric(row.schedule_difficulty_0_10, 1)} / 10
+        </span>
+      ),
+    },
+    {
+      key: 'opponent_epa',
+      label: 'Opp Avg EPA',
+      numeric: true,
+      render: (row) =>
+        `${metric(row.opponent_epa_avg, 0)} (${metric(row.opponent_epa_min, 0)}-${metric(row.opponent_epa_max, 0)})`,
+    },
+  ];
+
   useEffect(() => {
     const maxAutoVisible = Math.min(TEAM_SCHEDULE_AUTO_VISIBLE_TARGET, sortedScheduleRowsWithDifficulty.length);
     if (maxAutoVisible <= scheduleVisibleCount) return;
@@ -1306,6 +1367,18 @@ export function TeamCenterPage() {
     ];
   }, [climbCapability, robotEpaSummary.value, teamBreakdown, teamRating]);
 
+  // "87.7" on its own says nothing. Rank and field size travel together, and
+  // the event is named whenever the rating did not come from the selected one —
+  // the same disclaim-don't-hide rule the ratings fallback already follows.
+  const ratingRankLabel = useMemo(() => {
+    const rank = teamRating?.rank ?? null;
+    const fieldSize = teamRating?.field_size ?? null;
+    if (rank === null || fieldSize === null || fieldSize <= 0) return null;
+    const rankedAt = teamRating?.rank_event_key ?? null;
+    const where = rankedAt && rankedAt !== selectedEventKey ? ` at ${rankedAt.toUpperCase()}` : '';
+    return `${ordinal(rank)} of ${fieldSize} by model rating${where}`;
+  }, [teamRating, selectedEventKey]);
+
   const tbaRank = useMemo(() => {
     const status = asRecord(teamTbaEventStatus);
     const qual = asRecord(status?.qual);
@@ -1353,7 +1426,7 @@ export function TeamCenterPage() {
     const currentSelectionKey = `${selectedTeamKey}|${selectedEventKey || ''}`;
 
     if (!normalizedTeam) {
-      setErrorText('Use a valid team key like frc118 or team number like 118.');
+      setErrorMessages(['Use a valid team key like frc118 or team number like 118.']);
       return;
     }
 
@@ -1407,7 +1480,7 @@ export function TeamCenterPage() {
         />
       ) : null}
       <aside className="center-sidebar">
-        <SurfaceCard title="Team Finder" subtitle="Load team + event context.">
+        <SurfaceCard title="Team Finder">
           <form className="center-stack-form" onSubmit={submitTeamAndEvent}>
             <label className="center-label" htmlFor="team-center-team-input">
               Team
@@ -1447,18 +1520,24 @@ export function TeamCenterPage() {
             <span className="center-chip">{statusText}</span>
             <span className="center-chip">{relativeFromTimestamp(lastUpdatedAt)} · {liveRefreshSec}s</span>
           </div>
-          {errorText ? <p className="center-callout warning">{errorText}</p> : null}
+          {errorMessages.length === 1 ? (
+            <p className="center-callout warning">{errorMessages[0]}</p>
+          ) : errorMessages.length > 1 ? (
+            <ul className="center-callout warning center-callout-list">
+              {errorMessages.map((message) => <li key={message}>{message}</li>)}
+            </ul>
+          ) : null}
 
           <div className="center-actions-row">
-            <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}` : '/events'} title="Go to Event Center">
-              <CalendarIcon className="icon-inline" /> Event Center
+            <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}` : '/events'} title="Go to Events">
+              <CalendarIcon className="icon-inline" /> This event
             </Link>
             <Link
               className="center-btn ghost"
               to={selectedEventKey ? `/match-center?event=${selectedEventKey}` : '/match-center'}
               title="Go to Match Center"
             >
-              <ScoreboardIcon className="icon-inline" /> Match Center
+              <ScoreboardIcon className="icon-inline" /> This team’s matches
             </Link>
           </div>
         </SurfaceCard>
@@ -1529,7 +1608,7 @@ export function TeamCenterPage() {
                     onChange={setActiveTab}
                     items={teamTabs.map((tab) => ({
                       value: tab,
-                      label: titleizeKey(tab),
+                      label: teamTabLabel(tab),
                     }))}
                   />
                 </div>
@@ -1562,15 +1641,26 @@ export function TeamCenterPage() {
                     <div>{teamFormStrip(selectedTeamLiveForm)}</div>
                   </div>
                 </div>
-                <div className="center-status-row compact">
-                  <span className="center-chip">{teamBreakdown?.matches_analyzed ?? 0} analyzed</span>
-                  <span className="center-chip">Rating: {metric(teamRating?.rating_0_100 ?? null, 1)}</span>
-                  <span className="center-chip">Conf: {pct(teamRating?.confidence_0_1 ?? null, 1)}</span>
-                  <span className="center-chip" title="Expected Points Added">EPA: {metric(robotEpaSummary.value, 1)}</span>
-                  <span className="center-chip">Rank: {tbaRank !== null ? `#${tbaRank}` : 'N/A'}</span>
-                  <span className={`center-chip freshness ${freshnessSummary.state}`}>{freshnessSummary.label}</span>
+                <div className="center-team-hero">
+                  <Stat
+                    size="display"
+                    label="FRCMOB rating"
+                    value={metric(teamRating?.rating_0_100 ?? null, 1)}
+                    sub={ratingRankLabel}
+                    confidence={teamRating?.confidence_0_1 ?? undefined}
+                  />
+                  <div className="center-status-row compact">
+                    <span className="center-chip">{teamBreakdown?.matches_analyzed ?? 0} analyzed</span>
+                    <span className="center-chip" title="Expected Points Added">EPA: {metric(robotEpaSummary.value, 1)}</span>
+                    <span className="center-chip">Qual rank: {tbaRank !== null ? `#${tbaRank}` : 'N/A'}</span>
+                    <span className={`center-chip freshness ${freshnessSummary.state}`}>{freshnessSummary.label}</span>
+                  </div>
                 </div>
-                {freshnessSummary.detail ? (
+                {/* The freshness detail is often word-for-word one of the load
+                    warnings above, and the same sentence twice on one screen
+                    reads as a bug. Show it only when it is saying something
+                    new. */}
+                {freshnessSummary.detail && !errorMessages.includes(freshnessSummary.detail) ? (
                   <p className={`center-callout ${freshnessSummary.state === 'stale' ? 'warning' : 'muted'}`}>
                     {freshnessSummary.detail}
                   </p>
@@ -1586,7 +1676,7 @@ export function TeamCenterPage() {
                   onChange={setActiveTab}
                   items={teamTabs.map((tab) => ({
                     value: tab,
-                    label: titleizeKey(tab),
+                    label: teamTabLabel(tab),
                     icon: TEAM_TAB_ICONS[tab],
                   }))}
                 />
@@ -1595,7 +1685,7 @@ export function TeamCenterPage() {
             )}
 
             {loadingTeamData && !teamBreakdown && !teamRating ? (
-              <SurfaceCard title="Loading" subtitle="Loading team data." compactable>
+              <SurfaceCard title="Loading" compactable>
                 <SkeletonBlock rows={6} />
               </SurfaceCard>
             ) : null}
@@ -1605,7 +1695,6 @@ export function TeamCenterPage() {
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
                   <SurfaceCard
                     title="FRC Scouting Metrics"
-                    subtitle="Scouting pipeline metrics."
                     compactable
                   >
                     <div className="center-kpi-grid">
@@ -1646,19 +1735,17 @@ export function TeamCenterPage() {
                     </div>
                   </SurfaceCard>
 
-                  <SurfaceCard title="Scouting Rating" subtitle="Model rating and confidence." compactable>
+                  <SurfaceCard title="Rating Breakdown" compactable>
+                    {/* Overall Rating and Model Confidence used to sit here as
+                        well as in the page hero — the same two numbers twice on
+                        one screen, in two treatments. This card now carries only
+                        what the hero does not: the three components the rating
+                        is built from. */}
                     <div className="center-kpi-grid">
-                      <article className="center-kpi-card">
-                        <span><StarIcon className="icon-inline icon-muted" /> Overall Rating</span>
-                        <strong>{metric(teamRating?.rating_0_100 ?? null, 1)}</strong>
-                      </article>
-                      <article className="center-kpi-card">
-                        <span><ShieldCheckIcon className="icon-inline icon-muted" /> Model Confidence</span>
-                        <strong>{pct(teamRating?.confidence_0_1 ?? null, 1)}</strong>
-                      </article>
                       <article className="center-kpi-card">
                         <span><BarChartIcon className="icon-inline icon-muted" /> Robot EPA</span>
                         <strong>{metric(robotEpaSummary.value, 1)}</strong>
+                        <small>via {robotEpaSummary.source}</small>
                       </article>
                       <article className="center-kpi-card">
                         <span><GaugeIcon className="icon-inline icon-muted" /> Robot Level</span>
@@ -1669,7 +1756,6 @@ export function TeamCenterPage() {
                         <strong>{metric(teamRating?.driver_skill_0_100 ?? null, 1)}</strong>
                       </article>
                     </div>
-                    <p className="center-callout muted">EPA Source: {robotEpaSummary.source}</p>
                   </SurfaceCard>
 
                   <SurfaceCard title="Strengths" compactable>
@@ -1706,7 +1792,7 @@ export function TeamCenterPage() {
                     )}
                   </SurfaceCard>
 
-                  <SurfaceCard title="Model Signal Snapshot" subtitle="Rating model and feature-derived signals." compactable>
+                  <SurfaceCard title="Model Signal Snapshot" compactable>
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
                         <span><BarChartIcon className="icon-inline icon-muted" /> EPA Proxy</span>
@@ -1734,7 +1820,7 @@ export function TeamCenterPage() {
                     <p className="center-callout muted">Signal source: {robotEpaSummary.source}</p>
                   </SurfaceCard>
 
-                  <SurfaceCard title="TBA Snapshot" subtitle="TBA status and awards." compactable>
+                  <SurfaceCard title="TBA Snapshot" compactable>
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
                         <span><HashIcon className="icon-inline icon-muted" /> Event Rank</span>
@@ -1762,7 +1848,7 @@ export function TeamCenterPage() {
             {activeTab === 'performance' ? (
               <SurfaceCardGroup groupId="team-center-performance">
                 <div className={isMobileLayout ? 'fm-content-stack' : undefined}>
-                <SurfaceCard title="Performance Profile" subtitle="Model outputs and subscores." compactable>
+                <SurfaceCard title="Performance Profile" compactable>
                   <div className="center-metric-bar-list">
                     {performanceRows.map((row) => (
                       <article key={`perf-${row.label}`} className="center-metric-bar-row">
@@ -1818,7 +1904,7 @@ export function TeamCenterPage() {
                 </SurfaceCard>
 
                 {/* ── Positional Heatmap ──────────────────────────── */}
-                <SurfaceCard title="Field Heatmap" subtitle="Positional density from CV tracking." collapsible compactable>
+                <SurfaceCard title="Field Heatmap" collapsible compactable>
                   {heatmapLoading ? (
                     <div style={{ minHeight: 180 }}>
                       <SkeletonBlock rows={5} compact />
@@ -1903,7 +1989,7 @@ export function TeamCenterPage() {
             {activeTab === 'events' ? (
               <SurfaceCardGroup groupId="team-center-events">
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
-                  <SurfaceCard title="Competitions" subtitle="Registered events." compactable>
+                  <SurfaceCard title="Competitions" compactable>
                     {!teamCompetitions || teamCompetitions.registered_events.length === 0 ? (
                       <p className="center-callout muted">No competitions found.</p>
                     ) : (
@@ -1925,7 +2011,7 @@ export function TeamCenterPage() {
                             </small>
                             <div className="center-actions-row">
                               <button type="button" className="center-btn" title={`Open ${event.name}`} onClick={() => openEventCenter(event.event_key)}>
-                                <CalendarIcon className="icon-inline" /> Event Center
+                                <CalendarIcon className="icon-inline" /> Open event
                               </button>
                             </div>
                           </article>
@@ -1947,118 +2033,33 @@ export function TeamCenterPage() {
                     ) : null}
                     {scheduleRowsWithDifficulty.length > 0 ? (
                       <>
-                        {isMobileLayout ? (
-                          <>
-                            <div className="center-sort-chip-row" role="toolbar" aria-label="Schedule difficulty sorting">
-                              {(
-                                [
-                                  { id: 'time', label: 'By Time' },
-                                  { id: 'hardest', label: 'Hardest' },
-                                  { id: 'easiest', label: 'Easiest' },
-                                ] as Array<{ id: TeamScheduleSortMode; label: string }>
-                              ).map((option) => (
-                                <button
-                                  key={`team-schedule-sort-${option.id}`}
-                                  type="button"
-                                  className={`center-sort-chip ${scheduleSortMode === option.id ? 'active' : ''}`.trim()}
-                                  onClick={() => setScheduleSortMode(option.id)}
-                                >
-                                  {option.id === 'time' ? <ClockIcon className="icon-inline" /> : option.id === 'hardest' ? <FlameIcon className="icon-inline" /> : <EyeIcon className="icon-inline" />} {option.label}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="center-mobile-card-list">
-                              {visibleScheduleRowsWithDifficulty.map((row) => (
-                                <article key={`team-schedule-mobile-${row.match_key}`} className="center-mobile-data-card">
-                                  <header>
-                                    <button
-                                      type="button"
-                                      className="center-inline-link"
-                                      onClick={() => openMatchCenter(row.match_key)}
-                                    >
-                                      {row.display_name}
-                                    </button>
-                                    <span className={`center-difficulty-pill ${row.difficulty_tier}`}>
-                                      {metric(row.schedule_difficulty_0_10, 1)} / 10
-                                    </span>
-                                  </header>
-                                  <p className="meta">
-                                    {fmtDateShort(row.scheduled_time)}
-                                  </p>
-                                  <div className="center-mobile-data-grid">
-                                    <span>
-                                      Alliance
-                                      <strong>
-                                        {row.alliance}
-                                        {row.station ? ` (${row.station})` : ''}
-                                      </strong>
-                                    </span>
-                                    <span>
-                                      Opp Avg EPA
-                                      <strong>{metric(row.opponent_epa_avg, 0)}</strong>
-                                    </span>
-                                    <span>
-                                      Partners
-                                      <strong>{row.partners.join(', ') || 'TBD'}</strong>
-                                    </span>
-                                    <span>
-                                      Opponents
-                                      <strong>{row.opponents.join(', ') || 'TBD'}</strong>
-                                    </span>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="center-table-wrap">
-                            <table className="center-table">
-                              <thead>
-                                <tr>
-                                  <th>Match</th>
-                                  <th>Time</th>
-                                  <th>Alliance</th>
-                                  <th>Partners</th>
-                                  <th>Opponents</th>
-                                  <th>Difficulty</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {visibleScheduleRowsWithDifficulty.map((row) => (
-                                  <tr key={`team-schedule-${row.match_key}`}>
-                                    <td>
-                                      <button
-                                        type="button"
-                                        className="center-inline-link"
-                                        onClick={() => openMatchCenter(row.match_key)}
-                                      >
-                                        {row.display_name}
-                                      </button>
-                                    </td>
-                                    <td>{fmtDateShort(row.scheduled_time)}</td>
-                                    <td>
-                                      <span className={`center-alliance-pill ${row.alliance.toLowerCase()}`}>
-                                        {row.alliance}
-                                        {row.station ? ` (${row.station})` : ''}
-                                      </span>
-                                    </td>
-                                    <td>{row.partners.join(', ') || 'TBD'}</td>
-                                    <td>{row.opponents.join(', ') || 'TBD'}</td>
-                                    <td>
-                                      <span className={`center-difficulty-pill ${row.difficulty_tier}`}>
-                                        {metric(row.schedule_difficulty_0_10, 1)} / 10
-                                      </span>
-                                      <small>
-                                        Opp Avg EPA {metric(row.opponent_epa_avg, 0)} ({metric(row.opponent_epa_min, 0)}-
-                                        {metric(row.opponent_epa_max, 0)})
-                                      </small>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
+                        {/* One render at every width. The sort chips used to be
+                            inside the mobile branch, so a desktop visitor could
+                            not sort the schedule at all. */}
+                        <div className="center-sort-chip-row" role="toolbar" aria-label="Schedule difficulty sorting">
+                          {(
+                            [
+                              { id: 'time', label: 'By Time' },
+                              { id: 'hardest', label: 'Hardest' },
+                              { id: 'easiest', label: 'Easiest' },
+                            ] as Array<{ id: TeamScheduleSortMode; label: string }>
+                          ).map((option) => (
+                            <button
+                              key={`team-schedule-sort-${option.id}`}
+                              type="button"
+                              className={`center-sort-chip ${scheduleSortMode === option.id ? 'active' : ''}`.trim()}
+                              onClick={() => setScheduleSortMode(option.id)}
+                            >
+                              {option.id === 'time' ? <ClockIcon className="icon-inline" /> : option.id === 'hardest' ? <FlameIcon className="icon-inline" /> : <EyeIcon className="icon-inline" />} {option.label}
+                            </button>
+                          ))}
+                        </div>
+                        <Table
+                          columns={scheduleColumns}
+                          rows={visibleScheduleRowsWithDifficulty}
+                          rowKey={(row) => `team-schedule-${row.match_key}`}
+                          cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+                        />
                       </>
                     ) : null}
                     {sortedScheduleRowsWithDifficulty.length > visibleScheduleRowsWithDifficulty.length ? (
@@ -2137,14 +2138,14 @@ export function TeamCenterPage() {
             {activeTab === 'advanced' ? (
               <SurfaceCardGroup groupId="team-center-advanced">
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
-                  <SurfaceCard title="Model Details" subtitle="Raw rating payload.">
+                  <SurfaceCard title="Model Details">
                     {!teamRating ? <p className="center-callout muted">No rating payload available for this team.</p> : null}
                     {teamRating ? (
                       <pre className="center-code-block">{JSON.stringify(teamRating, null, 2)}</pre>
                     ) : null}
                   </SurfaceCard>
 
-                  <SurfaceCard title="Latest Summary" subtitle="Latest analyzed match payload.">
+                  <SurfaceCard title="Latest Summary">
                     {!teamBreakdown?.recent_matches?.length ? (
                       <p className="center-callout muted">No recent analyzed matches available.</p>
                     ) : (
@@ -2154,7 +2155,7 @@ export function TeamCenterPage() {
                     )}
                   </SurfaceCard>
 
-                  <SurfaceCard title="TBA Raw Payloads" subtitle="TBA status and awards payloads.">
+                  <SurfaceCard title="TBA Raw Payloads">
                     <pre className="center-code-block">
                       {JSON.stringify(
                         {

@@ -14,8 +14,19 @@ import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import {
+  Button,
+  CardBody,
+  Chip,
+  FieldSelect,
+  FieldStepper,
+  Stat,
+  Table,
+  type SortDirection,
+  type TableColumn,
+} from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
-import { useMobileLayout } from '../hooks/useMobileLayout';
+import styles from './AllianceAdvisorPage.module.css';
 import {
   asRecord,
   metric,
@@ -59,11 +70,14 @@ function teamNumLabel(teamKey: string): string {
   return num ? `${num}` : teamKey;
 }
 
-function colorForDesirability(value: number): string {
-  if (value >= 80) return 'var(--color-success, #22c55e)';
-  if (value >= 60) return 'var(--color-info, #3b82f6)';
-  if (value >= 40) return 'var(--color-warning, #eab308)';
-  return 'var(--color-muted, #94a3b8)';
+// Returns a class, not a colour. The old version returned
+// `var(--color-muted, #94a3b8)` for the low band — and --color-muted is not a
+// token, so that band was always the hardcoded grey, in both themes.
+function barToneClass(value: number): string {
+  if (value >= 80) return styles.barHigh;
+  if (value >= 60) return styles.barGood;
+  if (value >= 40) return styles.barFair;
+  return styles.barLow;
 }
 
 function barWidth(value: number, max: number): string {
@@ -77,7 +91,6 @@ function barWidth(value: number, max: number): string {
 
 export function AllianceAdvisorPage() {
   const navigate = useNavigate();
-  const isMobile = useMobileLayout();
 
   /* --- Event selection (shared hook) --- */
   const { eventKey, eventInput, setEventInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
@@ -226,12 +239,14 @@ export function AllianceAdvisorPage() {
     }
   }, [eventKey, builderSlots, teamKeySet, rankWeight, scale, simulations]);
 
-  function openTeamCenter(teamKey: string) {
+  // Memoised because the table columns depend on it; a fresh function each
+  // render would rebuild every column definition on every keystroke.
+  const openTeamCenter = useCallback((teamKey: string) => {
     const params = new URLSearchParams();
     params.set('team', teamKey.toLowerCase());
     if (eventKey) params.set('event', eventKey);
     navigate(`/team-center?${params.toString()}`);
-  }
+  }, [eventKey, navigate]);
 
   function handleEventSelect(key: string) {
     selectEvent(key);
@@ -258,19 +273,117 @@ export function AllianceAdvisorPage() {
         picks: teams.slice(1),
       }));
   }, [selectionModel]);
-
   const surfaceGroupId = 'alliance-advisor';
+
+  const [desirabilitySort, setDesirabilitySort] = useState<{ key: string; direction: SortDirection }>({
+    key: 'selection_desirability',
+    direction: 'desc',
+  });
+
+  // Flattened so the Table can take it as rows: the API returns a map of seed
+  // to picks, and a map is not a row list.
+  const seedPickRows = useMemo(() => {
+    const map = selectionModel?.first_round_seed_pick_probabilities;
+    if (!map) return [];
+    return Object.entries(map)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([seed, picks]) => ({
+        seed,
+        captainLabel: selectionModel?.captains[Number(seed) - 1]
+          ? teamNumLabel(selectionModel.captains[Number(seed) - 1])
+          : '',
+        picks,
+      }));
+  }, [selectionModel]);
+
+  const desirabilityColumns: TableColumn<TheoreticalSelectionTopTeam>[] = useMemo(
+    () => [
+      {
+        key: 'team_key',
+        label: 'Team',
+        render: (row) => (
+          <button type="button" className={styles.teamLink} onClick={() => openTeamCenter(row.team_key)}>
+            {teamLabel(row.team_key, teamPool)}
+          </button>
+        ),
+      },
+      { key: 'rank', label: 'Rank', numeric: true, sortable: true, width: '80px' },
+      {
+        key: 'strength_score',
+        label: 'Strength',
+        numeric: true,
+        sortable: true,
+        width: '100px',
+        render: (row) => metric(row.strength_score, 1),
+      },
+      {
+        key: 'selection_desirability',
+        label: 'Desirability',
+        numeric: true,
+        sortable: true,
+        width: '160px',
+        render: (row) => (
+          <span className={styles.desirability}>
+            <span className={styles.barTrack}>
+              <span
+                className={`${styles.bar} ${barToneClass(row.selection_desirability)}`}
+                style={{ width: barWidth(row.selection_desirability, maxDesirability) }}
+              />
+            </span>
+            <span className={styles.desirabilityValue}>{metric(row.selection_desirability, 1)}</span>
+          </span>
+        ),
+      },
+      {
+        key: 'first_round_pick_probability_0_1',
+        label: 'R1 Pick',
+        numeric: true,
+        sortable: true,
+        width: '100px',
+        render: (row) => pct(row.first_round_pick_probability_0_1, 0),
+      },
+      {
+        key: 'second_round_pick_probability_0_1',
+        label: 'R2 Pick',
+        numeric: true,
+        sortable: true,
+        width: '100px',
+        render: (row) => pct(row.second_round_pick_probability_0_1, 0),
+      },
+      {
+        key: 'is_captain',
+        label: 'Captain',
+        align: 'center',
+        width: '90px',
+        render: (row) => (row.is_captain ? <Chip tone="accent" size="sm">Captain</Chip> : '—'),
+      },
+    ],
+    [teamPool, maxDesirability, openTeamCenter],
+  );
+
+  const sortedDesirability = useMemo(() => {
+    const rows = selectionModel?.top_desirability ?? [];
+    if (!desirabilitySort) return rows;
+    const { key, direction } = desirabilitySort;
+    return [...rows].sort((a, b) => {
+      const left = (a as unknown as Record<string, unknown>)[key];
+      const right = (b as unknown as Record<string, unknown>)[key];
+      const order =
+        typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : String(left).localeCompare(String(right));
+      return direction === 'asc' ? order : -order;
+    });
+  }, [selectionModel, desirabilitySort]);
 
   return (
     <>
     <PageViewBar items={COMPARE_VIEWS} />
-    <div className={`alliance-advisor-layout${isMobile ? ' mobile' : ''}`}>
+    <div className={styles.layout}>
       <SurfaceCardGroup groupId={surfaceGroupId}>
         {/* ---- Event Selection ---- */}
         <SurfaceCard
           title="Alliance Selection Advisor"
-          subtitle="Monte Carlo alliance predictions."
-          className="advisor-event-card"
         >
           <EventPicker
             value={eventKey}
@@ -282,80 +395,74 @@ export function AllianceAdvisorPage() {
           />
 
           {eventTeams ? (
-            <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: '#a4b8c9' }}>
-              <strong style={{ color: '#d4e3f0' }}>{eventTeams.event_name || eventKey}</strong> — {teamPool.length} teams loaded
+            <p className={styles.eventSummary}>
+              <strong>{eventTeams.event_name || eventKey}</strong> — {teamPool.length} teams loaded
               {eventTeams.teams_with_event_rating > 0
                 ? ` (${eventTeams.teams_with_event_rating} with ratings)`
                 : ''}
             </p>
           ) : null}
 
-          {errorText ? <p className="center-callout warning">{errorText}</p> : null}
+          {errorText ? (
+            <p className={`${styles.note} ${styles.noteWarning}`} role="alert">{errorText}</p>
+          ) : null}
         </SurfaceCard>
 
         {/* ---- Selection Model Controls ---- */}
         {teamPool.length > 0 ? (
           <SurfaceCard
             title="Selection Model Settings"
-            subtitle="Simulation parameters."
             collapsible
           >
-            <div className="advisor-param-grid">
-              <label className="center-stack-form">
-                <span className="center-label">Simulations</span>
-                <input
-                  className="center-input"
-                  type="number"
+            <CardBody>
+              <div className={styles.paramGrid}>
+                <FieldStepper
+                  label="Simulations"
+                  name="simulations"
+                  value={simulations}
+                  onValueChange={setSimulations}
                   min={50}
                   max={5000}
                   step={50}
-                  value={simulations}
-                  onChange={(e) => setSimulations(Math.max(50, Math.min(5000, Number(e.target.value) || DEFAULT_SIMULATIONS)))}
                 />
-              </label>
-              <label className="center-stack-form">
-                <span className="center-label">Rank Weight</span>
-                <input
-                  className="center-input"
-                  type="number"
+                <FieldStepper
+                  label="Rank Weight"
+                  name="rank weight"
+                  value={rankWeight}
+                  onValueChange={setRankWeight}
                   min={0}
                   max={4}
                   step={0.1}
-                  value={rankWeight}
-                  onChange={(e) => setRankWeight(Number(e.target.value) || DEFAULT_RANK_WEIGHT)}
                 />
-              </label>
-              <label className="center-stack-form">
-                <span className="center-label">Scale</span>
-                <input
-                  className="center-input"
-                  type="number"
+                <FieldStepper
+                  label="Scale"
+                  name="scale"
+                  value={scale}
+                  onValueChange={setScale}
                   min={1}
                   max={200}
                   step={1}
-                  value={scale}
-                  onChange={(e) => setScale(Number(e.target.value) || DEFAULT_SCALE)}
                 />
-              </label>
-            </div>
-            <div className="center-actions-row">
-              <button
-                type="button"
-                className="center-btn"
-                onClick={() => void runSelectionModel()}
-                disabled={loadingModel || teamPool.length < 6}
-              >
-                {loadingModel ? 'Simulating...' : 'Run Selection Model'}
-              </button>
-            </div>
+              </div>
+              <div className={styles.actions}>
+                <Button
+                  variant="primary"
+                  onClick={() => void runSelectionModel()}
+                  loading={loadingModel}
+                  disabled={teamPool.length < 6}
+                >
+                  {loadingModel ? 'Simulating...' : 'Run Selection Model'}
+                </Button>
+              </div>
 
-            {selectionModel?.notes?.length ? (
-              <ul style={{ fontSize: '0.8rem', opacity: 0.7, margin: '0.5rem 0 0', paddingLeft: '1.25rem' }}>
-                {selectionModel.notes.map((note, i) => (
-                  <li key={i}>{note}</li>
-                ))}
-              </ul>
-            ) : null}
+              {selectionModel?.notes?.length ? (
+                <ul className={styles.notes}>
+                  {selectionModel.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </CardBody>
           </SurfaceCard>
         ) : null}
 
@@ -365,67 +472,29 @@ export function AllianceAdvisorPage() {
             title="Team Desirability Rankings"
             subtitle={`${selectionModel.top_desirability.length} teams ranked by selection desirability. ${selectionModel.simulations.toLocaleString()} Monte Carlo simulations.`}
             right={
-              <span className="center-chip">
+              <Chip tone={selectionModel.rank_source === 'tba' ? 'accent' : 'neutral'}>
                 {selectionModel.rank_source === 'tba' ? 'TBA Rankings' : 'Model Rankings'}
-              </span>
+              </Chip>
             }
           >
-            {/* Desktop table */}
-            <div className="center-table-wrap desktop-only">
-              <table className="center-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 40 }}>#</th>
-                    <th>Team</th>
-                    <th>Rank</th>
-                    <th style={{ minWidth: 80 }}>Strength</th>
-                    <th style={{ minWidth: 120 }}>Desirability</th>
-                    <th>R1 Pick</th>
-                    <th>R2 Pick</th>
-                    <th>Captain</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectionModel.top_desirability.map((row, idx) => (
-                    <DesirabilityRow
-                      key={row.team_key}
-                      row={row}
-                      index={idx}
-                      maxDesirability={maxDesirability}
-                      teams={teamPool}
-                      onOpenTeam={openTeamCenter}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card list */}
-            <div className="advisor-mobile-rank-list mobile-only">
-              {selectionModel.top_desirability.map((row, idx) => (
-                <MobileDesirabilityCard
-                  key={`m-${row.team_key}`}
-                  row={row}
-                  index={idx}
-                  maxDesirability={maxDesirability}
-                  teams={teamPool}
-                  onOpenTeam={openTeamCenter}
-                />
-              ))}
-            </div>
+            {/* One Table, not a desktop table plus a hand-maintained mobile card
+                list. Below 560px it renders each row as a stacked card itself. */}
+            <Table
+              columns={desirabilityColumns}
+              rows={sortedDesirability}
+              rowKey={(row) => row.team_key}
+              sortBy={desirabilitySort}
+              onSort={(key, direction) => setDesirabilitySort({ key, direction })}
+              stickyHeader
+              caption="Teams ranked by how desirable they are as an alliance pick."
+            />
           </SurfaceCard>
         ) : null}
 
         {/* ---- Expected Alliance Board ---- */}
         {allianceBoard.length > 0 ? (
-          <SurfaceCard
-            title="Expected Alliance Board"
-            subtitle="Predicted alliances."
-          >
-            <div
-              className="advisor-pros-cons-grid"
-              style={{ gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}
-            >
+          <SurfaceCard title="Expected Alliance Board">
+            <div className={styles.allianceGrid}>
               {allianceBoard.map((alliance, idx) => (
                 <AllianceCard
                   key={idx}
@@ -445,67 +514,58 @@ export function AllianceAdvisorPage() {
           Object.keys(selectionModel.first_round_seed_pick_probabilities).length > 0 ? (
           <SurfaceCard
             title="First-Round Pick Probabilities"
-            subtitle="First-round pick probabilities by seed."
             collapsible
           >
-            <div className="center-table-wrap">
-              <table className="center-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th>Captain (Seed)</th>
-                    <th>Most Likely Picks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(selectionModel.first_round_seed_pick_probabilities)
-                    .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([seed, picks]) => (
-                      <tr key={seed}>
-                        <td style={{ fontWeight: 600 }}>
-                          Seed {seed}
-                          {selectionModel.captains[Number(seed) - 1]
-                            ? ` (${teamNumLabel(selectionModel.captains[Number(seed) - 1])})`
-                            : ''}
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                            {picks.slice(0, 5).map((pick) => (
-                              <span
-                                key={pick.team_key}
-                                className="center-chip"
-                                style={{
-                                  cursor: 'pointer',
-                                  fontSize: '0.8rem',
-                                }}
-                                onClick={() => openTeamCenter(pick.team_key)}
-                                title={`Desirability: ${metric(pick.selection_desirability, 1)}`}
-                              >
-                                {teamNumLabel(pick.team_key)}{' '}
-                                <span style={{ opacity: 0.7 }}>{pct(pick.probability_0_1, 0)}</span>
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              columns={[
+                {
+                  key: 'seed',
+                  label: 'Captain (Seed)',
+                  render: (row) => (
+                    <span className={styles.captainRow}>
+                      Seed {row.seed}
+                      {row.captainLabel ? ` (${row.captainLabel})` : ''}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'picks',
+                  label: 'Most Likely Picks',
+                  render: (row) => (
+                    <span className={styles.pickChips}>
+                      {row.picks.slice(0, 5).map((pick) => (
+                        <button
+                          key={pick.team_key}
+                          type="button"
+                          className={styles.chipButton}
+                          onClick={() => openTeamCenter(pick.team_key)}
+                          title={`Desirability: ${metric(pick.selection_desirability, 1)}`}
+                        >
+                          <Chip size="sm">
+                            {teamNumLabel(pick.team_key)}{' '}
+                            <span className={styles.pickPct}>{pct(pick.probability_0_1, 0)}</span>
+                          </Chip>
+                        </button>
+                      ))}
+                    </span>
+                  ),
+                },
+              ]}
+              rows={seedPickRows}
+              rowKey={(row) => row.seed}
+            />
           </SurfaceCard>
         ) : null}
 
         {/* ---- Alliance Builder (What-If) ---- */}
         {teamPool.length > 0 ? (
-          <SurfaceCard
-            title="Alliance Builder"
-            subtitle="Test a specific alliance."
-          >
-            <div className="advisor-param-grid">
-              {([0, 1, 2] as const).map((slot) => (
-                <label key={slot} className="center-stack-form">
-                  <span className="center-label">{slot === 0 ? 'Captain' : `Pick ${slot}`}</span>
-                  <select
-                    className="center-input"
+          <SurfaceCard title="Alliance Builder">
+            <CardBody>
+              <div className={styles.paramGrid}>
+                {([0, 1, 2] as const).map((slot) => (
+                  <FieldSelect
+                    key={slot}
+                    label={slot === 0 ? 'Captain' : `Pick ${slot}`}
                     value={builderSlots[slot]}
                     onChange={(e) => {
                       const next: [string, string, string] = [...builderSlots];
@@ -522,153 +582,125 @@ export function AllianceAdvisorPage() {
                         {t.rating_0_100 != null ? ` (${metric(t.rating_0_100, 1)})` : ''}
                       </option>
                     ))}
-                  </select>
-                </label>
-              ))}
-            </div>
-
-            <div className="center-actions-row">
-              <button
-                type="button"
-                className="center-btn"
-                onClick={() => void runBuilder()}
-                disabled={loadingBuilder}
-              >
-                {loadingBuilder ? 'Analyzing...' : 'Analyze Alliance'}
-              </button>
-            </div>
-
-            {builderError ? <p className="center-callout warning">{builderError}</p> : null}
-
-            {builderResult ? (
-              <div style={{ marginTop: '0.75rem' }}>
-                {/* KPI cards */}
-                <div className="center-kpi-grid">
-                  <div className="center-kpi-card">
-                    <span>Alliance Score</span>
-                    <strong>{metric(builderResult.weighted_total_score_0_100, 1)} / 100</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Compatibility</span>
-                    <strong>{metric(builderResult.compatibility.compatibility_score_0_100, 1)} / 100</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Synergy Points</span>
-                    <strong>{metric(builderResult.compatibility.alliance_synergy_points, 2)}</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Confidence</span>
-                    <strong>{pct(builderResult.compatibility.confidence_0_1, 1)}</strong>
-                  </div>
-                </div>
-
-                {/* Team breakdown */}
-                <div className="center-table-wrap" style={{ marginTop: '0.5rem' }}>
-                  <table className="center-table" style={{ width: '100%' }}>
-                    <thead>
-                      <tr>
-                        <th>Team</th>
-                        <th>Rating</th>
-                        <th>Compatibility</th>
-                        <th>Pros</th>
-                        <th>Cons Risk</th>
-                        <th>Weighted</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {builderResult.teams.map((team) => (
-                        <tr key={team.team_key}>
-                          <td>
-                            <button
-                              type="button"
-                              className="center-link-btn"
-                              onClick={() => openTeamCenter(team.team_key)}
-                              style={{ fontWeight: 600 }}
-                            >
-                              {teamLabel(team.team_key, teamPool)}
-                            </button>
-                          </td>
-                          <td>{metric(team.rating_0_100, 1)}</td>
-                          <td>{metric(team.compatibility_score_0_100, 1)}</td>
-                          <td>{metric(team.pros_score_0_100, 1)}</td>
-                          <td>{metric(team.cons_risk_0_100, 1)}</td>
-                          <td style={{ fontWeight: 600 }}>{metric(team.weighted_score_0_100, 1)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Pair synergy breakdown */}
-                <div className="center-table-wrap" style={{ marginTop: '0.5rem' }}>
-                  <table className="center-table" style={{ width: '100%' }}>
-                    <thead>
-                      <tr>
-                        <th>Pair</th>
-                        <th>Synergy</th>
-                        <th>Base</th>
-                        <th>Complement</th>
-                        <th>Risk</th>
-                        <th>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {builderResult.compatibility.pair_breakdown.map((pair, i) => (
-                        <tr key={i}>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {teamNumLabel(pair.team_key_a)} + {teamNumLabel(pair.team_key_b)}
-                          </td>
-                          <td style={{ fontWeight: 600 }}>{metric(pair.synergy_points, 2)}</td>
-                          <td>{metric(pair.base_synergy_points, 2)}</td>
-                          <td>{metric(pair.complement_bonus_points, 2)}</td>
-                          <td>{metric(pair.risk_penalty_points, 2)}</td>
-                          <td className="center-chip" style={{ fontSize: '0.75rem' }}>
-                            {pair.source}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Pros / Cons */}
-                {builderResult.teams.some((t) => t.pros_top.length > 0 || t.cons_top.length > 0) ? (
-                  <div
-                    className="advisor-pros-cons-grid"
-                    style={{ gridTemplateColumns: isMobile ? '1fr' : `repeat(${builderResult.teams.length}, 1fr)` }}
-                  >
-                    {builderResult.teams.map((team) => (
-                      <div
-                        key={team.team_key}
-                        className="advisor-pros-cons-card"
-                      >
-                        <strong style={{ fontSize: '0.85rem' }}>
-                          {teamLabel(team.team_key, teamPool)}
-                        </strong>
-                        {team.pros_top.length > 0 ? (
-                          <ul style={{ paddingLeft: '1rem', margin: '0.25rem 0', fontSize: '0.8rem' }}>
-                            {team.pros_top.slice(0, 3).map((p, i) => (
-                              <li key={i} style={{ color: 'var(--color-success, #22c55e)' }}>
-                                {p.label ?? JSON.stringify(p)}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {team.cons_top.length > 0 ? (
-                          <ul style={{ paddingLeft: '1rem', margin: '0.25rem 0', fontSize: '0.8rem' }}>
-                            {team.cons_top.slice(0, 3).map((c, i) => (
-                              <li key={i} style={{ color: 'var(--color-danger, #ef4444)' }}>
-                                {c.label ?? JSON.stringify(c)}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
+                  </FieldSelect>
+                ))}
               </div>
-            ) : null}
+
+              <div className={styles.actions}>
+                <Button variant="primary" onClick={() => void runBuilder()} loading={loadingBuilder}>
+                  {loadingBuilder ? 'Analyzing...' : 'Analyze Alliance'}
+                </Button>
+              </div>
+
+              {builderError ? (
+                <p className={`${styles.note} ${styles.noteWarning}`} role="alert">{builderError}</p>
+              ) : null}
+
+              {builderResult ? (
+                <div className={styles.stack}>
+                  {/* Four equal figures answered four questions; the page only
+                      asks one — how good is this lineup. Alliance Score takes
+                      the display step with its confidence attached, and the
+                      rest step down beside it. */}
+                  <div className="page-hero">
+                    <Stat
+                      size="display"
+                      label="Alliance Score"
+                      value={metric(builderResult.weighted_total_score_0_100, 1)}
+                      unit="/ 100"
+                      confidence={builderResult.compatibility.confidence_0_1}
+                    />
+                    <div className="page-hero-stats">
+                      <Stat
+                        size="sm"
+                        label="Compatibility"
+                        value={metric(builderResult.compatibility.compatibility_score_0_100, 1)}
+                        unit="/ 100"
+                      />
+                      <Stat
+                        size="sm"
+                        label="Synergy Points"
+                        value={metric(builderResult.compatibility.alliance_synergy_points, 2)}
+                      />
+                    </div>
+                  </div>
+
+                  <Table
+                    columns={[
+                      {
+                        key: 'team_key',
+                        label: 'Team',
+                        render: (team) => (
+                          <button
+                            type="button"
+                            className={styles.teamLink}
+                            onClick={() => openTeamCenter(team.team_key)}
+                          >
+                            {teamLabel(team.team_key, teamPool)}
+                          </button>
+                        ),
+                      },
+                      { key: 'rating_0_100', label: 'Rating', numeric: true, render: (t) => metric(t.rating_0_100, 1) },
+                      { key: 'compatibility_score_0_100', label: 'Compatibility', numeric: true, render: (t) => metric(t.compatibility_score_0_100, 1) },
+                      { key: 'pros_score_0_100', label: 'Pros', numeric: true, render: (t) => metric(t.pros_score_0_100, 1) },
+                      { key: 'cons_risk_0_100', label: 'Cons Risk', numeric: true, render: (t) => metric(t.cons_risk_0_100, 1) },
+                      { key: 'weighted_score_0_100', label: 'Weighted', numeric: true, render: (t) => metric(t.weighted_score_0_100, 1) },
+                    ]}
+                    rows={builderResult.teams}
+                    rowKey={(team) => team.team_key}
+                    caption="Per-team contribution to the alliance score."
+                  />
+
+                  <Table
+                    columns={[
+                      {
+                        key: 'pair',
+                        label: 'Pair',
+                        render: (pair) => (
+                          <span className={styles.nowrap}>
+                            {teamNumLabel(pair.team_key_a)} + {teamNumLabel(pair.team_key_b)}
+                          </span>
+                        ),
+                      },
+                      { key: 'synergy_points', label: 'Synergy', numeric: true, render: (p) => metric(p.synergy_points, 2) },
+                      { key: 'base_synergy_points', label: 'Base', numeric: true, render: (p) => metric(p.base_synergy_points, 2) },
+                      { key: 'complement_bonus_points', label: 'Complement', numeric: true, render: (p) => metric(p.complement_bonus_points, 2) },
+                      { key: 'risk_penalty_points', label: 'Risk', numeric: true, render: (p) => metric(p.risk_penalty_points, 2) },
+                      { key: 'source', label: 'Source', align: 'center', render: (p) => <Chip size="sm">{p.source}</Chip> },
+                    ]}
+                    rows={builderResult.compatibility.pair_breakdown}
+                    rowKey={(_pair, index) => String(index)}
+                    caption="How each pair of teams contributes synergy."
+                  />
+
+                  {builderResult.teams.some((t) => t.pros_top.length > 0 || t.cons_top.length > 0) ? (
+                    <div className={styles.prosConsGrid}>
+                      {builderResult.teams.map((team) => (
+                        <div key={team.team_key} className={styles.prosConsCard}>
+                          <strong className={styles.prosConsTitle}>
+                            {teamLabel(team.team_key, teamPool)}
+                          </strong>
+                          {team.pros_top.length > 0 ? (
+                            <ul className={styles.prosList}>
+                              {team.pros_top.slice(0, 3).map((p, i) => (
+                                <li key={i}>{p.label ?? JSON.stringify(p)}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {team.cons_top.length > 0 ? (
+                            <ul className={styles.consList}>
+                              {team.cons_top.slice(0, 3).map((c, i) => (
+                                <li key={i}>{c.label ?? JSON.stringify(c)}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </CardBody>
           </SurfaceCard>
         ) : null}
       </SurfaceCardGroup>
@@ -680,59 +712,6 @@ export function AllianceAdvisorPage() {
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
-
-function DesirabilityRow({
-  row,
-  index,
-  maxDesirability,
-  teams,
-  onOpenTeam,
-}: {
-  row: TheoreticalSelectionTopTeam;
-  index: number;
-  maxDesirability: number;
-  teams: EventTeam[];
-  onOpenTeam: (teamKey: string) => void;
-}) {
-  return (
-    <tr
-      style={{
-        background: row.is_captain ? 'var(--surface-highlight, rgba(255,255,255,0.04))' : undefined,
-      }}
-    >
-      <td style={{ fontWeight: 600, opacity: 0.7 }}>{index + 1}</td>
-      <td>
-        <button
-          type="button"
-          className="center-link-btn"
-          onClick={() => onOpenTeam(row.team_key)}
-          style={{ fontWeight: 600 }}
-        >
-          {teamLabel(row.team_key, teams)}
-        </button>
-      </td>
-      <td>{row.rank}</td>
-      <td>{metric(row.strength_score, 1)}</td>
-      <td>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <div
-            className="advisor-desirability-bar"
-            style={{
-              background: colorForDesirability(row.selection_desirability),
-              width: barWidth(row.selection_desirability, maxDesirability),
-            }}
-          />
-          <span className="advisor-desirability-value">
-            {metric(row.selection_desirability, 1)}
-          </span>
-        </div>
-      </td>
-      <td>{pct(row.first_round_pick_probability_0_1, 0)}</td>
-      <td>{pct(row.second_round_pick_probability_0_1, 0)}</td>
-      <td>{row.is_captain ? '*' : '—'}</td>
-    </tr>
-  );
-}
 
 function AllianceCard({
   allianceNum,
@@ -748,94 +727,30 @@ function AllianceCard({
   onOpenTeam: (teamKey: string) => void;
 }) {
   return (
-    <div className="advisor-alliance-card">
-      <div className="advisor-alliance-head">
-        <span className="advisor-alliance-badge">
-          {allianceNum}
-        </span>
+    <div className={styles.allianceCard}>
+      <div className={styles.allianceHead}>
+        <span className={styles.allianceBadge}>{allianceNum}</span>
         <span>Alliance {allianceNum}</span>
       </div>
-      <div className="advisor-alliance-chips">
-        <span
-          className="center-chip"
-          style={{ cursor: 'pointer', fontWeight: 600 }}
+      <div className={styles.allianceChips}>
+        <button
+          type="button"
+          className={styles.chipButton}
           onClick={() => onOpenTeam(captain)}
           title="Captain"
         >
-          * {teamLabel(captain, teams)}
-        </span>
+          <Chip tone="accent" dot>{teamLabel(captain, teams)}</Chip>
+        </button>
         {picks.map((pick) => (
-          <span
+          <button
             key={pick}
-            className="center-chip"
-            style={{ cursor: 'pointer' }}
+            type="button"
+            className={styles.chipButton}
             onClick={() => onOpenTeam(pick)}
           >
-            {teamLabel(pick, teams)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Mobile Desirability Card                                           */
-/* ------------------------------------------------------------------ */
-
-function MobileDesirabilityCard({
-  row,
-  index,
-  maxDesirability,
-  teams,
-  onOpenTeam,
-}: {
-  row: TheoreticalSelectionTopTeam;
-  index: number;
-  maxDesirability: number;
-  teams: EventTeam[];
-  onOpenTeam: (teamKey: string) => void;
-}) {
-  return (
-    <div
-      className="advisor-mobile-rank-card"
-      style={{
-        background: row.is_captain
-          ? 'var(--surface-highlight, rgba(255,255,255,0.04))'
-          : undefined,
-      }}
-    >
-      <div className="advisor-mobile-rank-num">{index + 1}</div>
-      <div className="advisor-mobile-rank-body">
-        <div className="advisor-mobile-rank-header">
-          <button
-            type="button"
-            className="center-link-btn"
-            onClick={() => onOpenTeam(row.team_key)}
-            style={{ fontWeight: 600 }}
-          >
-            {teamLabel(row.team_key, teams)}
+            <Chip>{teamLabel(pick, teams)}</Chip>
           </button>
-          {row.is_captain && <span className="center-chip" style={{ fontSize: '0.7rem' }}>* Captain</span>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: 2 }}>
-          <div
-            className="advisor-desirability-bar"
-            style={{
-              background: colorForDesirability(row.selection_desirability),
-              width: barWidth(row.selection_desirability, maxDesirability),
-            }}
-          />
-          <span className="advisor-desirability-value">
-            {metric(row.selection_desirability, 1)}
-          </span>
-        </div>
-        <div className="advisor-mobile-rank-metrics">
-          <span>Rank <strong>{row.rank}</strong></span>
-          <span>Strength <strong>{metric(row.strength_score, 1)}</strong></span>
-          <span>R1 Pick <strong>{pct(row.first_round_pick_probability_0_1, 0)}</strong></span>
-          <span>R2 Pick <strong>{pct(row.second_round_pick_probability_0_1, 0)}</strong></span>
-        </div>
+        ))}
       </div>
     </div>
   );

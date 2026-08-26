@@ -73,7 +73,7 @@
 .odr-step.is-active .odr-step__bubble {
   border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
   background: var(--color-accent);
-  color: #f4fcf8;
+  color: var(--color-on-accent);
   box-shadow: 0 0 0 4px var(--color-accent-soft);
 }
 .odr-step.is-done .odr-step__bubble {
@@ -82,7 +82,7 @@
   color: var(--color-accent-hover);
 }
 .odr-step__label {
-  font-size: 0.68rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 600;
   text-transform: capitalize;
   letter-spacing: 0.01em;
@@ -306,7 +306,7 @@
   color: var(--color-text);
 }
 .odr-badge {
-  font-size: 0.66rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -389,7 +389,7 @@
   .on-device-run .odr-input,
   .on-device-run .odr-select {
     min-height: 44px;
-    font-size: 16px; /* prevent iOS zoom-on-focus */
+    font-size: var(--font-size-lg); /* prevent iOS zoom-on-focus */
   }
   .odr-track {
     flex-wrap: wrap;

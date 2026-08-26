@@ -1,0 +1,97 @@
+/* Settings page layout. Everything that used to be `settings-*` across four
+   shell stylesheets now lives here, page-scoped, on tokens. The controls
+   themselves come from Field, Button, Chip and Stat. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-content: start;
+  /* Cards size to their own content. Without this a short card stretches to
+     match the tallest one in its row and reads as a broken empty panel. */
+  align-items: start;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Two columns once there is room for them. The cards are independent, so a
+   plain auto-fit is right — no grid-template-areas to keep in sync. */
+@media (min-width: 1120px) {
+  .layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Each Field carries its own label now, so this is a grid of fields rather
+   than the old label-column / control-column pair. */
+.optionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.noteWarning {
+  color: var(--color-warning-text);
+}
+
+.status {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.statusOk {
+  color: var(--color-success-text);
+}
+
+.statusWarning {
+  color: var(--color-warning-text);
+}
+
+.statusDanger {
+  color: var(--color-danger-text);
+}
+
+/* The admin toggle is not a card — it is the seam between the everyday
+   settings and the operator tools, so it sits on its own across both columns. */
+.adminToggle {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+@media (min-width: 1120px) {
+  .adminToggle {
+    grid-column: 1 / -1;
+  }
+}
+
+.credit {
+  margin: 0;
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-dim);
+}
+
+.credit a {
+  color: var(--color-accent-text);
+}

@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventSchedule,
   getEventTeamLiveForm,
@@ -9,6 +9,17 @@ import {
 import type { EventScheduleItem, TeamCompetitionsResponse } from '../api';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import {
+  Button,
+  CardBody,
+  CardEmpty,
+  CardGrid,
+  Chip,
+  FieldSelect,
+  FieldText,
+  Stat,
+} from '../components/ui/primitives';
+import styles from './FavoritesPage.module.css';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { usePageClock } from '../hooks/usePageClock';
@@ -609,7 +620,7 @@ export function FavoritesPage() {
   const renderEventCards = (
     <div className="favorites-card-grid">
       {orderedEventCards.length === 0 ? (
-        <p className="center-callout muted">No favorite events yet.</p>
+        <CardEmpty title="No favorite events yet">Add an event key on the left to start tracking it.</CardEmpty>
       ) : null}
       {visibleEventCards.map((card) => {
         const nextMatch = card.upcoming_matches[0] || null;
@@ -619,10 +630,10 @@ export function FavoritesPage() {
               <strong>{eventDisplayName(card)}</strong>
               <small>{card.event_key}</small>
             </header>
-            <div className="center-status-row compact">
-              <span className="center-chip">{card.schedule_count} matches</span>
-              <span className="center-chip">{card.teams_count} teams</span>
-              <span className="center-chip">{relativeFromTimestamp(card.last_updated_at)}</span>
+            <div className={styles.chipRow}>
+              <Chip>{card.schedule_count} matches</Chip>
+              <Chip>{card.teams_count} teams</Chip>
+              <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
             </div>
 
             {card.live_matches.length > 0 ? (
@@ -645,43 +656,39 @@ export function FavoritesPage() {
                 })}
               </div>
             ) : nextMatch ? (
-              <p className="center-callout muted">
+              <p className={styles.note}>
                 Next match: {nextMatch.display_name || nextMatch.match_key} · {fmtDateShort(nextMatch.scheduled_time)}
               </p>
             ) : (
-              <p className="center-callout muted">No schedule rows.</p>
+              <p className={styles.note}>No schedule rows.</p>
             )}
 
             {card.warnings.length > 0 ? (
               <div className="center-stack-gap">
                 {card.warnings.slice(0, 2).map((warning, idx) => (
-                  <p key={`favorite-event-warning-${card.event_key}-${idx}`} className="center-callout warning">
+                  <p key={`favorite-event-warning-${card.event_key}-${idx}`} className={`${styles.note} ${styles.noteWarning}`}>
                     {warning}
                   </p>
                 ))}
               </div>
             ) : null}
 
-            <div className="center-actions-row">
-              <button type="button" className="center-btn ghost" onClick={() => openEventCenter(card.event_key)}>
-                Event Center
-              </button>
-              <button type="button" className="center-btn ghost" onClick={() => removeFavoriteEvent(card.event_key)}>
+            <div className={styles.actions}>
+              <Button size="sm" onClick={() => openEventCenter(card.event_key)}>
+                Events
+              </Button>
+              <Button size="sm" variant="quiet" onClick={() => removeFavoriteEvent(card.event_key)}>
                 Remove
-              </button>
+              </Button>
             </div>
           </article>
         );
       })}
       {orderedEventCards.length > visibleEventCards.length ? (
-        <div className="center-actions-row">
-          <button
-            type="button"
-            className="center-btn ghost"
-            onClick={() => setVisibleEventCardCount((prev) => prev + 20)}
-          >
+        <div className={styles.actions}>
+          <Button variant="quiet" fullWidth onClick={() => setVisibleEventCardCount((prev) => prev + 20)}>
             Show More Events ({visibleEventCards.length}/{orderedEventCards.length})
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
@@ -689,7 +696,9 @@ export function FavoritesPage() {
 
   const renderTeamCards = (
     <div className="favorites-card-grid">
-      {orderedTeamCards.length === 0 ? <p className="center-callout muted">No favorite teams yet.</p> : null}
+      {orderedTeamCards.length === 0 ? (
+        <CardEmpty title="No favorite teams yet">Add a team number on the left to start tracking it.</CardEmpty>
+      ) : null}
       {visibleTeamCards.map((card) => (
         <article key={`favorite-team-card-${card.team_key}`} className="favorites-item-card team">
           <header>
@@ -699,88 +708,64 @@ export function FavoritesPage() {
             <small>{card.team_key}</small>
           </header>
 
-          {card.error ? <p className="center-callout danger">{card.error}</p> : null}
-          <div className="center-status-row compact">
-            <span className={`center-chip freshness ${card.freshness_state}`}>Data: {card.freshness_label}</span>
+          {card.error ? (
+            <p className={`${styles.note} ${styles.noteDanger}`} role="alert">{card.error}</p>
+          ) : null}
+          <div className={styles.chipRow}>
+            <Chip tone={card.freshness_state === 'stale' ? 'warn' : 'accent'} dot>
+              Data: {card.freshness_label}
+            </Chip>
           </div>
           {card.freshness_detail ? (
-            <p className={`center-callout ${card.freshness_state === 'stale' ? 'warning' : 'muted'}`}>
+            <p className={`${styles.note} ${card.freshness_state === 'stale' ? styles.noteWarning : ''}`.trim()}>
               {card.freshness_detail}
             </p>
           ) : null}
 
-            <div className="center-kpi-grid">
-              <div className="center-kpi-card">
-                <span>Rating</span>
-                <strong>{metric(card.rating_0_100, 1)}</strong>
-            </div>
-            <div className="center-kpi-card">
-              <span>Confidence</span>
-              <strong>{pct(card.confidence_0_1, 1)}</strong>
-            </div>
-            <div className="center-kpi-card">
-              <span>Fuel</span>
-              <strong>{metric(card.fuel_rate, 2)}</strong>
-            </div>
-            <div className="center-kpi-card">
-              <span>Cycle</span>
-              <strong>{metricUnit(card.cycle_time_sec, 2, 's')}</strong>
-            </div>
-            <div className="center-kpi-card">
-              <span>Auto</span>
-              <strong>{metric(card.auto_contribution, 2)}</strong>
-            </div>
-              <div className="center-kpi-card">
-                <span>Climb</span>
-                <strong>{pct(card.climb_success_prob, 1)}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Robot</span>
-                <strong>{metric(card.rating_robot_level_0_100, 1)}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>TBA Rank</span>
-                <strong>{card.tba_rank !== null ? `#${card.tba_rank}` : 'N/A'}</strong>
-              </div>
-            </div>
+            <CardGrid dense>
+              <Stat label="Rating" value={metric(card.rating_0_100, 1)} size="sm" />
+              <Stat label="Confidence" value={pct(card.confidence_0_1, 1)} size="sm" />
+              <Stat label="Fuel" value={metric(card.fuel_rate, 2)} size="sm" />
+              <Stat label="Cycle" value={metricUnit(card.cycle_time_sec, 2, 's')} size="sm" />
+              <Stat label="Auto" value={metric(card.auto_contribution, 2)} size="sm" />
+              <Stat label="Climb" value={pct(card.climb_success_prob, 1)} size="sm" />
+              <Stat label="Robot" value={metric(card.rating_robot_level_0_100, 1)} size="sm" />
+              <Stat label="TBA Rank" value={card.tba_rank !== null ? `#${card.tba_rank}` : 'N/A'} size="sm" />
+            </CardGrid>
 
-            <div className="center-status-row compact">
-              <span className="center-chip">{card.matches_analyzed} analyzed</span>
-              <span className="center-chip">{card.events_count} events</span>
-              <span className="center-chip">Driver {metric(card.rating_driver_skill_0_100, 1)}</span>
-              <span className="center-chip">{card.tba_record}</span>
-              <span className="center-chip">{relativeFromTimestamp(card.last_updated_at)}</span>
+            <div className={styles.chipRow}>
+              <Chip>{card.matches_analyzed} analyzed</Chip>
+              <Chip>{card.events_count} events</Chip>
+              <Chip>Driver {metric(card.rating_driver_skill_0_100, 1)}</Chip>
+              <Chip>{card.tba_record}</Chip>
+              <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
             </div>
 
           {card.warnings.length > 0 ? (
             <div className="center-stack-gap">
               {card.warnings.slice(0, 2).map((warning, idx) => (
-                <p key={`favorite-team-warning-${card.team_key}-${idx}`} className="center-callout warning">
+                <p key={`favorite-team-warning-${card.team_key}-${idx}`} className={`${styles.note} ${styles.noteWarning}`}>
                   {warning}
                 </p>
               ))}
             </div>
           ) : null}
 
-          <div className="center-actions-row">
-            <button type="button" className="center-btn ghost" title={`Open Team Center for ${card.team_key}`} onClick={() => openTeamCenter(card.team_key)}>
+          <div className={styles.actions}>
+            <Button size="sm" title={`Open Team Center for ${card.team_key}`} onClick={() => openTeamCenter(card.team_key)}>
               Team Details
-            </button>
-            <button type="button" className="center-btn ghost" onClick={() => removeFavoriteTeam(card.team_key)}>
+            </Button>
+            <Button size="sm" variant="quiet" onClick={() => removeFavoriteTeam(card.team_key)}>
               Remove
-            </button>
+            </Button>
           </div>
         </article>
       ))}
       {orderedTeamCards.length > visibleTeamCards.length ? (
-        <div className="center-actions-row">
-          <button
-            type="button"
-            className="center-btn ghost"
-            onClick={() => setVisibleTeamCardCount((prev) => prev + 20)}
-          >
+        <div className={styles.actions}>
+          <Button variant="quiet" fullWidth onClick={() => setVisibleTeamCardCount((prev) => prev + 20)}>
             Show More Teams ({visibleTeamCards.length}/{orderedTeamCards.length})
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
@@ -808,83 +793,85 @@ export function FavoritesPage() {
           subtitle="Pin teams and events, set rating context."
           className="favorites-manager-card"
         >
-          <form className="center-input-row" onSubmit={addFavoriteEvent}>
-            <input
-              value={eventInput}
-              onChange={(event) => setEventInput(event.target.value)}
-              placeholder="Add event key"
-              aria-label="Add favorite event"
-            />
-            <button type="submit" className="center-btn">
-              Add Event
-            </button>
-          </form>
+          <CardBody>
+            <form className={styles.addRow} onSubmit={addFavoriteEvent}>
+              <FieldText
+                label="Add event"
+                value={eventInput}
+                onChange={(event) => setEventInput(event.target.value)}
+                placeholder="Event key, e.g. 2026arc"
+              />
+              {/* Both buttons sit on the same card, so they need names that tell
+                  them apart — "Add" twice reads as one control repeated. */}
+              <Button type="submit" variant="primary">Add Event</Button>
+            </form>
 
-          <form className="center-input-row" onSubmit={addFavoriteTeam}>
-            <input
-              value={teamInput}
-              onChange={(event) => setTeamInput(event.target.value)}
-              placeholder="Add team key/number"
-              aria-label="Add favorite team"
-            />
-            <button type="submit" className="center-btn">
-              Add Team
-            </button>
-          </form>
+            <form className={styles.addRow} onSubmit={addFavoriteTeam}>
+              <FieldText
+                label="Add team"
+                value={teamInput}
+                onChange={(event) => setTeamInput(event.target.value)}
+                placeholder="Team key or number"
+              />
+              <Button type="submit" variant="primary">Add Team</Button>
+            </form>
 
-          <label className="center-label" htmlFor="favorites-context-event">
-            Team Rating Context Event (optional)
-          </label>
-          <div className="center-input-row">
-            <select
-              id="favorites-context-event"
-              value={eventContextInput}
-              onChange={(event) => setEventContextInput(normalizeEventKey(event.target.value))}
-            >
-              <option value="">Auto-select from team events</option>
-              {contextEventOptions.map((event) => (
-                <option key={`favorites-context-option-${event.event_key}`} value={event.event_key}>
-                  {event.name} ({event.event_key})
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="center-btn ghost"
-              onClick={() => setEventContextInput(readStoredCenterContext().eventKey)}
-            >
-              Use Active
-            </button>
-          </div>
+            <div className={styles.addRow}>
+              <FieldSelect
+                label="Team Rating Context Event (optional)"
+                value={eventContextInput}
+                onChange={(event) => setEventContextInput(normalizeEventKey(event.target.value))}
+              >
+                <option value="">Auto-select from team events</option>
+                {contextEventOptions.map((event) => (
+                  <option key={`favorites-context-option-${event.event_key}`} value={event.event_key}>
+                    {event.name} ({event.event_key})
+                  </option>
+                ))}
+              </FieldSelect>
+              <Button
+                variant="quiet"
+                onClick={() => setEventContextInput(readStoredCenterContext().eventKey)}
+              >
+                Use Active
+              </Button>
+            </div>
 
-          <div className="center-actions-row">
-            <button
-              type="button"
-              className="center-btn ghost"
-              onClick={() => void refreshFavorites({ forceNetwork: true })}
-              disabled={loadingEvents || loadingTeams}
-            >
-              {loadingEvents || loadingTeams ? 'Refreshing...' : 'Refresh Favorites'}
-            </button>
-            <Link className="center-btn ghost" to="/settings">
-              Settings
-            </Link>
-          </div>
+            <div className={styles.actions}>
+              <Button
+                variant="quiet"
+                onClick={() => void refreshFavorites({ forceNetwork: true })}
+                loading={loadingEvents || loadingTeams}
+              >
+                {loadingEvents || loadingTeams ? 'Refreshing...' : 'Refresh Favorites'}
+              </Button>
+              <Button as="a" variant="quiet" href="#/settings">
+                Settings
+              </Button>
+            </div>
 
-          <div className="center-status-row compact">
-            <span className="center-chip">{relativeFromTimestamp(lastUpdatedAt)}</span>
-          </div>
+            <div className={styles.chipRow}>
+              <Chip>{relativeFromTimestamp(lastUpdatedAt)}</Chip>
+            </div>
 
-          {errorText ? <p className="center-callout danger">{errorText}</p> : null}
-          <p className="center-callout muted">{statusText}</p>
+            {errorText ? (
+              <p className={`${styles.note} ${styles.noteDanger}`} role="alert">{errorText}</p>
+            ) : null}
+            <p className={styles.note}>{statusText}</p>
+          </CardBody>
         </SurfaceCard>
 
-        <SurfaceCard title="Snapshot" subtitle="Favorites watchlist health." className="favorites-snapshot-card">
-          <div className="center-status-row compact">
-            <span className="center-chip">{favoriteEvents.length} events</span>
-            <span className="center-chip">{favoriteTeams.length} teams</span>
-            <span className="center-chip">{liveFavoriteMatches.length} live</span>
-          </div>
+        <SurfaceCard title="Snapshot" className="favorites-snapshot-card">
+          <CardGrid dense>
+            <Stat label="Events" value={favoriteEvents.length} size="sm" />
+            <Stat label="Teams" value={favoriteTeams.length} size="sm" />
+            <Stat
+              label="Live now"
+              value={liveFavoriteMatches.length}
+              size="sm"
+              tone={liveFavoriteMatches.length > 0 ? 'accent' : 'default'}
+            />
+          </CardGrid>
 
           {liveFavoriteMatches.length > 0 ? (
             <div className="center-list-scroll" role="list" aria-label="Live favorite matches">
@@ -907,13 +894,13 @@ export function FavoritesPage() {
               })}
             </div>
           ) : (
-            <p className="center-callout muted">No live matches.</p>
+            <p className={styles.note}>No live matches.</p>
           )}
         </SurfaceCard>
       </aside>
 
       <section className="center-main">
-        <SurfaceCard title="Favorites" subtitle="Tracked teams and events." className="favorites-header-card">
+        <SurfaceCard title="Favorites" className="favorites-header-card">
           <div className="center-tabs-header">
             <SegmentedTabs
               className="center-tabs"
@@ -929,58 +916,33 @@ export function FavoritesPage() {
           </div>
         </SurfaceCard>
 
-        {activeTab === 'overview' ? (
-          <SurfaceCardGroup groupId="favorites-overview">
-            <div className="favorites-overview-grid">
+        {/* One definition per list, shown in whichever tabs include it. The page
+            used to carry two copies of each — "Favorite Events" on the overview
+            tab and "Events Watchlist" on its own — which is how two names ended
+            up describing one list. There is no watchlist in this app: no
+            storage key, no endpoint, no type. Only Favorites. */}
+        <SurfaceCardGroup groupId={`favorites-${activeTab}`}>
+          <div className={activeTab === 'overview' ? styles.overviewGrid : undefined}>
+            {activeTab !== 'teams' ? (
               <SurfaceCard
                 title="Favorite Events"
-                subtitle="Pinned events status."
-                right={<span className="center-chip">{loadingEvents ? 'Loading...' : `${orderedEventCards.length} loaded`}</span>}
-                className="favorites-events-shell"
+                right={<Chip>{loadingEvents ? 'Loading...' : `${orderedEventCards.length} events`}</Chip>}
                 compactable
               >
                 {renderEventCards}
               </SurfaceCard>
+            ) : null}
+            {activeTab !== 'events' ? (
               <SurfaceCard
                 title="Favorite Teams"
-                subtitle="Team profiles with event-context ratings."
-                right={<span className="center-chip">{loadingTeams ? 'Loading...' : `${orderedTeamCards.length} loaded`}</span>}
-                className="favorites-teams-shell"
+                right={<Chip>{loadingTeams ? 'Loading...' : `${orderedTeamCards.length} teams`}</Chip>}
                 compactable
               >
                 {renderTeamCards}
               </SurfaceCard>
-            </div>
-          </SurfaceCardGroup>
-        ) : null}
-
-        {activeTab === 'events' ? (
-          <SurfaceCardGroup groupId="favorites-events">
-            <SurfaceCard
-              title="Events Watchlist"
-              subtitle="Schedule readiness and live windows."
-              right={<span className="center-chip">{loadingEvents ? 'Loading...' : `${orderedEventCards.length} events`}</span>}
-              className="favorites-events-shell"
-              compactable
-            >
-              {renderEventCards}
-            </SurfaceCard>
-          </SurfaceCardGroup>
-        ) : null}
-
-        {activeTab === 'teams' ? (
-          <SurfaceCardGroup groupId="favorites-teams">
-            <SurfaceCard
-              title="Teams Watchlist"
-              subtitle="Compare core targets."
-              right={<span className="center-chip">{loadingTeams ? 'Loading...' : `${orderedTeamCards.length} teams`}</span>}
-              className="favorites-teams-shell"
-              compactable
-            >
-              {renderTeamCards}
-            </SurfaceCard>
-          </SurfaceCardGroup>
-        ) : null}
+            ) : null}
+          </div>
+        </SurfaceCardGroup>
       </section>
     </div>
   );

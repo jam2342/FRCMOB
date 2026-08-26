@@ -18,7 +18,7 @@
   input,
   select,
   textarea {
-    min-height: var(--touch-target-compact, 36px);
+    min-height: var(--touch-target-compact);
   }
 
   /* Remove tap highlight on all interactive elements */
@@ -51,21 +51,19 @@
   .center-tabs-header {
     position: sticky;
     top: 0;
-    z-index: var(--z-sticky, 20);
+    z-index: var(--z-sticky);
     backdrop-filter: saturate(120%) blur(12px);
     -webkit-backdrop-filter: saturate(120%) blur(12px);
   }
 
   /* Better mobile card tap feedback */
-  .center-mobile-data-card,
   .event-picker-item,
   .match-picker-item,
   .center-team-chip {
-    transition: transform var(--motion-fast, 140ms) ease,
-                background var(--motion-fast, 140ms) ease;
+    transition: transform var(--motion-fast) ease,
+                background var(--motion-fast) ease;
   }
 
-  .center-mobile-data-card:active,
   .event-picker-item:active,
   .match-picker-item:active,
   .center-team-chip:active {
@@ -94,7 +92,7 @@
 @supports (padding: env(safe-area-inset-bottom)) {
   @media (max-width: 1120px) {
     .center-layout {
-      padding-bottom: calc(var(--bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom, 0px));
     }
   }
 }

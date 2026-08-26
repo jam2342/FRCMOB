@@ -1,0 +1,290 @@
+/* Table — Schedule, Rankings, Teams, Compare and the pick-probability boards
+   are all genuinely tabular and none of them are tables today.
+
+   Two rules carry most of the value. Numeric columns get tabular figures and
+   right alignment automatically, so a column of scores lines up on the decimal
+   instead of drifting. And the whole thing scrolls inside its own container,
+   so a wide table never hands its horizontal scrollbar to the page body. */
+
+.scroller {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+
+  border: var(--border-width-1) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--font-size-sm);
+}
+
+.th {
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  background: var(--color-surface-muted);
+
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  color: var(--color-text);
+  vertical-align: middle;
+
+  /* The first cell of each row is a <th scope="row"> for screen readers, which
+     browsers default to bold and centred. Reset both so a row header looks
+     like the data cell it sits beside. */
+  text-align: left;
+  font-weight: var(--font-weight-normal);
+}
+
+/* Screen-reader-facing table description. Visible, but quiet. */
+.caption {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  text-align: left;
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+.table tbody tr:last-child .td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover .td {
+  background: var(--color-surface-soft);
+}
+
+/* ── Alignment ────────────────────────────────────────────────────── */
+
+.alignRight {
+  text-align: right;
+}
+
+.alignCenter {
+  text-align: center;
+}
+
+/* Applied to numeric columns automatically — a score that changes width as it
+   updates makes the whole column jitter. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Sorting ──────────────────────────────────────────────────────── */
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+
+  margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 0;
+  width: calc(100% + var(--space-3) * 2);
+
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.alignRight .sortButton {
+  justify-content: flex-end;
+}
+
+.alignCenter .sortButton {
+  justify-content: center;
+}
+
+.sortButton:hover {
+  color: var(--color-text);
+}
+
+.sortButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
+.sortIcon {
+  display: block;
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+  flex: none;
+  opacity: 0.35;
+}
+
+.sortActive .sortIcon {
+  opacity: 1;
+  color: var(--color-accent-text);
+}
+
+.sortActive {
+  color: var(--color-text);
+}
+
+/* ── Sticky ───────────────────────────────────────────────────────── */
+
+.stickyHeader .th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-base);
+}
+
+/* The first column names the row, so it stays put while the metrics scroll —
+   the difference between a usable comparison on a phone and a guessing game. */
+.stickyFirstCol .th:first-child,
+.stickyFirstCol .td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: var(--z-base);
+  background: var(--color-surface);
+  border-right: var(--border-width-1) solid var(--color-border);
+}
+
+.stickyFirstCol .th:first-child {
+  z-index: var(--z-dropdown);
+  background: var(--color-surface-muted);
+}
+
+.stickyFirstCol tbody tr:hover .td:first-child {
+  background: var(--color-surface-soft);
+}
+
+/* ── Empty ────────────────────────────────────────────────────────── */
+
+.empty {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Mobile: stacked cards ────────────────────────────────────────── */
+
+/* A six-column table on a 390px phone is unreadable no matter how it scrolls,
+   so below 560px each row becomes a stacked card of label/value pairs. The
+   markup swap happens in the component; these are the styles for it. */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+
+  border: var(--border-width-1) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.cardHead {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  background: var(--color-surface-muted);
+
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  min-width: 0;
+}
+
+.cardRow:last-child {
+  border-bottom: 0;
+}
+
+.cardLabel {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  min-width: 0;
+}
+
+.cardValue {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  text-align: right;
+  flex: none;
+}
+
+/* The sort control still has to exist on mobile; it just moves out of the
+   header row into a strip above the cards. */
+.cardSortBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.cardSortChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+
+  min-height: var(--touch-target-compact);
+  padding: 0 var(--space-2);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--radius-full);
+
+  background: var(--control-bg);
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.cardSortChip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.cardSortChipActive {
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  color: var(--color-accent-text);
+}
+
+.cardSortChip .sortIcon {
+  opacity: 1;
+}

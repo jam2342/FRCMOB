@@ -233,6 +233,18 @@ export function isTransientAbortLikeError(error: unknown): boolean {
   );
 }
 
+/* "151.7d old" is a decimal place on a day count — precision the number does
+   not have and nobody reads. Rounds to the unit a person would actually say. */
+export function humanAge(days: number): string {
+  if (days < 1) return 'today';
+  if (days < 2) return 'yesterday';
+  if (days < 14) return `${Math.round(days)} days ago`;
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+  if (days < 365) return `${Math.round(days / 30)} months ago`;
+  const years = days / 365;
+  return years < 1.5 ? 'over a year ago' : `${Math.round(years)} years ago`;
+}
+
 export function summarizeFreshness(payload: unknown): FreshnessSummary {
   const row = asRecord(payload);
   if (!row) return { state: 'unknown', label: 'Freshness: N/A', detail: null };
@@ -244,10 +256,10 @@ export function summarizeFreshness(payload: unknown): FreshnessSummary {
     : [];
 
   if (isOutdated) {
-    const detail = warnings[0] || (ageDays !== null ? `Latest match is ${ageDays.toFixed(1)} day(s) old.` : null);
+    const detail = warnings[0] || (ageDays !== null ? `Latest analysed match was ${humanAge(ageDays)}.` : null);
     return {
       state: 'stale',
-      label: ageDays !== null ? `Stale (${ageDays.toFixed(1)}d old)` : 'Stale',
+      label: ageDays !== null ? `Stale · ${humanAge(ageDays)}` : 'Stale',
       detail,
     };
   }
@@ -255,7 +267,7 @@ export function summarizeFreshness(payload: unknown): FreshnessSummary {
   if (ageDays !== null) {
     return {
       state: 'fresh',
-      label: `Fresh (${ageDays.toFixed(1)}d old)`,
+      label: ageDays < 1 ? 'Fresh · today' : `Fresh · ${humanAge(ageDays)}`,
       detail: warnings[0] || null,
     };
   }
