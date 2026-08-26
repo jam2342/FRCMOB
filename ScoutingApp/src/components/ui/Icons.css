@@ -11,29 +11,6 @@
   vertical-align: -0.125em; /* optically align with text baseline */
 }
 
-/* Slightly larger inline icon (for headers / section titles) */
-.icon-inline--md {
-  width: 1.15em;
-  height: 1.15em;
-}
-
-.icon-size-sm {
-  width: var(--icon-size-sm, 14px);
-  height: var(--icon-size-sm, 14px);
-}
-
-.icon-size-xl {
-  width: var(--icon-size-xl, 24px);
-  height: var(--icon-size-xl, 24px);
-}
-
-/* Icon paired with text, small gap */
-.icon-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35em;
-}
-
 /* Pulsing live dot animation */
 .icon-live-pulse svg circle:first-child {
   animation: icon-pulse 1.4s ease-in-out infinite;
@@ -45,15 +22,9 @@
 }
 
 /* Status-colored icon wrappers */
-.icon-status-live { color: var(--status-live-color, #2ccf77); }
-.icon-status-upcoming { color: var(--status-upcoming-color, #4f96ea); }
-.icon-status-final { color: var(--status-final-color, #d0a84e); }
-.icon-status-fresh { color: var(--status-live-color, #2ccf77); }
-.icon-status-aging { color: var(--status-upcoming-color, #4f96ea); }
-.icon-status-stale { color: var(--status-warning-color, #e7b13c); }
-.icon-status-connected { color: var(--status-live-color, #2ccf77); }
-.icon-status-disconnected { color: var(--color-danger, #ef4444); }
-.icon-status-connecting { color: var(--status-upcoming-color, #4f96ea); }
+.icon-status-live { color: var(--status-live-color); }
+.icon-status-upcoming { color: var(--status-upcoming-color); }
+.icon-status-final { color: var(--status-final-color); }
 
 /* Muted icon for secondary labels */
 .icon-muted {

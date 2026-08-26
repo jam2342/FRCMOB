@@ -1,0 +1,98 @@
+{
+  "/home": {
+    "boxes": 6,
+    "nested": 1
+  },
+  "/events": {
+    "boxes": 6,
+    "nested": 0
+  },
+  "/events/export": {
+    "boxes": 9,
+    "nested": 6
+  },
+  "/events/dashboard": {
+    "boxes": 2,
+    "nested": 0
+  },
+  "/scouting": {
+    "boxes": 35,
+    "nested": 13
+  },
+  "/scouting/pit": {
+    "boxes": 2,
+    "nested": 0
+  },
+  "/scouting/assignments": {
+    "boxes": 2,
+    "nested": 0
+  },
+  "/scouting/coverage": {
+    "boxes": 3,
+    "nested": 1
+  },
+  "/scouting/auto-paths": {
+    "boxes": 2,
+    "nested": 0
+  },
+  "/scouting/calibrate": {
+    "boxes": 1,
+    "nested": 0
+  },
+  "/scouting/record": {
+    "boxes": 1,
+    "nested": 0
+  },
+  "/team-center": {
+    "boxes": 8,
+    "nested": 0
+  },
+  "/match-center": {
+    "boxes": 17,
+    "nested": 11
+  },
+  "/match-center/predictions": {
+    "boxes": 5,
+    "nested": 1
+  },
+  "/match-center/strategy": {
+    "boxes": 3,
+    "nested": 1
+  },
+  "/compare": {
+    "boxes": 5,
+    "nested": 1
+  },
+  "/compare/alliance-advisor": {
+    "boxes": 3,
+    "nested": 0
+  },
+  "/compare/picklist": {
+    "boxes": 2,
+    "nested": 0
+  },
+  "/favorites": {
+    "boxes": 5,
+    "nested": 0
+  },
+  "/settings": {
+    "boxes": 5,
+    "nested": 0
+  },
+  "/privacy": {
+    "boxes": 1,
+    "nested": 0
+  },
+  "/terms": {
+    "boxes": 1,
+    "nested": 0
+  },
+  "/primitives": {
+    "boxes": 10,
+    "nested": 3
+  },
+  "/primitives?state=modal": {
+    "boxes": 11,
+    "nested": 3
+  }
+}

@@ -13,16 +13,19 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: var(--z-bottom-bar, 40);
-    background: rgba(17, 26, 34, 0.92);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    border-top: 1px solid var(--color-border, #384756);
-    padding: 0 0 var(--safe-area-bottom, 0px);
+    z-index: var(--z-bottom-bar);
+    /* Opaque, not frosted. At 92% the page scrolled underneath stayed legible
+       through the bar — a card heading collided with the tab labels and read as
+       a rendering fault rather than as depth. A phone running on-device
+       inference also has better uses for the GPU than a permanent
+       backdrop-filter, so the blur goes with it. */
+    background: var(--color-bg-elevated);
+    border-top: 1px solid var(--color-border);
+    padding: 0 0 var(--safe-area-bottom);
     justify-content: space-around;
     align-items: stretch;
     gap: 0;
-    transition: transform var(--motion-base, 220ms) var(--motion-ease, ease);
+    transition: transform var(--motion-base) var(--motion-ease);
     will-change: transform;
   }
 
@@ -43,17 +46,17 @@
     padding: 6px 2px 8px;
     border: 0;
     background: transparent;
-    color: var(--color-text-dim, #73889c);
+    color: var(--color-text-dim);
     text-decoration: none;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
     font-weight: 620;
-    letter-spacing: var(--letter-spacing-wide, 0.02em);
+    letter-spacing: var(--letter-spacing-wide);
     cursor: pointer;
     position: relative;
     -webkit-tap-highlight-color: transparent;
     transition:
-      color var(--motion-fast, 140ms) var(--motion-ease, ease),
-      transform var(--motion-fast, 140ms) var(--motion-spring, ease);
+      color var(--motion-fast) var(--motion-ease),
+      transform var(--motion-fast) var(--motion-spring);
     user-select: none;
   }
 
@@ -69,11 +72,11 @@
     justify-content: center;
     width: 26px;
     height: 26px;
-    border-radius: var(--radius-lg, 14px);
+    border-radius: var(--radius-lg);
     transition:
-      background var(--motion-fast, 140ms) var(--motion-ease, ease),
-      transform var(--motion-fast, 140ms) var(--motion-spring, ease),
-      box-shadow var(--motion-fast, 140ms) var(--motion-ease, ease);
+      background var(--motion-fast) var(--motion-ease),
+      transform var(--motion-fast) var(--motion-spring),
+      box-shadow var(--motion-fast) var(--motion-ease);
   }
 
   .btb__icon svg {
@@ -85,7 +88,7 @@
   .btb__label {
     line-height: 1;
     white-space: nowrap;
-    transition: transform var(--motion-fast, 140ms) var(--motion-spring, ease);
+    transition: transform var(--motion-fast) var(--motion-spring);
   }
 
   /* ── Active indicator dot ──────────────────────────────────────── */
@@ -96,9 +99,9 @@
     transform: translateX(-50%);
     width: 4px;
     height: 4px;
-    border-radius: var(--radius-full, 9999px);
-    background: var(--color-accent, #5ca88d);
-    animation: btb-indicator-in var(--motion-base, 220ms) var(--motion-spring, ease) both;
+    border-radius: var(--radius-full);
+    background: var(--color-accent);
+    animation: btb-indicator-in var(--motion-base) var(--motion-spring) both;
   }
 
   @keyframes btb-indicator-in {
@@ -114,11 +117,11 @@
 
   /* ── Active state ──────────────────────────────────────────────── */
   .btb__tab--active {
-    color: var(--color-accent, #5ca88d);
+    color: var(--color-accent);
   }
 
   .btb__tab--active .btb__icon {
-    background: var(--color-accent-soft, rgba(92, 168, 141, 0.16));
+    background: var(--color-accent-soft);
     transform: translateY(-1px) scale(1.03);
     box-shadow: 0 4px 10px rgba(10, 22, 31, 0.2);
   }
@@ -140,25 +143,13 @@
 
   /* ── Push content up so bottom bar doesn't overlay page ────────── */
   .ps-content {
-    padding-bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px)) !important;
+    padding-bottom: calc(var(--bottom-bar-height) + var(--safe-area-bottom)) !important;
   }
 
   /* When bar is hidden, reduce padding smoothly */
   .btb--hidden ~ .ps-content,
   .btb--hidden + .ps-content {
-    padding-bottom: var(--safe-area-bottom, 0px) !important;
-  }
-
-  /* ── Mobile more sheet positioning above tab bar ────────────────── */
-  .ps-mobile-more-sheet {
-    bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px)) !important;
-    top: auto !important;
-    max-height: calc(100vh - 120px - var(--safe-area-bottom, 0px)) !important;
-    border-radius: var(--radius-xl, 18px) var(--radius-xl, 18px) 0 0;
-  }
-
-  .ps-mobile-more-backdrop {
-    bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px));
+    padding-bottom: var(--safe-area-bottom) !important;
   }
 
   /* Hide old hamburger button — bottom bar replaces it */
@@ -169,20 +160,21 @@
 
 /* ── Light theme ─────────────────────────────────────────────────── */
 .product-shell.theme-light .btb {
-  background: rgba(245, 247, 249, 0.92);
-  border-top-color: var(--color-border, #d7e0e9);
+  background: color-mix(in srgb, var(--color-surface-soft) 92%, transparent);
+  border-top-color: var(--color-border);
 }
 
 .product-shell.theme-light .btb__tab {
-  color: var(--color-text-dim, #8a99ab);
+  color: var(--color-text-dim);
 }
 
 .product-shell.theme-light .btb__tab--active {
-  color: var(--color-accent, #4f9a82);
+  /* 11px label — needs the text-weight accent, not the fill-weight one. */
+  color: var(--color-accent-text);
 }
 
 .product-shell.theme-light .btb__tab--active .btb__icon {
-  background: var(--color-accent-soft, rgba(79, 154, 130, 0.14));
+  background: var(--color-accent-soft);
 }
 
 /* ── Reduced motion ──────────────────────────────────────────────── */
@@ -218,7 +210,7 @@
   }
 
   .btb__label {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
   }
 }
 
@@ -226,7 +218,7 @@
   .btb__tab {
     min-height: 44px;
     padding: 4px 1px 5px;
-    font-size: 0.6rem;
+    font-size: var(--font-size-legacy-10);
     overflow: hidden;
   }
 
@@ -241,6 +233,6 @@
   }
 
   .btb__label {
-    font-size: 0.625rem;
+    font-size: var(--font-size-legacy-10);
   }
 }

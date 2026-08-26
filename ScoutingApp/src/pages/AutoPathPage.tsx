@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCanvasTokens } from '../hooks/useCanvasTokens';
 import { getTeamBreakdown } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
@@ -18,6 +19,18 @@ const PATHS_STORAGE = 'autopath_saved_v1';
 /* field dimensions from game config (meters) */
 const FIELD_W = 16.541;
 const FIELD_H = 8.0693;
+
+/* The field's own chrome, resolved at draw time — canvas cannot read var().
+   The zone fills and PATH_COLORS below stay literal on purpose: they are
+   categorical identity, not chrome, and a zone that changed hue between themes
+   would stop matching the season config it mirrors. */
+const FIELD_TOKENS = [
+  '--field-canvas-bg',
+  '--field-canvas-grid',
+  '--field-canvas-line',
+  '--field-canvas-label',
+  '--field-canvas-note',
+] as const;
 
 /* default zones from season_template.json */
 const DEFAULT_ZONES: Zone[] = [
@@ -340,6 +353,10 @@ export function AutoPathPage() {
   }
 
   /* ── draw the canvas ───────────────────────── */
+  // New object on theme change, so drawCanvas changes identity and the effect
+  // below repaints. A canvas keeps its pixels when the stylesheet swaps.
+  const tokens = useCanvasTokens(FIELD_TOKENS);
+
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -354,11 +371,11 @@ export function AutoPathPage() {
     ctx.scale(dpr, dpr);
 
     /* background */
-    ctx.fillStyle = '#1a2332';
+    ctx.fillStyle = tokens['--field-canvas-bg'];
     ctx.fillRect(0, 0, w, h);
 
     /* grid lines */
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.strokeStyle = tokens['--field-canvas-grid'];
     ctx.lineWidth = 1;
     for (let mx = 1; mx < FIELD_W; mx++) {
       const x = (mx / FIELD_W) * w;
@@ -396,7 +413,7 @@ export function AutoPathPage() {
         { x: 0, y: 0 },
       );
       const { cx: lcx, cy: lcy } = fieldToCanvas(centroid, w, h);
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillStyle = tokens['--field-canvas-label'];
       ctx.font = `${Math.max(9, w / 60)}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -405,7 +422,7 @@ export function AutoPathPage() {
 
     /* center line */
     const midX = w / 2;
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.strokeStyle = tokens['--field-canvas-line'];
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
@@ -419,7 +436,7 @@ export function AutoPathPage() {
       ctx.globalAlpha = 0.5;
       for (const tp of autoTrackPts) {
         const { cx, cy } = fieldToCanvas({ x: tp.field_x!, y: tp.field_y! }, w, h);
-        ctx.fillStyle = '#fbbf24';
+        ctx.fillStyle = tokens['--field-canvas-note'];
         ctx.beginPath();
         ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
         ctx.fill();
@@ -489,7 +506,7 @@ export function AutoPathPage() {
       });
       ctx.stroke();
     }
-  }, [filteredPaths, currentStroke, autoTrackPts, showTrackOverlay, selectedPathIds]);
+  }, [filteredPaths, currentStroke, autoTrackPts, showTrackOverlay, selectedPathIds, tokens]);
 
   useEffect(() => { drawCanvas(); }, [drawCanvas]);
 

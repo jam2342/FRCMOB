@@ -933,6 +933,27 @@ def _event_team_rating_row(
         .first()
     )
 
+def _event_rating_rank_context(
+    db: Session,
+    *,
+    event_key: str,
+    team_key: str,
+) -> dict[str, int] | None:
+    row = _event_team_rating_row(db, event_key, team_key)
+    if row is None:
+        return None
+    rank = _event_rating_rank(db, event_key=event_key, team_key=team_key)
+    if rank is None:
+        return None
+    field_size = (
+        db.query(func.count(models.EventTeamRating.team_key))
+        .filter(models.EventTeamRating.event_key == event_key)
+        .scalar()
+    )
+    # "4th" says nothing without "of 75". A figure with no comparison is
+    # decoration, so the two travel together or not at all.
+    return {"rank": int(rank), "field_size": int(field_size or 0)}
+
 def _event_rating_rank(
     db: Session,
     *,
@@ -1584,6 +1605,31 @@ async def _build_team_intel_payload(
         analysis_warnings.append(
             "Some scouting averages are temporarily model-derived because analyzed clip coverage is still sparse."
         )
+
+    # Rank against the event the rating actually came from, not the event that
+    # was asked for. A team with no rating at the selected event falls back to
+    # their most recent one, and ranking that against a field they were never
+    # in would be a fabricated baseline.
+    #
+    # Deliberately not gated on normalized_event_key: Team Center requests this
+    # payload with no event at all, and a rating that arrives without its
+    # position is the bare figure this work exists to remove.
+    if bool(rating_payload.get("available")):
+        rank_event_key = (
+            rating_payload.get("context_event_key")
+            or rating_payload.get("event_key")
+            or normalized_event_key
+        )
+        if rank_event_key:
+            rank_context = _event_rating_rank_context(
+                db,
+                event_key=str(rank_event_key),
+                team_key=normalized_team_key,
+            )
+            if rank_context is not None:
+                rating_payload["rank"] = rank_context["rank"]
+                rating_payload["field_size"] = rank_context["field_size"]
+                rating_payload["rank_event_key"] = str(rank_event_key)
 
     if normalized_event_key and bool(rating_payload.get("available")):
         rank_summary = (

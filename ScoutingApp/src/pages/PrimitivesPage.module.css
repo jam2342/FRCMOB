@@ -1,0 +1,11 @@
+/* Gallery layout only. The primitives bring their own styling — nothing here
+   may restyle them, or the guards would be measuring the gallery rather than
+   the primitives. */
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}

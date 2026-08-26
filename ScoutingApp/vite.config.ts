@@ -5,15 +5,19 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // Model weights are intentionally excluded from Git. A production build
-  // therefore needs a public CORS-enabled URL unless the build context
-  // deliberately supplies the local ONNX artifact.
+  // Model weights are intentionally excluded from Git, so a CI checkout never has
+  // them. The on-device detector degrades on its own (MatchRecorder/VideoFileProcessor
+  // surface "Detector unavailable"), so a missing model must NOT fail the whole deploy —
+  // that would take the entire app down over one optional PWA feature. Warn instead, and
+  // let a release build opt back into hard enforcement via ONDEVICE_MODEL_REQUIRED=true.
   const remoteModelUrl = String(process.env.VITE_ONDEVICE_MODEL_URL || '').trim()
   const bundledModel = resolve(__dirname, 'public/models/frc_robot_detector_v2.onnx')
-  if (mode === 'production' && !remoteModelUrl && !existsSync(bundledModel)) {
-    throw new Error(
-      'Missing on-device detector: set VITE_ONDEVICE_MODEL_URL to a public CORS-enabled ONNX URL, or provide public/models/frc_robot_detector_v2.onnx during the build.',
-    )
+  const modelMissing = !remoteModelUrl && !existsSync(bundledModel)
+  if (mode === 'production' && modelMissing) {
+    const message =
+      'Missing on-device detector: set VITE_ONDEVICE_MODEL_URL to a public CORS-enabled ONNX URL, or provide public/models/frc_robot_detector_v2.onnx during the build.'
+    if (String(process.env.ONDEVICE_MODEL_REQUIRED || '').trim() === 'true') throw new Error(message)
+    console.warn(`[vite] ${message} Building without it: on-device detection stays disabled at runtime.`)
   }
 
   return {
@@ -48,6 +52,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
+      // Scope vitest to unit tests. Without this it also globs e2e/*.spec.* and
+      // tries to run browser guards inside jsdom.
+      include: ['src/**/*.{test,spec}.{ts,tsx}', 'e2e/lib/*.test.mjs'],
       environment: 'jsdom',
       setupFiles: './src/test/setup.ts',
       globals: true,

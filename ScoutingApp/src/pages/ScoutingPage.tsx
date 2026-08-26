@@ -32,6 +32,20 @@ import { AutoScoutEvidencePanel } from '../components/scouting/AutoScoutEvidence
 import { AutoScoutFieldBadge } from '../components/scouting/AutoScoutFieldBadge';
 import { AutoScoutReviewPanel } from '../components/scouting/AutoScoutReviewPanel';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import {
+  Button,
+  CardEmpty,
+  Chip,
+  FieldCheckbox,
+  FieldRadioGroup,
+  FieldSelect,
+  FieldStepper,
+  FieldText,
+  FieldToggle,
+  Table,
+  type RadioOption,
+} from '../components/ui/primitives';
+import styles from './ScoutingPage.module.css';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { useAutoScoutDraft } from '../hooks/useAutoScoutDraft';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -237,60 +251,40 @@ function CounterInput(props: {
   badge?: ReactNode;
 }) {
   const { label, value, onChange, min = 0, max = 999, step = 1, badge = null } = props;
-  function handleDirectInput(rawValue: string) {
-    if (rawValue.trim() === '') {
-      onChange(min);
-      return;
-    }
-    const parsed = Number.parseInt(rawValue, 10);
-    if (Number.isNaN(parsed)) return;
-    onChange(clampNumber(parsed, min, max));
+
+  // Haptics live here rather than in the primitive: the direction of travel is
+  // a fact about this control, and a scout counting one-handed relies on the
+  // tap feedback to know a press registered without looking.
+  function handleChange(next: number) {
+    if (next > value) hapticTap();
+    else if (next < value) hapticUndo();
+    onChange(next);
   }
 
   return (
-    <div className="scout-stepper">
-      <div className="scout-stepper-label">
-        <span>{label}</span>
-        {badge}
-      </div>
-      <div className="scout-stepper-controls">
-        <button
-          type="button"
-          className="center-btn ghost scout-stepper-btn"
-          onClick={() => {
-            hapticUndo();
-            onChange(clampNumber(value - step, min, max));
-          }}
-          aria-label={`Decrease ${label}`}
-        >
-          -
-        </button>
-        <input
-          className="scout-stepper-input"
-          type="number"
-          inputMode="numeric"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(event) => handleDirectInput(event.target.value)}
-          aria-label={`${label} value`}
-        />
-        <button
-          type="button"
-          className="center-btn scout-stepper-btn"
-          onClick={() => {
-            hapticTap();
-            onChange(clampNumber(value + step, min, max));
-          }}
-          aria-label={`Increase ${label}`}
-        >
-          +
-        </button>
-      </div>
-    </div>
+    <FieldStepper
+      label={label}
+      badge={badge}
+      value={value}
+      onValueChange={handleChange}
+      min={min}
+      max={max}
+      step={step}
+      name={label}
+    />
   );
 }
+
+const SCALE_OPTIONS: RadioOption[] = [
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+  { value: '5', label: '5' },
+  // Not a sixth rating. Marked muted so an unanswered scale does not render its
+  // null answer as the selected, accent-filled option.
+  { value: '', label: 'N/A', muted: true },
+];
 
 function ScaleInput(props: {
   label: string;
@@ -299,35 +293,23 @@ function ScaleInput(props: {
   badge?: ReactNode;
 }) {
   const { label, value, onChange, badge = null } = props;
+
+  // Real radios rather than a row of buttons. The old markup gave a screen
+  // reader six unrelated buttons with no signal that one was selected; this is
+  // announced as a group, and arrow keys move between the levels.
   return (
-    <div className="scout-scale-input">
-      <span className="scout-scale-label">
-        <span>{label}</span>
-        {badge}
-      </span>
-      <div className="scout-scale-row">
-        {[1, 2, 3, 4, 5].map((level) => (
-          <button
-            type="button"
-            key={`${label}-${level}`}
-            className={`scout-scale-btn ${value === level ? 'active' : ''}`.trim()}
-            onClick={() => {
-              hapticTap();
-              onChange(level as Level1To5);
-            }}
-          >
-            {level}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`scout-scale-btn scout-scale-btn-na ${value === null ? 'active' : ''}`.trim()}
-          onClick={() => onChange(null)}
-        >
-          N/A
-        </button>
-      </div>
-    </div>
+    <FieldRadioGroup
+      legend={label}
+      badge={badge}
+      name={`scale-${label}`}
+      segmented
+      value={value === null ? '' : String(value)}
+      options={SCALE_OPTIONS}
+      onValueChange={(next) => {
+        if (next !== '') hapticTap();
+        onChange(next === '' ? null : (Number(next) as Level1To5));
+      }}
+    />
   );
 }
 
@@ -751,6 +733,22 @@ export function ScoutingPage() {
     [liveOverallScoutRating.score_0_100],
   );
   const timerPhase = phaseLabelForTimer(timerSec);
+
+  /* Which capture card the match is actually in right now.
+   *
+   * Emphasis is added, never subtracted: the other cards are not dimmed. A
+   * scout who is behind on teleop counts while the endgame runs still needs to
+   * read them, and reducing contrast on three of four cards to highlight one
+   * would fail AA for the sake of a hint. Only applies while the timer runs —
+   * a stopped clock has no current phase to point at. */
+  const phaseEmphasis = useCallback(
+    (cardPhase: 'Auto' | 'Teleop' | 'Endgame') => {
+      if (!timerRunning) return '';
+      // Anti-defense and mobility are counted through teleop, so they ride with it.
+      return timerPhase === cardPhase ? 'scout-phase-now' : '';
+    },
+    [timerRunning, timerPhase],
+  );
   const timerClockLabel = `${String(Math.floor(timerSec / 60)).padStart(2, '0')}:${String(timerSec % 60).padStart(2, '0')}`;
   const timerPhaseState: 'live' | 'upcoming' | 'ended' | 'unknown' = timerPhase === 'Auto'
     ? 'upcoming'
@@ -2955,7 +2953,7 @@ export function ScoutingPage() {
   }
 
   const captureAutoCard = showCaptureAutoCard ? (
-    <SurfaceCard title="Auto" subtitle="Autonomous scoring.">
+    <SurfaceCard title="Auto" className={phaseEmphasis('Auto')}>
       <div className="scout-control-card">
         {countersFor('auto').map((field) => (
           <CounterInput
@@ -2967,14 +2965,16 @@ export function ScoutingPage() {
             badge={renderAutoScoutBadge(field.key)}
           />
         ))}
-        <button
-          type="button"
-          className={`scout-toggle-btn ${form.auto_mobility ? 'active' : ''}`.trim()}
-          onClick={() => setForm((current) => ({ ...current, auto_mobility: !current.auto_mobility }))}
-        >
-          <span>Mobility {form.auto_mobility ? 'Done' : 'Not done'}</span>
-          {renderAutoScoutBadge('auto_mobility')}
-        </button>
+        <FieldToggle
+          label="Mobility"
+          hint={form.auto_mobility ? 'Done' : 'Not done'}
+          badge={renderAutoScoutBadge('auto_mobility')}
+          checked={form.auto_mobility}
+          onCheckedChange={(next) => {
+            hapticTap();
+            setForm((current) => ({ ...current, auto_mobility: next }));
+          }}
+        />
         {scalesFor('auto').map((field) => (
           <ScaleInput
             key={field.key}
@@ -2989,15 +2989,11 @@ export function ScoutingPage() {
   ) : null;
 
   const captureEndgameCard = showCaptureEndgameCard ? (
-    <SurfaceCard title="Endgame" subtitle="Endgame result and pressure context.">
+    <SurfaceCard title="Endgame" className={phaseEmphasis('Endgame')}>
       <div className="scout-control-card">
-        <label className="center-label scout-inline-label" htmlFor="scout-endgame-select">
-          <span>Endgame result</span>
-          {renderAutoScoutBadge('endgame_mode')}
-        </label>
-        <select
-          id="scout-endgame-select"
-          className="center-input"
+        <FieldSelect
+          label="Endgame result"
+          badge={renderAutoScoutBadge('endgame_mode')}
           value={form.endgame_mode}
           onChange={(event) =>
             setForm((current) => ({
@@ -3012,23 +3008,29 @@ export function ScoutingPage() {
           <option value="climb_level_1">{ENDGAME_LABELS.climb_level_1}</option>
           <option value="climb_level_2">{ENDGAME_LABELS.climb_level_2}</option>
           <option value="climb_level_3">{ENDGAME_LABELS.climb_level_3}</option>
-        </select>
-        <button
-          type="button"
-          className={`scout-toggle-btn ${form.climbed_under_pressure ? 'active' : ''}`.trim()}
-          onClick={() => setForm((current) => ({ ...current, climbed_under_pressure: !current.climbed_under_pressure }))}
-        >
-          <span>Climbed while defended {form.climbed_under_pressure ? 'Yes' : 'No'}</span>
-          {renderAutoScoutBadge('climbed_under_pressure')}
-        </button>
-        <button
-          type="button"
-          className={`scout-toggle-btn ${form.protected_zone_risk ? 'active' : ''}`.trim()}
-          onClick={() => setForm((current) => ({ ...current, protected_zone_risk: !current.protected_zone_risk }))}
-        >
-          <span>Protected-zone risk {form.protected_zone_risk ? 'High' : 'Low'}</span>
-          {renderAutoScoutBadge('protected_zone_risk')}
-        </button>
+        </FieldSelect>
+        {/* These were buttons whose only state signal was the word at the end
+            of their own label, so nothing announced them as on or off. A switch
+            carries aria-checked. */}
+        <FieldToggle
+          label="Climbed while defended"
+          badge={renderAutoScoutBadge('climbed_under_pressure')}
+          checked={form.climbed_under_pressure}
+          onCheckedChange={(next) => {
+            hapticTap();
+            setForm((current) => ({ ...current, climbed_under_pressure: next }));
+          }}
+        />
+        <FieldToggle
+          label="Protected-zone risk"
+          hint={form.protected_zone_risk ? 'High' : 'Low'}
+          badge={renderAutoScoutBadge('protected_zone_risk')}
+          checked={form.protected_zone_risk}
+          onCheckedChange={(next) => {
+            hapticTap();
+            setForm((current) => ({ ...current, protected_zone_risk: next }));
+          }}
+        />
         <p className="scout-card-note">Current endgame points: {ENDGAME_POINTS[form.endgame_mode]}</p>
       </div>
     </SurfaceCard>
@@ -3160,11 +3162,21 @@ export function ScoutingPage() {
             aria-label={setupHeaderCollapsed ? 'Expand setup controls' : 'Collapse setup controls'}
           >
             {setupHeaderCollapsed ? <ChevronDownIcon className="icon-inline" /> : <ChevronUpIcon className="icon-inline" />}
-            <span>{setupHeaderCollapsed ? 'Expand' : 'Collapse'}</span>
+            {/* Names its region, like the three shell toggles. On the 52px rail
+                there is no room, and the section icons underneath say what the
+                rail is — the same reason the collapsed nav shows icons rather
+                than eight identical dashes. */}
+            {!scoutingSidebarSideCollapsed ? <span>Setup</span> : null}
           </button>
 
           <SegmentedTabs
-            className={`scout-sidebar-nav ${setupHeaderCollapsed ? 'collapsed' : ''}`.trim()}
+            className={`scout-sidebar-nav ${
+              scoutingSidebarSideCollapsed
+                ? 'rail'
+                : setupHeaderCollapsed
+                  ? 'collapsed'
+                  : ''
+            }`.trim()}
             itemClassName="scout-sidebar-nav-pill"
             ariaLabel="Scouting sidebar section"
             value={sidebarSection}
@@ -3199,15 +3211,25 @@ export function ScoutingPage() {
             value={scoutingMode}
             onChange={setScoutingMode}
             items={[
-              { value: 'match', label: 'Match Scout', icon: <ClipboardCheckIcon className="icon-inline" /> },
-              { value: 'rapid', label: 'Rapid Tap', icon: <ZapIcon className="icon-inline" /> },
+              // The difference between the two used to be explained in a
+              // sentence sitting between them: "Rapid Tap resets inputs after
+              // each save; Match Scout keeps values." A control that needs a
+              // paragraph to distinguish it from its neighbour should say it
+              // itself, so the behaviour is the tooltip on each option.
+              {
+                value: 'match',
+                label: 'Match Scout',
+                icon: <ClipboardCheckIcon className="icon-inline" />,
+                title: 'Keeps your values after saving',
+              },
+              {
+                value: 'rapid',
+                label: 'Rapid Tap',
+                icon: <ZapIcon className="icon-inline" />,
+                title: 'Clears the form after each save',
+              },
             ]}
           />
-          {!isMobileLayout ? (
-            <p className="center-callout muted">
-              Rapid Tap resets inputs after each save; Match Scout keeps values.
-            </p>
-          ) : null}
 
           <SegmentedTabs
             className="center-tabs"
@@ -3399,7 +3421,7 @@ export function ScoutingPage() {
               <div className="center-actions-row">
                 {selectedEventKey ? (
                   <Link className="center-btn ghost" to={`/events?event=${selectedEventKey}`}>
-                    <CalendarIcon className="icon-inline" /> Event Center
+                    <CalendarIcon className="icon-inline" /> This event
                   </Link>
                 ) : null}
                 {selectedMatch?.match_key ? (
@@ -3428,7 +3450,7 @@ export function ScoutingPage() {
             <span className="scout-sidebar-section-label">Room</span>
             <span className="scout-sidebar-section-note">{roomSectionSummary}</span>
           </div>
-        <SurfaceCard title="Scout Profile" subtitle="Your identity and team.">
+        <SurfaceCard title="Scout Profile">
           <div className="scout-profile-grid">
             <label className="center-label" htmlFor="scout-profile-name">
               Scout Name
@@ -3686,7 +3708,7 @@ export function ScoutingPage() {
             <span className="scout-sidebar-section-label">Data</span>
             <span className="scout-sidebar-section-note">{dataSectionSummary}</span>
           </div>
-        <SurfaceCard title="Auto Draft" subtitle="Generate, review, and save with evidence.">
+        <SurfaceCard title="Auto Draft">
           <AutoScoutReviewPanel
             enabled={autoScoutEnabled}
             canGenerate={Boolean(selectedEventKey && selectedMatchKey && selectedTeamKey)}
@@ -3723,7 +3745,7 @@ export function ScoutingPage() {
         </SurfaceCard>
         ) : null}
 
-        <SurfaceCard title="Match Timer" subtitle="Phase awareness for live scouting.">
+        <SurfaceCard title="Match Timer">
           <div className="scout-timer-shell">
             <div className="scout-timer-value">{timerClockLabel}</div>
             <span className={`center-chip timer ${timerPhaseState}`.trim()}>
@@ -3915,7 +3937,7 @@ export function ScoutingPage() {
           )}
 
           {showCaptureTeleopCard ? (
-          <SurfaceCard title="Teleop" subtitle="Production, misses, and handling.">
+          <SurfaceCard title="Teleop" className={phaseEmphasis('Teleop')}>
             <div className="scout-control-card">
               {countersFor('teleop').map((field) => (
                 <CounterInput
@@ -3932,7 +3954,7 @@ export function ScoutingPage() {
           ) : null}
 
           {showCaptureMobilityCard ? (
-          <SurfaceCard title="Anti-Defense + Mobility" subtitle="Pressure survival.">
+          <SurfaceCard title="Anti-Defense + Mobility" className={phaseEmphasis('Teleop')}>
             <div className="scout-control-card">
               {countersFor('mobility').map((field) => (
                 <CounterInput
@@ -4058,7 +4080,7 @@ export function ScoutingPage() {
           ) : null}
 
           {showScorePointsCard ? (
-          <SurfaceCard title="Point Summary" subtitle="Match totals from tap counts.">
+          <SurfaceCard title="Point Summary">
             <div className="center-kpi-grid">
               <div className="center-kpi-card">
                 <span>Auto points</span>
@@ -4081,7 +4103,7 @@ export function ScoutingPage() {
           ) : null}
 
           {showScoreLiveCard ? (
-          <SurfaceCard title="Live Robot Rating" subtitle="Real-time rating from scout inputs.">
+          <SurfaceCard title="Live Robot Rating">
             <div className="center-kpi-grid">
               <div className="center-kpi-card">
                 <span>Overall scout score (0-100)</span>
@@ -4153,159 +4175,122 @@ export function ScoutingPage() {
         {showHistorySection && showHistoryTeamMatchesCard ? (
           <SurfaceCard
             title="Selected Team Match Performance"
-            subtitle="Per-match performance for selected team."
           >
           {!selectedTeamKey ? (
-            <p className="center-callout muted">Pick a team to load match rows.</p>
-          ) : selectedTeamMatchPerformance.length === 0 ? (
-            <p className="center-callout muted">
-              No schedule rows for {selectedTeamKey.toUpperCase()} in {selectedEventKey || 'this event'}.
-            </p>
-          ) : isMobileLayout ? (
-            <div className="center-mobile-card-list">
-              {selectedTeamMatchPerformance.map((row) => {
-                const statusClass =
-                  row.status === 'live'
-                    ? 'live'
-                    : row.status === 'upcoming'
-                      ? 'upcoming'
-                      : row.status === 'completed'
-                        ? 'ended'
-                        : 'unknown';
-                const latestNote = row.latest_note
-                  ? row.latest_note.length > 120
-                    ? `${row.latest_note.slice(0, 120)}...`
-                    : row.latest_note
-                  : null;
-                return (
-                  <article key={`team-match-performance-mobile-${row.match_key}`} className="center-mobile-data-card">
-                    <header>
-                      <div>
-                        <strong>{row.match_display}</strong>
-                        <div className="meta">
-                          {fmtDateShort(row.scheduled_time)} · {row.comp_level}
-                        </div>
-                      </div>
-                      <span className={`center-chip timer ${statusClass}`.trim()}>{titleizeKey(row.status)}</span>
-                    </header>
-                    <div className="center-mobile-data-grid">
-                      <span>
-                        Score
-                        <strong>
-                          {row.alliance_score !== null && row.opponent_score !== null
-                            ? `${row.alliance_score}-${row.opponent_score}`
-                            : 'N/A'}
-                        </strong>
-                      </span>
-                      <span>
-                        Reports<strong>{row.scout_reports}</strong>
-                      </span>
-                      <span>
-                        Overall<strong>{row.overall_scout_avg_0_100 !== null ? row.overall_scout_avg_0_100.toFixed(1) : 'N/A'}</strong>
-                      </span>
-                      <span>
-                        Manual<strong>{row.manual_avg_0_100 !== null ? row.manual_avg_0_100.toFixed(1) : 'N/A'}</strong>
-                      </span>
-                      <span>
-                        Scout+API
-                        <strong>{row.scouting_api_avg_0_100 !== null ? row.scouting_api_avg_0_100.toFixed(1) : 'N/A'}</strong>
-                      </span>
-                      <span>
-                        Avg Pts<strong>{row.avg_points_total !== null ? row.avg_points_total.toFixed(1) : 'N/A'}</strong>
-                      </span>
-                    </div>
-                    {latestNote ? <p className="center-callout muted scout-mobile-note">Note: {latestNote}</p> : null}
-                    <div className="center-actions-row compact scout-mobile-actions">
-                      <button
-                        type="button"
-                        className="center-btn ghost"
+            <CardEmpty title="No team selected">Pick a team to load match rows.</CardEmpty>
+          ) : (
+            <Table
+              columns={[
+                {
+                  key: 'match_display',
+                  label: 'Match',
+                  render: (row) => (
+                    <span className={styles.matchCell}>
+                      <strong>{row.match_display}</strong>
+                      <small>{fmtDateShort(row.scheduled_time)} · {row.comp_level}</small>
+                    </span>
+                  ),
+                },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  align: 'center',
+                  render: (row) => (
+                    <Chip
+                      tone={
+                        row.status === 'live' ? 'danger'
+                          : row.status === 'upcoming' ? 'accent'
+                            : row.status === 'completed' ? 'neutral'
+                              : 'warn'
+                      }
+                      dot={row.status === 'live'}
+                      size="sm"
+                    >
+                      {titleizeKey(row.status)}
+                    </Chip>
+                  ),
+                },
+                {
+                  key: 'score',
+                  label: 'Score',
+                  numeric: true,
+                  render: (row) =>
+                    row.alliance_score !== null && row.opponent_score !== null
+                      ? `${row.alliance_score} - ${row.opponent_score}`
+                      : 'N/A',
+                },
+                { key: 'scout_reports', label: 'Reports', numeric: true, sortable: true },
+                {
+                  key: 'overall_scout_avg_0_100',
+                  label: 'Overall',
+                  numeric: true,
+                  sortable: true,
+                  render: (row) => (row.overall_scout_avg_0_100 !== null ? row.overall_scout_avg_0_100.toFixed(1) : 'N/A'),
+                },
+                {
+                  key: 'manual_avg_0_100',
+                  label: 'Manual',
+                  numeric: true,
+                  render: (row) => (row.manual_avg_0_100 !== null ? row.manual_avg_0_100.toFixed(1) : 'N/A'),
+                },
+                {
+                  key: 'scouting_api_avg_0_100',
+                  label: 'Scout+API',
+                  numeric: true,
+                  render: (row) => (row.scouting_api_avg_0_100 !== null ? row.scouting_api_avg_0_100.toFixed(1) : 'N/A'),
+                },
+                {
+                  key: 'avg_points_total',
+                  label: 'Avg Pts',
+                  numeric: true,
+                  sortable: true,
+                  render: (row) => (row.avg_points_total !== null ? row.avg_points_total.toFixed(1) : 'N/A'),
+                },
+                {
+                  key: 'latest_note',
+                  label: 'Latest Note',
+                  render: (row) => (
+                    <span className={styles.noteCell} title={row.latest_note || undefined}>
+                      {row.latest_note || 'No notes yet'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  label: 'Open',
+                  align: 'right',
+                  render: (row) => (
+                    <span className={styles.rowActions}>
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        icon={<ClipboardIcon className="icon-inline" />}
                         onClick={() => {
                           setSelectedMatchKey(row.match_key);
                           setSelectedTeamKey(selectedTeamKey);
                           setStatusText(`Loaded ${row.match_display} for scouting.`);
                         }}
                       >
-                        <ClipboardIcon className="icon-inline" /> Scout Match
-                      </button>
-                      <Link className="center-btn ghost" to={`/match-center?event=${selectedEventKey}&match=${row.match_key}`}>
-                        <ScoreboardIcon className="icon-inline" /> Match Center
-                      </Link>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="center-table-wrap">
-              <table className="center-table">
-                <thead>
-                  <tr>
-                    <th>Match</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Score</th>
-                    <th>Reports</th>
-                    <th>Overall</th>
-                    <th>Manual</th>
-                    <th>Scout+API</th>
-                    <th>Avg Pts</th>
-                    <th>Latest Note</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedTeamMatchPerformance.map((row) => (
-                    <tr key={`team-match-performance-${row.match_key}`}>
-                      <td>
-                        <strong>{row.match_display}</strong>
-                        <small>{fmtDateShort(row.scheduled_time)}</small>
-                      </td>
-                      <td>{row.comp_level}</td>
-                      <td>
-                        <span className={`center-chip timer ${row.status === 'live' ? 'live' : row.status === 'upcoming' ? 'upcoming' : row.status === 'completed' ? 'ended' : 'unknown'}`.trim()}>
-                          {titleizeKey(row.status)}
-                        </span>
-                      </td>
-                      <td>
-                        {row.alliance_score !== null && row.opponent_score !== null
-                          ? `${row.alliance_score} - ${row.opponent_score}`
-                          : 'N/A'}
-                      </td>
-                      <td>{row.scout_reports}</td>
-                      <td>{row.overall_scout_avg_0_100 !== null ? row.overall_scout_avg_0_100.toFixed(1) : 'N/A'}</td>
-                      <td>{row.manual_avg_0_100 !== null ? row.manual_avg_0_100.toFixed(1) : 'N/A'}</td>
-                      <td>{row.scouting_api_avg_0_100 !== null ? row.scouting_api_avg_0_100.toFixed(1) : 'N/A'}</td>
-                      <td>{row.avg_points_total !== null ? row.avg_points_total.toFixed(1) : 'N/A'}</td>
-                      <td>
-                        {row.latest_note
-                          ? row.latest_note.length > 100
-                            ? `${row.latest_note.slice(0, 100)}...`
-                            : row.latest_note
-                          : 'No notes yet'}
-                      </td>
-                      <td>
-                        <div className="center-actions-row compact">
-                          <button
-                            type="button"
-                            className="center-btn ghost"
-                            onClick={() => {
-                              setSelectedMatchKey(row.match_key);
-                              setSelectedTeamKey(selectedTeamKey);
-                              setStatusText(`Loaded ${row.match_display} for scouting.`);
-                            }}
-                          >
-                            <ClipboardIcon className="icon-inline" /> Scout Match
-                          </button>
-                          <Link className="center-btn ghost" to={`/match-center?event=${selectedEventKey}&match=${row.match_key}`}>
-                            <ScoreboardIcon className="icon-inline" /> Match Center
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        Scout Match
+                      </Button>
+                      <Button
+                        as="a"
+                        size="sm"
+                        variant="quiet"
+                        href={`#/match-center?event=${selectedEventKey}&match=${row.match_key}`}
+                        icon={<ScoreboardIcon className="icon-inline" />}
+                      >
+                        Match Center
+                      </Button>
+                    </span>
+                  ),
+                },
+              ]}
+              rows={selectedTeamMatchPerformance}
+              rowKey={(row) => row.match_key}
+              stickyHeader
+              empty={`No schedule rows for ${selectedTeamKey.toUpperCase()} in ${selectedEventKey || 'this event'}.`}
+            />
           )}
           </SurfaceCard>
         ) : null}
@@ -4334,171 +4319,144 @@ export function ScoutingPage() {
         {showHistorySection && showHistoryTeamRollupsCard ? (
           <SurfaceCard
             title="Scouted Teams Quick Access"
-            subtitle="Scouted team scores and head-up."
             right={
-              !isMobileLayout ? (
-                <div className="scout-history-toolbar">
-                  <button
-                    type="button"
-                    className="center-btn ghost"
-                    onClick={() => setShowTeamSummaries((current) => !current)}
-                  >
-                    {showTeamSummaries ? 'Hide Summary' : <><BarChartIcon className="icon-inline" /> Summary</>}
-                  </button>
-                  <label className="scout-history-filter">
-                    <input
-                      type="checkbox"
-                      checked={historyMineOnly}
-                      onChange={(event) => setHistoryMineOnly(event.target.checked)}
-                      disabled={!activeRoom?.room_key}
-                    />
-                    {activeRoom?.room_key ? 'My reports only' : 'My reports'}
-                  </label>
-                  <label className="scout-history-filter">
-                    <input
-                      type="checkbox"
-                      checked={historyOnlyCurrentEvent}
-                      onChange={(event) => setHistoryOnlyCurrentEvent(event.target.checked)}
-                    />
-                    Current event only
-                  </label>
-                </div>
-              ) : undefined
+              <Button
+                size="sm"
+                variant="quiet"
+                pressed={showTeamSummaries}
+                icon={<BarChartIcon className="icon-inline" />}
+                onClick={() => setShowTeamSummaries((current) => !current)}
+              >
+                {showTeamSummaries ? 'Hide Summary' : 'Summary'}
+              </Button>
             }
           >
-            <div className="center-input-row scout-quick-search-row">
-              <input
+            {/* The two filters used to be desktop-only, which left a scout on a
+                phone — the device this page is actually used on — unable to
+                narrow the list at all. */}
+            <div className={styles.filterRow}>
+              <FieldText
+                label="Filter scouted teams"
                 value={quickTeamQuery}
                 onChange={(event) => setQuickTeamQuery(event.target.value)}
-                placeholder="Filter scouted teams (team key or label)"
-                aria-label="Filter scouted teams"
+                placeholder="Team key or label"
+              />
+              <FieldCheckbox
+                label={activeRoom?.room_key ? 'My reports only' : 'My reports'}
+                checked={historyMineOnly}
+                onChange={(event) => setHistoryMineOnly(event.target.checked)}
+                disabled={!activeRoom?.room_key}
+              />
+              <FieldCheckbox
+                label="Current event only"
+                checked={historyOnlyCurrentEvent}
+                onChange={(event) => setHistoryOnlyCurrentEvent(event.target.checked)}
               />
             </div>
-          {teamRollups.length === 0 ? (
-            <p className="center-callout muted">No scouted teams in this scope.</p>
-          ) : isMobileLayout ? (
-            <div className="center-mobile-card-list">
-              {teamRollups.slice(0, 60).map((row) => (
-                <article key={`rollup-mobile-${row.team_key}`} className="center-mobile-data-card">
-                  <header>
-                    <div>
+
+            <Table
+              columns={[
+                {
+                  key: 'team_key',
+                  label: 'Team',
+                  render: (row) => (
+                    <span className={styles.matchCell}>
                       <strong>{row.team_key.toUpperCase()}</strong>
-                      <div className="meta">{row.team_label}</div>
-                    </div>
-                    <span className="center-chip">Reports: {row.entries_count}</span>
-                  </header>
-                  <div className="center-mobile-data-grid">
-                    <span>
-                      Notes<strong>{row.notes_count}</strong>
+                      <small>{row.team_label}</small>
                     </span>
-                    <span>
-                      Overall<strong>{row.avg_overall_scout_0_100.toFixed(1)}</strong>
+                  ),
+                },
+                { key: 'entries_count', label: 'Reports', numeric: true, sortable: true },
+                { key: 'notes_count', label: 'Notes', numeric: true, sortable: true },
+                {
+                  key: 'avg_overall_scout_0_100',
+                  label: 'Overall',
+                  numeric: true,
+                  sortable: true,
+                  render: (row) => row.avg_overall_scout_0_100.toFixed(1),
+                },
+                {
+                  key: 'avg_manual_0_100',
+                  label: 'Manual',
+                  numeric: true,
+                  render: (row) => row.avg_manual_0_100.toFixed(1),
+                },
+                {
+                  key: 'avg_scouting_api_0_100',
+                  label: 'Scout+API',
+                  numeric: true,
+                  render: (row) => (row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : 'N/A'),
+                },
+                {
+                  key: 'avg_points_total',
+                  label: 'Avg Pts',
+                  numeric: true,
+                  sortable: true,
+                  render: (row) => row.avg_points_total.toFixed(1),
+                },
+                {
+                  key: 'avg_driver_0_100',
+                  label: 'Driver',
+                  numeric: true,
+                  render: (row) => row.avg_driver_0_100.toFixed(1),
+                },
+                {
+                  key: 'head_up',
+                  label: 'Head-up',
+                  render: (row) => (
+                    <span className={styles.noteCell} title={row.head_up}>{row.head_up}</span>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  label: 'Quick Actions',
+                  align: 'right',
+                  render: (row) => (
+                    <span className={styles.rowActions}>
+                      <Button
+                        as="a"
+                        size="sm"
+                        variant="quiet"
+                        href={`#/team-center?event=${row.latest_event_key}&team=${row.team_key}`}
+                      >
+                        Team
+                      </Button>
+                      <Button
+                        as="a"
+                        size="sm"
+                        variant="quiet"
+                        href={`#/match-center?event=${row.latest_event_key}&match=${row.latest_match_key}`}
+                      >
+                        Match
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        icon={<SearchIcon className="icon-inline" />}
+                        onClick={() => {
+                          setSelectedTeamKey(row.team_key);
+                          setSelectedEventKey(row.latest_event_key);
+                          setEventInput(row.latest_event_key);
+                          setStatusText(`Focused on ${row.team_key.toUpperCase()}.`);
+                        }}
+                      >
+                        Focus
+                      </Button>
                     </span>
-                    <span>
-                      Manual<strong>{row.avg_manual_0_100.toFixed(1)}</strong>
-                    </span>
-                    <span>
-                      Scout+API
-                      <strong>{row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : 'N/A'}</strong>
-                    </span>
-                    <span>
-                      Avg Pts<strong>{row.avg_points_total.toFixed(1)}</strong>
-                    </span>
-                    <span>
-                      Driver<strong>{row.avg_driver_0_100.toFixed(1)}</strong>
-                    </span>
-                  </div>
-                  <p className="center-callout muted scout-mobile-note">{row.head_up}</p>
-                  <div className="center-actions-row compact scout-mobile-actions">
-                    <Link className="center-btn ghost" to={`/team-center?event=${row.latest_event_key}&team=${row.team_key}`}>
-                      Team
-                    </Link>
-                    <Link className="center-btn ghost" to={`/match-center?event=${row.latest_event_key}&match=${row.latest_match_key}`}>
-                      Match
-                    </Link>
-                    <button
-                      type="button"
-                      className="center-btn ghost"
-                      onClick={() => {
-                        setSelectedTeamKey(row.team_key);
-                        setSelectedEventKey(row.latest_event_key);
-                        setEventInput(row.latest_event_key);
-                        setStatusText(`Focused on ${row.team_key.toUpperCase()}.`);
-                      }}
-                    >
-                      <SearchIcon className="icon-inline" /> Focus
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="center-table-wrap">
-              <table className="center-table">
-                <thead>
-                  <tr>
-                    <th>Team</th>
-                    <th>Reports</th>
-                    <th>Notes</th>
-                    <th>Overall</th>
-                    <th>Manual</th>
-                    <th>Scout+API</th>
-                    <th>Avg Pts</th>
-                    <th>Driver</th>
-                    <th>Head-up</th>
-                    <th>Quick Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamRollups.slice(0, 60).map((row) => (
-                    <tr key={`rollup-${row.team_key}`}>
-                      <td>
-                        <strong>{row.team_key.toUpperCase()}</strong>
-                        <small>{row.team_label}</small>
-                      </td>
-                      <td>{row.entries_count}</td>
-                      <td>{row.notes_count}</td>
-                      <td>{row.avg_overall_scout_0_100.toFixed(1)}</td>
-                      <td>{row.avg_manual_0_100.toFixed(1)}</td>
-                      <td>{row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : 'N/A'}</td>
-                      <td>{row.avg_points_total.toFixed(1)}</td>
-                      <td>{row.avg_driver_0_100.toFixed(1)}</td>
-                      <td>{row.head_up}</td>
-                      <td>
-                        <div className="center-actions-row compact">
-                          <Link className="center-btn ghost" to={`/team-center?event=${row.latest_event_key}&team=${row.team_key}`}>
-                            Team
-                          </Link>
-                          <Link className="center-btn ghost" to={`/match-center?event=${row.latest_event_key}&match=${row.latest_match_key}`}>
-                            Match
-                          </Link>
-                          <button
-                            type="button"
-                            className="center-btn ghost"
-                            onClick={() => {
-                              setSelectedTeamKey(row.team_key);
-                              setSelectedEventKey(row.latest_event_key);
-                              setEventInput(row.latest_event_key);
-                              setStatusText(`Focused on ${row.team_key.toUpperCase()}.`);
-                            }}
-                          >
-                            Focus
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  ),
+                },
+              ]}
+              rows={teamRollups.slice(0, 60)}
+              rowKey={(row) => row.team_key}
+              stickyHeader
+              empty="No scouted teams in this scope."
+            />
           </SurfaceCard>
         ) : null}
 
         {showHistorySection && showHistorySummariesCard ? (
           <SurfaceCard
             title="Scouting Team Summaries"
-            subtitle="Per-team summaries with notes."
           >
             {teamSummaries.length === 0 ? (
               <p className="center-callout muted">No summaries yet. Save reports first.</p>
@@ -4536,129 +4494,92 @@ export function ScoutingPage() {
         ) : null}
 
         {showHistorySection && showHistoryEntriesCard ? (
-          <SurfaceCard title="Scouted Matches" subtitle="Saved scouting logs and ratings.">
-          {visibleEntries.length === 0 ? (
-            <p className="center-callout muted">No entries yet. Save a scouting entry first.</p>
-          ) : isMobileLayout ? (
-            <div className="center-mobile-card-list">
-              {visibleEntries.map((entry) => {
-                const note = entry.notes
-                  ? entry.notes.length > 120
-                    ? `${entry.notes.slice(0, 120)}...`
-                    : entry.notes
-                  : null;
-                return (
-                  <article key={`entry-mobile-${entry.id}`} className="center-mobile-data-card">
-                    <header>
-                      <div>
-                        <strong>{entry.team_key.toUpperCase()} · {entry.match_display}</strong>
-                        <div className="meta">
-                          {entry.event_key} · {relativeFromTimestamp(entry.saved_at_ms)} · {entry.scout_profile || 'Unknown scout'}
-                        </div>
-                      </div>
-                      <span className="center-chip">Pts: {entry.points.total}</span>
-                    </header>
-                    <div className="center-mobile-data-grid">
-                      <span>
-                        Driver<strong>{entry.driver_competency.score_0_100}</strong>
-                      </span>
-                      <span>
-                        Overall<strong>{entry.overall_scout_rating.score_0_100.toFixed(1)}</strong>
-                      </span>
-                      <span>
-                        Manual<strong>{entry.manual_rating.score_0_100.toFixed(1)}</strong>
-                      </span>
-                      <span>
-                        Scout+API
-                        <strong>{entry.scouting_api_rating ? entry.scouting_api_rating.score_0_100.toFixed(1) : 'N/A'}</strong>
-                      </span>
-                      <span>
-                        Room<strong>{activeRoom?.room_key ? activeRoom.room_key : 'N/A'}</strong>
-                      </span>
-                      <span>
-                        Head-up<strong>{entryHeadUp(entry)}</strong>
-                      </span>
-                    </div>
-                    <div className="center-actions-row compact scout-mobile-actions">
-                      <Link className="center-btn ghost" to={`/match-center?event=${entry.event_key}&match=${entry.match_key}`}>
-                        <ScoreboardIcon className="icon-inline" /> Match
-                      </Link>
-                      <Link className="center-btn ghost" to={`/team-center?event=${entry.event_key}&team=${entry.team_key}`}>
-                        <UsersIcon className="icon-inline" /> Team
-                      </Link>
-                      <button type="button" className="center-btn ghost" onClick={() => setQrShareEntry(entry)}>
-                        <QrCodeIcon className="icon-inline" /> Share QR
-                      </button>
-                    </div>
-                    {note ? <p className="center-callout muted scout-mobile-note">Note: {note}</p> : null}
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="center-table-wrap">
-              <table className="center-table">
-                <thead>
-                  <tr>
-                    <th>Saved</th>
-                    <th>Scout</th>
-                    <th>Event</th>
-                    <th>Match</th>
-                    <th>Team</th>
-                    <th>Notes</th>
-                    <th>Total</th>
-                    <th>Driver</th>
-                    <th>Overall</th>
-                    <th>Manual</th>
-                    <th>Scout+API</th>
-                    <th>Head-up</th>
-                    <th>Room</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleEntries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td>{relativeFromTimestamp(entry.saved_at_ms)}</td>
-                      <td>{entry.scout_profile}</td>
-                      <td>{entry.event_key}</td>
-                      <td>
-                        <Link to={`/match-center?event=${entry.event_key}&match=${entry.match_key}`}>
-                          {entry.match_display}
-                        </Link>
-                      </td>
-                      <td>
-                        <Link to={`/team-center?event=${entry.event_key}&team=${entry.team_key}`}>
-                          {entry.team_key.toUpperCase()}
-                        </Link>
-                      </td>
-                      <td>
-                        {entry.notes
-                          ? entry.notes.length > 100
-                            ? `${entry.notes.slice(0, 100)}...`
-                            : entry.notes
-                          : '—'}
-                      </td>
-                      <td>{entry.points.total}</td>
-                      <td>{entry.driver_competency.score_0_100}</td>
-                      <td>{entry.overall_scout_rating.score_0_100.toFixed(1)}</td>
-                      <td>{entry.manual_rating.score_0_100.toFixed(1)}</td>
-                      <td>{entry.scouting_api_rating ? entry.scouting_api_rating.score_0_100.toFixed(1) : 'N/A'}</td>
-                      <td>{entryHeadUp(entry)}</td>
-                      <td>
-                        {activeRoom?.room_key ? activeRoom.room_key : 'Not connected'}
-                      </td>
-                      <td>
-                        <button type="button" className="center-btn ghost" style={{ fontSize: '0.75rem', padding: '2px 6px' }} onClick={() => setQrShareEntry(entry)}>
-                          QR
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <SurfaceCard
+            title="Scouted Matches"
+            right={<Chip tone={activeRoom?.room_key ? 'accent' : 'neutral'} dot>
+              {activeRoom?.room_key ? `Room ${activeRoom.room_key}` : 'Not connected'}
+            </Chip>}
+          >
+          {/* One Table, not a desktop table plus a hand-maintained mobile card
+              list of the same rows. Below 560px it stacks each row into a card
+              itself. The old "Room" column repeated activeRoom.room_key in
+              every row — a column whose every cell is identical is not a
+              column, so it moved to the card header above. */}
+          <Table
+            columns={[
+              {
+                key: 'match_display',
+                label: 'Match',
+                render: (entry) => (
+                  <span className={styles.matchCell}>
+                    <strong>{entry.match_display}</strong>
+                    <small>{entry.team_key.toUpperCase()} · {entry.event_key}</small>
+                  </span>
+                ),
+              },
+              { key: 'saved_at_ms', label: 'Saved', sortable: true, render: (e) => relativeFromTimestamp(e.saved_at_ms) },
+              { key: 'scout_profile', label: 'Scout', render: (e) => e.scout_profile || 'Unknown' },
+              { key: 'points', label: 'Total', numeric: true, sortable: true, render: (e) => e.points.total },
+              { key: 'driver', label: 'Driver', numeric: true, render: (e) => e.driver_competency.score_0_100 },
+              { key: 'overall', label: 'Overall', numeric: true, render: (e) => e.overall_scout_rating.score_0_100.toFixed(1) },
+              { key: 'manual', label: 'Manual', numeric: true, render: (e) => e.manual_rating.score_0_100.toFixed(1) },
+              {
+                key: 'api',
+                label: 'Scout+API',
+                numeric: true,
+                render: (e) => (e.scouting_api_rating ? e.scouting_api_rating.score_0_100.toFixed(1) : 'N/A'),
+              },
+              { key: 'headup', label: 'Head-up', align: 'center', render: (e) => entryHeadUp(e) },
+              {
+                key: 'notes',
+                label: 'Notes',
+                render: (e) => (
+                  <span className={styles.noteCell} title={e.notes || undefined}>
+                    {e.notes || '—'}
+                  </span>
+                ),
+              },
+              {
+                key: 'actions',
+                label: 'Open',
+                align: 'right',
+                render: (e) => (
+                  <span className={styles.rowActions}>
+                    <Button
+                      as="a"
+                      size="sm"
+                      variant="quiet"
+                      href={`#/match-center?event=${e.event_key}&match=${e.match_key}`}
+                      icon={<ScoreboardIcon className="icon-inline" />}
+                    >
+                      Match
+                    </Button>
+                    <Button
+                      as="a"
+                      size="sm"
+                      variant="quiet"
+                      href={`#/team-center?event=${e.event_key}&team=${e.team_key}`}
+                      icon={<UsersIcon className="icon-inline" />}
+                    >
+                      Team
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      onClick={() => setQrShareEntry(e)}
+                      icon={<QrCodeIcon className="icon-inline" />}
+                    >
+                      QR
+                    </Button>
+                  </span>
+                ),
+              },
+            ]}
+            rows={visibleEntries}
+            rowKey={(entry) => entry.id}
+            stickyHeader
+            empty="No entries yet. Save a scouting entry first."
+          />
           </SurfaceCard>
         ) : null}
       </section>

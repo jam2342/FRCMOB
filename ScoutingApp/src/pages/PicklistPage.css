@@ -125,7 +125,7 @@
   border: 1px solid currentColor;
   background: color-mix(in srgb, currentColor 9%, transparent);
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   padding: 0.15rem 0.55rem;
   cursor: pointer;
@@ -135,19 +135,19 @@
 }
 
 .picklist-tier--first {
-  color: var(--color-info);
+  color: var(--color-info-text);
 }
 
 .picklist-tier--second {
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .picklist-tier--dnp {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .picklist-status {
-  font-size: 0.75rem;
+  font-size: var(--font-size-2xs);
   font-weight: 800;
   padding: 0.1rem 0.45rem;
   border-radius: var(--radius-sm);
@@ -155,12 +155,12 @@
 
 .picklist-status.picked {
   background: var(--color-success-soft);
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 .picklist-status.declined {
   background: var(--color-danger-soft);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .picklist-actions {
@@ -173,7 +173,7 @@
 
 .picklist-mini-btn {
   padding: 0.2rem 0.55rem;
-  font-size: 0.78rem;
+  font-size: var(--font-size-2xs);
   min-height: 32px;
 }
 
@@ -190,12 +190,12 @@
   flex-direction: column;
   gap: var(--space-1);
   flex: 1 1 220px;
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
 }
 
 .picklist-note-preview {
   flex-basis: 100%;
-  font-size: 0.78rem;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;

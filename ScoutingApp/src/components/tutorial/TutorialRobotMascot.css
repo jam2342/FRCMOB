@@ -29,7 +29,7 @@
 .tut-robot-arm,
 .tut-robot-hand,
 .tut-robot-leg {
-  stroke: #9fb3c9;
+  stroke: var(--color-text-muted);
   stroke-width: 6;
 }
 
@@ -42,7 +42,7 @@
 }
 
 .tut-robot-head {
-  fill: #dfeaf4;
+  fill: var(--color-text);
   stroke: #8ea3ba;
   stroke-width: 2;
 }

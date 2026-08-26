@@ -17,6 +17,8 @@ import type {
   TheoreticalAllianceResponse,
 } from '../api';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
+import styles from './ComparePage.module.css';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { usePageVisibility } from '../hooks/usePageVisibility';
@@ -42,6 +44,48 @@ const COMPARE_STORAGE_KEYS = {
 
 const COMPARE_TABS = ['summary', 'detailed', 'alliance'] as const;
 type CompareTab = (typeof COMPARE_TABS)[number];
+
+/* Compare puts twelve figures beside each other, so it stays a table for far
+   longer than a five-column board does. useMobileLayout's 1120 is the width the
+   surrounding page already switches at, and matching it keeps the two in step. */
+const COMPARE_CARD_BREAKPOINT = 1120;
+
+type TheoreticalTeamRow = TheoreticalAllianceResponse['teams'][number];
+type TheoreticalPairRow = TheoreticalAllianceResponse['compatibility']['pair_breakdown'][number];
+type SelectionRow = NonNullable<
+  TheoreticalAllianceResponse['selection_model']
+>['top_desirability'][number];
+
+const THEORETICAL_TEAM_COLUMNS: TableColumn<TheoreticalTeamRow>[] = [
+  { key: 'team_key', label: 'Team' },
+  { key: 'rating', label: 'Rating', numeric: true, render: (row) => metric(row.rating_0_100, 2) },
+  { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.model_confidence_0_1, 1) },
+  { key: 'compatibility', label: 'Compatibility', numeric: true, render: (row) => metric(row.compatibility_score_0_100, 2) },
+  { key: 'pros', label: 'Pros', numeric: true, render: (row) => metric(row.pros_score_0_100, 2) },
+  { key: 'cons', label: 'Cons Risk', numeric: true, render: (row) => metric(row.cons_risk_0_100, 2) },
+  { key: 'weighted', label: 'Weighted', numeric: true, render: (row) => metric(row.weighted_score_0_100, 2) },
+  { key: 'pick', label: 'Pick Prob.', numeric: true, render: (row) => pct(row.selection_pick_probability_0_1, 1) },
+];
+
+const PAIR_COLUMNS: TableColumn<TheoreticalPairRow>[] = [
+  { key: 'pair', label: 'Pair', render: (row) => `${row.team_key_a} + ${row.team_key_b}` },
+  { key: 'synergy', label: 'Synergy Points', numeric: true, render: (row) => metric(row.synergy_points, 3) },
+  { key: 'base', label: 'Base', numeric: true, render: (row) => metric(row.base_synergy_points, 3) },
+  { key: 'role', label: 'Role Adj.', numeric: true, render: (row) => metric(row.role_adjustment_points, 3) },
+  { key: 'complement', label: 'Complement', numeric: true, render: (row) => metric(row.complement_bonus_points, 3) },
+  { key: 'risk', label: 'Risk Penalty', numeric: true, render: (row) => metric(row.risk_penalty_points, 3) },
+  { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence, 1) },
+  { key: 'source', label: 'Source', render: (row) => titleizeKey(row.source) },
+];
+
+const SELECTION_COLUMNS: TableColumn<SelectionRow>[] = [
+  { key: 'team_key', label: 'Selection Team' },
+  { key: 'rank', label: 'Rank', numeric: true },
+  { key: 'strength', label: 'Strength', numeric: true, render: (row) => metric(row.strength_score, 2) },
+  { key: 'desirability', label: 'Desirability', numeric: true, render: (row) => metric(row.selection_desirability, 2) },
+  { key: 'r1', label: 'R1 Pick Prob.', numeric: true, render: (row) => pct(row.first_round_pick_probability_0_1, 1) },
+  { key: 'r2', label: 'R2 Pick Prob.', numeric: true, render: (row) => pct(row.second_round_pick_probability_0_1, 1) },
+];
 
 type CompareTeamBundle = {
   team_key: string;
@@ -586,6 +630,76 @@ export function ComparePage() {
     });
   }, [compareTeamKeys, selectedEventKey, teamBundles]);
 
+  type CompareRow = (typeof compareRows)[number];
+
+  const summaryColumns: TableColumn<CompareRow>[] = [
+    {
+      key: 'team',
+      // Eleven numeric columns will happily squeeze this one to nothing, and a
+      // nickname broken across five lines stops identifying the team.
+      width: '11rem',
+      label: 'Team',
+      render: (row) => (
+        <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)}>
+          {row.breakdown?.team.nickname || row.team_key}
+        </button>
+      ),
+    },
+    { key: 'rating', label: 'Rating', numeric: true, render: (row) => metric(row.rating?.rating_0_100, 1) },
+    { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.rating?.confidence_0_1, 1) },
+    { key: 'robot', label: 'Robot', numeric: true, render: (row) => metric(row.rating?.robot_level_0_100, 1) },
+    {
+      key: 'rank',
+      label: 'TBA Rank',
+      numeric: true,
+      render: (row) => {
+        const rank = parseNumber(asRecord(asRecord(asRecord(row.tba_event_status)?.qual)?.ranking)?.rank);
+        return rank !== null ? `#${rank}` : 'N/A';
+      },
+    },
+    { key: 'fuel', label: 'Fuel', numeric: true, render: (row) => metric(row.breakdown?.averages?.fuel_scoring_rate, 2) },
+    { key: 'cycle', label: 'Cycle', numeric: true, render: (row) => metric(row.breakdown?.averages?.cycle_time_sec, 2) },
+    { key: 'auto', label: 'Auto', numeric: true, render: (row) => metric(row.breakdown?.averages?.auto_contribution, 2) },
+    { key: 'climb', label: 'Climb', numeric: true, render: (row) => pct(row.breakdown?.averages?.climb_success_prob, 1) },
+    { key: 'reliability', label: 'Reliability', numeric: true, render: (row) => pct(row.breakdown?.averages?.reliability_score, 1) },
+    { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.breakdown?.matches_analyzed ?? 'N/A' },
+    { key: 'freshness', label: 'Freshness', render: (row) => summarizeFreshness(row.breakdown?.data_freshness || null).label },
+  ];
+
+  /* Below the breakpoint a compare row becomes a compact metric grid rather
+     than one stacked card per figure: eight short numbers fit on a scouting
+     phone, twelve labelled lines do not. The cells still come out of the
+     columns above through renderCell, so there is one definition of how a
+     compare figure is formatted — the second copy that used to live here is
+     what let the mobile view quietly drift two metrics behind the desktop one. */
+  const CARD_METRIC_KEYS = ['rating', 'robot', 'rank', 'climb', 'fuel', 'cycle', 'auto', 'reliability'];
+  const renderSummaryCards = (rows: CompareRow[]) => (
+    <div className={styles.mobileList}>
+      {rows.map((row) => {
+        const freshness = summarizeFreshness(row.breakdown?.data_freshness || null);
+        return (
+          <article key={`compare-mobile-${row.team_key}`} className={styles.mobileCard}>
+            <div className={styles.mobileHead}>
+              {renderCell(summaryColumns[0], row)}
+              <Chip size="sm" tone={freshness.state === 'stale' ? 'warn' : 'neutral'}>
+                {freshness.label}
+              </Chip>
+            </div>
+            <div className={styles.mobileMetrics}>
+              {summaryColumns
+                .filter((column) => CARD_METRIC_KEYS.includes(column.key))
+                .map((column) => (
+                  <span key={column.key}>
+                    {column.label} <strong>{renderCell(column, row)}</strong>
+                  </span>
+                ))}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+
   const metricHighlights = useMemo(() => {
     const definitions = [
       {
@@ -916,7 +1030,6 @@ export function ComparePage() {
       <aside className="center-sidebar">
         <SurfaceCard
           title="Compare Controls"
-          subtitle="Add teams and set event context."
           className="compare-controls-card"
         >
           <label className="center-label" htmlFor="compare-event-input">
@@ -971,7 +1084,7 @@ export function ComparePage() {
               Clear
             </button>
             <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}` : '/events'}>
-              Event Center
+              Events
             </Link>
           </div>
 
@@ -1046,7 +1159,6 @@ export function ComparePage() {
       <section className="center-main">
         <SurfaceCard
           title="Compare Center"
-          subtitle="Compare diagnostics and theoretical alliance builder."
           right={<span className="center-chip">Context: {selectedEventKey || 'none'}</span>}
           className="compare-header-card"
         >
@@ -1065,16 +1177,25 @@ export function ComparePage() {
           </div>
 
           {compareTeamKeys.length > 0 ? (
-            <div className="compare-chip-row">
+            <div className={styles.chipRow}>
               {compareTeamKeys.map((teamKey) => (
-                <div key={`compare-chip-${teamKey}`} className="compare-chip">
-                  <button type="button" onClick={() => openTeamCenter(teamKey)}>
+                <Chip
+                  key={`compare-chip-${teamKey}`}
+                  onRemove={() => removeCompareTeam(teamKey)}
+                  removeLabel={`Remove ${teamKey}`}
+                >
+                  {/* The accessible name here is the team's nickname, which is
+                      the right name for a person to hear and the wrong one for
+                      a snapshot to pin. */}
+                  <button
+                    type="button"
+                    className={styles.chipButton}
+                    data-guard-data-label=""
+                    onClick={() => openTeamCenter(teamKey)}
+                  >
                     {compareTeamLabel(teamKey, teamBundles[teamKey]?.breakdown || null)}
                   </button>
-                  <button type="button" aria-label={`Remove ${teamKey}`} onClick={() => removeCompareTeam(teamKey)}>
-                    ×
-                  </button>
-                </div>
+                </Chip>
               ))}
             </div>
           ) : (
@@ -1084,7 +1205,7 @@ export function ComparePage() {
 
         {activeTab === 'summary' ? (
           <SurfaceCardGroup groupId="compare-center-summary">
-            <SurfaceCard title="Summary" subtitle="Key metrics and model outputs." className="compare-summary-card" compactable>
+            <SurfaceCard title="Summary" className="compare-summary-card" compactable>
             {metricHighlights.length > 0 ? (
               <div className="compare-highlights-grid">
                 {metricHighlights.map((highlight) => (
@@ -1107,87 +1228,14 @@ export function ComparePage() {
               <p className="center-callout muted">Add at least 2 teams for highlights.</p>
             )}
 
-            <div className="center-table-wrap desktop-only">
-              <table className="center-table compare-table">
-                <thead>
-                  <tr>
-                    <th>Team</th>
-                    <th>Rating</th>
-                    <th>Confidence</th>
-                    <th>Robot</th>
-                    <th>TBA Rank</th>
-                    <th>Fuel</th>
-                    <th>Cycle</th>
-                    <th>Auto</th>
-                    <th>Climb</th>
-                    <th>Reliability</th>
-                    <th>Matches</th>
-                    <th>Freshness</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {compareRows.map((row) => (
-                    <tr key={`compare-summary-row-${row.team_key}`}>
-                      <td>
-                        <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)}>
-                          {row.breakdown?.team.nickname || row.team_key}
-                        </button>
-                      </td>
-                      <td>{metric(row.rating?.rating_0_100, 1)}</td>
-                      <td>{pct(row.rating?.confidence_0_1, 1)}</td>
-                      <td>{metric(row.rating?.robot_level_0_100, 1)}</td>
-                      <td>
-                        {(() => {
-                          const status = asRecord(row.tba_event_status);
-                          const qual = asRecord(status?.qual);
-                          const ranking = asRecord(qual?.ranking);
-                          const rank = parseNumber(ranking?.rank);
-                          return rank !== null ? `#${rank}` : 'N/A';
-                        })()}
-                      </td>
-                      <td>{metric(row.breakdown?.averages?.fuel_scoring_rate, 2)}</td>
-                      <td>{metric(row.breakdown?.averages?.cycle_time_sec, 2)}</td>
-                      <td>{metric(row.breakdown?.averages?.auto_contribution, 2)}</td>
-                      <td>{pct(row.breakdown?.averages?.climb_success_prob, 1)}</td>
-                      <td>{pct(row.breakdown?.averages?.reliability_score, 1)}</td>
-                      <td>{row.breakdown?.matches_analyzed ?? 'N/A'}</td>
-                      <td>{summarizeFreshness(row.breakdown?.data_freshness || null).label}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile summary cards */}
-            <div className="compare-mobile-summary-list mobile-only">
-              {compareRows.map((row) => {
-                const status = asRecord(row.tba_event_status);
-                const qual = asRecord(status?.qual);
-                const ranking = asRecord(qual?.ranking);
-                const rank = parseNumber(ranking?.rank);
-                const freshness = summarizeFreshness(row.breakdown?.data_freshness || null);
-                return (
-                  <div key={`compare-mobile-${row.team_key}`} className="compare-mobile-summary-card">
-                    <div className="compare-mobile-summary-head">
-                      <button type="button" className="center-link-btn" onClick={() => openTeamCenter(row.team_key)} style={{ fontWeight: 600 }}>
-                        {row.breakdown?.team.nickname || row.team_key}
-                      </button>
-                      <span className={`center-chip freshness ${freshness.state}`} style={{ fontSize: '0.7rem' }}>{freshness.label}</span>
-                    </div>
-                    <div className="compare-mobile-summary-metrics">
-                      <span>Rating <strong>{metric(row.rating?.rating_0_100, 1)}</strong></span>
-                      <span>Robot <strong>{metric(row.rating?.robot_level_0_100, 1)}</strong></span>
-                      <span>Rank <strong>{rank !== null ? `#${rank}` : '—'}</strong></span>
-                      <span>Climb <strong>{pct(row.breakdown?.averages?.climb_success_prob, 1)}</strong></span>
-                      <span>Fuel <strong>{metric(row.breakdown?.averages?.fuel_scoring_rate, 2)}</strong></span>
-                      <span>Cycle <strong>{metric(row.breakdown?.averages?.cycle_time_sec, 2)}</strong></span>
-                      <span>Auto <strong>{metric(row.breakdown?.averages?.auto_contribution, 2)}</strong></span>
-                      <span>Rely <strong>{pct(row.breakdown?.averages?.reliability_score, 1)}</strong></span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <Table
+              columns={summaryColumns}
+              rows={compareRows}
+              rowKey={(row) => `compare-summary-row-${row.team_key}`}
+              cardBreakpoint={COMPARE_CARD_BREAKPOINT}
+              renderCards={renderSummaryCards}
+              empty="Add teams to build compare diagnostics."
+            />
             </SurfaceCard>
           </SurfaceCardGroup>
         ) : null}
@@ -1196,7 +1244,6 @@ export function ComparePage() {
           <SurfaceCardGroup groupId="compare-center-deep">
             <SurfaceCard
               title="Deep Compare"
-              subtitle="Per-team pros/cons and diagnostics."
               className="compare-deep-shell"
               compactable
             >
@@ -1524,97 +1571,25 @@ export function ComparePage() {
                   </div>
                 </div>
 
-                <div className="center-table-wrap">
-                  <table className="center-table compare-table">
-                    <thead>
-                      <tr>
-                        <th>Team</th>
-                        <th>Rating</th>
-                        <th>Confidence</th>
-                        <th>Compatibility</th>
-                        <th>Pros</th>
-                        <th>Cons Risk</th>
-                        <th>Weighted</th>
-                        <th>Pick Prob.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {theoreticalResult.teams.map((team) => (
-                        <tr key={`theoretical-team-row-${team.team_key}`}>
-                          <td>{team.team_key}</td>
-                          <td>{metric(team.rating_0_100, 2)}</td>
-                          <td>{pct(team.model_confidence_0_1, 1)}</td>
-                          <td>{metric(team.compatibility_score_0_100, 2)}</td>
-                          <td>{metric(team.pros_score_0_100, 2)}</td>
-                          <td>{metric(team.cons_risk_0_100, 2)}</td>
-                          <td>{metric(team.weighted_score_0_100, 2)}</td>
-                          <td>{pct(team.selection_pick_probability_0_1, 1)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table
+                  columns={THEORETICAL_TEAM_COLUMNS}
+                  rows={theoreticalResult.teams}
+                  rowKey={(row) => `theoretical-team-row-${row.team_key}`}
+                />
 
-                <div className="center-table-wrap">
-                  <table className="center-table compare-table">
-                    <thead>
-                      <tr>
-                        <th>Pair</th>
-                        <th>Synergy Points</th>
-                        <th>Base</th>
-                        <th>Role Adj.</th>
-                        <th>Complement</th>
-                        <th>Risk Penalty</th>
-                        <th>Confidence</th>
-                        <th>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {theoreticalResult.compatibility.pair_breakdown.map((pair, idx) => (
-                        <tr key={`theoretical-pair-${idx}`}>
-                          <td>
-                            {pair.team_key_a} + {pair.team_key_b}
-                          </td>
-                          <td>{metric(pair.synergy_points, 3)}</td>
-                          <td>{metric(pair.base_synergy_points, 3)}</td>
-                          <td>{metric(pair.role_adjustment_points, 3)}</td>
-                          <td>{metric(pair.complement_bonus_points, 3)}</td>
-                          <td>{metric(pair.risk_penalty_points, 3)}</td>
-                          <td>{pct(pair.confidence, 1)}</td>
-                          <td>{titleizeKey(pair.source)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table
+                  columns={PAIR_COLUMNS}
+                  rows={theoreticalResult.compatibility.pair_breakdown}
+                  rowKey={(_row, index) => `theoretical-pair-${index}`}
+                  empty="No pair synergy data."
+                />
 
                 {theoreticalResult.selection_model ? (
-                  <div className="center-table-wrap">
-                    <table className="center-table compare-table">
-                      <thead>
-                        <tr>
-                          <th>Selection Team</th>
-                          <th>Rank</th>
-                          <th>Strength</th>
-                          <th>Desirability</th>
-                          <th>R1 Pick Prob.</th>
-                          <th>R2 Pick Prob.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {theoreticalResult.selection_model.top_desirability.slice(0, 12).map((row) => (
-                          <tr key={`selection-desirability-${row.team_key}`}>
-                            <td>{row.team_key}</td>
-                            <td>{row.rank}</td>
-                            <td>{metric(row.strength_score, 2)}</td>
-                            <td>{metric(row.selection_desirability, 2)}</td>
-                            <td>{pct(row.first_round_pick_probability_0_1, 1)}</td>
-                            <td>{pct(row.second_round_pick_probability_0_1, 1)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Table
+                    columns={SELECTION_COLUMNS}
+                    rows={theoreticalResult.selection_model.top_desirability.slice(0, 12)}
+                    rowKey={(row) => `selection-desirability-${row.team_key}`}
+                  />
                 ) : null}
               </div>
             ) : null}

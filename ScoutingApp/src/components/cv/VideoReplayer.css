@@ -4,7 +4,7 @@
   position: relative;
   width: 100%;
   background: var(--color-bg);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -118,7 +118,7 @@
 }
 
 .video-replayer__mode-note a {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-decoration: none;
   font-weight: 600;
 }

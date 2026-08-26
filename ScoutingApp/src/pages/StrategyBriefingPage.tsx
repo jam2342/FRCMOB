@@ -473,7 +473,6 @@ export function StrategyBriefingPage() {
         {/* ---- Event + Team Selection ---- */}
         <SurfaceCard
           title="Match Strategy Briefing"
-          subtitle="Tactical match briefings."
           className="no-print"
         >
           <EventPicker
@@ -773,7 +772,7 @@ export function StrategyBriefingPage() {
                           )}
                           {opp.rating?.cons && opp.rating.cons.length > 0 ? (
                             <div className="briefing-signal-list">
-                              <span className="text-sm" style={{ color: '#ef4444' }}>Weaknesses:</span>
+                              <span className="text-sm" style={{ color: 'var(--color-danger-text)' }}>Weaknesses:</span>
                               {opp.rating.cons.slice(0, 3).map((c, i) => (
                                 <span key={i} className="text-sm"> {c.label}</span>
                               ))}

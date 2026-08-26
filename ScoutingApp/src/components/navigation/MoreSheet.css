@@ -5,14 +5,14 @@
 .ms__backdrop {
   position: fixed;
   inset: 0;
-  z-index: calc(var(--z-bottom-bar, 40) - 1);
-  background: rgba(0, 0, 0, 0.4);
+  z-index: calc(var(--z-bottom-bar) - 1);
+  background: color-mix(in srgb, var(--color-bg) 40%, transparent);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   border: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  animation: ms-fade-in var(--motion-fast, 140ms) ease both;
+  animation: ms-fade-in var(--motion-fast) ease both;
 }
 
 @keyframes ms-fade-in {
@@ -24,15 +24,15 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--bottom-bar-height, 56px) + var(--safe-area-bottom, 0px));
-  z-index: calc(var(--z-bottom-bar, 40) + 1);
-  background: var(--color-bg-elevated, #151c24);
-  border-radius: var(--radius-xl, 18px) var(--radius-xl, 18px) 0 0;
+  bottom: calc(var(--bottom-bar-height) + var(--safe-area-bottom));
+  z-index: calc(var(--z-bottom-bar) + 1);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding: 6px 12px 12px;
   max-height: calc(100vh - 122px);
   overflow-y: auto;
-  box-shadow: var(--shadow-xl, 0 12px 32px rgba(6, 10, 16, 0.32));
-  animation: ms-slide-up var(--motion-base, 220ms) var(--motion-snappy, ease) both;
+  box-shadow: var(--shadow-xl);
+  animation: ms-slide-up var(--motion-base) var(--motion-snappy) both;
 }
 
 @keyframes ms-slide-up {
@@ -63,7 +63,7 @@
 }
 
 .ms--closing {
-  animation: ms-slide-down 200ms var(--motion-snappy, ease) both;
+  animation: ms-slide-down 200ms var(--motion-snappy) both;
   pointer-events: none;
 }
 
@@ -76,26 +76,26 @@
 .ms__handle {
   width: 36px;
   height: 4px;
-  border-radius: var(--radius-full, 9999px);
-  background: var(--color-border, #384756);
-  margin: var(--space-1, 4px) auto var(--space-3, 12px);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  margin: var(--space-1) auto var(--space-3);
   cursor: grab;
   touch-action: none;
 }
 
 /* ── Section ─────────────────────────────────────────────────────── */
 .ms__section {
-  margin-bottom: var(--space-2, 8px);
+  margin-bottom: var(--space-2);
 }
 
 .ms__section-title {
-  font-size: var(--font-size-2xs, 0.625rem);
-  font-weight: var(--font-weight-semibold, 600);
-  color: var(--color-text-dim, #73889c);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  margin: 0 0 var(--space-2, 8px);
-  padding: 0 var(--space-1, 4px);
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-1);
 }
 
 /* ── Grid of links ───────────────────────────────────────────────── */
@@ -112,35 +112,35 @@
   justify-content: center;
   gap: 3px;
   padding: 9px 6px;
-  border-radius: var(--radius-md, 10px);
-  background: var(--color-surface, #1b2530);
-  border: 1px solid var(--color-border, #384756);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   text-decoration: none;
-  color: var(--color-text, #e4edf5);
+  color: var(--color-text);
   transition:
-    background var(--motion-fast, 140ms) ease,
-    border-color var(--motion-fast, 140ms) ease,
-    transform var(--motion-fast, 140ms) var(--motion-spring, ease),
-    box-shadow var(--motion-fast, 140ms) ease;
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--motion-spring),
+    box-shadow var(--motion-fast) ease;
   -webkit-tap-highlight-color: transparent;
   min-height: 58px;
 }
 
 .ms__link:active {
-  background: var(--color-surface-soft, #202c38);
+  background: var(--color-surface-soft);
   transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .ms__link:hover {
     transform: translateY(-1px);
-    box-shadow: 0 7px 14px rgba(5, 12, 19, 0.2);
+    box-shadow: 0 7px 14px color-mix(in srgb, var(--color-bg) 20%, transparent);
   }
 }
 
 .ms__link--active {
-  border-color: var(--color-accent, #5ca88d);
-  background: var(--color-accent-soft, rgba(92, 168, 141, 0.16));
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
   box-shadow: 0 6px 12px rgba(16, 34, 27, 0.2);
 }
 
@@ -158,7 +158,7 @@
 }
 
 .ms__link-label {
-  font-size: 0.64rem;
+  font-size: var(--font-size-legacy-10);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -166,27 +166,27 @@
 /* ── Divider ─────────────────────────────────────────────────────── */
 .ms__divider {
   height: 1px;
-  background: var(--color-border, #384756);
-  margin: var(--space-2, 8px) 0;
+  background: var(--color-surface-muted);
+  margin: var(--space-2) 0;
 }
 
 /* ── Light theme ─────────────────────────────────────────────────── */
 .product-shell.theme-light .ms {
-  background: var(--color-bg-elevated, #f7f9fc);
+  background: var(--color-bg-elevated);
 }
 
 .product-shell.theme-light .ms__link {
-  background: var(--color-surface, #ffffff);
-  border-color: var(--color-border, #d7e0e9);
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 .product-shell.theme-light .ms__link:active {
-  background: var(--color-surface-muted, #edf2f7);
+  background: var(--color-surface-muted);
 }
 
 .product-shell.theme-light .ms__link--active {
-  border-color: var(--color-accent, #4f9a82);
-  background: var(--color-accent-soft, rgba(79, 154, 130, 0.14));
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 /* ── Reduced motion ──────────────────────────────────────────────── */
@@ -216,4 +216,32 @@
   .ms__backdrop {
     display: none !important;
   }
+}
+
+/* Secondary legal links — plain text so they don't compete with the nav tiles. */
+.ms__legal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0 0.25rem;
+  flex-wrap: wrap;
+}
+
+.ms__legal-link {
+  color: var(--color-text-dim);
+  font-size: var(--font-size-2xs);
+  text-decoration: none;
+  padding: 0.35rem 0.25rem;
+}
+
+.ms__legal-link:hover,
+.ms__legal-link:focus-visible {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.ms__legal-sep {
+  color: var(--color-text-dim);
+  font-size: var(--font-size-2xs);
 }

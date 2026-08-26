@@ -25,7 +25,8 @@ import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
-import { useMobileLayout } from '../hooks/useMobileLayout';
+import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
+import { Table, type TableColumn } from '../components/ui/primitives';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
@@ -633,6 +634,27 @@ export function MatchCenterPage() {
     return rows;
   }, [pairSortMode, selectedBlueSynergy?.pair_breakdown, selectedRedSynergy?.pair_breakdown]);
 
+  /* The pair board's alliance is a fact about the row, so it stays a real
+     alliance pill rather than the plain "Red"/"Blue" text the desktop table
+     used while the phone list showed the pill. */
+  const pairBreakdownColumns: TableColumn<(typeof selectedPairBreakdown)[number]>[] = [
+    {
+      key: 'pair',
+      label: 'Pair',
+      render: (pair) => `${pair.team_key_a} + ${pair.team_key_b}`,
+    },
+    {
+      key: 'alliance',
+      label: 'Alliance',
+      render: (pair) => (
+        <span className={`center-alliance-pill ${pair.alliance.toLowerCase()}`}>{pair.alliance}</span>
+      ),
+    },
+    { key: 'points', label: 'Points', numeric: true, render: (pair) => metric(pair.synergy_points, 2) },
+    { key: 'confidence', label: 'Confidence', numeric: true, render: (pair) => metric(pair.confidence, 2) },
+    { key: 'source', label: 'Source', render: (pair) => titleizeKey(pair.source) },
+  ];
+
   const nextLiveMatch = useMemo(() => {
     const rows = [...scheduleRows];
     rows.sort((a, b) => {
@@ -805,7 +827,7 @@ export function MatchCenterPage() {
         />
       ) : null}
       <aside className="center-sidebar">
-        <SurfaceCard title="Match Finder" subtitle="Pick an event and match." compactable>
+        <SurfaceCard title="Match Finder" compactable>
           <EventPicker
             value={selectedEventKey}
             onSelect={(key) => {
@@ -832,8 +854,8 @@ export function MatchCenterPage() {
           </div>
           {eventError ? <p className="center-callout warning">{eventError}</p> : null}
           <div className="center-actions-row primary-actions">
-            <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}&tab=schedule` : '/events'} title="Go to Event Center">
-              <CalendarIcon className="icon-inline" /> Event Center
+            <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}&tab=schedule` : '/events'} title="Go to Events">
+              <CalendarIcon className="icon-inline" /> This event
             </Link>
             <button
               type="button"
@@ -1099,7 +1121,7 @@ export function MatchCenterPage() {
         ) : null}
 
         {selectedEventKey && loadingEventData && scheduleRows.length === 0 ? (
-          <SurfaceCard title="Loading" subtitle="Pulling match data." compactable>
+          <SurfaceCard title="Loading" compactable>
             <SkeletonBlock rows={6} />
           </SurfaceCard>
         ) : null}
@@ -1140,16 +1162,13 @@ export function MatchCenterPage() {
                   <strong>{selectedBlueLineupLabel}</strong>
                 </div>
               </div>
-              <div className="center-actions-row">
-                {liveStream?.watch_url ? (
-                  <a href={liveStream.watch_url} target="_blank" rel="noreferrer" className="center-btn" title="Watch live broadcast">
-                    <VideoIcon className="icon-inline" /> Watch
-                  </a>
-                ) : null}
-                <button type="button" className="center-btn ghost" onClick={() => setActiveTab('teams')}>
-                  <UsersIcon className="icon-inline" /> Teams
-                </button>
-              </div>
+              {/* Both controls that used to sit here were duplicates of things
+                  already on screen: "Watch" pointed at the same
+                  liveStream.watch_url as the Live Stream card below, and
+                  "Teams" ran the same setActiveTab('teams') as the Teams tab
+                  directly above. Four controls, two actions, one screen.
+                  The mobile action row keeps its copies — the tab strip is not
+                  rendered there, so they are the only way to reach either. */}
             </SurfaceCard>
             ) : null}
 
@@ -1290,7 +1309,7 @@ export function MatchCenterPage() {
                     <SkeletonBlock rows={6} compact />
                   </div>
                 ) : matchTracks && matchTracks.total_rows > 0 ? (
-                  <SurfaceCard title="CV Video Replayer" subtitle="Robot tracking overlay synced to match video." collapsible>
+                  <SurfaceCard title="CV Video Replayer" collapsible>
                     <VideoReplayer
                       key={matchTracks.match_key}
                       data={matchTracks}
@@ -1307,7 +1326,7 @@ export function MatchCenterPage() {
               {selectedIsLive ? (
                 renderLiveStreamCard('Live Broadcast', 'Stream replaces lineup while match is live.')
               ) : (
-                <SurfaceCard title="Alliances" subtitle="Team lineup for current match." compactable>
+                <SurfaceCard title="Alliances" compactable>
                   <div className="center-alliance-split">
                     <div className={`center-alliance-col red ${resolvedWinner === 'red' ? 'winner' : ''}`.trim()}>
                       <label>
@@ -1387,7 +1406,7 @@ export function MatchCenterPage() {
                 renderLiveStreamCard()
               )}
 
-              <SurfaceCard title="Match Phase Windows" subtitle="Phase timing from game config." compactable>
+              <SurfaceCard title="Match Phase Windows" compactable>
                 {loadingPhases ? (
                   <div className="center-loading-state">
                     <SkeletonBlock rows={3} compact />
@@ -1429,7 +1448,7 @@ export function MatchCenterPage() {
                   </div>
                 </SurfaceCard>
               ) : matchTracks && matchTracks.total_rows > 0 ? (
-                <SurfaceCard title="CV Video Replayer" subtitle="Robot tracking overlay synced to match video." collapsible compactable>
+                <SurfaceCard title="CV Video Replayer" collapsible compactable>
                   <VideoReplayer
                     key={matchTracks.match_key}
                     data={matchTracks}
@@ -1444,7 +1463,7 @@ export function MatchCenterPage() {
 
         {selectedMatch && activeTab === 'breakdown' ? (
           <SurfaceCardGroup groupId="match-center-breakdown">
-            <SurfaceCard title="Match Breakdown" subtitle="Alliance synergy and pair breakdown." compactable>
+            <SurfaceCard title="Match Breakdown" compactable>
             <div className="center-kpi-grid">
               <article className="center-kpi-card">
                 <span><SignalIcon className="icon-inline" /> Status</span>
@@ -1499,91 +1518,32 @@ export function MatchCenterPage() {
                   </article>
                 </div>
 
-                {isMobileLayout ? (
-                  <>
-                    <div className="center-sort-chip-row" role="toolbar" aria-label="Pair breakdown sorting">
-                      <button
-                        type="button"
-                        className={`center-sort-chip ${pairSortMode === 'points' ? 'active' : ''}`.trim()}
-                        onClick={() => setPairSortMode('points')}
-                      >
-                        <ScoreboardIcon className="icon-inline" /> By Points
-                      </button>
-                      <button
-                        type="button"
-                        className={`center-sort-chip ${pairSortMode === 'confidence' ? 'active' : ''}`.trim()}
-                        onClick={() => setPairSortMode('confidence')}
-                      >
-                        <StarIcon className="icon-inline" /> By Confidence
-                      </button>
-                    </div>
-                    <div className="center-mobile-card-list">
-                      {selectedPairBreakdown.map((pair, idx) => (
-                        <article key={`pair-mobile-${pair.alliance}-${idx}`} className="center-mobile-data-card">
-                          <header>
-                            <strong>
-                              {pair.team_key_a} + {pair.team_key_b}
-                            </strong>
-                            <span className={`center-alliance-pill ${pair.alliance.toLowerCase()}`}>{pair.alliance}</span>
-                          </header>
-                          <div className="center-mobile-data-grid">
-                            <span>
-                              Points
-                              <strong>{metric(pair.synergy_points, 2)}</strong>
-                            </span>
-                            <span>
-                              Confidence
-                              <strong>{metric(pair.confidence, 2)}</strong>
-                            </span>
-                            <span>
-                              Source
-                              <strong>{titleizeKey(pair.source)}</strong>
-                            </span>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                    {selectedPairBreakdown.length === 0 ? (
-                      <p className="center-callout muted">No pair synergy data.</p>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="center-table-wrap">
-                    <table className="center-table">
-                      <thead>
-                        <tr>
-                          <th>Alliance</th>
-                          <th>Pair</th>
-                          <th>Points</th>
-                          <th>Confidence</th>
-                          <th>Source</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedPairBreakdown.map(
-                          (pair, idx) => (
-                            <tr key={`pair-${pair.alliance}-${idx}`}>
-                              <td>{pair.alliance}</td>
-                              <td>
-                                {pair.team_key_a} + {pair.team_key_b}
-                              </td>
-                              <td>{metric(pair.synergy_points, 2)}</td>
-                              <td>{metric(pair.confidence, 2)}</td>
-                              <td>{titleizeKey(pair.source)}</td>
-                            </tr>
-                          ),
-                        )}
-                        {selectedPairBreakdown.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="center-muted">
-                            No pair synergy data.
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                {/* One render at every width. The sort chips used to be inside
+                    the mobile branch, so a desktop visitor could not sort the
+                    pairs at all. */}
+                <div className="center-sort-chip-row" role="toolbar" aria-label="Pair breakdown sorting">
+                  <button
+                    type="button"
+                    className={`center-sort-chip ${pairSortMode === 'points' ? 'active' : ''}`.trim()}
+                    onClick={() => setPairSortMode('points')}
+                  >
+                    <ScoreboardIcon className="icon-inline" /> By Points
+                  </button>
+                  <button
+                    type="button"
+                    className={`center-sort-chip ${pairSortMode === 'confidence' ? 'active' : ''}`.trim()}
+                    onClick={() => setPairSortMode('confidence')}
+                  >
+                    <StarIcon className="icon-inline" /> By Confidence
+                  </button>
+                </div>
+                <Table
+                  columns={pairBreakdownColumns}
+                  rows={selectedPairBreakdown}
+                  rowKey={(pair, index) => `pair-${pair.alliance}-${index}`}
+                  cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+                  empty="No pair synergy data."
+                />
               </>
             )}
             </SurfaceCard>

@@ -97,7 +97,7 @@ export function AutoScoutEvidencePanel(props: AutoScoutEvidencePanelProps) {
     );
   }
   return (
-    <SurfaceCard title="Auto-Scout Evidence" subtitle="Confidence, refs, and track replay.">
+    <SurfaceCard title="Auto-Scout Evidence">
       <EvidenceBody {...bodyProps} />
     </SurfaceCard>
   );

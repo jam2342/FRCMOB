@@ -1,0 +1,133 @@
+/* Card insides. SurfaceCard already owns the shell — its portal expansion,
+   mobile collapse and focus handling are correct and are not touched here.
+   These are the parts 84 bespoke classes were each reinventing: the padded
+   body, the label/value list row, the stat grid, and the empty state. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.bodyTight {
+  gap: var(--space-2);
+}
+
+/* ── Row ──────────────────────────────────────────────────────────── */
+
+/* A label on the left, a value on the right, a hairline between rows. The
+   single most-repeated shape in the app. */
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width-1) solid var(--color-border);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowValue {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  text-align: right;
+  flex: none;
+}
+
+/* An interactive row is a button, so it gets a real hit area and focus ring
+   rather than a click handler on a div. */
+.rowButton {
+  width: 100%;
+  border: 0;
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowButton:hover {
+  background: var(--color-surface-soft);
+}
+
+.rowButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
+@media (pointer: coarse) {
+  .rowButton {
+    min-height: var(--touch-target-min);
+  }
+}
+
+/* ── Grid ─────────────────────────────────────────────────────────── */
+
+/* Auto-fitting stat grid. `minmax(0, …)` on the track keeps a long value from
+   forcing the column wider than its share and pushing the card sideways. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.gridDense {
+  grid-template-columns: repeat(auto-fit, minmax(min(92px, 100%), 1fr));
+  gap: var(--space-2);
+}
+
+/* ── Empty ────────────────────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+
+  padding: var(--space-6) var(--space-4);
+  border: var(--border-width-1) dashed var(--color-border);
+  border-radius: var(--radius-md);
+
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.emptyIcon {
+  display: inline-flex;
+  color: var(--color-text-dim);
+}
+
+.emptyIcon svg {
+  display: block;
+  width: var(--icon-size-xl);
+  height: var(--icon-size-xl);
+}
+
+.emptyTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.emptyText {
+  font-size: var(--font-size-sm);
+  max-width: 42ch;
+}

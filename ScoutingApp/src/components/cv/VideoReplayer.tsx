@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TrackRow, MatchTracksResponse } from '../../api';
+import { readableInk } from '../../utils/readableInk';
 import './VideoReplayer.css';
 
 /* ── constants ────────────────────────────────────────────────────── */
@@ -148,8 +149,10 @@ export function VideoReplayer({ data, videoUrl, className, seekToTimeSec }: Prop
       ctx.fillStyle = color;
       ctx.fillRect(x1, y1 - labelH, labelW, labelH);
 
-      // Label text
-      ctx.fillStyle = '#fff';
+      // Label text. The ink follows the track colour rather than always being
+      // white — white on the yellow track measured 1.92:1, and this label is
+      // the only thing saying which robot the box belongs to.
+      ctx.fillStyle = readableInk(color);
       ctx.textBaseline = 'middle';
       ctx.fillText(label, x1 + 4, y1 - labelH / 2);
 

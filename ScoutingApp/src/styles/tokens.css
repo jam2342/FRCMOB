@@ -3,24 +3,73 @@
 /* ================================================================== */
 
 :root {
-  /* ── Color Palette: Dark (default) ─────────────────────────────── */
-  --color-bg:             #10151b;
-  --color-bg-elevated:    #151c24;
-  --color-surface:        #1b2530;
-  --color-surface-soft:   #202c38;
-  --color-surface-muted:  #263341;
-  --color-surface-raised: #243040;
-  --color-border:         #384756;
-  --color-border-strong:  #4a5d6f;
-  --color-text:           #e4edf5;
-  --color-text-muted:     #9fb0c1;
-  --color-text-dim:       #73889c;
+  /* ── Color Palette: Dark (default) ───────────────────────────────
+     The neutrals are near-neutral on purpose. Every surface, border and text
+     colour used to sit on hue 208-213 — one blue-grey ramp, which is the
+     default any dashboard lands on. In an app whose central fact is red
+     alliance versus blue alliance, a blue ground means the chrome competes
+     with half the data: a blue-tinted match row on a blue-tinted card said
+     nothing.
+
+     They now carry a 3-5% warm cast at hue 40 — aluminium and venue floor
+     rather than slate — and every value was recomputed to hold its exact
+     WCAG relative luminance, so no contrast pair moved. Red and blue are the
+     only strong hues left, which is how the sport looks. */
+  --color-bg:             #151413;
+  --color-bg-elevated:    #1c1b19;
+  --color-surface:        #252422;
+  --color-surface-soft:   #2c2b28;
+  --color-surface-muted:  #33322e;
+  --color-surface-raised: #312f2c;
+  --color-border:         #474541;
+  --color-border-strong:  #5e5b55;
+  --color-text:           #ececeb;
+  --color-text-muted:     #afaeaa;
+  /* A hair lighter than the luminance-preserving recolour produced. Moving the
+     neutrals off blue changed what this composites against, and the Stat label
+     landed at 4.49:1 — under AA by one hundredth. */
+  --color-text-dim:       #a3a19d;
 
   /* ── Accent colors ─────────────────────────────────────────────── */
-  --color-accent:         #5ca88d;
+  --color-accent:         #43ab87;
   --color-accent-hover:   #6fbf9e;
+  /* Accent used as TEXT, not as a fill. Small accent-coloured labels need more
+     contrast than a button background does.
+     Brighter than --color-accent-strong: an accent chip puts this text on the
+     accent-*soft* fill, which composites lighter than the plain surface and
+     dropped #2fb072 to 4.27:1. Brightening only helps every other dark-theme
+     use, since they all sit on darker grounds. */
+  --color-accent-text:    #3cbb7e;
   --color-accent-soft:    rgba(92, 168, 141, 0.16);
   --color-accent-strong:  #2fb072;
+  /* Text sitting ON the accent fill. The accent is a mid-tone, so white over it
+     is 2.8:1 — this goes dark instead (6.07:1 here, 5.12:1 in light). */
+  --color-on-accent:      #0d1f18;
+
+  /* ── Scout identity colours ────────────────────────────────────────
+     Categorical, not semantic: which scout owns an assignment slot. Ten of
+     them, cycled by index, so they must stay visually distinct rather than
+     ordered — a scale would read as a ranking, which these are not.
+
+     Every one is a fill with text on top, so each is paired with an ink that
+     actually passes AA against it. That pairing is the point: the assignment
+     grid used to force white on all ten, which measured 1.92:1 on the yellow
+     and 1.98:1 on the lime. Dark ink clears 4.5:1 on all ten, and the indigo
+     moved from #6366f1 (4.00:1, the one that failed both inks) to #818cf8.
+
+     They are identity, not theme, so the values do not change between light
+     and dark — only the ground behind the grid does. */
+  --scout-ink:            #0f172a;
+  --scout-color-1:        #3b82f6;
+  --scout-color-2:        #22c55e;
+  --scout-color-3:        #eab308;
+  --scout-color-4:        #ef4444;
+  --scout-color-5:        #a855f7;
+  --scout-color-6:        #ec4899;
+  --scout-color-7:        #14b8a6;
+  --scout-color-8:        #f97316;
+  --scout-color-9:        #818cf8;
+  --scout-color-10:       #84cc16;
 
   /* ── Semantic colors ───────────────────────────────────────────── */
   --color-success:        #22c55e;
@@ -31,6 +80,24 @@
   --color-danger-soft:    rgba(239, 68, 68, 0.14);
   --color-info:           #3b82f6;
   --color-info-soft:      rgba(59, 130, 246, 0.14);
+
+  /* Semantic colours used as TEXT rather than as a fill or a dot. The base
+     values are tuned to read as swatches; as small text on a surface, danger
+     and info land at 3.4:1 and 3.5:1 even here, and all four fail in light.
+     Fills, borders and dots keep the base value. */
+  --color-success-text:   #22c55e;
+  --color-warning-text:   #eab308;
+  --color-danger-text:    #f87171;
+  --color-info-text:      #60a5fa;
+
+  /* Alliance colours as text. These carry real meaning in FRC — which side a
+     row belongs to — so they stay red and blue rather than collapsing to grey,
+     just at a value that is actually readable. */
+  /* Lightened from #f87171. Warm text loses contrast against a warm ground, and
+     moving the neutrals off blue put "Red alliance" at 4.49:1 — the one real
+     cost of that change, and it is paid here rather than by reverting it. */
+  --color-alliance-red-text:  #fb9090;
+  --color-alliance-blue-text: #60a5fa;
 
   /* ── Alliance colors ───────────────────────────────────────────── */
   --color-alliance-red:   #cf5c68;
@@ -45,19 +112,39 @@
   --color-offline-text:   #ffd8de;
 
   /* ── Typography ────────────────────────────────────────────────── */
-  --font-family:          'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+  --font-family:          'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
                           Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
   --font-mono:            'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
 
-  --font-size-2xs:        0.75rem;    /* 12px – raised from 10px for legibility */
-  --font-size-xs:         0.8125rem;  /* 13px – raised from 11px */
-  --font-size-sm:         0.8125rem;  /* 13px – raised from 12px */
-  --font-size-base:       0.875rem;   /* 14px – raised from ~13.5px */
-  --font-size-md:         0.9375rem;  /* 15px */
-  --font-size-lg:         1.0625rem;  /* 17px */
-  --font-size-xl:         1.1875rem;  /* 19px */
-  --font-size-2xl:        1.4375rem;  /* 23px */
-  --font-size-3xl:        1.75rem;    /* 28px */
+  /* The ladder. Each step has a job; if a size does not have one of these
+     jobs, it does not get a size. See src/styles/README.md.
+
+     This scale existed before and was almost entirely bypassed: 546 raw
+     font-size literals against 112 token references, spelled 59 different
+     ways whose twelve commonest all landed between 9.9px and 13.4px. The
+     ladder is unchanged from 12px up — what was missing was the top. */
+  --font-size-2xs:        0.75rem;    /* 12px – uppercase eyebrows and labels. Never a sentence. */
+  --font-size-xs:         0.8125rem;  /* 13px – alias of sm, kept for existing call sites */
+  --font-size-sm:         0.8125rem;  /* 13px – table cells, chips, metadata */
+  --font-size-base:       0.875rem;   /* 14px – reading text. Anything in sentences. */
+  --font-size-md:         0.9375rem;  /* 15px – emphasised body */
+  --font-size-lg:         1.0625rem;  /* 17px – sub-headings */
+  --font-size-xl:         1.1875rem;  /* 19px – card and section titles */
+  --font-size-2xl:        1.4375rem;  /* 23px – page titles */
+  --font-size-3xl:        1.75rem;    /* 28px – hero; the display step on mobile */
+  --font-size-display:    2.25rem;    /* 36px – THE one value per screen. Never a label. */
+
+  /* Transitional, not part of the ladder. The type codemod snapped 546
+     literals onto tokens with a hard ceiling of 1px movement per element, so
+     it needed somewhere to put the sizes below 12px that the app had grown
+     through compounding `em` — it ships text at 8.96px today. These two exist
+     so that pass could be provably invisible.
+
+     They are named `legacy` so nobody reads them as a choice. Retiring them is
+     a tracked job: guard-type.mjs counts their uses and the count only goes
+     down. Do not add a new one. */
+  --font-size-legacy-10:  0.625rem;   /* 10px */
+  --font-size-legacy-11:  0.6875rem;  /* 11px */
 
   --font-weight-normal:   400;
   --font-weight-medium:   500;
@@ -68,21 +155,31 @@
   --line-height-base:     1.45;
   --line-height-relaxed:  1.6;
 
-  /* Canonical type styles */
-  --type-display-size:    1.75rem;
-  --type-display-weight:  700;
+  /* Canonical type styles — views onto the ladder above, never their own
+     numbers.
+
+     These used to carry their own values, which made them a second type system
+     sitting beside the ladder: --type-heading-sm-size was 0.9375rem and
+     --font-size-md was 0.9375rem, the same size spelled two ways, and
+     --type-body-size was 0.84rem, which is on neither. A blanket
+     `.product-shell h3` rule set from --type-heading-sm-size then quietly beat
+     every component that set its own heading, which is why raising the card
+     title to 19px looked like it worked and did not. Expressed as var() they
+     cannot drift apart again. */
+  --type-display-size:    var(--font-size-3xl);
+  --type-display-weight:  var(--font-weight-bold);
   --type-display-line:    1.2;
-  --type-heading-lg-size: 1.1875rem;
-  --type-heading-lg-weight: 700;
-  --type-heading-lg-line: 1.28;
-  --type-heading-sm-size: 0.9375rem;
-  --type-heading-sm-weight: 700;
+  --type-heading-lg-size: var(--font-size-xl);
+  --type-heading-lg-weight: var(--font-weight-bold);
+  --type-heading-lg-line: var(--line-height-tight);
+  --type-heading-sm-size: var(--font-size-md);
+  --type-heading-sm-weight: var(--font-weight-bold);
   --type-heading-sm-line: 1.34;
-  --type-body-size:       0.84rem;
-  --type-body-weight:     400;
-  --type-body-line:       1.45;
-  --type-caption-size:    0.75rem;
-  --type-caption-weight:  500;
+  --type-body-size:       var(--font-size-sm);
+  --type-body-weight:     var(--font-weight-normal);
+  --type-body-line:       var(--line-height-base);
+  --type-caption-size:    var(--font-size-2xs);
+  --type-caption-weight:  var(--font-weight-medium);
   --type-caption-line:    1.38;
 
   --letter-spacing-tight: -0.01em;
@@ -101,6 +198,18 @@
   --space-10:  2.5rem;    /* 40px */
   --space-12:  3rem;      /* 48px */
   --space-16:  4rem;      /* 64px */
+
+  /* ── Spacing by role ───────────────────────────────────────────────
+     The numeric scale above says how big; these say what for. A page that
+     reaches for a number picks whatever looked right that day, which is how
+     the gap between two stacked cards ended up being 16px on nineteen routes,
+     12px on three, and 10px and 14px on Live Scouting — three values for one
+     role on a single page.
+
+     guard:consistency asserts every card stack in the app uses this one. */
+  --card-stack-gap:   var(--space-4);   /* between sibling cards */
+  --card-padding:     var(--space-4);   /* inside a card */
+  --card-section-gap: var(--space-3);   /* between blocks inside a card */
 
   /* ── Radii ─────────────────────────────────────────────────────── */
   --radius-xs:    4px;
@@ -138,7 +247,7 @@
   --motion-normal:  var(--motion-duration-base);
   --motion-base:    var(--motion-duration-base);
   --motion-slow:    var(--motion-duration-slow);
-  --motion-ease:    var(--motion-curve-standard);
+  --motion-ease:    cubic-bezier(0.2, 0.78, 0.24, 1);
   --motion-snappy:  cubic-bezier(0.2, 0.82, 0.28, 1);
   --motion-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
   --motion-smooth:  cubic-bezier(0.4, 0, 0.2, 1);
@@ -171,6 +280,37 @@
   --touch-target-min:     44px;
   --touch-target-compact: 36px;
 
+  /* ── Controls ──────────────────────────────────────────────────── */
+  /* The shared vocabulary for every interactive control: buttons, fields,
+     tabs, pills. These used to live on `.product-shell`, which left them
+     undefined in portalled content — Modal and SurfaceCard both render into
+     document.body, outside the shell. On :root they resolve everywhere, and
+     inside the shell they compute exactly as before. */
+  --control-min-height: 38px;
+  --control-min-height-dense: 32px;
+  --control-padding-inline: 13px;
+  --control-padding-inline-dense: 10px;
+  --control-gap: 6px;
+  --control-radius: var(--radius-control);
+  --control-radius-pill: var(--radius-full);
+  --control-border: color-mix(in srgb, var(--color-border) 90%, transparent);
+  --control-border-strong: color-mix(in srgb, var(--color-border-strong) 72%, var(--color-accent));
+  --control-bg: color-mix(in srgb, var(--color-surface-soft) 92%, transparent);
+  --control-bg-hover: color-mix(in srgb, var(--color-surface-muted) 78%, var(--color-surface-soft));
+  --control-bg-active: color-mix(in srgb, var(--color-accent-soft) 62%, var(--color-surface-soft));
+  --control-text: var(--color-text);
+  --control-text-muted: var(--color-text-muted);
+  --control-shadow-active: 0 8px 16px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --control-shadow-soft: 0 4px 12px rgba(8, 15, 24, 0.12);
+
+  /* ── Focus ─────────────────────────────────────────────────────── */
+  /* One ring for all seven primitives. Uses the -strong accent because the
+     base accent is a mid-tone that only reaches 3:1 against light surfaces,
+     and a focus ring is a non-text indicator that has to clear 3:1. */
+  --focus-ring-width:  2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color:  var(--color-accent-strong);
+
   /* ── Icon sizes ────────────────────────────────────────────────── */
   --icon-size-xs: 12px;
   --icon-size-sm: 14px;
@@ -198,29 +338,136 @@
   --ui-shadow:        var(--shadow-lg);
   --alliance-red:     var(--color-alliance-red);
   --alliance-blue:    var(--color-alliance-blue);
+
+  /* ── Field canvas ──────────────────────────────────────────────────
+     Read with getComputedStyle at draw time, not through the cascade —
+     ctx.fillStyle rejects var(), so a canvas cannot inherit these. See
+     hooks/useCanvasTokens.ts. Every field render in the app painted these
+     exact dark values regardless of theme, because there was no mechanism
+     to reference a token from a draw call. */
+  --field-canvas-bg:    #242320;
+  --field-canvas-grid:  rgba(255, 255, 255, 0.06);
+  --field-canvas-line:  rgba(255, 255, 255, 0.15);
+  --field-canvas-label: rgba(255, 255, 255, 0.5);
+  --field-canvas-red:   rgba(207, 92, 104, 0.5);
+  --field-canvas-blue:  rgba(92, 141, 207, 0.5);
+  --field-canvas-note:  #fbbf24;
+  /* ── Moved here from the shell stylesheets ──────────────────────
+     A token on `.product-shell` does not exist inside a portal, and a
+     token in seven files is not a source of truth. Values are the ones
+     that were actually winning, computed from layer and source order. */
+  /* 260px fitted nothing: the longest label is "Match Center", which sets at
+     about 95px, so a third of the rail was empty. 208px holds label plus icon
+     with room to spare. */
+  --ps-sidebar-width:             208px;
+  --ps-sidebar-collapsed-width:             74px;
+  --finder-collapsed-width:             86px;
+  --finder-expanded-width:             clamp(286px, 24vw, 356px);
+  --ps-topbar-height:             57px;
+  --ps-offline-banner-height:             0px;
+  --ps-sticky-gap:             8px;
+  --ps-sticky-top:             calc(
+    var(--ps-topbar-height) + var(--ps-offline-banner-height) + var(--ps-sticky-gap)
+  );
+  --ps-sticky-bar-height:             46px;
+  --ps-sticky-top-2:             calc(var(--ps-sticky-top) + var(--ps-sticky-bar-height) + var(--ps-sticky-gap));
+  --ui-card-padding-x:             var(--space-4);
+  --ui-card-padding-y:             var(--space-4);
+  --ui-card-gap:             var(--space-3);
+  --ui-border-default:             var(--border-default);
+  --ui-border-subtle:             var(--border-width-1) var(--border-style-solid) color-mix(in srgb, var(--color-border) 78%, transparent);
+  --ui-shadow-card:             var(--shadow-md);
+  --ui-shadow-card-hover:             var(--shadow-lg);
+  --status-live-color:             #2ccf77;
+  --status-live-soft:             rgba(44, 207, 119, 0.18);
+  --status-live-text:             #2ccf77;
+  --status-upcoming-color:             #4f96ea;
+  --status-upcoming-soft:             rgba(79, 150, 234, 0.18);
+  --status-upcoming-text:             #7fb6f4;
+  --status-final-color:             #d0a84e;
+  --status-final-soft:             rgba(208, 168, 78, 0.18);
+  /* Brightened from #d0a84e. A finished-match score pill used to sit on an
+     outlined card with a dark fill; now it sits on a tinted list row, and on a
+     tie the row's warning wash lifts the ground enough to drop the old value to
+     4.40:1. The pill's border and dot keep --status-final-color. */
+  --status-final-text:             #e3c176;
+  --status-warning-color:             #e7b13c;
+  --status-warning-soft:             rgba(231, 177, 60, 0.18);
+  --motion-page:             280ms;
+  --motion-list:             250ms;
+  /* A third size vocabulary, now aliases. Between this, --type-*-size above and
+     --font-size-*, the app had three names for 12px. */
+  --type-xs:             var(--font-size-legacy-11);
+  --type-sm:             var(--font-size-2xs);
+  --type-base:           var(--font-size-sm);
+  --type-md:             var(--font-size-md);
+  --type-lg:             var(--font-size-lg);
+  --type-xl:             var(--font-size-xl);
+  --type-2xl:            var(--font-size-2xl);
+  --leading-tight:             1.28;
+  --leading-base:             1.45;
+  --leading-relaxed:             1.6;
+  --alliance-red-bg:             rgba(207, 92, 104, 0.12);
+  --alliance-blue-bg:             rgba(92, 141, 207, 0.12);
+  --alliance-red-border:             rgba(207, 92, 104, 0.32);
+  --alliance-blue-border:             rgba(92, 141, 207, 0.32);
+  --dviz-accent:             #3b82f6;
+  --dviz-highlight:             #f59e0b;
+  --home-polish-ring:             color-mix(in srgb, var(--ui-accent) 18%, var(--ui-border));
+  --home-polish-shadow:             0 14px 30px rgba(6, 10, 16, 0.18);
+  --home-polish-shadow-strong:             0 20px 42px rgba(6, 10, 16, 0.24);
 }
 
 /* ── Light theme overrides ─────────────────────────────────────── */
 :root.theme-light,
 .product-shell.theme-light {
-  --color-bg:             #f1f5f9;
-  --color-bg-elevated:    #f7f9fc;
+  /* The field is a diagram, not a photo, so it follows the theme like every
+     other surface. The two alliance washes are darkened to hold their weight
+     against a pale field instead of washing out. */
+  --field-canvas-bg:    #e5e4e2;
+  --field-canvas-grid:  rgba(15, 23, 42, 0.07);
+  --field-canvas-line:  rgba(15, 23, 42, 0.2);
+  /* 0.58 measured 4.04:1 against the pale field — under AA, and guard 3 cannot
+     see canvas text to catch it. 0.72 clears it on the bare field and on every
+     zone fill drawn over it. */
+  --field-canvas-label: rgba(15, 23, 42, 0.72);
+  --field-canvas-red:   rgba(178, 52, 66, 0.42);
+  --field-canvas-blue:  rgba(46, 98, 173, 0.42);
+  --field-canvas-note:  #b45309;
+  --color-bg:             #f5f4f4;
+  --color-bg-elevated:    #f9f9f8;
   --color-surface:        #ffffff;
-  --color-surface-soft:   #f6f8fb;
-  --color-surface-muted:  #edf2f7;
-  --color-surface-raised: #f0f3f7;
-  --color-border:         #d7e0e9;
-  --color-border-strong:  #c1cedb;
-  --color-text:           #243546;
-  --color-text-muted:     #6d7e8f;
-  --color-text-dim:       #8a99ab;
+  --color-surface-soft:   #f8f8f7;
+  --color-surface-muted:  #f2f1f0;
+  --color-surface-raised: #f3f3f2;
+  --color-border:         #e0dfdd;
+  --color-border-strong:  #ceccc9;
+  --color-text:           #343331;
+  /* Both muted steps are set so they still clear WCAG AA (4.5:1) for small text
+     on the darkest light surface (--color-surface-muted #edf2f7), not just on
+     white. The previous values were 3.71:1 and 2.58:1 there. */
+  --color-text-muted:     #676561;
+  --color-text-dim:       #6f6d69;
 
-  --color-accent:         #4f9a82;
+  --color-accent:         #3d9d7b;
   --color-accent-hover:   #3f8a72;
+  /* None of the light accents clear 4.5:1 on white (3.35 / 4.13 / 4.26), so
+     accent-coloured text gets its own darker value. 4.56:1 on the darkest
+     light surface. */
+  --color-accent-text:    #176b45;
   --color-accent-soft:    rgba(79, 154, 130, 0.14);
   --color-accent-strong:  #2d8a64;
+  --color-on-accent:      #0d1f18;
 
   --color-danger:         #b76d79;
+
+  /* Measured against the darkest light surface, not against white. */
+  --color-success-text:   #146c34;
+  --color-warning-text:   #8a5406;
+  --color-danger-text:    #a33a4a;
+  --color-info-text:      #1d4ed8;
+  --color-alliance-red-text:  #b03444;
+  --color-alliance-blue-text: #2f5fa8;
 
   --color-alliance-red:   #c44b58;
   --color-alliance-red-soft: rgba(196, 75, 88, 0.14);
@@ -237,4 +484,39 @@
   --shadow-md:    0 6px 14px rgba(35, 58, 86, 0.08);
   --shadow-lg:    0 8px 18px rgba(35, 58, 86, 0.1);
   --shadow-xl:    0 12px 28px rgba(35, 58, 86, 0.12);
+  /* ── Moved here from the shell stylesheets ──────────────────────
+     A token on `.product-shell` does not exist inside a portal, and a
+     token in seven files is not a source of truth. Values are the ones
+     that were actually winning, computed from layer and source order. */
+  --status-live-color:             #0f8a53;
+  --status-live-soft:             rgba(15, 138, 83, 0.14);
+  --status-live-text:             #0a643c;
+  --status-upcoming-color:             #2d6fb8;
+  --status-upcoming-soft:             rgba(45, 111, 184, 0.14);
+  --status-upcoming-text:             #1e4f86;
+  --status-final-color:             #8a6115;
+  --status-final-soft:             rgba(138, 97, 21, 0.16);
+  --status-final-text:             #66470f;
+  --status-warning-color:             #995400;
+  --status-warning-soft:             rgba(153, 84, 0, 0.16);
+  --alliance-red:             #c44b58;
+  --alliance-blue:             #4a7cc4;
+  --alliance-red-bg:             rgba(196, 75, 88, 0.08);
+  --alliance-blue-bg:             rgba(74, 124, 196, 0.08);
+  --alliance-red-border:             rgba(196, 75, 88, 0.24);
+  --alliance-blue-border:             rgba(74, 124, 196, 0.24);
+  --home-polish-shadow:             0 14px 30px rgba(35, 58, 86, 0.1);
+  --home-polish-shadow-strong:             0 20px 42px rgba(35, 58, 86, 0.14);
+}
+
+/* ── Controls grow on touch ────────────────────────────────────────
+   Below the desktop breakpoint every control reaches the 44px minimum
+   touch target. Moved here alongside the control tokens themselves. */
+@media (max-width: 1120px) {
+  :root {
+    --control-min-height: 48px;
+    --control-min-height-dense: 44px;
+    --control-padding-inline: 12px;
+    --control-padding-inline-dense: 10px;
+  }
 }

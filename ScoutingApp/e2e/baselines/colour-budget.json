@@ -1,0 +1,22 @@
+{
+  "src/components/LiveRatingsPanel.css": 4,
+  "src/components/cv/VideoReplayer.css": 1,
+  "src/components/navigation/BottomTabBar.css": 1,
+  "src/components/navigation/MobileSearchOverlay.css": 1,
+  "src/components/navigation/MoreSheet.css": 1,
+  "src/components/scouting/AutoScoutEvidencePanel.css": 6,
+  "src/components/scouting/AutoScoutFieldBadge.css": 14,
+  "src/components/scouting/AutoScoutReviewPanel.css": 3,
+  "src/components/tutorial/TutorialRobotMascot.css": 16,
+  "src/components/ui/EmptyState.css": 3,
+  "src/features/onDevice/OnDeviceRun.css": 13,
+  "src/index.css": 6,
+  "src/layout/ProductShell.css": 26,
+  "src/layout/productshell/shell-features.css": 120,
+  "src/layout/productshell/shell-foundation.css": 306,
+  "src/layout/productshell/shell-mobile.css": 111,
+  "src/layout/productshell/shell-overrides.css": 14,
+  "src/layout/productshell/shell-shared.css": 85,
+  "src/pages/QrShareModals.module.css": 1,
+  "src/styles/print.css": 7
+}

@@ -27,11 +27,11 @@
 }
 .es--error .es__icon {
   background: rgba(255, 69, 58, 0.1);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 .es--offline .es__icon {
   background: rgba(255, 159, 10, 0.1);
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 .es--compact .es__icon {
   width: 40px;

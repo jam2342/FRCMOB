@@ -265,11 +265,6 @@ export function size(): number {
   return knownCount;
 }
 
-/** Read the full queue (for diagnostics / settings UI). */
-export async function listQueued(): Promise<QueuedMutation[]> {
-  return readQueue();
-}
-
 /**
  * Replay all queued mutations sequentially.
  * Returns the number of successfully replayed items.

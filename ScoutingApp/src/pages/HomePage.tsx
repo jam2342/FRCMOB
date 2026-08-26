@@ -47,7 +47,8 @@ import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { EmptyState } from '../components/ui/EmptyState';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
-import { useMobileLayout } from '../hooks/useMobileLayout';
+import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
+import { Stat, Table, type TableColumn } from '../components/ui/primitives';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
@@ -189,6 +190,13 @@ function writeHomeMobileAutoEventGuard(dayToken: string) {
   } catch {
     // Ignore storage failures on restricted browsers.
   }
+}
+
+/* The rankings payload sets `nickname` to the team key when a team has none,
+   so printing both gives "#5940 frc5940". */
+function teamSuffix(row: { nickname?: string | null; team_key: string }): string {
+  const nickname = (row.nickname || '').trim();
+  return nickname && nickname !== row.team_key ? ` ${nickname}` : '';
 }
 
 function normalizeHomeTeamsSortMode(value: unknown): HomeTeamsSortMode {
@@ -1315,6 +1323,25 @@ export function HomePage() {
     return null;
   }, [feedEventKeys, nowMs, scheduleByEvent, selectedEventKey]);
 
+  const nextHomeMatchHero = useMemo(() => {
+    if (!nextLiveHomeMatch) return null;
+    const timer = liveTimerLabel(nextLiveHomeMatch.match.scheduled_time ?? null, nowMs);
+    // 'unknown' means no published start time and 'ended' means it is over.
+    // Neither has a countdown, so neither gets the display step — a hero
+    // reading "Pending publish" would be a label pretending to be a value.
+    if (timer.state !== 'upcoming' && timer.state !== 'live') return null;
+    const eventName =
+      scheduleByEvent[nextLiveHomeMatch.eventKey]?.event_name
+      || nextLiveHomeMatch.eventKey.toUpperCase();
+    return {
+      label: timer.label,
+      value: timer.value,
+      sub: `${nextLiveHomeMatch.match.display_name} \u00b7 ${eventName}`,
+      live: timer.state === 'live',
+    };
+  }, [nextLiveHomeMatch, nowMs, scheduleByEvent]);
+
+
   const eventRankingRows = useMemo(() => {
     const payload = asRecord(selectedEventRankings?.rankings);
     const rows = Array.isArray(payload?.rankings) ? payload.rankings : [];
@@ -1389,6 +1416,25 @@ export function HomePage() {
     const start = Math.max(0, (teamsPage - 1) * teamsPerPage);
     return sortedTeamsRows.slice(start, start + teamsPerPage);
   }, [sortedTeamsRows, teamsPage, teamsPerPage]);
+
+  /* Team number and nickname were two columns on desktop and one line on the
+     phone. They are one entity, so they are one column now — which also makes
+     the narrow-width card head read as the team rather than as a bare index. */
+  const teamsInsightColumns: TableColumn<(typeof pagedTeamsRows)[number]>[] = [
+    {
+      key: 'team',
+      label: 'Team',
+      render: (row) => (
+        <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)}>
+          #{row.team_number}
+          {row.nickname && row.nickname !== row.team_key ? ` ${row.nickname}` : ''}
+        </button>
+      ),
+    },
+    { key: 'rank', label: 'Rank', numeric: true, render: (row) => row.rank ?? '-' },
+    { key: 'record', label: 'Record', render: (row) => row.record },
+    { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.matches_played ?? '-' },
+  ];
 
   const teamsPageSummary = useMemo(() => {
     const start = teamsTotalCount > 0 ? (teamsPage - 1) * teamsPerPage + 1 : 0;
@@ -1889,6 +1935,25 @@ export function HomePage() {
             )}
           </div>
 
+          {/* What Home is actually for: how long until the next match. The
+              countdown already existed inside nextLiveHomeMatch, used only to
+              enable an "Open Next Live" button — the number itself was never
+              shown. Rendered only when there is a real scheduled time; a match
+              with no published time has nothing to count down, and a hero
+              reading "Pending publish" would be a label pretending to be a
+              value. */}
+          {nextHomeMatchHero ? (
+            <div className="page-hero home-next-hero">
+              <Stat
+                size="display"
+                label={nextHomeMatchHero.label}
+                value={nextHomeMatchHero.value}
+                sub={nextHomeMatchHero.sub}
+                tone={nextHomeMatchHero.live ? 'danger' : 'default'}
+              />
+            </div>
+          ) : null}
+
           <div className="home-fotmob-filters" role="tablist" aria-label="Home feed filters">
             {(
               [
@@ -2025,78 +2090,17 @@ export function HomePage() {
 
                 {pagedTeamsRows.length > 0 ? (
                   <>
-                    {isMobileLayout ? (
-                      <>
-                        <div className="center-sort-chip-row" role="toolbar" aria-label="Teams insights sorting">
-                          {(
-                            [
-                              { id: 'rank', label: 'By Rank' },
-                              { id: 'team', label: 'By Team' },
-                            ] as Array<{ id: HomeTeamsSortMode; label: string }>
-                          ).map((option) => (
-                            <button
-                              key={`home-teams-sort-${option.id}`}
-                              type="button"
-                              className={`center-sort-chip ${teamsSortMode === option.id ? 'active' : ''}`.trim()}
-                              onClick={() => setTeamsSortMode(option.id)}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="center-mobile-card-list">
-                          {pagedTeamsRows.map((row) => (
-                            <article key={`home-teams-mobile-${row.team_key}`} className="center-mobile-data-card">
-                              <header>
-                                <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)}>
-                                  #{row.team_number} {row.nickname || row.team_key}
-                                </button>
-                                <span className="center-chip">#{row.rank ?? '-'}</span>
-                              </header>
-                              <div className="center-mobile-data-grid">
-                                <span>
-                                  Record
-                                  <strong>{row.record}</strong>
-                                </span>
-                                <span>
-                                  Matches
-                                  <strong>{row.matches_played ?? '-'}</strong>
-                                </span>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="center-table-wrap">
-                        <table className="center-table home-teams-insights-table">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>Team</th>
-                              <th>Rank</th>
-                              <th>Record</th>
-                              <th>Matches</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {pagedTeamsRows.map((row) => (
-                              <tr key={`home-teams-row-${row.team_key}`}>
-                                <td>{row.team_number}</td>
-                                <td>
-                                  <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)}>
-                                    {row.nickname || row.team_key}
-                                  </button>
-                                </td>
-                                <td>{row.rank ?? '-'}</td>
-                                <td>{row.record}</td>
-                                <td>{row.matches_played ?? '-'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                    {/* No chip row here, unlike Match Center and Team Center:
+                        this board already has an always-present "Sort: …"
+                        select in its controls row above, and the chips were the
+                        mobile-only twin of that same state. Two controls for
+                        one value is worse than the asymmetry it fixed. */}
+                    <Table
+                      columns={teamsInsightColumns}
+                      rows={pagedTeamsRows}
+                      rowKey={(row) => `home-teams-row-${row.team_key}`}
+                      cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+                    />
                   </>
                 ) : null}
 
@@ -2405,10 +2409,14 @@ export function HomePage() {
         <section className={`home-fotmob-card ${compareBuilderCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <div>
-              <h3>Alliance Builder</h3>
+              {/* Named for the page it opens. It used to say "Alliance
+                  Builder" and land on Compare, which the nav calls Compare and
+                  which holds a *second*, hand-rolled builder — so one feature
+                  had four names across the app. */}
+              <h3>Alliance Advisor</h3>
               <small>Simulate pick-fit lineups</small>
             </div>
-            {renderMobileCollapseButton('compare-builder', 'Alliance Builder')}
+            {renderMobileCollapseButton('compare-builder', 'Alliance Advisor')}
           </header>
           {compareBuilderCollapsed ? (
             <p id={cardContentId('compare-builder')} className="home-card-collapsed-hint">
@@ -2419,8 +2427,13 @@ export function HomePage() {
               <p id={cardContentId('compare-builder')} className="home-fotmob-note">
                 Build and compare 3-team lineups with compatibility scoring.
               </p>
-              <Link className="home-fotmob-btn" to={selectedEventKey ? `/compare?event=${selectedEventKey}` : '/compare'}>
-                Open Builder
+              <Link
+                className="home-fotmob-btn"
+                to={selectedEventKey
+                  ? `/compare/alliance-advisor?event=${selectedEventKey}`
+                  : '/compare/alliance-advisor'}
+              >
+                Open
               </Link>
             </>
           )}
@@ -2505,7 +2518,7 @@ export function HomePage() {
                       <span className="rank">#{row.rank ?? '-'}</span>
                       <TeamAvatar teamKey={row.team_key} teamNumber={row.team_number} size={22} />
                       <span className="team">
-                        #{row.team_number} {row.nickname}
+                        #{row.team_number}{teamSuffix(row)}
                       </span>
                       <span className="record">{row.record}</span>
                     </button>
@@ -2691,7 +2704,7 @@ export function HomePage() {
                     >
                       <span className="rank">#{row.rank ?? '-'}</span>
                       <TeamAvatar teamKey={row.team_key} teamNumber={row.team_number} size={22} />
-                      <span className="team">#{row.team_number} {row.nickname}</span>
+                      <span className="team">#{row.team_number}{teamSuffix(row)}</span>
                       <span className="record">{row.record}</span>
                     </button>
                   ))}

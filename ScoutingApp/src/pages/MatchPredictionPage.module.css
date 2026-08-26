@@ -1,0 +1,57 @@
+/* Match Prediction. The board is one Table now, so what is left here is the
+   correct/wrong marking and the few cell details that were inline styles. */
+
+.matchLink {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.source {
+  margin-left: var(--space-1);
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+/* Whether the prediction was right.
+
+   The tint goes on the cells only. Setting it on the <tr> as well composited
+   it twice — 10% over 10% is 19%, which dropped the red synergy figure sitting
+   on top of it to 3.95:1. At 5% applied once the text keeps 5.17:1 and the
+   band still reads when you scan a column of them.
+
+   The stripe is what actually carries the state, which is why the tint can
+   afford to be quiet: colour alone would fail anyone who cannot separate the
+   two hues, and the result cell spells out (Y)/(N) besides. */
+.rowCorrect > td,
+.rowCorrect > th {
+  background: color-mix(in srgb, var(--color-success) 5%, transparent);
+}
+
+.rowWrong > td,
+.rowWrong > th {
+  background: color-mix(in srgb, var(--color-danger) 5%, transparent);
+}
+
+.rowCorrect > th:first-child {
+  box-shadow: inset 3px 0 0 var(--color-success);
+}
+
+.rowWrong > th:first-child {
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+/* The card fallback is one element, so it takes the tint and the stripe
+   directly rather than through its cells. */
+.rowCorrect:not(tr) {
+  background: color-mix(in srgb, var(--color-success) 5%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-success);
+}
+
+.rowWrong:not(tr) {
+  background: color-mix(in srgb, var(--color-danger) 5%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}

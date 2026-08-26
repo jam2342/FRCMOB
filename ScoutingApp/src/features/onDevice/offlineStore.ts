@@ -71,7 +71,8 @@ export async function saveSession(db: IDBDatabase, session: StoredSession): Prom
   await withStore(db, SESSIONS, 'readwrite', (s) => req(s.put(session)));
 }
 
-export async function listSessions(db: IDBDatabase): Promise<StoredSession[]> {
+// Internal: listPendingSessions is the entry point callers actually use.
+async function listSessions(db: IDBDatabase): Promise<StoredSession[]> {
   return withStore(db, SESSIONS, 'readonly', (s) => req<StoredSession[]>(s.getAll()));
 }
 

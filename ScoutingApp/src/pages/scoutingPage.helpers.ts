@@ -54,6 +54,8 @@ const FLOAT_TIMER_VIEWPORT_PADDING = 6;
 const FLOAT_TIMER_MIN_VISIBLE_X = 36;
 const FLOAT_TIMER_MIN_VISIBLE_Y = 28;
 const FLOAT_TIMER_HEADER_OVERLAP_Y = 132;
+// Roughly the timer's own height plus a margin, so it lands above the fold edge.
+const FLOAT_TIMER_DEFAULT_BOTTOM_OFFSET = 150;
 
 export const ENDGAME_LABELS: Record<EndgameMode, string> = {
   none: 'No endgame action',
@@ -1319,10 +1321,51 @@ export function normalizeRoomKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 48);
 }
 
+/* Width of the nav rail the timer must not sit on top of. Read from the live
+   token rather than hardcoded, because --ps-sidebar-current-width tracks the
+   collapsed state and the wide-screen @media override — the timer has to follow
+   both. Zero below 1120px, where the sidebar is not on screen. */
+export function currentSidebarWidth(viewportWidth: number): number {
+  if (viewportWidth <= 1120) return 0;
+  if (typeof document === 'undefined') return 0;
+  const shell = document.querySelector('.product-shell');
+  if (!shell) return 0;
+  const raw = getComputedStyle(shell).getPropertyValue('--ps-sidebar-current-width');
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/* Top of the scrolling content area, measured rather than assumed. The chrome
+   above it is not a fixed height — the context strip grows with the number of
+   recent picks and collapses to one line — so any constant here is wrong on
+   some screen. Falls back to a value that clears the topbar. */
+export function contentAreaTop(): number {
+  if (typeof document === 'undefined') return 74;
+  const content = document.querySelector('.ps-content');
+  if (!content) return 74;
+  const top = content.getBoundingClientRect().top;
+  return Number.isFinite(top) && top > 0 ? Math.round(top) : 74;
+}
+
 export function defaultFloatingTimerPosition(viewportWidth: number): FloatingTimerPosition {
   if (viewportWidth <= 900) return { x: 8, y: 64 };
   if (viewportWidth <= 1120) return { x: 10, y: 68 };
-  return { x: 10, y: 74 };
+  // Two things this default has already got wrong: x:10 put it on top of the
+  // sidebar, covering the COLLAPSE control and the Home link, and y:74 then put
+  // it on top of the context strip's chips. Anchoring to the top means every
+  // change to the chrome above moves it back onto something.
+  //
+  // Bottom-left of the content area instead: clear of the rail, clear of the
+  // chrome however tall it grows, and clear of the counter columns a scout is
+  // actually tapping. Still draggable from there.
+  const viewportHeight = typeof window === 'undefined' ? 900 : window.innerHeight;
+  return {
+    x: currentSidebarWidth(viewportWidth) + FLOAT_TIMER_VIEWPORT_PADDING,
+    y: Math.max(
+      contentAreaTop() + FLOAT_TIMER_VIEWPORT_PADDING,
+      viewportHeight - FLOAT_TIMER_DEFAULT_BOTTOM_OFFSET,
+    ),
+  };
 }
 
 function normalizeFloatingTimerPosition(raw: unknown): FloatingTimerPosition | null {
@@ -1363,10 +1406,13 @@ export function floatingTimerBounds(): FloatingTimerBounds {
   const viewportWidth = viewport?.width ?? window.innerWidth;
   const viewportHeight = viewport?.height ?? window.innerHeight;
   const bottomReserve = 0;
-  const minX = FLOAT_TIMER_VIEWPORT_PADDING;
+  const minX = currentSidebarWidth(viewportWidth) + FLOAT_TIMER_VIEWPORT_PADDING;
+  // Mobile deliberately allows a negative offset so the timer can tuck under
+  // the header. On desktop there is chrome worth protecting, so the floor is
+  // the top of the content area.
   const minY = viewportWidth <= 1120
     ? FLOAT_TIMER_VIEWPORT_PADDING - FLOAT_TIMER_HEADER_OVERLAP_Y
-    : FLOAT_TIMER_VIEWPORT_PADDING;
+    : contentAreaTop() + FLOAT_TIMER_VIEWPORT_PADDING;
   const maxX = Math.max(minX, viewportWidth - FLOAT_TIMER_MIN_VISIBLE_X - FLOAT_TIMER_VIEWPORT_PADDING);
   const maxY = Math.max(minY, viewportHeight - bottomReserve - FLOAT_TIMER_MIN_VISIBLE_Y - FLOAT_TIMER_VIEWPORT_PADDING);
   return { minX, maxX, minY, maxY };

@@ -1,0 +1,1077 @@
+{
+  "/home": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/compare/alliance-advisor": [
+        "Open"
+      ]
+    },
+    "cardGaps": []
+  },
+  "/events": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [
+      "center-list-scroll"
+    ],
+    "duplicates": [
+      "#27 Team RUSH x2",
+      "Home x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/events/export": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Download CSV x5",
+      "Events x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/events/export": [
+        "Export"
+      ],
+      "/events/dashboard": [
+        "Dashboard"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/events/dashboard": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Events x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/events/export": [
+        "Export"
+      ],
+      "/events/dashboard": [
+        "Dashboard"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/scouting": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Auto Draft x2",
+      "Match Center x12",
+      "Scout Match x10"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events",
+        "This event"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/scouting/pit": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/scouting/assignments": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/scouting/coverage": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [
+      "coverage-grid-wrap"
+    ],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/scouting/auto-paths": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/scouting/calibrate": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": []
+  },
+  "/scouting/record": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Live Scouting",
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/scouting/pit": [
+        "Pit Scouting"
+      ],
+      "/scouting/assignments": [
+        "Assignments"
+      ],
+      "/scouting/coverage": [
+        "Coverage"
+      ],
+      "/scouting/auto-paths": [
+        "Auto Paths"
+      ],
+      "/scouting/calibrate": [
+        "Field Calibration"
+      ],
+      "/scouting/record": [
+        "On-Device Breakdown"
+      ]
+    },
+    "cardGaps": []
+  },
+  "/team-center": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events",
+        "This event"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center",
+        "This team’s matches"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/match-center": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [
+      "center-list-scroll"
+    ],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events",
+        "This event"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match",
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/match-center/predictions": [
+        "Predictions"
+      ],
+      "/match-center/strategy": [
+        "Strategy"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/match-center/predictions": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [
+      "center-pre-block"
+    ],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match",
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/match-center/predictions": [
+        "Predictions"
+      ],
+      "/match-center/strategy": [
+        "Strategy"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/match-center/strategy": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match",
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/match-center/predictions": [
+        "Predictions"
+      ],
+      "/match-center/strategy": [
+        "Strategy"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/compare": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [
+      "center-list-scroll",
+      "center-sidebar"
+    ],
+    "duplicates": [
+      "Compare x2",
+      "Events x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/compare/alliance-advisor": [
+        "Alliance Advisor"
+      ],
+      "/compare/picklist": [
+        "Picklist"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/compare/alliance-advisor": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Compare x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/compare/alliance-advisor": [
+        "Alliance Advisor"
+      ],
+      "/compare/picklist": [
+        "Picklist"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/compare/picklist": {
+    "startOffset": 16,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Compare x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/compare/alliance-advisor": [
+        "Alliance Advisor"
+      ],
+      "/compare/picklist": [
+        "Picklist"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/favorites": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Events x2",
+      "Settings x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/settings": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/privacy": [
+        "Privacy Policy"
+      ],
+      "/terms": [
+        "Terms of Service"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/privacy": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings",
+        "Settings → Maintenance"
+      ],
+      "/terms": [
+        "Terms of Service"
+      ]
+    },
+    "cardGaps": []
+  },
+  "/terms": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Privacy Policy x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Settings"
+      ],
+      "/privacy": [
+        "Privacy Policy"
+      ]
+    },
+    "cardGaps": []
+  },
+  "/primitives": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Team x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Link button",
+        "Settings"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  },
+  "/primitives?state=modal": {
+    "startOffset": null,
+    "contentTop": 160,
+    "scrollers": [],
+    "duplicates": [
+      "Team x2"
+    ],
+    "destinations": {
+      "/home": [
+        "Home"
+      ],
+      "/events": [
+        "Events"
+      ],
+      "/scouting": [
+        "Scouting"
+      ],
+      "/match-center": [
+        "Match Center"
+      ],
+      "/team-center": [
+        "Team Center"
+      ],
+      "/compare": [
+        "Compare"
+      ],
+      "/favorites": [
+        "Favorites"
+      ],
+      "/settings": [
+        "Link button",
+        "Settings"
+      ]
+    },
+    "cardGaps": [
+      "16px"
+    ]
+  }
+}

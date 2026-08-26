@@ -5,10 +5,44 @@ import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
+import { Stat } from '../components/ui/primitives';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
+import { Table, type TableColumn } from '../components/ui/primitives';
 import './ScoutingCoveragePage.css';
+
+type LeaderboardRow = ScoutingCoverageResponse['leaderboard'][number];
+
+const LEADERBOARD_COLUMNS: TableColumn<LeaderboardRow>[] = [
+  {
+    key: 'rank',
+    label: '#',
+    render: (_row, index) => (
+      <span className={`coverage-rank-badge ${index < 3 ? `coverage-rank-badge--top${index + 1}` : ''}`.trim()}>
+        {index + 1}
+      </span>
+    ),
+  },
+  { key: 'scout_profile', label: 'Scout' },
+  { key: 'entry_count', label: 'Entries', numeric: true },
+  { key: 'matches_covered', label: 'Matches', numeric: true },
+  { key: 'teams_covered', label: 'Teams', numeric: true },
+  {
+    key: 'best_qual_streak',
+    label: 'Best Streak',
+    numeric: true,
+    render: (row) => (
+      <>
+        {/* Ten quals in a row without a gap is the thing worth calling out,
+            so it is a label rather than a colour on the number. */}
+        {row.best_qual_streak >= 10 ? <span className="coverage-streak-hot">Hot</span> : null}
+        {row.best_qual_streak}
+      </>
+    ),
+  },
+  { key: 'last_entry_at', label: 'Last Entry', render: (row) => relativeTime(row.last_entry_at) },
+];
 
 const STORAGE_KEY = 'scouting_center_event_key';
 const REFRESH_MS = 30_000;
@@ -17,6 +51,17 @@ type CoverageTab = 'grid' | 'leaderboard' | 'quality';
 
 function teamNumber(teamKey: string): string {
   return teamKey.replace(/^frc/i, '');
+}
+
+/* The header says Red | Blue, but the payload lists the blue slots first — so
+   every team was displayed under the opposing alliance. Ordering here rather
+   than swapping the header, because the payload order is not a contract: a
+   slot knows which alliance it is on, so use that. */
+function orderByAlliance<T extends { alliance: string }>(slots: T[]): T[] {
+  return [...slots].sort((a, b) => {
+    if (a.alliance === b.alliance) return 0;
+    return a.alliance === 'red' ? -1 : 1;
+  });
 }
 
 function relativeTime(iso: string | null): string {
@@ -99,36 +144,33 @@ export function ScoutingCoveragePage() {
             {errorText ? <p className="center-callout warning">{errorText}</p> : null}
 
             {summary ? (
-              <div className="center-kpi-grid coverage-summary-grid">
-                <div
-                  className={`center-kpi-card ${
+              <div className="page-hero">
+                {/* Coverage and Slots Covered were two of five identical boxes.
+                    They are one fact: 86% is only meaningful as 129 of 150,
+                    so the count becomes the hero's baseline rather than its
+                    neighbour. */}
+                <Stat
+                  size="display"
+                  label="Coverage"
+                  value={`${summary.coverage_pct}%`}
+                  sub={`${summary.covered_slots} of ${summary.total_slots} slots scouted`}
+                  tone={
                     summary.coverage_pct >= 90
-                      ? 'tone-green'
+                      ? 'success'
                       : summary.coverage_pct >= 60
-                        ? 'tone-yellow'
-                        : 'tone-red'
-                  }`}
-                >
-                  <span>Coverage</span>
-                  <strong>{summary.coverage_pct}%</strong>
-                </div>
-                <div className="center-kpi-card">
-                  <span>Slots Covered</span>
-                  <strong>
-                    {summary.covered_slots}/{summary.total_slots}
-                  </strong>
-                </div>
-                <div className="center-kpi-card">
-                  <span>Entries</span>
-                  <strong>{summary.total_entries}</strong>
-                </div>
-                <div className="center-kpi-card">
-                  <span>Scouts</span>
-                  <strong>{summary.scout_count}</strong>
-                </div>
-                <div className={`center-kpi-card ${summary.outlier_count > 0 ? 'tone-yellow' : ''}`}>
-                  <span>Quality Flags</span>
-                  <strong>{summary.outlier_count}</strong>
+                        ? 'warning'
+                        : 'danger'
+                  }
+                />
+                <div className="page-hero-stats">
+                  <Stat size="sm" label="Entries" value={summary.total_entries} />
+                  <Stat size="sm" label="Scouts" value={summary.scout_count} />
+                  <Stat
+                    size="sm"
+                    label="Quality flags"
+                    value={summary.outlier_count}
+                    tone={summary.outlier_count > 0 ? 'warning' : 'default'}
+                  />
                 </div>
               </div>
             ) : null}
@@ -148,22 +190,22 @@ export function ScoutingCoveragePage() {
                     <thead>
                       <tr>
                         <th>Match</th>
-                        <th colSpan={3}>Red</th>
-                        <th colSpan={3}>Blue</th>
+                        <th colSpan={3} className="coverage-head--red">Red</th>
+                        <th colSpan={3} className="coverage-head--blue">Blue</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.grid.map((row) => (
                         <tr key={row.match_key}>
                           <td className="coverage-match-label">{row.label}</td>
-                          {row.slots.map((slot) => (
+                          {orderByAlliance(row.slots).map((slot, index) => (
                             <td
                               key={`${row.match_key}-${slot.team_key}`}
                               className={[
                                 'coverage-cell',
-                                slot.alliance === 'red' ? 'coverage-cell--red' : 'coverage-cell--blue',
+                                index === 3 ? 'coverage-cell--alliance-split' : '',
                                 slot.entry_count > 0 ? 'coverage-cell--covered' : 'coverage-cell--missing',
-                              ].join(' ')}
+                              ].filter(Boolean).join(' ')}
                               title={
                                 slot.entry_count > 0
                                   ? `${slot.entry_count} entr${slot.entry_count > 1 ? 'ies' : 'y'} by ${slot.scouts.join(', ') || 'unknown'}`
@@ -188,45 +230,12 @@ export function ScoutingCoveragePage() {
               ) : null}
 
               {tab === 'leaderboard' ? (
-                data.leaderboard.length === 0 ? (
-                  <p className="center-callout muted">No scouting entries yet.</p>
-                ) : (
-                  <div className="center-table-wrap">
-                    <table className="center-table">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>Scout</th>
-                          <th>Entries</th>
-                          <th>Matches</th>
-                          <th>Teams</th>
-                          <th>Best Streak</th>
-                          <th>Last Entry</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.leaderboard.map((row, index) => (
-                          <tr key={row.scout_profile}>
-                            <td className="text-muted">
-                              <span className={`coverage-rank-badge ${index < 3 ? `coverage-rank-badge--top${index + 1}` : ''}`}>
-                                {index + 1}
-                              </span>
-                            </td>
-                            <td className="coverage-scout-name">{row.scout_profile}</td>
-                            <td>{row.entry_count}</td>
-                            <td>{row.matches_covered}</td>
-                            <td>{row.teams_covered}</td>
-                            <td>
-                              {row.best_qual_streak >= 10 ? <span className="coverage-streak-hot">Hot</span> : null}
-                              {row.best_qual_streak}
-                            </td>
-                            <td className="text-muted">{relativeTime(row.last_entry_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )
+                <Table
+                  columns={LEADERBOARD_COLUMNS}
+                  rows={data.leaderboard}
+                  rowKey={(row) => row.scout_profile}
+                  empty="No scouting entries yet."
+                />
               ) : null}
 
               {tab === 'quality' ? (

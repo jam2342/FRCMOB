@@ -1,0 +1,50 @@
+{
+  "src/components/navigation/BottomTabBar.css": {
+    "literals": 0,
+    "legacy": 4
+  },
+  "src/components/navigation/MoreSheet.css": {
+    "literals": 0,
+    "legacy": 1
+  },
+  "src/components/scouting/AutoScoutFieldBadge.css": {
+    "literals": 0,
+    "legacy": 1
+  },
+  "src/features/onDevice/OnDeviceRun.css": {
+    "literals": 0,
+    "legacy": 2
+  },
+  "src/layout/ProductShell.css": {
+    "literals": 0,
+    "legacy": 32
+  },
+  "src/layout/productshell/shell-features.css": {
+    "literals": 0,
+    "legacy": 18
+  },
+  "src/layout/productshell/shell-foundation.css": {
+    "literals": 0,
+    "legacy": 21
+  },
+  "src/layout/productshell/shell-mobile.css": {
+    "literals": 0,
+    "legacy": 61
+  },
+  "src/layout/productshell/shell-overrides.css": {
+    "literals": 0,
+    "legacy": 17
+  },
+  "src/layout/productshell/shell-shared.css": {
+    "literals": 0,
+    "legacy": 16
+  },
+  "src/pages/PitScoutingPage.css": {
+    "literals": 0,
+    "legacy": 1
+  },
+  "src/pages/ScoutingCoveragePage.css": {
+    "literals": 0,
+    "legacy": 3
+  }
+}

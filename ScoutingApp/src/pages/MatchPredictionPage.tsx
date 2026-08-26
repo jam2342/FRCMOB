@@ -15,6 +15,9 @@ import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { buildMatchCenterPath, metric, pct, teamNumberFromTeamKey } from './centerUtils';
+import { MOBILE_LAYOUT_BREAKPOINT } from '../hooks/useMobileLayout';
+import { Stat, Table, type TableColumn } from '../components/ui/primitives';
+import styles from './MatchPredictionPage.module.css';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & helpers                                                */
@@ -39,6 +42,97 @@ function matchDisplayName(m: { comp_level: string; set_number: number; match_num
 function teamNum(teamKey: string): string {
   const n = teamNumberFromTeamKey(teamKey);
   return n ? String(n) : teamKey;
+}
+
+/* The favoured alliance and its probability. Both the table row and the phone
+   card derived this — identically, twenty lines apart — which is precisely how
+   a formatting change lands in one view and not the other. */
+function favouredAlliance(pred: MatchPrediction): { red: boolean; label: string } {
+  const red = (pred.red_prob ?? 0.5) > 0.5;
+  if (pred.red_prob == null) return { red, label: '—' };
+  return {
+    red,
+    label: red
+      ? `Red ${(pred.red_prob * 100).toFixed(0)}%`
+      : `Blue ${((pred.blue_prob ?? 0.5) * 100).toFixed(0)}%`,
+  };
+}
+
+/* null when there is nothing to score yet — an upcoming match, a tie, or a
+   prediction we never made. Only true/false mark the row. */
+function wasPredictionCorrect(pred: MatchPrediction): boolean | null {
+  if (!pred.is_completed || !pred.winner || pred.winner === 'tie' || pred.red_prob == null) return null;
+  const { red } = favouredAlliance(pred);
+  return (red && pred.winner === 'red') || (!red && pred.winner === 'blue');
+}
+
+function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn<MatchPrediction>[] {
+  return [
+  {
+    key: 'match',
+    label: 'Match',
+    render: (pred) => (
+      <button type="button" className={`center-link-btn ${styles.matchLink}`} onClick={() => onOpenMatch(pred.match_key)}>
+        {pred.display_name}
+      </button>
+    ),
+  },
+  {
+    key: 'red',
+    label: 'Red Alliance',
+    render: (pred) => pred.red_teams.map((team) => teamNum(team)).join(', '),
+  },
+  {
+    key: 'blue',
+    label: 'Blue Alliance',
+    render: (pred) => pred.blue_teams.map((team) => teamNum(team)).join(', '),
+  },
+  {
+    key: 'prediction',
+    label: 'Prediction',
+    render: (pred) => {
+      const favoured = favouredAlliance(pred);
+      return (
+        <>
+          <span className={`prediction-label ${favoured.red ? 'text-red' : 'text-blue'}`}>{favoured.label}</span>
+          {pred.prediction_source === 'ml_model' ? <span className={styles.source}>ML</span> : null}
+        </>
+      );
+    },
+  },
+  {
+    key: 'synergy',
+    label: 'Synergy',
+    render: (pred) => (
+      <span className={styles.nowrap}>
+        <span className="text-red">{metric(pred.red_synergy, 0)}</span>
+        {' vs '}
+        <span className="text-blue">{metric(pred.blue_synergy, 0)}</span>
+      </span>
+    ),
+  },
+  {
+    key: 'confidence',
+    label: 'Confidence',
+    numeric: true,
+    render: (pred) => pct(Math.min(pred.red_confidence, pred.blue_confidence), 0),
+  },
+  {
+    key: 'result',
+    label: 'Result',
+    render: (pred) => {
+      if (!pred.is_completed) return <span className="text-muted">Upcoming</span>;
+      const correct = wasPredictionCorrect(pred);
+      const tone = pred.winner === 'red' ? 'text-red' : pred.winner === 'blue' ? 'text-blue' : '';
+      return (
+        <span className={`prediction-result ${tone}`.trim()}>
+          {pred.red_score}–{pred.blue_score}
+          {correct === true ? ' (Y)' : correct === false ? ' (N)' : ''}
+        </span>
+      );
+    },
+  },
+  ];
 }
 
 /** Derive win probability from synergy scores with sigmoid-like logic. */
@@ -244,9 +338,12 @@ export function MatchPredictionPage() {
     <div className="center-page-container">
       <SurfaceCardGroup groupId={surfaceGroupId}>
         {/* ---- Event Selection ---- */}
+        {/* Named for what it holds. Both this card and the list below it were
+            titled "Match Predictions", so the page had two identically named
+            cards and two identical "Open Match Predictions fullscreen"
+            buttons. This one is a picker. */}
         <SurfaceCard
-          title="Match Predictions"
-          subtitle="Match outcome predictions."
+          title="Event Finder"
         >
           <EventPicker
             value={eventKey}
@@ -276,34 +373,30 @@ export function MatchPredictionPage() {
 
         {/* ---- Model Accuracy ---- */}
         {stats.completed > 0 ? (
-          <SurfaceCard title="Prediction Accuracy" subtitle="Model accuracy.">
-            <div className="center-kpi-grid">
-              <div className={`center-kpi-card ${stats.accuracy != null && stats.accuracy >= 0.6 ? 'tone-green' : 'tone-yellow'}`}>
-                <span>Accuracy</span>
-                <strong>
-                  {stats.accuracy != null ? `${(stats.accuracy * 100).toFixed(1)}%` : '—'}
-                </strong>
+          <SurfaceCard title="Prediction Accuracy">
+            {/* Accuracy and Correct were two of five identical boxes saying one
+                thing: 82.9% is 116 of 141. The count is the baseline, not a
+                sibling, so it sits under the figure it explains. */}
+            <div className="page-hero">
+              <Stat
+                size="display"
+                label="Accuracy"
+                value={stats.accuracy != null ? `${(stats.accuracy * 100).toFixed(1)}%` : '—'}
+                sub={`${stats.correct} of ${stats.completed} completed matches called right`}
+                tone={
+                  stats.accuracy == null
+                    ? 'default'
+                    : stats.accuracy >= 0.6
+                      ? 'success'
+                      : 'warning'
+                }
+              />
+              <div className="page-hero-stats">
+                <Stat size="sm" label="Matches" value={stats.total} sub={`${stats.completed} played`} />
+                {stats.ml_powered > 0 ? (
+                  <Stat size="sm" label="ML powered" value={stats.ml_powered} />
+                ) : null}
               </div>
-              <div className="center-kpi-card">
-                <span>Correct</span>
-                <strong>
-                  {stats.correct} / {stats.completed}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Total Matches</span>
-                <strong>{stats.total}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Completed</span>
-                <strong>{stats.completed}</strong>
-              </div>
-              {stats.ml_powered > 0 ? (
-                <div className="center-kpi-card tone-blue">
-                  <span>ML Powered</span>
-                  <strong>{stats.ml_powered}</strong>
-                </div>
-              ) : null}
             </div>
           </SurfaceCard>
         ) : null}
@@ -328,43 +421,17 @@ export function MatchPredictionPage() {
               </div>
             }
           >
-            {/* Desktop table */}
-            <div className="center-table-wrap desktop-only">
-              <table className="center-table">
-                <thead>
-                  <tr>
-                    <th>Match</th>
-                    <th className="text-red">Red Alliance</th>
-                    <th className="text-blue">Blue Alliance</th>
-                    <th>Prediction</th>
-                    <th>Synergy</th>
-                    <th>Confidence</th>
-                    <th>Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPredictions.map((pred) => (
-                    <PredictionRow
-                      key={pred.match_key}
-                      pred={pred}
-                      isMobile={false}
-                      onOpenMatch={openMatchCenter}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card list */}
-            <div className="prediction-mobile-list mobile-only">
-              {filteredPredictions.map((pred) => (
-                <MobilePredictionCard
-                  key={`m-${pred.match_key}`}
-                  pred={pred}
-                  onOpenMatch={openMatchCenter}
-                />
-              ))}
-            </div>
+            <Table
+              columns={predictionColumns(openMatchCenter)}
+              rows={filteredPredictions}
+              rowKey={(pred) => pred.match_key}
+              cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+              rowClassName={(pred) => {
+                const correct = wasPredictionCorrect(pred);
+                if (correct === null) return undefined;
+                return correct ? styles.rowCorrect : styles.rowWrong;
+              }}
+            />
           </SurfaceCard>
         ) : null}
 
@@ -372,7 +439,6 @@ export function MatchPredictionPage() {
         {tbaPredictions ? (
           <SurfaceCard
             title="TBA Predictions"
-            subtitle="External reference predictions from The Blue Alliance."
             collapsible
           >
             <pre className="center-pre-block" style={{ maxHeight: 320, overflow: 'auto', fontSize: '0.75rem' }}>
@@ -386,197 +452,3 @@ export function MatchPredictionPage() {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Prediction Row                                                     */
-/* ------------------------------------------------------------------ */
-
-function PredictionRow({
-  pred,
-  onOpenMatch,
-}: {
-  pred: MatchPrediction;
-  isMobile: boolean;
-  onOpenMatch: (matchKey: string) => void;
-}) {
-  const redAdv = (pred.red_prob ?? 0.5) > 0.5;
-  const probStr =
-    pred.red_prob != null
-      ? redAdv
-        ? `Red ${(pred.red_prob * 100).toFixed(0)}%`
-        : `Blue ${((pred.blue_prob ?? 0.5) * 100).toFixed(0)}%`
-      : '—';
-
-  const wasCorrect =
-    pred.is_completed && pred.winner && pred.winner !== 'tie' && pred.red_prob != null
-      ? (redAdv && pred.winner === 'red') || (!redAdv && pred.winner === 'blue')
-      : null;
-
-  const sourceLabel = pred.prediction_source === 'ml_model' ? 'ML' : '';
-
-  return (
-    <tr
-      className={
-        wasCorrect === true
-          ? 'prediction-row-correct'
-          : wasCorrect === false
-            ? 'prediction-row-wrong'
-            : undefined
-      }
-    >
-      <td>
-        <button
-          type="button"
-          className="center-link-btn"
-          onClick={() => onOpenMatch(pred.match_key)}
-          style={{ fontWeight: 600, whiteSpace: 'nowrap' }}
-        >
-          {pred.display_name}
-        </button>
-      </td>
-      <td className="text-sm">
-        {pred.red_teams.map((t) => teamNum(t)).join(', ')}
-      </td>
-      <td className="text-sm">
-        {pred.blue_teams.map((t) => teamNum(t)).join(', ')}
-      </td>
-      <td>
-        <span className={`prediction-label ${redAdv ? 'text-red' : 'text-blue'}`}>
-          {probStr}
-        </span>
-        {sourceLabel ? (
-          <span className="text-muted" style={{ marginLeft: 4, fontSize: '0.75rem' }}>{sourceLabel}</span>
-        ) : null}
-      </td>
-      <td className="text-sm" style={{ whiteSpace: 'nowrap' }}>
-        <span className="text-red">
-          {metric(pred.red_synergy, 0)}
-        </span>
-        {' vs '}
-        <span className="text-blue">
-          {metric(pred.blue_synergy, 0)}
-        </span>
-      </td>
-      <td className="text-sm">
-        {pct(Math.min(pred.red_confidence, pred.blue_confidence), 0)}
-      </td>
-      <td>
-        {pred.is_completed ? (
-          <span
-            className={`prediction-result ${
-              pred.winner === 'red'
-                ? 'text-red'
-                : pred.winner === 'blue'
-                  ? 'text-blue'
-                  : ''
-            }`}
-          >
-            {pred.red_score}–{pred.blue_score}
-            {wasCorrect === true ? ' (Y)' : wasCorrect === false ? ' (N)' : ''}
-          </span>
-        ) : (
-          <span className="text-sm text-muted">Upcoming</span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Mobile Prediction Card                                             */
-/* ------------------------------------------------------------------ */
-
-function MobilePredictionCard({
-  pred,
-  onOpenMatch,
-}: {
-  pred: MatchPrediction;
-  onOpenMatch: (matchKey: string) => void;
-}) {
-  const redAdv = (pred.red_prob ?? 0.5) > 0.5;
-  const probStr =
-    pred.red_prob != null
-      ? redAdv
-        ? `Red ${(pred.red_prob * 100).toFixed(0)}%`
-        : `Blue ${((pred.blue_prob ?? 0.5) * 100).toFixed(0)}%`
-      : '—';
-
-  const wasCorrect =
-    pred.is_completed && pred.winner && pred.winner !== 'tie' && pred.red_prob != null
-      ? (redAdv && pred.winner === 'red') || (!redAdv && pred.winner === 'blue')
-      : null;
-
-  const sourceLabel = pred.prediction_source === 'ml_model' ? 'ML' : '';
-
-  const cardClass = [
-    'prediction-mobile-card',
-    wasCorrect === true ? 'correct' : wasCorrect === false ? 'wrong' : '',
-  ].filter(Boolean).join(' ');
-
-  return (
-    <div className={cardClass}>
-      <div className="prediction-mobile-head">
-        <button
-          type="button"
-          className="center-link-btn"
-          onClick={() => onOpenMatch(pred.match_key)}
-          style={{ fontWeight: 600 }}
-        >
-          {pred.display_name}
-        </button>
-        <span className={`prediction-label ${redAdv ? 'text-red' : 'text-blue'}`} style={{ fontSize: '0.82rem' }}>
-          {probStr}
-          {sourceLabel ? (
-            <span className="text-muted" style={{ marginLeft: 4, fontSize: '0.75rem' }}>{sourceLabel}</span>
-          ) : null}
-        </span>
-      </div>
-
-      <div className="prediction-mobile-alliances">
-        <div className="prediction-mobile-alliance">
-          <span className="prediction-mobile-alliance-label red">Red</span>
-          <span className="prediction-mobile-alliance-teams">
-            {pred.red_teams.map((t) => teamNum(t)).join(', ')}
-          </span>
-        </div>
-        <div className="prediction-mobile-alliance">
-          <span className="prediction-mobile-alliance-label blue">Blue</span>
-          <span className="prediction-mobile-alliance-teams">
-            {pred.blue_teams.map((t) => teamNum(t)).join(', ')}
-          </span>
-        </div>
-      </div>
-
-      <div className="prediction-mobile-stats">
-        <span>
-          Synergy
-          <strong>
-            <span className="text-red">{metric(pred.red_synergy, 0)}</span>
-            {' – '}
-            <span className="text-blue">{metric(pred.blue_synergy, 0)}</span>
-          </strong>
-        </span>
-        <span>
-          Confidence
-          <strong>{pct(Math.min(pred.red_confidence, pred.blue_confidence), 0)}</strong>
-        </span>
-        <span>
-          Result
-          <strong>
-            {pred.is_completed ? (
-              <span
-                className={
-                  pred.winner === 'red' ? 'text-red' : pred.winner === 'blue' ? 'text-blue' : ''
-                }
-              >
-                {pred.red_score}–{pred.blue_score}
-                {wasCorrect === true ? ' (Y)' : wasCorrect === false ? ' (N)' : ''}
-              </span>
-            ) : (
-              <span className="text-muted">—</span>
-            )}
-          </strong>
-        </span>
-      </div>
-    </div>
-  );
-}

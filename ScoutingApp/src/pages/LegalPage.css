@@ -1,0 +1,66 @@
+/* Long-form legal prose. Deliberately narrow measure for readability, and
+   mobile-first since scouts read this on ~250x450 phones. */
+.legal-page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0 0 3rem;
+}
+
+.legal-page .legal-intro {
+  margin: 0 0 1rem;
+}
+
+.legal-page section + section {
+  margin-top: 1.75rem;
+}
+
+.legal-page h4 {
+  margin: 0 0 0.5rem;
+  font-size: var(--font-size-lg);
+  font-weight: 650;
+}
+
+.legal-page p,
+.legal-page li {
+  line-height: 1.6;
+  font-size: var(--font-size-md);
+  /* Long unbreakable tokens (email addresses) overflow the ~250px scouting
+     phone viewport otherwise. */
+  overflow-wrap: anywhere;
+}
+
+.legal-page a {
+  overflow-wrap: anywhere;
+}
+
+.legal-page p {
+  margin: 0 0 0.75rem;
+}
+
+.legal-page ul {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.legal-page li {
+  margin-bottom: 0.4rem;
+}
+
+.legal-page .legal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 900px) {
+  .legal-page {
+    padding-bottom: 2rem;
+  }
+
+  .legal-page p,
+  .legal-page li {
+    font-size: var(--font-size-base);
+  }
+}

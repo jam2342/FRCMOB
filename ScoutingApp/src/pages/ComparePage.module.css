@@ -1,0 +1,83 @@
+/* Compare page layout. The four boards here are all genuinely tabular and are
+   now one Table each; what is left is the page's own framing — the team chip
+   row and the narrow-width metric grid the summary board falls back to. */
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The chip's label is a button because tapping it opens Team Center. Stripping
+   the button chrome keeps it looking like chip text while staying reachable by
+   keyboard, which a span with an onClick never was. */
+.chipButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chipButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+
+/* ── Narrow-width summary ─────────────────────────────────────────── */
+
+.mobileList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mobileCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+
+  padding: var(--space-3);
+  border: var(--border-width-1) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  min-width: 0;
+}
+
+.mobileHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+/* auto-fit rather than a fixed column count: two metrics per row on a 320px
+   phone, four on a tablet, without a second breakpoint to keep in sync. */
+.mobileMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(96px, 100%), 1fr));
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.mobileMetrics span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+.mobileMetrics strong {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}

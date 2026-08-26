@@ -1,0 +1,178 @@
+/* Modal — one component that is a centred dialog on a desktop and a bottom
+   sheet on a phone. Replaces 44 modal/overlay/drawer/sheet classes, the
+   biggest single class deletion in the remodel.
+
+   It renders through a portal to document.body, which is why the control
+   tokens had to move from `.product-shell` onto `:root` — inside the portal
+   the shell is not an ancestor and every one of them resolved to nothing. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+
+  background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  max-height: min(88vh, 720px);
+
+  border: var(--border-width-1) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xl);
+
+  /* Contain the layout so a wide child cannot push the dialog past the
+     viewport and take the page's horizontal scrollbar with it. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sm {
+  max-width: 400px;
+}
+
+.lg {
+  max-width: 760px;
+}
+
+.full {
+  max-width: min(1120px, 100%);
+  max-height: 92vh;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+
+  padding: var(--space-4);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  flex: none;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--type-heading-lg-size);
+  font-weight: var(--type-heading-lg-weight);
+  line-height: var(--type-heading-lg-line);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1) 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.close:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
+.close svg {
+  display: block;
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+}
+
+.body {
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-width: 0;
+  flex: 1;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width-1) solid var(--color-border);
+  background: var(--color-surface-soft);
+  flex: none;
+}
+
+/* ── Below 560px it becomes a sheet ───────────────────────────────── */
+
+/* Same component, same DOM, same focus handling — only the geometry changes.
+   A centred dialog on a 390px phone leaves unusable margins and puts the
+   actions out of thumb reach. */
+@media (max-width: 560px) {
+  .backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dialog {
+    max-width: 100%;
+    max-height: 90vh;
+    border-width: var(--border-width-1) 0 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  .full {
+    max-height: 96vh;
+  }
+
+  /* A grab handle so the sheet reads as a sheet rather than a stuck panel. */
+  .head::before {
+    content: '';
+    position: absolute;
+    top: var(--space-2);
+    left: 50%;
+    transform: translateX(-50%);
+
+    width: 36px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+  }
+
+  .head {
+    position: relative;
+    padding-top: var(--space-5);
+  }
+
+  .footer {
+    /* Actions go full width and stack, so both are thumb-reachable. */
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}

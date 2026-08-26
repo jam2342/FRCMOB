@@ -1,0 +1,86 @@
+/* Scout assignment page. The grid itself is a genuine matrix — grouped
+   alliance headers, six interactive cells per row — so it is not a Table; what
+   this file owns is the scout identity treatment and the cell framing. */
+
+/* One class per identity colour rather than an inline background, so the fill
+   and the ink that goes on it are decided together. Every pair below clears
+   4.5:1 (worst is the purple at 4.51); see the note in tokens.css. */
+
+.scout1 {
+  background: var(--scout-color-1);
+  color: var(--scout-ink);
+}
+
+.scout2 {
+  background: var(--scout-color-2);
+  color: var(--scout-ink);
+}
+
+.scout3 {
+  background: var(--scout-color-3);
+  color: var(--scout-ink);
+}
+
+.scout4 {
+  background: var(--scout-color-4);
+  color: var(--scout-ink);
+}
+
+.scout5 {
+  background: var(--scout-color-5);
+  color: var(--scout-ink);
+}
+
+.scout6 {
+  background: var(--scout-color-6);
+  color: var(--scout-ink);
+}
+
+.scout7 {
+  background: var(--scout-color-7);
+  color: var(--scout-ink);
+}
+
+.scout8 {
+  background: var(--scout-color-8);
+  color: var(--scout-ink);
+}
+
+.scout9 {
+  background: var(--scout-color-9);
+  color: var(--scout-ink);
+}
+
+.scout10 {
+  background: var(--scout-color-10);
+  color: var(--scout-ink);
+}
+
+
+.scoutLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.scoutChip {
+  font-weight: var(--font-weight-semibold);
+  border-color: transparent;
+}
+
+.workload {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The alliance seam. Cell index 3 is the first blue slot, so the border marks
+   where red ends — it was an inline `2px solid var(--surface-border, #444)`,
+   and that fallback fired every time because --surface-border does not exist. */
+.cell {
+  padding: var(--space-1) 5px;
+}
+
+.allianceSplit {
+  border-left: 2px solid var(--color-border);
+}

@@ -560,6 +560,14 @@ export type EventTeamRatingItem = {
   model_version: string;
   updated_at: string | null;
   rating_trend?: RatingTrend | null;
+  /* Where this rating sits in its own event's field. `rank_event_key` is the
+     event the rating came from, which is not always the event that was asked
+     for — a team with no rating at the selected event falls back to their most
+     recent one, and ranking that against a field they were never in would be a
+     made-up baseline. Show the event when it differs. */
+  rank?: number | null;
+  field_size?: number | null;
+  rank_event_key?: string | null;
 };
 
 export type RatingTrend = {
