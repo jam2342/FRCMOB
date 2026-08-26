@@ -1,0 +1,225 @@
+/* Button — the app's one interactive control.
+   Replaces 52 bespoke button classes, `center-btn` chief among them, which had
+   32 selectors spread over 14 stylesheets. Every colour here is a token; the
+   variants read the same in both themes because the tokens they mix already
+   differ per theme, so none of this needs a light-theme branch. */
+
+.button {
+  font-family: inherit;
+  font-size: var(--type-caption-size);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.01em;
+  line-height: 1;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+
+  min-height: var(--control-min-height);
+  padding: 0 var(--control-padding-inline);
+  border: var(--border-width-1) solid transparent;
+  border-radius: var(--control-radius);
+
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+}
+
+.button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Hover lift is suppressed for disabled and loading, which both keep the
+   element focusable-looking but non-actionable. */
+.button:hover:not(:disabled):not([aria-disabled='true']),
+.button:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  transform: translateY(-1px);
+}
+
+.button:active:not(:disabled):not([aria-disabled='true']) {
+  transform: translateY(0);
+}
+
+.button:disabled,
+.button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+
+  .button:hover,
+  .button:focus-visible,
+  .button:active {
+    transform: none;
+  }
+}
+
+/* ── Variants ─────────────────────────────────────────────────────── */
+
+/* Solid accent fill. The accent is a mid-tone, so white over it measures
+   2.8:1 — the ink goes dark instead (--color-on-accent, 6.07:1 dark /
+   5.12:1 light). This corrects the "solid fill with white text" the plan
+   assumed before the accent was measured. */
+.primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.primary:hover:not(:disabled):not([aria-disabled='true']),
+.primary:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* The established default: accent tinted into the surface. Inherits the exact
+   mix `center-btn` used, so a half-migrated page stays visually coherent. */
+.default {
+  background: color-mix(in srgb, var(--color-accent) 44%, var(--color-surface-soft));
+  border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+  color: var(--color-text);
+  box-shadow: var(--control-shadow-soft);
+}
+
+.default:hover:not(:disabled):not([aria-disabled='true']),
+.default:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-accent) 54%, var(--color-surface-soft));
+}
+
+.quiet {
+  background: var(--control-bg);
+  border-color: var(--control-border);
+  color: var(--control-text);
+}
+
+.quiet:hover:not(:disabled):not([aria-disabled='true']),
+.quiet:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-strong);
+}
+
+.danger {
+  background: var(--color-danger-soft);
+  border-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-border));
+  color: var(--color-danger-text);
+}
+
+.danger:hover:not(:disabled):not([aria-disabled='true']),
+.danger:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-danger) 26%, var(--color-surface-soft));
+  border-color: var(--color-danger);
+}
+
+/* ── Sizes ────────────────────────────────────────────────────────── */
+
+.sm {
+  min-height: var(--control-min-height-dense);
+  padding: 0 var(--control-padding-inline-dense);
+  font-size: var(--font-size-2xs);
+  gap: var(--space-1);
+}
+
+/* ── Shape modifiers ──────────────────────────────────────────────── */
+
+.fullWidth {
+  width: 100%;
+}
+
+.iconOnly {
+  padding: 0;
+  width: var(--control-min-height);
+  flex: none;
+}
+
+.iconOnly.sm {
+  width: var(--control-min-height-dense);
+}
+
+/* A pressed toggle reads as selected rather than as a hover state, so it gets
+   its own resting appearance instead of borrowing :active. */
+.button[aria-pressed='true'] {
+  background: var(--control-bg-active);
+  border-color: var(--control-border-strong);
+  color: var(--color-text);
+}
+
+/* ── Icon and loading ─────────────────────────────────────────────── */
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.icon svg {
+  display: block;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+}
+
+.sm .icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.spinner {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  flex: none;
+  border-radius: var(--radius-full);
+  border: var(--border-width-2) solid currentColor;
+  border-top-color: transparent;
+  animation: button-spin var(--motion-slow) linear infinite;
+}
+
+.sm .spinner {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.6s;
+  }
+}
+
+/* Touch targets. The control tokens already grow to 48px below 1120px, but a
+   dense button would still land at 44px — which is the floor, not a target to
+   undercut. Stated explicitly so no page-level override can shrink it. */
+@media (pointer: coarse) {
+  .button {
+    min-height: max(var(--control-min-height), var(--touch-target-min));
+  }
+
+  .iconOnly {
+    width: max(var(--control-min-height), var(--touch-target-min));
+  }
+
+  .sm {
+    min-height: var(--touch-target-min);
+  }
+
+  .iconOnly.sm {
+    width: var(--touch-target-min);
+  }
+}

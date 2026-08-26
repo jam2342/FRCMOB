@@ -5,11 +5,11 @@
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   padding: 0.28rem 0.65rem;
-  font-size: 0.74rem;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   line-height: 1;
   background: rgba(255, 255, 255, 0.05);
-  color: var(--text-1, #f4f7fb);
+  color: var(--color-text);
 }
 
 button.auto-scout-badge {
@@ -18,7 +18,7 @@ button.auto-scout-badge {
 
 .auto-scout-badge small {
   opacity: 0.8;
-  font-size: 0.68rem;
+  font-size: var(--font-size-legacy-11);
 }
 
 .auto-scout-badge--auto {
@@ -34,15 +34,15 @@ button.auto-scout-badge {
 }
 
 .auto-scout-badge--review {
-  background: rgba(99, 171, 255, 0.14);
-  border-color: rgba(99, 171, 255, 0.32);
+  background: color-mix(in srgb, var(--color-info-text) 14%, transparent);
+  border-color: color-mix(in srgb, var(--color-info-text) 32%, transparent);
   color: #b7d8ff;
 }
 
 .auto-scout-badge--manual {
   background: rgba(176, 185, 198, 0.12);
   border-color: rgba(176, 185, 198, 0.28);
-  color: #d7dee8;
+  color: var(--color-text);
 }
 
 .auto-scout-badge--blank {

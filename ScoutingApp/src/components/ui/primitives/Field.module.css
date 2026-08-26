@@ -1,0 +1,462 @@
+/* Field — every form control in the app. Replaces 38 classes across 78 raw
+   inputs, selects and textareas that had no shared component at all.
+
+   This is the largest un-abstracted surface in the codebase and it is
+   concentrated where a styling inconsistency costs the most: the form a human
+   fills in during a 160-second match. The Stepper below is the control that
+   scout actually taps, so it gets the largest targets in the whole system. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.required {
+  color: var(--color-danger-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.hint {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-dim);
+}
+
+.error {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-danger-text);
+}
+
+/* ── Text / Select / Textarea ─────────────────────────────────────── */
+
+.control {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-min-height);
+  padding: 0 var(--control-padding-inline);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+
+  background: var(--control-bg);
+  color: var(--color-text);
+
+  font-family: inherit;
+  /* 16px is the iOS zoom-on-focus threshold. Below it Safari zooms the page
+     when the field is tapped, which on a scouting phone loses the layout
+     mid-match. */
+  font-size: max(16px, var(--font-size-base));
+  line-height: var(--line-height-base);
+
+  transition:
+    border-color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease);
+}
+
+.control::placeholder {
+  color: var(--color-text-dim);
+}
+
+.control:hover:not(:disabled) {
+  border-color: var(--control-border-strong);
+}
+
+.control:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-color: var(--color-accent);
+}
+
+.control:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.control[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.textarea {
+  min-height: calc(var(--control-min-height) * 2);
+  padding: var(--space-2) var(--control-padding-inline);
+  resize: vertical;
+}
+
+/* A native select keeps its own arrow — replacing it means reimplementing
+   keyboard behaviour that already works. Only the padding makes room for it. */
+.select {
+  padding-right: var(--space-6);
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .control {
+    min-height: max(var(--control-min-height), var(--touch-target-min));
+  }
+}
+
+/* ── Stepper ──────────────────────────────────────────────────────── */
+
+/* The match-entry control. Big targets, a large tabular value that does not
+   shift width as it counts up, and no keyboard trap — the value is a real
+   input so it can be typed or corrected. */
+.stepper {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.stepperButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0;
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.stepperButton:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-strong);
+}
+
+.stepperButton:active:not(:disabled) {
+  background: var(--control-bg-active);
+}
+
+.stepperButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.stepperButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepperValue {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-2);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+
+  background: var(--control-bg);
+  color: var(--color-text);
+
+  font-family: inherit;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+
+  /* Native number spinners are a 12px target next to a 44px one. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.stepperValue::-webkit-outer-spin-button,
+.stepperValue::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.stepperValue:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-color: var(--color-accent);
+}
+
+.stepperValue:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Larger still on touch — this is the one control operated one-handed under
+   time pressure, so it gets more than the 44px floor. */
+@media (pointer: coarse) {
+  .stepperButton,
+  .stepperValue {
+    min-height: 52px;
+  }
+
+  .stepperButton {
+    width: 52px;
+  }
+}
+
+/* ── Toggle ───────────────────────────────────────────────────────── */
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-min-height);
+}
+
+.toggleLabel {
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.toggle {
+  position: relative;
+  flex: none;
+
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--radius-full);
+
+  background: var(--color-surface-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+
+.toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.toggle[aria-checked='true'] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggleKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--color-text);
+
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+
+.toggle[aria-checked='true'] .toggleKnob {
+  background: var(--color-on-accent);
+  transform: translateX(18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle,
+  .toggleKnob {
+    transition: none;
+  }
+}
+
+/* ── Checkbox and radio ───────────────────────────────────────────── */
+
+/* The whole label is the target, not just the 16px box. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  min-height: var(--touch-target-min);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.check input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.check input:disabled,
+.check:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* A fieldset cannot be display:flex without Safari mislaying the legend, so
+   the reset lives here and an inner div carries the layout. */
+.fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.radioGroupInline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* A fieldset legend is the group's accessible name; styled to match .label
+   rather than left at the browser default. */
+.legend {
+  padding: 0;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Provenance marker beside a label. Sized so it never pushes the label text
+   onto a second line in a dense match form. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  flex: none;
+}
+
+/* ── Segmented radios ─────────────────────────────────────────────── */
+
+/* The 1–5 scales. Real radios underneath — the visual is a segment row, but
+   the semantics stay a radiogroup, so it is announced as one and arrow keys
+   move between options. The buttons this replaces had neither. */
+/* Grid, not wrapping flex. With flex, a 1-5-plus-N/A scale in a narrow column
+   wrapped to "1 2 3 4" then a full-width "5" beside a small N/A — the leftover
+   row stretched its one rating to four times the width of the others, which
+   reads as emphasis on whichever number happened to wrap. Equal cells wrap
+   without changing size. */
+.segmentGroup {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.segment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-2);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+
+  background: var(--control-bg);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The radio itself covers the segment so the whole area is the hit target,
+   but stays invisible — the segment is the control's appearance. */
+.segment input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segment[data-checked] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/* The absence of an answer. Selected it reads as "not set" rather than as a
+   chosen value: no accent fill, no bold. A 1-5 scale starts here, and the
+   previous treatment made the null option the brightest thing in the row. */
+.segmentMuted {
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-dim);
+}
+
+.segmentMuted[data-checked] {
+  background: var(--control-bg);
+  border-color: var(--control-border-strong);
+  border-style: dashed;
+  color: var(--color-text-muted);
+}
+
+.segment:hover:not([data-checked]) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-strong);
+}
+
+/* Focus lands on the hidden input, so the ring has to be drawn on the label. */
+.segment:has(input:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.labelRow .label {
+  min-width: 0;
+}

@@ -26,6 +26,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ActionOverflowMenu } from '../components/ui/ActionOverflowMenu';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { Table } from '../components/ui/primitives';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -56,8 +57,7 @@ import { readStoredCenterContext, writeCenterContext } from '../layout/centerCon
 import { type QuickJumpRegion } from '../layout/userSettings';
 import {
   GridIcon, ListIcon, PieChartIcon, TrophyIcon, UsersIcon,
-  LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, SignalIcon,
-  GlobeIcon, RefreshIcon, CloudSyncIcon,
+  LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, GlobeIcon, RefreshIcon, CloudSyncIcon,
   CopyIcon, DownloadIcon,
   ScoreboardIcon, BracketIcon, ChevronDownIcon,
   TargetIcon, DeltaIcon,
@@ -2090,7 +2090,7 @@ export function EventsPage() {
       ) : null}
       <aside className="center-sidebar">
         {!isMobileLayout || mobilePanel === 'finder' ? (
-        <SurfaceCard title="Event Finder" subtitle="Search and pick an event.">
+        <SurfaceCard title="Event Finder">
           <form className="center-input-row center-input-row-event-search" onSubmit={handleSearchSubmit}>
             <input
               value={eventQuery}
@@ -2388,7 +2388,7 @@ export function EventsPage() {
         ) : null}
 
         {selectedEventKey && loadingEventData && eventSchedule.length === 0 && effectiveTeamCount === 0 ? (
-          <SurfaceCard title="Loading" subtitle="Pulling event data." compactable>
+          <SurfaceCard title="Loading" compactable>
             <SkeletonBlock rows={6} />
           </SurfaceCard>
         ) : null}
@@ -2506,7 +2506,7 @@ export function EventsPage() {
             {/* ── Desktop: original overview ── */}
             {!isMobileLayout ? (
             <div className="center-content-grid">
-            <SurfaceCard title="Overview" subtitle="Match + team snapshot." compactable>
+            <SurfaceCard title="Overview" compactable>
               {loadingEventData ? (
                 <div className="center-loading-state">
                   <SkeletonBlock rows={3} compact />
@@ -2532,7 +2532,7 @@ export function EventsPage() {
               </div>
             </SurfaceCard>
 
-            <SurfaceCard title="Top By Coverage" subtitle="Most analyzed teams." compactable>
+            <SurfaceCard title="Top By Coverage" compactable>
               {topAnalyzedTeams.length === 0 ? (
                 <EmptyState compact title="No coverage yet" description="No analyzed team history yet." />
               ) : (
@@ -2549,7 +2549,7 @@ export function EventsPage() {
               )}
             </SurfaceCard>
 
-            <SurfaceCard title="Top Fuel Rate" subtitle="Best fuel scoring pace." compactable>
+            <SurfaceCard title="Top Fuel Rate" compactable>
               {topFuelTeams.length === 0 ? (
                 <EmptyState compact title="No fuel metrics yet" description="Fuel-rate metrics still sparse." />
               ) : (
@@ -2572,7 +2572,7 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'schedule' ? (
           <SurfaceCardGroup groupId="event-center-schedule">
-            <SurfaceCard title="Schedule" subtitle="Match list with live timer." compactable>
+            <SurfaceCard title="Schedule" compactable>
             {loadingEventData ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
@@ -2811,7 +2811,6 @@ export function EventsPage() {
           <SurfaceCardGroup groupId="event-center-breakdown">
             <SurfaceCard
               title="Event Breakdown"
-              subtitle="Qualifying and knockout progression."
               compactable
             >
             <SegmentedTabs
@@ -2870,120 +2869,72 @@ export function EventsPage() {
                       </article>
                     </div>
 
-                    {isMobileLayout ? (
-                      <>
-                        <div className="center-sort-chip-row" role="toolbar" aria-label="Qualifying breakdown sorting">
-                          {(
-                            [
-                              { id: 'time', label: 'By Time', icon: <ClockIcon className="icon-inline" /> },
-                              { id: 'status', label: 'By Status', icon: <SignalIcon className="icon-inline" /> },
-                            ] as Array<{ id: QualBreakdownSortMode; label: string; icon: React.ReactNode }>
-                          ).map((option) => (
+                    <Table
+                      columns={[
+                        {
+                          key: 'display_name',
+                          label: 'Match',
+                          render: (match) => (
                             <button
-                              key={`qual-breakdown-sort-${option.id}`}
                               type="button"
-                              className={`center-sort-chip ${qualBreakdownSortMode === option.id ? 'active' : ''}`.trim()}
-                              onClick={() => setQualBreakdownSortMode(option.id)}
+                              className="center-inline-link"
+                              onClick={() => openMatchCenter(match.match_key)}
+                              title={`Open ${match.display_name}`}
                             >
-                              {option.icon} {option.label}
+                              {match.display_name}
                             </button>
-                          ))}
-                        </div>
-                        <div className="center-mobile-card-list">
-                          {sortedQualificationMatches.map((match) => {
+                          ),
+                        },
+                        {
+                          key: 'scheduled_time',
+                          label: 'Time',
+                          sortable: true,
+                          render: (match) => fmtDateShort(match.scheduled_time),
+                        },
+                        {
+                          key: 'status',
+                          label: 'Status',
+                          align: 'center',
+                          render: (match) => {
                             const timer = liveTimerLabel(match.scheduled_time, nowMs);
                             const isCompleted = inferMatchCompleted(match, nowMs);
-                            const winner = inferWinnerAlliance(match, nowMs);
-                            const hasScores = matchHasScores(match);
                             return (
-                              <article key={`qual-breakdown-mobile-${match.match_key}`} className="center-mobile-data-card">
-                                <header>
-                                  <button
-                                    type="button"
-                                    className="center-inline-link"
-                                    onClick={() => openMatchCenter(match.match_key)}
-                                  >
-                                    {match.display_name}
-                                  </button>
-                                  <span className={`center-status-pill ${isCompleted ? 'ended' : timer.state}`}>
-                                    {isCompleted ? 'Final' : timer.label}
-                                  </span>
-                                </header>
-                                <p className="meta">
-                                  {fmtDateShort(match.scheduled_time)}
-                                </p>
-                                <div className="center-mobile-data-grid">
-                                  <span>
-                                    Score
-                                    <strong>{hasScores ? `${match.red_score}-${match.blue_score}` : 'N/A'}</strong>
-                                  </span>
-                                  <span>
-                                    Winner
-                                    <strong>
-                                      {winner ? (winner === 'tie' ? 'Tie' : `${titleizeKey(winner)} wins`) : 'Pending'}
-                                    </strong>
-                                  </span>
-                                </div>
-                              </article>
+                              <span className={`center-status-pill ${isCompleted ? 'ended' : timer.state}`}>
+                                {isCompleted ? 'Final' : timer.label}
+                              </span>
                             );
-                          })}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="center-table-wrap">
-                        <table className="center-table">
-                          <thead>
-                            <tr>
-                              <th>Match</th>
-                              <th>Time</th>
-                              <th>Status</th>
-                              <th>Score</th>
-                              <th>Winner</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sortedQualificationMatches.map((match) => {
-                              const timer = liveTimerLabel(match.scheduled_time, nowMs);
-                              const isCompleted = inferMatchCompleted(match, nowMs);
-                              const winner = inferWinnerAlliance(match, nowMs);
-                              const hasScores = matchHasScores(match);
-                              return (
-                                <tr key={`qual-breakdown-${match.match_key}`}>
-                                  <td>
-                                    <button
-                                      type="button"
-                                      className="center-inline-link"
-                                      onClick={() => openMatchCenter(match.match_key)}
-                                      title={`Open ${match.display_name}`}
-                                    >
-                                      {match.display_name}
-                                    </button>
-                                  </td>
-                                  <td>{fmtDateShort(match.scheduled_time)}</td>
-                                  <td>
-                                    <span className={`center-status-pill ${isCompleted ? 'ended' : timer.state}`}>
-                                      {isCompleted ? 'Final' : timer.label}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    {hasScores ? `${match.red_score}-${match.blue_score}` : <span className="center-muted">N/A</span>}
-                                  </td>
-                                  <td>
-                                    {winner ? (
-                                      <span className="center-match-winner-chip">
-                                        {winner === 'tie' ? 'Tie' : `${titleizeKey(winner)} wins`}
-                                      </span>
-                                    ) : (
-                                      <span className="center-muted">Pending</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                          },
+                        },
+                        {
+                          key: 'score',
+                          label: 'Score',
+                          numeric: true,
+                          render: (match) =>
+                            matchHasScores(match)
+                              ? `${match.red_score}-${match.blue_score}`
+                              : <span className="center-muted">N/A</span>,
+                        },
+                        {
+                          key: 'winner',
+                          label: 'Winner',
+                          align: 'center',
+                          render: (match) => {
+                            const winner = inferWinnerAlliance(match, nowMs);
+                            return winner ? (
+                              <span className="center-match-winner-chip">
+                                {winner === 'tie' ? 'Tie' : `${titleizeKey(winner)} wins`}
+                              </span>
+                            ) : (
+                              <span className="center-muted">Pending</span>
+                            );
+                          },
+                        },
+                      ]}
+                      rows={sortedQualificationMatches}
+                      rowKey={(match) => match.match_key}
+                      stickyHeader
+                      empty="No qualification matches yet."
+                    />
                   </>
                 )}
               </>
@@ -3206,7 +3157,7 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'rankings' ? (
           <SurfaceCardGroup groupId="event-center-rankings">
-            <SurfaceCard title="Rankings" subtitle="Event leaderboard." compactable>
+            <SurfaceCard title="Rankings" compactable>
             {loadingEventData ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
@@ -3217,26 +3168,48 @@ export function EventsPage() {
             ) : null}
             {rankingRows.length > 0 ? (
               <>
-                {isMobileLayout ? (
-                  <>
-                    <div className="center-sort-chip-row" role="toolbar" aria-label="Rankings sorting">
-                      {(
-                        [
-                          { id: 'rank', label: 'By Rank' },
-                          { id: 'team', label: 'By Team' },
-                          { id: 'played', label: 'By Played' },
-                        ] as Array<{ id: RankingsSortMode; label: string }>
-                      ).map((option) => (
+                {/* One Table owning the columns, rows and sorting. The narrow
+                    view keeps its compact standings grid through renderCards —
+                    30 rows of six short figures fit on a phone, 30 stacked
+                    cards of six labelled lines do not. */}
+                <Table
+                  columns={[
+                    { key: 'rank', label: 'Rank', numeric: true, sortable: true, width: '80px', render: (row) => row.rank ?? 'N/A' },
+                    {
+                      key: 'team_number',
+                      label: 'Team',
+                      sortable: true,
+                      render: (row) => (
                         <button
-                          key={`rankings-sort-${option.id}`}
                           type="button"
-                          className={`center-sort-chip ${rankingsSortMode === option.id ? 'active' : ''}`.trim()}
-                          onClick={() => setRankingsSortMode(option.id)}
+                          className="center-inline-link"
+                          onClick={() => openTeamCenter(row.team_key)}
+                          title={`View Team ${row.team_number} · Record: ${row.record}`}
                         >
-                          {option.label}
+                          #{row.team_number} {row.nickname}
                         </button>
-                      ))}
-                    </div>
+                      ),
+                    },
+                    { key: 'record', label: 'Record', align: 'center', width: '110px' },
+                    { key: 'matches_played', label: 'Played', numeric: true, sortable: true, width: '90px', render: (row) => row.matches_played ?? 'N/A' },
+                    {
+                      key: 'sort0',
+                      label: rankingSortLabels[0] || 'S1',
+                      numeric: true,
+                      render: (row) => row.sort_orders[0] ?? 'N/A',
+                    },
+                    {
+                      key: 'sort1',
+                      label: rankingSortLabels[1] || 'S2',
+                      numeric: true,
+                      render: (row) => row.sort_orders[1] ?? 'N/A',
+                    },
+                  ]}
+                  rows={visibleRankingRows}
+                  rowKey={(row) => row.team_key}
+                  stickyHeader
+                  empty="No rankings published yet."
+                  renderCards={(narrowRows) => (
                     <div className="fm-standings-card">
                       <div className="fm-standings-header">
                         <span>#</span>
@@ -3246,7 +3219,7 @@ export function EventsPage() {
                         <span>{rankingSortLabels[0]?.slice(0, 4) || 'S1'}</span>
                         <span>{rankingSortLabels[1]?.slice(0, 4) || 'S2'}</span>
                       </div>
-                      {visibleRankingRows.map((row) => (
+                      {narrowRows.map((row) => (
                         <button
                           key={`ranking-fm-${row.team_key}`}
                           type="button"
@@ -3266,45 +3239,8 @@ export function EventsPage() {
                         </button>
                       ))}
                     </div>
-                  </>
-                ) : (
-                  <div className="center-table-wrap">
-                    <table className="center-table">
-                      <thead>
-                        <tr>
-                          <th>Rank</th>
-                          <th>Team</th>
-                          <th>Record</th>
-                          <th>Played</th>
-                          {rankingSortLabels.slice(0, 2).map((label, idx) => (
-                            <th key={`sort-label-${idx}`}>{label}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleRankingRows.map((row) => (
-                          <tr key={`ranking-${row.team_key}`}>
-                            <td>{row.rank ?? 'N/A'}</td>
-                            <td>
-                              <button
-                                type="button"
-                                className="center-inline-link"
-                                onClick={() => openTeamCenter(row.team_key)}
-                                title={`View Team ${row.team_number} · Record: ${row.record}`}
-                              >
-                                #{row.team_number} {row.nickname}
-                              </button>
-                            </td>
-                            <td>{row.record}</td>
-                            <td>{row.matches_played ?? 'N/A'}</td>
-                            <td>{row.sort_orders[0] ?? 'N/A'}</td>
-                            <td>{row.sort_orders[1] ?? 'N/A'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                  )}
+                />
               </>
             ) : null}
             {sortedRankingRows.length > visibleRankingRows.length ? (
@@ -3324,7 +3260,7 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'teams' ? (
           <SurfaceCardGroup groupId="event-center-teams">
-            <SurfaceCard title="Teams" subtitle="Event roster with live status." compactable>
+            <SurfaceCard title="Teams" compactable>
             {loadingEventData && eventTeamRows.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
@@ -3335,125 +3271,74 @@ export function EventsPage() {
             ) : null}
             {eventTeamRows.length > 0 ? (
               <>
-                {isMobileLayout ? (
-                  <>
-                    <div className="center-sort-chip-row" role="toolbar" aria-label="Event teams sorting">
-                      {(
-                        [
-                          { id: 'team', label: 'By Team' },
-                          { id: 'analyzed', label: 'By Coverage' },
-                          { id: 'fuel', label: 'By Fuel' },
-                          { id: 'climb', label: 'By Climb' },
-                        ] as Array<{ id: EventTeamsSortMode; label: string }>
-                      ).map((option) => (
+                <Table
+                  columns={[
+                    {
+                      key: 'team_number',
+                      label: 'Team',
+                      sortable: true,
+                      render: (team) => (
                         <button
-                          key={`event-teams-sort-${option.id}`}
                           type="button"
-                          className={`center-sort-chip ${eventTeamsSortMode === option.id ? 'active' : ''}`.trim()}
-                          onClick={() => setEventTeamsSortMode(option.id)}
+                          className="center-inline-link"
+                          onClick={() => openTeamCenter(team.team_key)}
                         >
-                          {option.label}
+                          #{team.team_number} {team.nickname || team.team_key}
                         </button>
-                      ))}
-                    </div>
-                    <div className="center-mobile-card-list">
-                      {visibleEventTeamRows.map((team) => {
+                      ),
+                    },
+                    {
+                      key: 'live',
+                      label: 'Live',
+                      align: 'center',
+                      render: (team) => {
                         const entry = liveStatusByTeam[team.team_key.toLowerCase()] || null;
-                        return (
-                          <article key={`team-mobile-row-${team.team_key}`} className="center-mobile-data-card">
-                            <header>
-                              <button type="button" className="center-inline-link" onClick={() => openTeamCenter(team.team_key)} title={`View Team ${team.team_number}`}>
-                                #{team.team_number} {team.nickname || team.team_key}
-                              </button>
-                              {entry?.is_live ? (
-                                <span className="center-live-chip">
-                                  <i className="center-live-dot" aria-hidden="true" />
-                                  Live
-                                </span>
-                              ) : (
-                                <span className="center-chip">Idle</span>
-                              )}
-                            </header>
-                            <div>{teamFormStrip(entry)}</div>
-                            <div className="center-mobile-data-grid">
-                              <span>
-                                Analyzed
-                                <strong>{team.history_count}</strong>
-                              </span>
-                              <span>
-                                Fuel
-                                <strong>{metric(team.averages?.fuel_scoring_rate ?? null, 2)}</strong>
-                              </span>
-                              <span>
-                                Cycle
-                                <strong>{metric(team.averages?.cycle_time_sec ?? null, 1)}</strong>
-                              </span>
-                              <span>
-                                Auto
-                                <strong>{metric(team.averages?.auto_contribution ?? null, 2)}</strong>
-                              </span>
-                              <span>
-                                Climb
-                                <strong>{metric(team.averages?.climb_success_prob ?? null, 2)}</strong>
-                              </span>
-                            </div>
-                          </article>
+                        return entry?.is_live ? (
+                          <span className="center-live-chip">
+                            <i className="center-live-dot" aria-hidden="true" />
+                            Live
+                          </span>
+                        ) : (
+                          <span className="center-muted">-</span>
                         );
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <div className="center-table-wrap">
-                    <table className="center-table">
-                      <thead>
-                        <tr>
-                          <th>Team</th>
-                          <th>Live</th>
-                          <th>Form</th>
-                          <th>Analyzed</th>
-                          <th>Fuel</th>
-                          <th>Cycle</th>
-                          <th>Auto</th>
-                          <th>Climb</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleEventTeamRows.map((team) => {
-                          const entry = liveStatusByTeam[team.team_key.toLowerCase()] || null;
-                          return (
-                            <tr key={`team-row-${team.team_key}`}>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="center-inline-link"
-                                  onClick={() => openTeamCenter(team.team_key)}
-                                >
-                                  #{team.team_number} {team.nickname || team.team_key}
-                                </button>
-                              </td>
-                              <td>
-                                {entry?.is_live ? (
-                                  <span className="center-live-chip">
-                                    <i className="center-live-dot" aria-hidden="true" />
-                                    Live
-                                  </span>
-                                ) : (
-                                  <span className="center-muted">-</span>
-                                )}
-                              </td>
-                              <td>{teamFormStrip(entry)}</td>
-                              <td>{team.history_count}</td>
-                              <td>{metric(team.averages?.fuel_scoring_rate ?? null, 2)}</td>
-                              <td>{metric(team.averages?.cycle_time_sec ?? null, 1)}</td>
-                              <td>{metric(team.averages?.auto_contribution ?? null, 2)}</td>
-                              <td>{metric(team.averages?.climb_success_prob ?? null, 2)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      },
+                    },
+                    {
+                      key: 'form',
+                      label: 'Form',
+                      render: (team) => teamFormStrip(liveStatusByTeam[team.team_key.toLowerCase()] || null),
+                    },
+                    { key: 'history_count', label: 'Analyzed', numeric: true, sortable: true },
+                    {
+                      key: 'fuel',
+                      label: 'Fuel',
+                      numeric: true,
+                      render: (team) => metric(team.averages?.fuel_scoring_rate ?? null, 2),
+                    },
+                    {
+                      key: 'cycle',
+                      label: 'Cycle',
+                      numeric: true,
+                      render: (team) => metric(team.averages?.cycle_time_sec ?? null, 1),
+                    },
+                    {
+                      key: 'auto',
+                      label: 'Auto',
+                      numeric: true,
+                      render: (team) => metric(team.averages?.auto_contribution ?? null, 2),
+                    },
+                    {
+                      key: 'climb',
+                      label: 'Climb',
+                      numeric: true,
+                      render: (team) => metric(team.averages?.climb_success_prob ?? null, 2),
+                    },
+                  ]}
+                  rows={visibleEventTeamRows}
+                  rowKey={(team) => team.team_key}
+                  stickyHeader
+                  empty="No team rows available."
+                />
               </>
             ) : null}
             {eventTeamRows.length > visibleEventTeamRows.length ? (

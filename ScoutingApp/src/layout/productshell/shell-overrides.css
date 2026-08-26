@@ -1,0 +1,1174 @@
+/* ==================================================================
+   shell-overrides
+
+   Merged from 1 file, in the order they were imported —
+   order within a layer is what decides between two equally specific
+   rules, so it is preserved exactly. Section banners keep the original
+   grouping findable.
+   ================================================================== */
+
+/* ── scouting-refinement ──────────────────────────────── */
+
+/* ==========================================================================
+   Scouting Page Visual Refinement
+   ========================================================================== */
+
+.product-shell .scouting-layout-grid {
+  align-items: start;
+  transition: grid-template-columns 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Scrolls with the page, unlike every other .center-sidebar.
+ *
+ * The shared rule makes that column sticky and caps it at calc(100vh - 90px)
+ * with overflow-y: auto, which is right for a *finder* — you want the team or
+ * match list pinned while you read the detail beside it. On Live Scouting the
+ * same column is the workspace: Setup, Profile, Room, Auto Draft, Save. That
+ * is 2,880px of form crammed into an 810px window, so reaching Save meant
+ * scrolling a nested region while the page scrolled too, and the wheel did
+ * whichever the pointer happened to be over.
+ *
+ * `clip` rather than `hidden` on the x axis: `hidden` on one axis computes the
+ * other to `auto`, which is how this column ended up with a scrollbar nobody
+ * asked for even before the shared rule applied. */
+.product-shell .scouting-layout-grid .center-sidebar {
+  gap: var(--card-stack-gap);
+  padding-bottom: 8px;
+  position: static;
+  max-height: none;
+  overflow-x: clip;
+  overflow-y: visible;
+  transition: gap 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.product-shell .scouting-layout-grid .center-sidebar.scout-sidebar-side-collapsed {
+  gap: 6px;
+  padding-right: 0;
+  justify-items: center;
+}
+
+@media (min-width: 1121px) {
+  .product-shell .scouting-layout-grid.scouting-sidebar-side-collapsed {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+}
+
+.product-shell .scouting-layout-grid .center-main {
+  gap: 16px;
+}
+
+@media (min-width: 1121px) {
+  .product-shell .scout-main-grid.scout-main-grid-extended.scout-main-grid-capture-desktop {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .product-shell .scout-capture-stack-col {
+    display: grid;
+    align-content: start;
+    gap: var(--card-stack-gap);
+  }
+
+  .product-shell .scout-capture-stack-divider {
+    height: 1px;
+    margin: 0 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-border) 92%, transparent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+    opacity: 0.9;
+  }
+
+  .product-shell .scout-main-grid.scout-secondary-grid.scout-tertiary-grid {
+    align-items: start;
+  }
+
+  .product-shell .scout-main-grid.scout-secondary-grid.scout-tertiary-grid .scout-driver-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .product-shell .scout-main-grid.scout-secondary-grid.scout-tertiary-grid .scout-driver-breakdown {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .product-shell .scout-main-grid.scout-secondary-grid.scout-tertiary-grid .scout-driver-breakdown > div {
+    padding: 7px;
+  }
+}
+
+@media (min-width: 1121px) and (max-width: 1360px) {
+  .product-shell .scout-main-grid.scout-secondary-grid.scout-tertiary-grid .scout-driver-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.product-shell .scouting-layout-grid .center-sidebar .center-actions-row {
+  gap: 8px;
+}
+
+.product-shell .scouting-layout-grid .center-sidebar .center-actions-row .center-btn,
+.product-shell .scouting-layout-grid .center-sidebar .center-actions-row a.center-btn {
+  min-height: 34px;
+  border-radius: 10px;
+}
+
+.product-shell .scouting-layout-grid .surface-card-head h3 {
+  letter-spacing: 0.012em;
+}
+
+.product-shell .scouting-layout-grid .surface-card-head p {
+  line-height: 1.42;
+  max-width: 72ch;
+}
+
+.product-shell .scout-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.product-shell .scout-status-row .center-chip {
+  min-height: 24px;
+  padding: 4px 9px;
+}
+
+.product-shell .scout-control-card {
+  border-radius: 13px;
+  padding: 11px;
+  gap: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.product-shell .scout-control-card h4 {
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.04em;
+}
+
+.product-shell .scout-card-note {
+  line-height: 1.45;
+}
+
+.product-shell .scout-rp-btn {
+  min-height: 70px;
+  align-content: start;
+}
+
+.product-shell .scout-rp-btn strong {
+  line-height: 1.2;
+}
+
+.product-shell .scout-rp-btn small {
+  line-height: 1.35;
+}
+
+.product-shell .scout-notes-shell {
+  gap: 10px;
+}
+
+.product-shell .scout-notes-input {
+  min-height: 114px;
+  border-radius: 13px;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+.product-shell .scout-list-block p,
+.product-shell .scout-team-summary-card > p {
+  line-height: 1.42;
+}
+
+.product-shell .scout-profile-chip-row {
+  gap: 7px;
+}
+
+.product-shell .scout-profile-chip {
+  min-height: 30px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+  color: var(--color-text-muted);
+  transition:
+    border-color var(--motion-fast) ease,
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    transform var(--motion-fast) ease;
+}
+
+.product-shell .scout-profile-chip:hover,
+.product-shell .scout-profile-chip.active {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-bg-elevated));
+  color: var(--color-text);
+}
+
+/* === Sidebar navigation + grouping ====================================== */
+.finder-sidebar-header.scout-sidebar-hub {
+  --scout-sidebar-collapse-duration: 260ms;
+  --scout-sidebar-collapse-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  justify-self: start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 88%, var(--color-surface-soft));
+  box-shadow:
+    0 14px 30px rgba(7, 11, 16, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  transform-origin: left top;
+  will-change: inline-size, padding, gap, transform;
+  transition:
+    inline-size var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    max-inline-size var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    max-height var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    padding var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    gap var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    border-radius var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    box-shadow var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease),
+    transform var(--scout-sidebar-collapse-duration) var(--scout-sidebar-collapse-ease);
+  overflow: hidden;
+}
+
+.finder-sidebar-sections {
+  display: grid;
+  gap: 16px;
+  max-height: 2600px;
+  max-inline-size: 100%;
+  opacity: 1;
+  transform: translateX(0);
+  transform-origin: left top;
+  transition:
+    max-height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-inline-size 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 240ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    gap 220ms ease,
+    margin 220ms ease;
+  overflow: hidden;
+}
+
+.center-sidebar.scout-sidebar-side-collapsed .finder-sidebar-sections,
+.finder-sidebar-sections.collapsed {
+  max-height: 0;
+  max-inline-size: 0;
+  margin: 0;
+  gap: 0;
+  opacity: 0;
+  transform: translateX(-16px);
+  pointer-events: none;
+}
+
+.scout-sidebar-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  transition:
+    max-height var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    margin var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  overflow: hidden;
+}
+
+.scout-sidebar-overview-copy {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.scout-sidebar-overview-copy > * {
+  display: block;
+  min-width: 0;
+}
+
+.scout-sidebar-overview-kicker {
+  font-size: var(--font-size-legacy-11);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+/* Size, weight and colour come from the shared card-title rule in
+   shell-foundation — this is the scouting workspace's card heading, and it was
+   the one at font-weight 760, a value on no scale at all. Only the line-height
+   is local, because this heading sits above a summary line. */
+.scout-sidebar-overview-copy strong {
+  line-height: 1.12;
+}
+
+.scout-sidebar-overview-copy p {
+  margin: 0;
+  font-size: var(--font-size-2xs);
+  line-height: 1.45;
+  max-width: 42ch;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+}
+
+.scout-sidebar-overview-actions {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 6px;
+}
+
+.scout-sidebar-overview-actions .center-btn {
+  min-height: 34px;
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.scout-sidebar-overview-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
+  font-size: var(--font-size-legacy-11);
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  transition: all var(--motion-fast);
+}
+
+@keyframes badge-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(255, 159, 10, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0); }
+}
+
+.scout-sidebar-overview-state:not(.ready) {
+  border-color: color-mix(in srgb, var(--color-warning) 80%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 25%, transparent);
+  /* The fill is a 25% tint of the surface behind it, so it is dark in one theme
+     and pale in the other. A literal white read at 1.23:1 in light. */
+  color: var(--color-text);
+  animation: badge-pulse 2.5s infinite ease-out;
+}
+
+.scout-sidebar-overview-state.ready {
+  border-color: color-mix(in srgb, var(--color-accent) 72%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-text);
+}
+
+.scout-sidebar-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 72px;
+  margin: 0;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    max-height var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    margin var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  overflow: hidden;
+}
+
+.scout-sidebar-nav.collapsed {
+  max-height: 0;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+
+.scout-sidebar-nav-pill {
+  justify-content: center;
+  text-align: center;
+}
+
+.scout-sidebar-nav-pill .segmented-tabs__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.scout-sidebar-nav-pill .segmented-tabs__label {
+  font-size: var(--font-size-2xs);
+  font-weight: 760;
+}
+
+.scout-sidebar-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-legacy-11);
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    min-height var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    padding var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    background var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    color var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform var(--scout-sidebar-collapse-duration, 260ms) var(--scout-sidebar-collapse-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.scout-sidebar-collapse-btn:active {
+  border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-bg-elevated));
+  color: var(--color-text);
+}
+
+.scout-sidebar-collapse-btn .icon-inline {
+  width: 14px;
+  height: 14px;
+}
+
+.scout-sidebar-collapse-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scout-sidebar-collapse-btn.icon-only {
+  gap: 0;
+  padding-inline: 0;
+}
+
+.scout-sidebar-collapse-btn.icon-only span {
+  display: none;
+}
+
+.finder-sidebar-header.scout-sidebar-hub.collapsed {
+  padding: 6px;
+  gap: 0;
+  border-radius: 13px;
+  box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
+}
+
+.finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-collapse-btn {
+  min-height: 34px;
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  color: var(--color-text);
+}
+
+.finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-overview {
+  max-height: 0;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+
+@media (min-width: 1121px) {
+  .finder-sidebar-header.scout-sidebar-hub.collapsed {
+    inline-size: clamp(108px, 34%, 138px);
+    max-inline-size: clamp(108px, 34%, 138px);
+    transform: translateX(-2px);
+  }
+
+  .finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-collapse-btn {
+    min-height: 36px;
+    padding-inline: 10px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-sidebar-side-collapsed .finder-sidebar-header.scout-sidebar-hub.collapsed {
+    inline-size: 52px;
+    max-inline-size: 52px;
+    padding: 0;
+    border-radius: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    justify-self: center;
+    transform: none;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-sidebar-side-collapsed .finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-collapse-btn {
+    width: 42px;
+    min-width: 42px;
+    max-width: 42px;
+    min-height: 34px;
+    max-height: 34px;
+    padding-inline: 0;
+    border-radius: 11px;
+    justify-self: center;
+  }
+}
+
+.scout-sidebar-section {
+  display: grid;
+  gap: var(--card-stack-gap);
+  scroll-margin-top: 96px;
+}
+
+.scout-sidebar-section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  align-items: start;
+  gap: 4px;
+  padding: 0 2px 2px;
+}
+
+.scout-sidebar-section-label {
+  display: block;
+  width: 100%;
+  font-size: var(--font-size-legacy-11);
+  font-weight: 820;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.scout-sidebar-section-note {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: var(--font-size-2xs);
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.scout-sidebar-section.active .scout-sidebar-section-label {
+  color: var(--color-accent-text);
+}
+
+.scout-sidebar-section.active > .surface-card {
+  border-color: color-mix(in srgb, var(--color-accent) 36%, var(--color-border));
+  box-shadow:
+    0 10px 20px rgba(5, 9, 14, 0.12),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.product-shell .scouting-page-view-bar {
+  width: 100%;
+  justify-content: safe center;
+  scroll-padding-inline: 16px;
+}
+
+@media (max-width: 1120px) {
+  /* Keep the scouting tool switcher reachable on mobile — every sub-view
+     (Pit, Coverage, Auto Paths, Field Calibration, On-Device) lives here, so
+     hiding it stranded those tools. Start-aligned + scrollable with an edge
+     fade hint (see .can-scroll-* in ps-shared-controls.css). */
+  .product-shell .scouting-page-view-bar {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    gap: 6px;
+    /* Default: the pill is a sibling before a .center-page-container, whose
+       content sits 8px in (its mobile gutter) from the ps-content edge — so
+       inset the pill 8px to line its left edge up with the cards below it.
+       Bottom 10px gives a real gap before the next bar/content (was 0). */
+    padding: 8px 8px 10px;
+    scroll-padding-inline: 8px;
+  }
+
+  /* Live Scouting + Assignments put the pill before the grid, which has no
+     inner gutter — its toggle/cards sit flush at the ps-content edge, so drop
+     the pill's side inset to match (this is the misalignment that was visible). */
+  .product-shell .scouting-page-view-bar:has(+ .scouting-layout-grid) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* Auto Paths renders the pill INSIDE the container, so it already inherits
+     the gutter — no extra inset needed. */
+  .product-shell .center-page-container > .scouting-page-view-bar {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .product-shell .scouting-layout-grid .center-sidebar,
+  .product-shell .scouting-layout-grid .center-main {
+    gap: var(--card-stack-gap);
+  }
+
+  .product-shell .scouting-layout-grid .mobile-view-toggle {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    position: sticky;
+    top: var(--ps-sticky-top);
+    z-index: 10;
+    border: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--color-bg-elevated) 96%, transparent);
+    box-shadow: 0 10px 22px rgba(6, 10, 15, 0.18);
+    backdrop-filter: blur(12px);
+    padding: 6px;
+    transition:
+      max-height var(--motion-fast) ease,
+      margin var(--motion-fast) ease,
+      opacity var(--motion-fast) ease,
+      top var(--motion-fast) ease,
+      padding var(--motion-fast) ease,
+      gap var(--motion-fast) ease,
+      border-radius var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease,
+      transform var(--motion-fast) ease;
+    max-height: 88px;
+    overflow: hidden;
+  }
+
+  .product-shell .scouting-layout-grid .mobile-view-toggle-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 32px;
+    padding: 4px 8px;
+    font-size: var(--font-size-2xs);
+    transition:
+      min-height var(--motion-fast) ease,
+      padding var(--motion-fast) ease,
+      font-size var(--motion-fast) ease;
+  }
+
+  .product-shell .scouting-layout-grid .center-sidebar .center-actions-row .center-btn,
+  .product-shell .scouting-layout-grid .center-sidebar .center-actions-row a.center-btn {
+    min-height: 32px;
+  }
+
+  .product-shell .scout-control-card {
+    padding: 9px;
+    gap: 7px;
+  }
+
+  .product-shell .scout-rp-btn {
+    min-height: 58px;
+    padding: 7px;
+  }
+
+  .product-shell .scout-profile-chip {
+    min-height: 28px;
+    padding: 5px 9px;
+    font-size: var(--font-size-2xs);
+  }
+
+  .product-shell .scout-notes-input {
+    min-height: 96px;
+    padding: 10px;
+    font-size: var(--font-size-sm);
+  }
+  .product-shell .scouting-layout-grid .fm-scout-panel-pill,
+  .product-shell .scouting-layout-grid .fm-scout-section-tab {
+    min-height: var(--control-min-height-dense);
+    padding: 0 var(--control-padding-inline);
+    border: 1px solid var(--control-border);
+    border-radius: var(--control-radius);
+    background: var(--control-bg);
+    color: var(--control-text-muted);
+    box-shadow: none;
+    white-space: nowrap;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero {
+    transition:
+      max-height var(--motion-fast) ease,
+      margin var(--motion-fast) ease,
+      opacity var(--motion-fast) ease,
+      top var(--motion-fast) ease,
+      padding var(--motion-fast) ease,
+      gap var(--motion-fast) ease,
+      border-radius var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease,
+      transform var(--motion-fast) ease;
+    max-height: 120px;
+    overflow: hidden;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-actions,
+  .product-shell .scouting-layout-grid .fm-scout-hero-context,
+  .product-shell .scouting-layout-grid .fm-scout-hero-chip,
+  .product-shell .scouting-layout-grid .fm-scout-hero-actions .center-btn{
+    transition:
+      gap var(--motion-fast) ease,
+      min-height var(--motion-fast) ease,
+      padding var(--motion-fast) ease,
+      font-size var(--motion-fast) ease,
+      border-radius var(--motion-fast) ease;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tabs {
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+    margin-bottom: 8px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tab {
+    flex: 1;
+    font-size: var(--font-size-2xs);
+    font-weight: 720;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tab.active,
+  .product-shell .scouting-layout-grid .fm-scout-panel-pill.active {
+    border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
+    background: var(--control-bg-active);
+    color: var(--control-text);
+    box-shadow: var(--control-shadow-active);
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tab .icon-inline,
+  .product-shell .scouting-layout-grid .fm-scout-panel-pill .icon-inline {
+    opacity: 0.72;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tab.active .icon-inline,
+  .product-shell .scouting-layout-grid .fm-scout-panel-pill.active .icon-inline {
+    opacity: 1;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-panel-tabs {
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-panel-pill {
+    font-size: var(--font-size-legacy-11);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle {
+    top: calc(env(safe-area-inset-top, 0px) + 48px);
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle-btn {
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: var(--font-size-2xs);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle-btn .segmented-tabs__icon {
+    transform: scale(0.92);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
+    top: calc(env(safe-area-inset-top, 0px) + 84px);
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions {
+    gap: 4px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions .center-btn{
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: var(--font-size-legacy-11);
+    border-radius: 7px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-context {
+    gap: 3px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-chip {
+    padding: 2px 6px;
+    font-size: var(--font-size-legacy-10);
+    border-radius: 5px;
+  }
+
+  /* Section switching + Scout Board now live in the merged top toggle
+     (Setup·Room·Data·Board), so this header's only mobile contents — the
+     Collapse row and the Setup/Room/Data section nav — are redundant. Drop the
+     whole header on mobile to remove a stacked bar. (The desktop side-rail
+     header is unaffected — it renders above this breakpoint.) */
+  .finder-sidebar-header.scout-sidebar-hub {
+    display: none;
+  }
+
+  .scout-sidebar-collapse-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 36px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
+    background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-legacy-11);
+    font-weight: 820;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      min-height var(--motion-fast) ease,
+      border-color var(--motion-fast) ease,
+      background var(--motion-fast) ease,
+      color var(--motion-fast) ease;
+  }
+
+  .scout-sidebar-collapse-btn:active {
+    border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 14%, var(--color-bg-elevated));
+    color: var(--color-text);
+  }
+
+  .scout-sidebar-collapse-btn .icon-inline {
+    width: 14px;
+    height: 14px;
+  }
+
+  .scout-sidebar-overview {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .scout-sidebar-overview-copy p {
+    display: none;
+  }
+
+  .scout-sidebar-overview-actions {
+    justify-items: stretch;
+  }
+
+  .scout-sidebar-overview-actions .center-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Compact inline quick-action buttons next to match select (mobile only) */
+  .scout-match-quick-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .scout-match-quick-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+    color: var(--control-text-muted);
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease, opacity 140ms ease;
+  }
+
+  .scout-match-quick-btn:disabled {
+    opacity: 0.32;
+    cursor: not-allowed;
+  }
+
+  .scout-match-quick-btn:not(:disabled):active {
+    background: var(--control-bg-active);
+    color: var(--control-text);
+  }
+
+  .scout-sidebar-nav {
+    gap: 6px;
+  }
+
+  .scout-sidebar-nav-pill {
+    min-height: 44px;
+  }
+
+  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed,
+  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .finder-sidebar-header.scout-sidebar-hub {
+    padding: 6px;
+    gap: 0;
+    border-radius: 13px;
+    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
+  }
+
+  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-collapse-btn {
+    min-height: 34px;
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    color: var(--color-text);
+  }
+
+  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-overview,
+  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .scout-sidebar-overview {
+    max-height: 0;
+    margin: 0;
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
+  }
+
+  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .scout-sidebar-nav {
+    gap: 4px;
+  }
+
+  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .scout-sidebar-nav-pill {
+    min-height: 34px;
+    font-size: var(--font-size-legacy-11);
+  }
+
+  .scout-sidebar-section {
+    scroll-margin-top: 72px;
+  }
+
+  .scout-sidebar-section-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .scout-sidebar-section-note {
+    white-space: normal;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero {
+    top: calc(env(safe-area-inset-top, 0px) + 90px);
+    gap: 4px;
+    padding: 5px 8px;
+    border-radius: 12px;
+    max-height: 80px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-actions .center-btn {
+    grid-column: auto;
+    min-height: 32px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-context {
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-context::-webkit-scrollbar {
+    display: none;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-chip {
+    padding: 3px 7px;
+    font-size: var(--font-size-legacy-10);
+    flex-shrink: 0;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-hidden .mobile-view-toggle,
+  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-18px);
+    max-height: 0;
+    margin: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    box-shadow: none;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero {
+    gap: 0;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-hidden .mobile-view-toggle-btn,
+  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero-actions .center-btn,
+  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero-chip {
+    opacity: 0;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
+    top: calc(env(safe-area-inset-top, 0px) + 84px);
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions {
+    gap: 4px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions .center-btn{
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: var(--font-size-legacy-11);
+    border-radius: 7px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-context {
+    gap: 3px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-chip {
+    padding: 2px 6px;
+    font-size: var(--font-size-legacy-10);
+    border-radius: 5px;
+  }
+}
+
+@media (max-width: 320px), (max-height: 500px) {
+  .product-shell .scouting-layout-grid .mobile-view-toggle {
+    top: calc(env(safe-area-inset-top, 0px) + 44px);
+    gap: 4px;
+    padding: 4px;
+    border-radius: 11px;
+    max-height: 84px;
+  }
+
+  .product-shell .scouting-layout-grid .mobile-view-toggle-btn {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: var(--font-size-legacy-11);
+  }
+
+  .product-shell .scouting-layout-grid .mobile-view-toggle-btn .segmented-tabs__icon {
+    transform: scale(0.88);
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero {
+    top: calc(env(safe-area-inset-top, 0px) + 72px);
+    gap: 3px;
+    padding: 4px 6px;
+    border-radius: 10px;
+    max-height: 76px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-actions {
+    gap: 4px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-actions .center-btn{
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: var(--font-size-legacy-10);
+    border-radius: 7px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-context {
+    gap: 3px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-chip {
+    padding: 2px 5px;
+    font-size: var(--font-size-legacy-10);  /* was 8.96px */
+    border-radius: 5px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-chip.match {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-hero-chip.mode {
+    display: none;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tabs {
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 6px;
+    border-radius: 11px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-section-tab {
+    min-height: 32px;
+    font-size: var(--font-size-legacy-11);
+    padding: 0 6px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-panel-tabs {
+    gap: 5px;
+    margin-bottom: 3px;
+  }
+
+  .product-shell .scouting-layout-grid .fm-scout-panel-pill {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: var(--font-size-legacy-10);
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle {
+    top: calc(env(safe-area-inset-top, 0px) + 40px);
+    padding: 3px;
+  }
+
+  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
+    top: calc(env(safe-area-inset-top, 0px) + 66px);
+    padding: 3px 5px;
+    max-height: 82px;
+  }
+}
+
+
+/* ── Collapsed scouting rail ─────────────────────────────────────────
+   Collapsing the workspace used to hide the section tabs along with
+   everything else, leaving a 42x34 chevron alone in an empty 52px column with
+   nothing to say what it was or what it would expand.
+
+   The rail keeps its three sections as icons instead — Setup, Room, Data —
+   so it still navigates, and so the column reads as the workspace rather than
+   as a stray button. Same reasoning as the main nav rail. */
+.scout-sidebar-nav.rail {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  max-height: none;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  justify-items: center;
+}
+
+.scout-sidebar-nav.rail .scout-sidebar-nav-pill {
+  width: 42px;
+  min-width: 42px;
+  padding-inline: 0;
+}
+
+.scout-sidebar-nav.rail .segmented-tabs__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 1121px) {
+  /* The rail is a column of controls now, so it needs its height back. */
+  .product-shell .scouting-layout-grid.scouting-sidebar-side-collapsed
+    .finder-sidebar-header.scout-sidebar-hub.collapsed {
+    display: grid;
+    gap: 8px;
+    align-content: start;
+  }
+}

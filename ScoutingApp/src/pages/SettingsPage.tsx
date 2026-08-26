@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { PushNotificationsCard } from '../components/ui/PushNotificationsCard';
+import {
+  Button,
+  CardBody,
+  CardGrid,
+  Chip,
+  FieldSelect,
+  FieldStepper,
+  FieldText,
+  Stat,
+} from '../components/ui/primitives';
+import styles from './SettingsPage.module.css';
 import {
   clientAdminKeyAvailable,
   clearStoredClientAdminSessionToken,
@@ -39,6 +49,7 @@ import {
 } from '../tutorial/tutorialState';
 import { REGION_FILTER_OPTIONS } from '../utils/regionFilters';
 import { relativeFromTimestamp } from './centerUtils';
+import { AUTHOR_NAME, AUTHOR_SITE_URL } from './legalContent';
 
 const COMPARE_KEYS = {
   event: 'scouting_compare_event_key',
@@ -439,148 +450,118 @@ export function SettingsPage() {
     setStatusText('Settings reset to defaults.');
     setLastSavedAt(Date.now());
   }
+  const statusToneClass =
+    adminAuthStatusTone === 'success'
+      ? styles.statusOk
+      : adminAuthStatusTone === 'warning'
+        ? styles.statusWarning
+        : adminAuthStatusTone === 'danger'
+          ? styles.statusDanger
+          : undefined;
 
   return (
-    <div className="settings-layout-grid">
+    <div className={styles.layout}>
       <SurfaceCard
         title="Appearance"
-        subtitle="Theme and density."
-        right={<span className="center-chip">Saved {relativeFromTimestamp(lastSavedAt)}</span>}
-        className="settings-card settings-appearance-card"
+        right={<Chip>Saved {relativeFromTimestamp(lastSavedAt)}</Chip>}
       >
-        <div className="settings-option-grid">
-          <label className="center-label" htmlFor="settings-theme">
-            Theme
-          </label>
-          <select
-            id="settings-theme"
-            className="center-input"
-            value={themeMode}
-            onChange={(event) => updateTheme(event.target.value as ThemeMode)}
-          >
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
+        <CardBody>
+          <div className={styles.optionGrid}>
+            <FieldSelect
+              label="Theme"
+              value={themeMode}
+              onChange={(event) => updateTheme(event.target.value as ThemeMode)}
+            >
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </FieldSelect>
 
-          <label className="center-label" htmlFor="settings-density">
-            Density
-          </label>
-          <select
-            id="settings-density"
-            className="center-input"
-            value={densityMode}
-            onChange={(event) => updateDensity(event.target.value as DensityMode)}
-          >
-            <option value="comfortable">Comfortable</option>
-            <option value="compact">Compact</option>
-          </select>
-        </div>
-        <p className="center-callout muted">Applied immediately.</p>
+            <FieldSelect
+              label="Density"
+              value={densityMode}
+              onChange={(event) => updateDensity(event.target.value as DensityMode)}
+            >
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </FieldSelect>
+          </div>
+          <p className={styles.note}>Applied immediately.</p>
+        </CardBody>
       </SurfaceCard>
 
-      <SurfaceCard
-        title="Workflow Defaults"
-        subtitle="App defaults."
-        className="settings-card settings-workflow-card"
-      >
-        <div className="settings-option-grid">
-          <label className="center-label" htmlFor="settings-ui-mode">
-            UI Mode
-          </label>
-          <select
-            id="settings-ui-mode"
-            className="center-input"
-            value={uiMode}
-            onChange={(event) => updateUiMode(event.target.value as UIMode)}
-          >
-            <option value="full">Full Diagnostics</option>
-            <option value="simple">Simple</option>
-          </select>
+      <SurfaceCard title="Workflow Defaults">
+        <CardBody>
+          <div className={styles.optionGrid}>
+            <FieldSelect
+              label="UI Mode"
+              value={uiMode}
+              onChange={(event) => updateUiMode(event.target.value as UIMode)}
+            >
+              <option value="full">Full Diagnostics</option>
+              <option value="simple">Simple</option>
+            </FieldSelect>
 
-          <label className="center-label" htmlFor="settings-jump-mode">
-            Quick Search Default
-          </label>
-          <select
-            id="settings-jump-mode"
-            className="center-input"
-            value={quickJumpMode}
-            onChange={(event) => updateQuickJumpMode(event.target.value as QuickJumpMode)}
-          >
-            <option value="auto">Auto</option>
-            <option value="team">Team</option>
-            <option value="event">Event</option>
-          </select>
+            <FieldSelect
+              label="Quick Search Default"
+              value={quickJumpMode}
+              onChange={(event) => updateQuickJumpMode(event.target.value as QuickJumpMode)}
+            >
+              <option value="auto">Auto</option>
+              <option value="team">Team</option>
+              <option value="event">Event</option>
+            </FieldSelect>
 
-          <label className="center-label" htmlFor="settings-jump-region">
-            Region Filter Default
-          </label>
-          <select
-            id="settings-jump-region"
-            className="center-input"
-            value={quickJumpRegion}
-            onChange={(event) => updateQuickJumpRegion(event.target.value as QuickJumpRegion)}
-          >
-            {REGION_FILTER_OPTIONS.map((option) => (
-              <option key={`settings-region-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <FieldSelect
+              label="Region Filter Default"
+              value={quickJumpRegion}
+              onChange={(event) => updateQuickJumpRegion(event.target.value as QuickJumpRegion)}
+            >
+              {REGION_FILTER_OPTIONS.map((option) => (
+                <option key={`settings-region-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </FieldSelect>
 
-          <label className="center-label" htmlFor="settings-tutorial-autoplay">
-            Tutorial Auto-Play
-          </label>
-          <select
-            id="settings-tutorial-autoplay"
-            className="center-input"
-            value={tutorialAutoplay ? 'enabled' : 'disabled'}
-            onChange={(event) => updateTutorialAutoplay(event.target.value === 'enabled')}
-          >
-            <option value="enabled">Enabled (show once per tab)</option>
-            <option value="disabled">Disabled</option>
-          </select>
-        </div>
+            <FieldSelect
+              label="Tutorial Auto-Play"
+              value={tutorialAutoplay ? 'enabled' : 'disabled'}
+              onChange={(event) => updateTutorialAutoplay(event.target.value === 'enabled')}
+            >
+              <option value="enabled">Enabled (show once per tab)</option>
+              <option value="disabled">Disabled</option>
+            </FieldSelect>
+          </div>
 
-        <div className="settings-option-grid">
-          <label className="center-label" htmlFor="settings-live-refresh">
-            Live Refresh Interval (seconds)
-          </label>
-          <input
-            id="settings-live-refresh"
-            className="center-input"
-            type="number"
+          <FieldStepper
+            label="Live Refresh Interval"
+            name="live refresh interval"
+            hint="Seconds between polls. Longer intervals survive venue wifi better."
+            value={liveRefreshSec}
+            onValueChange={updateLiveRefreshSec}
             min={5}
             max={120}
             step={5}
-            value={liveRefreshSec}
-            onChange={(event) => updateLiveRefreshSec(Number(event.target.value || 20))}
           />
-        </div>
-        <p className="center-callout muted">
-          Completed: {tutorialSeenCount}/{TUTORIAL_SCOPES.length}.
-        </p>
-        <div className="center-actions-row">
-          <button type="button" className="center-btn ghost" onClick={resetTutorialProgress}>
-            Reset Tutorial Progress
-          </button>
-        </div>
+
+          <p className={styles.note}>
+            Tutorials completed: {tutorialSeenCount}/{TUTORIAL_SCOPES.length}.
+          </p>
+          <div className={styles.actions}>
+            <Button variant="quiet" onClick={resetTutorialProgress}>
+              Reset Tutorial Progress
+            </Button>
+          </div>
+        </CardBody>
       </SurfaceCard>
 
       <PushNotificationsCard />
 
       {adminModeEnabled ? (
-      <SurfaceCard
-        title="Refresh + Runtime"
-        subtitle="Polling and runtime."
-        className="settings-card settings-runtime-card"
-      >
-        <div className="settings-option-grid">
-          <label className="center-label" htmlFor="settings-admin-api-key">
-            Admin API Key (session mint only)
-          </label>
-          <input
-            id="settings-admin-api-key"
-            className="center-input"
+      <SurfaceCard title="Refresh + Runtime">
+        <CardBody>
+          <FieldText
+            label="Admin API Key (session mint only)"
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -588,203 +569,200 @@ export function SettingsPage() {
             onChange={(event) => setAdminApiKeyInput(event.target.value)}
             placeholder={`Paste ${writeAuthHeader} to mint ${writeAuthSessionHeader}`}
           />
-        </div>
-        <div className="center-actions-row">
-          <button type="button" className="center-btn" onClick={() => void validateAndEnableAdminMode()} disabled={adminAuthBusy}>
-            {adminAuthBusy ? 'Creating Session...' : 'Create Admin Session'}
-          </button>
-          <button type="button" className="center-btn ghost" onClick={disableAdminMode} disabled={adminAuthBusy}>
-            Disable Admin Mode
-          </button>
-          <button type="button" className="center-btn ghost" onClick={clearAdminModeKey} disabled={adminAuthBusy}>
-            Clear Saved Session
-          </button>
-        </div>
-        <p className={`center-callout ${adminAuthStatusTone}`.trim()} aria-live="polite">
-          {adminAuthStatus}
-        </p>
-        <div className="center-status-row compact">
-          <span className="center-chip">API: {healthStatus}</span>
-          <span className="center-chip">
-            Public mode: {publicReadonlyMode === null ? 'unknown' : publicReadonlyMode ? 'read-only' : 'full'}
-          </span>
-          <span className="center-chip">
-            Write auth: {writeAuthEnforced === null ? 'unknown' : writeAuthEnforced ? 'enforced' : 'not enforced'}
-          </span>
-          <span className="center-chip">
-            Admin key: {writeAuthKeyConfigured === null ? 'unknown' : writeAuthKeyConfigured ? 'configured' : 'missing'}
-          </span>
-          <span className="center-chip">Admin mode: {adminModeEnabled ? 'enabled' : 'disabled'}</span>
-          <span className="center-chip">Admin session: {clientAdminKeyAvailable() ? 'active' : 'inactive'}</span>
-          <span className="center-chip">Header: {writeAuthHeader}</span>
-          <span className="center-chip">Session header: {writeAuthSessionHeader}</span>
-          <span className="center-chip">
-            Session expires:{' '}
-            {adminSessionExpiresAtUnix && adminSessionExpiresAtUnix > 0
-              ? relativeFromTimestamp(adminSessionExpiresAtUnix * 1000)
-              : 'N/A'}
-          </span>
-          <span className="center-chip">Status: {statusText}</span>
-        </div>
+          <div className={styles.actions}>
+            <Button variant="primary" onClick={() => void validateAndEnableAdminMode()} loading={adminAuthBusy}>
+              {adminAuthBusy ? 'Creating Session...' : 'Create Admin Session'}
+            </Button>
+            <Button variant="quiet" onClick={disableAdminMode} disabled={adminAuthBusy}>
+              Disable Admin Mode
+            </Button>
+            <Button variant="quiet" onClick={clearAdminModeKey} disabled={adminAuthBusy}>
+              Clear Saved Session
+            </Button>
+          </div>
+          <p className={`${styles.status} ${statusToneClass ?? ''}`.trim()} aria-live="polite">
+            {adminAuthStatus}
+          </p>
+          <div className={styles.chipRow}>
+            <Chip>API: {healthStatus}</Chip>
+            <Chip>
+              Public mode: {publicReadonlyMode === null ? 'unknown' : publicReadonlyMode ? 'read-only' : 'full'}
+            </Chip>
+            <Chip tone={writeAuthEnforced ? 'accent' : 'warn'}>
+              Write auth: {writeAuthEnforced === null ? 'unknown' : writeAuthEnforced ? 'enforced' : 'not enforced'}
+            </Chip>
+            <Chip tone={writeAuthKeyConfigured ? 'accent' : 'warn'}>
+              Admin key: {writeAuthKeyConfigured === null ? 'unknown' : writeAuthKeyConfigured ? 'configured' : 'missing'}
+            </Chip>
+            <Chip tone={adminModeEnabled ? 'accent' : 'neutral'}>
+              Admin mode: {adminModeEnabled ? 'enabled' : 'disabled'}
+            </Chip>
+            <Chip tone={clientAdminKeyAvailable() ? 'accent' : 'neutral'} dot>
+              Admin session: {clientAdminKeyAvailable() ? 'active' : 'inactive'}
+            </Chip>
+            <Chip>Header: {writeAuthHeader}</Chip>
+            <Chip>Session header: {writeAuthSessionHeader}</Chip>
+            <Chip>
+              Session expires:{' '}
+              {adminSessionExpiresAtUnix && adminSessionExpiresAtUnix > 0
+                ? relativeFromTimestamp(adminSessionExpiresAtUnix * 1000)
+                : 'N/A'}
+            </Chip>
+            <Chip>Status: {statusText}</Chip>
+          </div>
+        </CardBody>
       </SurfaceCard>
       ) : null}
 
       {adminModeEnabled ? (
       <>
-      <SurfaceCard
-        title="Ops Dashboard"
-        subtitle="Ops observability."
-        className="settings-card settings-runtime-card settings-ops-card"
-      >
-        <div className="center-actions-row">
-          <button type="button" className="center-btn ghost" onClick={() => void refreshOpsDashboard()} disabled={opsLoading}>
-            {opsLoading ? 'Refreshing...' : 'Refresh Ops Snapshot'}
-          </button>
-          <button
-            type="button"
-            className="center-btn ghost"
-            onClick={() => void runClimbBackfillNow()}
-            disabled={climbBackfillBusy}
-          >
-            {climbBackfillBusy ? 'Backfilling...' : 'Run Climb Backfill'}
-          </button>
-        </div>
-        {opsErrorText ? <p className="center-callout warning">{opsErrorText}</p> : null}
-        {climbBackfillStatus ? <p className="center-callout muted">{climbBackfillStatus}</p> : null}
-        {opsLoading && !opsDashboard ? <p className="center-callout muted">Loading...</p> : null}
-        {opsDashboard ? (
-          <>
-            <div className="center-kpi-grid">
-              <div className="center-kpi-card">
-                <span>Alerts</span>
-                <strong>{opsDashboard.alert_count}</strong>
+      <SurfaceCard title="Ops Dashboard">
+        <CardBody>
+          <div className={styles.actions}>
+            <Button variant="quiet" onClick={() => void refreshOpsDashboard()} loading={opsLoading}>
+              {opsLoading ? 'Refreshing...' : 'Refresh Ops Snapshot'}
+            </Button>
+            <Button variant="quiet" onClick={() => void runClimbBackfillNow()} loading={climbBackfillBusy}>
+              {climbBackfillBusy ? 'Backfilling...' : 'Run Climb Backfill'}
+            </Button>
+          </div>
+          {opsErrorText ? (
+            <p className={`${styles.note} ${styles.noteWarning}`} role="alert">{opsErrorText}</p>
+          ) : null}
+          {climbBackfillStatus ? <p className={styles.note}>{climbBackfillStatus}</p> : null}
+          {opsLoading && !opsDashboard ? <p className={styles.note}>Loading...</p> : null}
+          {opsDashboard ? (
+            <>
+              <CardGrid dense>
+                <Stat label="Alerts" value={opsDashboard.alert_count} tone={opsDashboard.alert_count > 0 ? 'danger' : 'success'} />
+                <Stat label="Queue Pending" value={opsDashboard.queue.counts?.pending_total ?? 'N/A'} />
+                <Stat
+                  label="Queue Pressure"
+                  value={
+                    typeof opsDashboard.queue.pressure_0_1 === 'number'
+                      ? Math.round(opsDashboard.queue.pressure_0_1 * 100)
+                      : 'N/A'
+                  }
+                  unit={typeof opsDashboard.queue.pressure_0_1 === 'number' ? '%' : undefined}
+                />
+                <Stat
+                  label="Regional Auto"
+                  value={
+                    opsDashboard.automation.enabled
+                      ? opsDashboard.automation.locked
+                        ? 'Locked'
+                        : opsDashboard.automation.due_now
+                          ? 'Due'
+                          : 'Idle'
+                      : 'Disabled'
+                  }
+                />
+                <Stat
+                  label="Media Used"
+                  value={
+                    typeof opsDashboard.media_usage.total_gb === 'number'
+                      ? opsDashboard.media_usage.total_gb.toFixed(2)
+                      : 'N/A'
+                  }
+                  unit={typeof opsDashboard.media_usage.total_gb === 'number' ? 'GB' : undefined}
+                />
+                <Stat
+                  label="Disk Free"
+                  value={
+                    typeof opsDashboard.media_usage.disk_free_gb === 'number'
+                      ? opsDashboard.media_usage.disk_free_gb.toFixed(2)
+                      : 'N/A'
+                  }
+                  unit={typeof opsDashboard.media_usage.disk_free_gb === 'number' ? 'GB' : undefined}
+                />
+                <Stat
+                  label="Climb Audit"
+                  value={
+                    opsDashboard.climb_integrity.last_result?.severity
+                      ? String(opsDashboard.climb_integrity.last_result.severity).toUpperCase()
+                      : 'N/A'
+                  }
+                />
+                <Stat
+                  label="Climb Mismatch"
+                  value={
+                    typeof opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate === 'number'
+                      ? Math.round((opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate || 0) * 100)
+                      : 'N/A'
+                  }
+                  unit={
+                    typeof opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate === 'number'
+                      ? '%'
+                      : undefined
+                  }
+                />
+                <Stat
+                  label="Climb Signal Coverage"
+                  value={
+                    typeof opsDashboard.climb_signal_coverage?.summary?.coverage_any_pct === 'number'
+                      ? opsDashboard.climb_signal_coverage.summary.coverage_any_pct.toFixed(1)
+                      : 'N/A'
+                  }
+                  unit={
+                    typeof opsDashboard.climb_signal_coverage?.summary?.coverage_any_pct === 'number'
+                      ? '%'
+                      : undefined
+                  }
+                />
+                <Stat
+                  label="Official Climb Coverage"
+                  value={
+                    typeof opsDashboard.climb_signal_coverage?.summary?.coverage_official_pct === 'number'
+                      ? opsDashboard.climb_signal_coverage.summary.coverage_official_pct.toFixed(1)
+                      : 'N/A'
+                  }
+                  unit={
+                    typeof opsDashboard.climb_signal_coverage?.summary?.coverage_official_pct === 'number'
+                      ? '%'
+                      : undefined
+                  }
+                />
+              </CardGrid>
+              <div className={styles.chipRow}>
+                <Chip>Generated: {relativeFromTimestamp(Date.parse(opsDashboard.generated_at))}</Chip>
+                <Chip>Queue cap: {opsDashboard.queue.caps?.max_pending_jobs ?? 'N/A'}</Chip>
+                <Chip>Automation season: {opsDashboard.automation.season}</Chip>
               </div>
-              <div className="center-kpi-card">
-                <span>Queue Pending</span>
-                <strong>{opsDashboard.queue.counts?.pending_total ?? 'N/A'}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Queue Pressure</span>
-                <strong>
-                  {typeof opsDashboard.queue.pressure_0_1 === 'number'
-                    ? `${Math.round(opsDashboard.queue.pressure_0_1 * 100)}%`
-                    : 'N/A'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Texas Auto</span>
-                <strong>
-                  {opsDashboard.automation.enabled
-                    ? opsDashboard.automation.locked
-                      ? 'Locked'
-                      : opsDashboard.automation.due_now
-                        ? 'Due'
-                        : 'Idle'
-                    : 'Disabled'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Media Used</span>
-                <strong>
-                  {typeof opsDashboard.media_usage.total_gb === 'number'
-                    ? `${opsDashboard.media_usage.total_gb.toFixed(2)} GB`
-                    : 'N/A'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Disk Free</span>
-                <strong>
-                  {typeof opsDashboard.media_usage.disk_free_gb === 'number'
-                    ? `${opsDashboard.media_usage.disk_free_gb.toFixed(2)} GB`
-                    : 'N/A'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Climb Audit</span>
-                <strong>
-                  {opsDashboard.climb_integrity.last_result?.severity
-                    ? String(opsDashboard.climb_integrity.last_result.severity).toUpperCase()
-                    : 'N/A'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Climb Mismatch</span>
-                <strong>
-                  {typeof opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate === 'number'
-                    ? `${Math.round((opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate || 0) * 100)}%`
-                    : 'N/A'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Climb Signal Coverage</span>
-                <strong>
-                  {typeof opsDashboard.climb_signal_coverage?.summary?.coverage_any_pct === 'number'
-                    ? `${opsDashboard.climb_signal_coverage.summary.coverage_any_pct.toFixed(1)}%`
-                    : 'N/A'}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Official Climb Coverage</span>
-                <strong>
-                  {typeof opsDashboard.climb_signal_coverage?.summary?.coverage_official_pct === 'number'
-                    ? `${opsDashboard.climb_signal_coverage.summary.coverage_official_pct.toFixed(1)}%`
-                    : 'N/A'}
-                </strong>
-              </div>
-            </div>
-            <div className="center-status-row compact">
-              <span className="center-chip">Generated: {relativeFromTimestamp(Date.parse(opsDashboard.generated_at))}</span>
-              <span className="center-chip">Queue cap: {opsDashboard.queue.caps?.max_pending_jobs ?? 'N/A'}</span>
-              <span className="center-chip">Automation season: {opsDashboard.automation.season}</span>
-            </div>
-          </>
-        ) : null}
+            </>
+          ) : null}
+        </CardBody>
       </SurfaceCard>
 
-      <SurfaceCard
-        title="Local Diagnostics"
-        subtitle="Local cache diagnostics."
-        className="settings-card settings-diagnostics-card"
-      >
-        <div className="settings-diagnostics-grid">
-          <div className="center-kpi-card">
-            <span>Favorite Events</span>
-            <strong>{diagnostics.favoriteEventsCount}</strong>
-          </div>
-          <div className="center-kpi-card">
-            <span>Favorite Teams</span>
-            <strong>{diagnostics.favoriteTeamsCount}</strong>
-          </div>
-          <div className="center-kpi-card">
-            <span>Compare Event</span>
-            <strong>{diagnostics.compareEventKey || 'None'}</strong>
-          </div>
-          <div className="center-kpi-card">
-            <span>Compare Teams</span>
-            <strong>{diagnostics.compareTeamCount}</strong>
-          </div>
-        </div>
+      <SurfaceCard title="Local Diagnostics">
+        <CardBody>
+          <CardGrid dense>
+            <Stat label="Favorite Events" value={diagnostics.favoriteEventsCount} />
+            <Stat label="Favorite Teams" value={diagnostics.favoriteTeamsCount} />
+            <Stat label="Compare Event" value={diagnostics.compareEventKey || 'None'} />
+            <Stat label="Compare Teams" value={diagnostics.compareTeamCount} />
+          </CardGrid>
 
-        <div className="center-actions-row">
-          <button type="button" className="center-btn ghost" onClick={refreshDiagnostics}>
-            Refresh Diagnostics
-          </button>
-          <Link className="center-btn ghost" to="/favorites" title="Open Favorites page">
-            Favorites
-          </Link>
-          <Link className="center-btn ghost" to="/compare" title="Open Compare page">
-            Compare
-          </Link>
-        </div>
+          <div className={styles.actions}>
+            <Button variant="quiet" onClick={refreshDiagnostics}>
+              Refresh Diagnostics
+            </Button>
+            <Button as="a" variant="quiet" href="#/favorites" title="Open Favorites page">
+              Favorites
+            </Button>
+            <Button as="a" variant="quiet" href="#/compare" title="Open Compare page">
+              Compare
+            </Button>
+          </div>
+        </CardBody>
       </SurfaceCard>
       </>
       ) : null}
 
       {/* Admin tools toggle */}
-      <div className="settings-admin-toggle-row">
-        <button
-          type="button"
-          className={`center-btn ghost ${adminModeEnabled ? 'active' : ''}`.trim()}
+      <div className={styles.adminToggle}>
+        <Button
+          variant="quiet"
+          pressed={adminModeEnabled}
           onClick={() => {
             const next = !adminModeEnabled;
             setClientAdminModeEnabled(next);
@@ -793,28 +771,50 @@ export function SettingsPage() {
           }}
         >
           {adminModeEnabled ? 'Hide Admin Tools' : 'Show Admin Tools'}
-        </button>
+        </Button>
       </div>
 
+      <SurfaceCard title="Maintenance">
+        <CardBody>
+          <div className={styles.actions}>
+            <Button variant="quiet" onClick={clearFavorites}>
+              Clear Favorites
+            </Button>
+            <Button variant="quiet" onClick={clearCompareCache}>
+              Clear Compare Cache
+            </Button>
+            <Button variant="danger" onClick={resetDefaults}>
+              Reset Defaults
+            </Button>
+          </div>
+          <p className={styles.note}>Only clears local browser state.</p>
+        </CardBody>
+      </SurfaceCard>
+
       <SurfaceCard
-        title="Maintenance"
-        subtitle="Local cleanup."
-        className="settings-card settings-maintenance-card"
+        title="About & Legal"
+        subtitle="How FRCMOB handles your data, and the terms of use."
       >
-        <div className="center-actions-row">
-          <button type="button" className="center-btn ghost" onClick={clearFavorites}>
-            Clear Favorites
-          </button>
-          <button type="button" className="center-btn ghost" onClick={clearCompareCache}>
-            Clear Compare Cache
-          </button>
-          <button type="button" className="center-btn" onClick={resetDefaults}>
-            Reset Defaults
-          </button>
-        </div>
-        <p className="center-callout muted">
-          Only clears local browser state.
-        </p>
+        <CardBody>
+          <div className={styles.actions}>
+            <Button as="a" variant="quiet" href="#/privacy" title="Read the Privacy Policy">
+              Privacy Policy
+            </Button>
+            <Button as="a" variant="quiet" href="#/terms" title="Read the Terms of Service">
+              Terms of Service
+            </Button>
+          </div>
+          <p className={styles.note}>
+            Recorded video is processed on your device and never uploaded.
+          </p>
+          <p className={styles.credit}>
+            Built by{' '}
+            <a href={AUTHOR_SITE_URL} target="_blank" rel="noopener noreferrer">
+              {AUTHOR_NAME}
+            </a>
+            .
+          </p>
+        </CardBody>
       </SurfaceCard>
     </div>
   );

@@ -15,6 +15,34 @@ import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
+import { Stat, Table, type TableColumn } from '../components/ui/primitives';
+
+type RankingRow = EventTeamRatingItem;
+
+const RANKING_COLUMNS: TableColumn<RankingRow>[] = [
+  { key: 'rank', label: '#', numeric: true, render: (_row, index) => index + 1 },
+  {
+    key: 'team',
+    label: 'Team',
+    render: (row) => (
+      <>
+        <strong>{row.team_number ?? row.team_key}</strong>
+        {row.nickname ? <span className="dviz-nick"> {row.nickname}</span> : null}
+      </>
+    ),
+  },
+  {
+    key: 'rating',
+    label: 'Rating',
+    numeric: true,
+    render: (row) => <span className="dviz-rating-pill">{row.rating_0_100.toFixed(1)}</span>,
+  },
+  { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence_0_1) },
+  { key: 'throughput', label: 'Throughput', numeric: true, render: (row) => row.subscores.throughput.toFixed(0) },
+  { key: 'endgame', label: 'Endgame', numeric: true, render: (row) => row.subscores.endgame.toFixed(0) },
+  { key: 'auto', label: 'Auto', numeric: true, render: (row) => (row.subscores.auto_contribution ?? 0).toFixed(0) },
+  { key: 'consistency', label: 'Consistency', numeric: true, render: (row) => row.subscores.consistency.toFixed(0) },
+];
 import { metric, pct, normalizeTeamKeyInput } from './centerUtils';
 
 /* ------------------------------------------------------------------ */
@@ -405,6 +433,11 @@ export function DataVizPage() {
   /* resolved team key */
   const teamKey = useMemo(() => normalizeTeamKeyInput(teamInput), [teamInput]);
 
+  const fieldAverageRating = useMemo(
+    () => (ratings.length ? ratings.reduce((sum, row) => sum + row.rating_0_100, 0) / ratings.length : 0),
+    [ratings],
+  );
+
   /* ── fetch event ratings ────────────────────── */
   const loadRatings = useCallback(async () => {
     if (!eventKey) return;
@@ -591,7 +624,7 @@ export function DataVizPage() {
             >
               <div className="dviz-chart-container">
                 {topTeams.length > 0 ? (
-                  <HBarChart items={topTeams} maxVal={maxRating} width={isMobile ? 340 : 500} />
+                  <HBarChart items={topTeams} maxVal={maxRating} width={500} />
                 ) : (
                   <p className="dviz-empty">Select an event to view ratings</p>
                 )}
@@ -599,38 +632,33 @@ export function DataVizPage() {
             </SurfaceCard>
 
             {/* KPI Summary */}
-            <SurfaceCard
-              title="Event Summary"
-              subtitle={`${ratings.length} teams`}
-            >
-              <div className="center-kpi-grid dviz-kpi-grid">
-                <div className="center-kpi-card">
-                  <span className="center-kpi-value">{ratings.length}</span>
-                  <span className="center-kpi-label">Teams</span>
+            <SurfaceCard title="Event Summary">
+              {/* The page's own question is "how strong is this field", and the
+                  answer is the top rating read against the average. Four equal
+                  boxes made you compute that yourself.
+
+                  Rendered only once ratings exist. An em-dash at 36px is a
+                  placeholder shouting, and guard-hierarchy is right to call
+                  that a hero that is a label rather than a value. */}
+              {ratings.length > 0 ? (
+                <div className="page-hero">
+                  <Stat
+                    size="display"
+                    label="Top rating"
+                    value={ratings[0].rating_0_100.toFixed(1)}
+                    sub={`${ratings[0].nickname ?? ratings[0].team_key} · field average ${fieldAverageRating.toFixed(1)}`}
+                    confidence={
+                      ratings.reduce((sum, row) => sum + row.confidence_0_1, 0) / ratings.length
+                    }
+                  />
+                  <div className="page-hero-stats">
+                    <Stat size="sm" label="Teams rated" value={ratings.length} />
+                    <Stat size="sm" label="Field average" value={fieldAverageRating.toFixed(1)} />
+                  </div>
                 </div>
-                <div className="center-kpi-card">
-                  <span className="center-kpi-value">
-                    {ratings.length > 0 ? ratings[0].rating_0_100.toFixed(1) : '--'}
-                  </span>
-                  <span className="center-kpi-label">Top Rating</span>
-                </div>
-                <div className="center-kpi-card">
-                  <span className="center-kpi-value">
-                    {ratings.length > 0
-                      ? (ratings.reduce((s, r) => s + r.rating_0_100, 0) / ratings.length).toFixed(1)
-                      : '--'}
-                  </span>
-                  <span className="center-kpi-label">Avg Rating</span>
-                </div>
-                <div className="center-kpi-card">
-                  <span className="center-kpi-value">
-                    {ratings.length > 0
-                      ? (ratings.reduce((s, r) => s + r.confidence_0_1, 0) / ratings.length * 100).toFixed(0) + '%'
-                      : '--'}
-                  </span>
-                  <span className="center-kpi-label">Avg Confidence</span>
-                </div>
-              </div>
+              ) : (
+                <p className="center-callout muted">Load an event to see how its field compares.</p>
+              )}
             </SurfaceCard>
 
             {/* Full Rankings Table */}
@@ -640,64 +668,12 @@ export function DataVizPage() {
                 subtitle={`All ${ratings.length} teams`}
                 collapsible
               >
-                <div className={isMobile ? 'dviz-rankings-mobile' : 'dviz-rankings-table-wrap'}>
-                  {isMobile ? (
-                    ratings.map((r, i) => (
-                      <div
-                        key={r.team_key}
-                        className={`dviz-rank-card ${r.team_key === teamKey ? 'dviz-rank-highlight' : ''}`}
-                      >
-                        <span className="dviz-rank-pos">#{i + 1}</span>
-                        <span className="dviz-rank-team">{r.team_number ?? r.team_key}</span>
-                        <span className="dviz-rank-name">{r.nickname || ''}</span>
-                        <span className="dviz-rank-rating">{r.rating_0_100.toFixed(1)}</span>
-                        <div className="dviz-rank-bar-bg">
-                          <div
-                            className="dviz-rank-bar-fill"
-                            style={{ width: `${(r.rating_0_100 / maxRating) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <table className="dviz-rankings-table">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>Team</th>
-                          <th>Rating</th>
-                          <th>Confidence</th>
-                          <th>Throughput</th>
-                          <th>Endgame</th>
-                          <th>Auto</th>
-                          <th>Consistency</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ratings.map((r, i) => (
-                          <tr
-                            key={r.team_key}
-                            className={r.team_key === teamKey ? 'dviz-row-highlight' : ''}
-                          >
-                            <td>{i + 1}</td>
-                            <td>
-                              <strong>{r.team_number ?? r.team_key}</strong>
-                              {r.nickname ? <span className="dviz-nick"> {r.nickname}</span> : null}
-                            </td>
-                            <td>
-                              <span className="dviz-rating-pill">{r.rating_0_100.toFixed(1)}</span>
-                            </td>
-                            <td>{pct(r.confidence_0_1)}</td>
-                            <td>{r.subscores.throughput.toFixed(0)}</td>
-                            <td>{r.subscores.endgame.toFixed(0)}</td>
-                            <td>{(r.subscores.auto_contribution ?? 0).toFixed(0)}</td>
-                            <td>{r.subscores.consistency.toFixed(0)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                <Table
+                  columns={RANKING_COLUMNS}
+                  rows={ratings}
+                  rowKey={(row) => row.team_key}
+                  rowClassName={(row) => row.team_key === teamKey && 'dviz-row-highlight'}
+                />
               </SurfaceCard>
             )}
           </>
@@ -732,9 +708,9 @@ export function DataVizPage() {
                 title="Match-by-Match Trends"
                 subtitle={`${breakdown?.recent_matches?.length ?? 0} matches`}
               >
-                <div className={`dviz-trends-grid ${isMobile ? 'dviz-trends-mobile' : ''}`}>
+                <div className="dviz-trends-grid">
                   {matchTrends.map((t) => (
-                    <Sparkline key={t.key} values={t.values} label={t.label} width={isMobile ? 280 : 300} />
+                    <Sparkline key={t.key} values={t.values} label={t.label} width={300} />
                   ))}
                 </div>
               </SurfaceCard>
@@ -747,7 +723,7 @@ export function DataVizPage() {
                 subtitle="Average seconds per zone"
               >
                 <div className="dviz-zone-container">
-                  <DonutChart slices={zoneSlices} size={isMobile ? 160 : 200} />
+                  <DonutChart slices={zoneSlices} size={200} />
                   <div className="dviz-zone-legend">
                     {zoneSlices.map((sl) => (
                       <div key={sl.key} className="dviz-zone-legend-item">
@@ -788,14 +764,13 @@ export function DataVizPage() {
             {eventTypeCounts.length > 0 && (
               <SurfaceCard
                 title="Event Type Breakdown"
-                subtitle="Detected event counts"
                 collapsible
               >
                 <div className="dviz-chart-container">
                   <HBarChart
                     items={eventTypeCounts}
                     maxVal={eventTypeCounts[0]?.value ?? 1}
-                    width={isMobile ? 340 : 500}
+                    width={500}
                   />
                 </div>
               </SurfaceCard>

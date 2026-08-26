@@ -1,0 +1,145 @@
+/* Chip — a small labelled token. Replaces 68 badge/pill/tag classes.
+
+   Tone is never the sole carrier of meaning: the `dot` is available so a
+   colour-blind reader has a second channel, and the label itself always
+   carries the words. Red and blue are alliance tones only — they mean "this
+   belongs to the red/blue alliance" and are never used for decoration. */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px var(--space-2);
+  border: var(--border-width-1) solid transparent;
+  border-radius: var(--radius-full);
+
+  font-family: inherit;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sm {
+  min-height: 18px;
+  padding: 1px var(--space-1);
+  font-size: var(--font-size-2xs);
+}
+
+/* ── Tones ────────────────────────────────────────────────────────── */
+
+.neutral {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.accent {
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  color: var(--color-accent-text);
+}
+
+.warn {
+  background: var(--color-warning-soft);
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  color: var(--color-warning-text);
+}
+
+.danger {
+  background: var(--color-danger-soft);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
+  color: var(--color-danger-text);
+}
+
+.red {
+  background: var(--color-alliance-red-soft);
+  border-color: color-mix(in srgb, var(--color-alliance-red) 45%, transparent);
+  color: var(--color-alliance-red-text);
+}
+
+.blue {
+  background: var(--color-alliance-blue-soft);
+  border-color: color-mix(in srgb, var(--color-alliance-blue) 45%, transparent);
+  color: var(--color-alliance-blue-text);
+}
+
+/* ── Parts ────────────────────────────────────────────────────────── */
+
+/* The dot is the second, non-colour channel: its presence marks the chip as
+   status-bearing even where the hue cannot be told apart. */
+.dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.icon svg {
+  display: block;
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
+
+.remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  width: 16px;
+  height: 16px;
+  margin-right: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.remove:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.remove:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.remove svg {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
+/* A removable chip's target is well under 44px by design — it sits inline in
+   dense lists. On touch the chip itself grows so the button is reachable. */
+@media (pointer: coarse) {
+  .chip:has(.remove) {
+    min-height: 32px;
+  }
+
+  .remove {
+    width: 24px;
+    height: 24px;
+  }
+}

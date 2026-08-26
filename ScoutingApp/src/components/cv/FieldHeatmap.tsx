@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { TeamHeatmapResponse } from '../../api';
+import { useCanvasTokens } from '../../hooks/useCanvasTokens';
 import './FieldHeatmap.css';
+
+/* The field's own colours. The heat gradient below is deliberately NOT in here:
+   it is a scale, and a scale that changed between themes would stop meaning the
+   same thing from one screenshot to the next. */
+const FIELD_TOKENS = [
+  '--field-canvas-bg',
+  '--field-canvas-grid',
+  '--field-canvas-line',
+  '--field-canvas-red',
+  '--field-canvas-blue',
+] as const;
 
 /* ── constants ────────────────────────────────────────────────────── */
 
@@ -46,6 +58,9 @@ type Props = {
 export function FieldHeatmap({ data, className, showGrid = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // A new object on theme change, so `draw` changes identity and the effect
+  // below repaints — a canvas keeps its pixels when the stylesheet swaps.
+  const tokens = useCanvasTokens(FIELD_TOKENS);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -69,12 +84,12 @@ export function FieldHeatmap({ data, className, showGrid = true }: Props) {
     ctx.scale(dpr, dpr);
 
     /* ── background ──────────────────────────────────────────── */
-    ctx.fillStyle = '#1a2332';
+    ctx.fillStyle = tokens['--field-canvas-bg'];
     ctx.fillRect(0, 0, w, h);
 
     /* ── grid lines ──────────────────────────────────────────── */
     if (showGrid) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.strokeStyle = tokens['--field-canvas-grid'];
       ctx.lineWidth = 1;
       for (let mx = 1; mx < fieldW; mx++) {
         const x = (mx / fieldW) * w;
@@ -92,12 +107,12 @@ export function FieldHeatmap({ data, className, showGrid = true }: Props) {
       }
 
       /* field border */
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.strokeStyle = tokens['--field-canvas-line'];
       ctx.lineWidth = 2;
       ctx.strokeRect(1, 1, w - 2, h - 2);
 
       /* centre line */
-      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+      ctx.strokeStyle = tokens['--field-canvas-grid'];
       ctx.lineWidth = 1;
       ctx.setLineDash([6, 4]);
       const cx = w / 2;
@@ -134,13 +149,13 @@ export function FieldHeatmap({ data, className, showGrid = true }: Props) {
     ctx.font = `bold ${Math.max(10, w * 0.015)}px Inter, sans-serif`;
     ctx.textBaseline = 'top';
 
-    ctx.fillStyle = 'rgba(207, 92, 104, 0.5)';
+    ctx.fillStyle = tokens['--field-canvas-red'];
     ctx.fillText('RED', 6, 6);
 
-    ctx.fillStyle = 'rgba(92, 141, 207, 0.5)';
+    ctx.fillStyle = tokens['--field-canvas-blue'];
     const blueMetrics = ctx.measureText('BLUE');
     ctx.fillText('BLUE', w - blueMetrics.width - 6, 6);
-  }, [data, showGrid]);
+  }, [data, showGrid, tokens]);
 
   /* ── draw on mount and resize ───────────────────────────────── */
   useEffect(() => {

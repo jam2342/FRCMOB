@@ -17,6 +17,38 @@ import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
+import { Table, type TableColumn } from '../components/ui/primitives';
+import styles from './ExportPage.module.css';
+
+/* "Top Strength" used to be gated on !isMobile, but the page redirects to
+   /events below the mobile breakpoint (see the guard in the component), so the
+   condition could never be false. One column list. */
+const RATINGS_PREVIEW_COLUMNS: TableColumn<EventTeamRatingItem>[] = [
+  { key: 'rank', label: '#', numeric: true, render: (_row, index) => index + 1 },
+  {
+    key: 'team',
+    label: 'Team',
+    render: (row) => (
+      <span className={styles.teamCell}>
+        #{row.team_number} {row.nickname || ''}
+      </span>
+    ),
+  },
+  {
+    key: 'rating',
+    label: 'Rating',
+    numeric: true,
+    render: (row) => <span className={styles.teamCell}>{metric(row.rating_0_100, 1)}</span>,
+  },
+  { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence_0_1, 0) },
+  { key: 'robot', label: 'Robot', numeric: true, render: (row) => metric(row.robot_level_0_100, 0) },
+  { key: 'driver', label: 'Driver', numeric: true, render: (row) => metric(row.driver_skill_0_100, 0) },
+  {
+    key: 'strength',
+    label: 'Top Strength',
+    render: (row) => <span className={styles.strengthCell}>{row.pros?.[0]?.label || '—'}</span>,
+  },
+];
 import { downloadCsv } from '../utils/csvExport';
 import { metric, pct } from './centerUtils';
 
@@ -310,7 +342,6 @@ export function ExportPage() {
         {/* ---- Event Selection ---- */}
         <SurfaceCard
           title="Data Export"
-          subtitle="Export event data to CSV."
         >
           <EventPicker
             value={eventKey}
@@ -335,7 +366,6 @@ export function ExportPage() {
         {hasAnyData ? (
           <SurfaceCard
             title="Available Exports"
-            subtitle="Download CSV files."
           >
             <div className="export-card-grid">
               {/* Team Ratings */}
@@ -393,40 +423,11 @@ export function ExportPage() {
             subtitle={`Top teams by rating at ${eventName || eventKey}.`}
             collapsible
           >
-            <div className="center-table-wrap">
-              <table className="center-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Team</th>
-                    <th>Rating</th>
-                    <th>Confidence</th>
-                    <th>Robot</th>
-                    <th>Driver</th>
-                    {!isMobile ? <th>Top Strength</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {ratings.slice(0, 20).map((r, idx) => (
-                    <tr key={r.team_key}>
-                      <td className="text-muted">{idx + 1}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        #{r.team_number} {r.nickname || ''}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{metric(r.rating_0_100, 1)}</td>
-                      <td>{pct(r.confidence_0_1, 0)}</td>
-                      <td>{metric(r.robot_level_0_100, 0)}</td>
-                      <td>{metric(r.driver_skill_0_100, 0)}</td>
-                      {!isMobile ? (
-                        <td className="text-sm text-muted">
-                          {r.pros?.[0]?.label || '—'}
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              columns={RATINGS_PREVIEW_COLUMNS}
+              rows={ratings.slice(0, 20)}
+              rowKey={(row) => row.team_key}
+            />
           </SurfaceCard>
         ) : null}
       </SurfaceCardGroup>

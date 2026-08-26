@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import { Button, Chip, FieldTextarea, Modal } from '../components/ui/primitives';
 import type { SavedScoutingEntry } from './scoutingPage.types';
 import { normalizeEntry } from './scoutingPage.helpers';
 import {
@@ -9,6 +10,19 @@ import {
   isQrEntryString,
   parseRoomKeyFromQr,
 } from './qrUtils';
+import styles from './QrShareModals.module.css';
+
+// These three modals are conditionally mounted by ScoutingPage, so `open` is
+// always true here and every prop signature is unchanged — nothing at the call
+// site moves. What changed is that the overlay, Escape handling, focus trap,
+// focus restore, scroll lock and portal now come from Modal instead of being
+// hand-rolled three times with none of the last four.
+
+// A QR code is dark-on-white because that is what scanners are built to read.
+// These two are deliberately not tokens: theming them would render a light
+// code on a dark ground in dark mode and cost real scans at an event.
+const QR_COLORS = { dark: '#0f172a', light: '#ffffff' };
+const QR_WIDTH = 280;
 
 type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => {
   detect(image: ImageBitmapSource): Promise<Array<{ rawValue?: string }>>;
@@ -17,6 +31,38 @@ type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => {
 type WindowWithBarcodeDetector = Window & typeof globalThis & {
   BarcodeDetector?: BarcodeDetectorCtor;
 };
+
+// Clipboard access is blocked outside a secure context and on some in-app
+// browsers, so the temporary-textarea path is a real fallback, not legacy.
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    document.body.removeChild(area);
+  }
+}
+
+function useCopyFlag() {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const flag = useCallback(() => {
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 2000);
+  }, []);
+
+  return [copied, flag] as const;
+}
 
 /* ================================================================== */
 /*  QR Share Modal – Generate QR code for a scouting entry            */
@@ -32,7 +78,7 @@ export function QrShareModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [errorText, setErrorText] = useState('');
   const [payloadSize, setPayloadSize] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const [copied, flagCopied] = useCopyFlag();
   const encodedRef = useRef('');
 
   useEffect(() => {
@@ -45,10 +91,10 @@ export function QrShareModal({
         if (cancelled) return;
         if (canvasRef.current) {
           await QRCode.toCanvas(canvasRef.current, encoded, {
-            width: 280,
+            width: QR_WIDTH,
             margin: 2,
             errorCorrectionLevel: encoded.length > 1000 ? 'L' : encoded.length > 600 ? 'M' : 'Q',
-            color: { dark: '#0f172a', light: '#ffffff' },
+            color: QR_COLORS,
           });
         }
       } catch (err) {
@@ -60,70 +106,42 @@ export function QrShareModal({
 
   const handleCopyText = useCallback(async () => {
     if (!encodedRef.current) return;
-    try {
-      await navigator.clipboard.writeText(encodedRef.current);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback: select text in a temporary textarea
-      const ta = document.createElement('textarea');
-      ta.value = encodedRef.current;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }, []);
-
-  // Close on Escape
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+    await copyToClipboard(encodedRef.current);
+    flagCopied();
+  }, [flagCopied]);
 
   return (
-    <div className="qr-modal-backdrop" onClick={onClose}>
-      <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="qr-modal-header">
-          <h3>Share Entry via QR</h3>
-          <button type="button" className="qr-modal-close" onClick={onClose} aria-label="Close">
-            &#x2715;
-          </button>
-        </div>
-
-        <div className="qr-modal-meta">
-          <span className="center-chip">{entry.team_label}</span>
-          <span className="center-chip">{entry.match_display}</span>
-          <span className="center-chip">{entry.event_key}</span>
-        </div>
-
-        <div className="qr-modal-canvas-wrap">
-          {errorText ? (
-            <p className="center-callout warning">{errorText}</p>
-          ) : (
-            <canvas ref={canvasRef} />
-          )}
-        </div>
-
-        <p className="qr-modal-hint">
-          Point another device's camera at this QR code, or use the "Import via QR" button.
-        </p>
-
-        <div className="qr-modal-actions">
-          <button type="button" className="center-btn" onClick={handleCopyText}>
+    <Modal
+      open
+      onClose={onClose}
+      title="Share Entry via QR"
+      footer={
+        <>
+          <span className={styles.size}>{payloadSize > 0 ? `${payloadSize} chars` : ''}</span>
+          <Button variant="primary" onClick={handleCopyText}>
             {copied ? 'Copied!' : 'Copy as Text'}
-          </button>
-          <span className="text-sm text-muted">
-            {payloadSize > 0 ? `${payloadSize} chars` : ''}
-          </span>
-        </div>
+          </Button>
+        </>
+      }
+    >
+      <div className={styles.meta}>
+        <Chip>{entry.team_label}</Chip>
+        <Chip>{entry.match_display}</Chip>
+        <Chip tone="accent">{entry.event_key}</Chip>
       </div>
-    </div>
+
+      {errorText ? (
+        <p className={`${styles.status} ${styles.statusError}`} role="alert">{errorText}</p>
+      ) : (
+        <div className={styles.canvasWrap}>
+          <canvas ref={canvasRef} />
+        </div>
+      )}
+
+      <p className={styles.hint}>
+        Point another device's camera at this QR code, or use the "Import via QR" button.
+      </p>
+    </Modal>
   );
 }
 
@@ -141,7 +159,7 @@ export function RoomQrModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [errorText, setErrorText] = useState('');
   const [payloadText, setPayloadText] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [copied, flagCopied] = useCopyFlag();
   const normalizedRoomKey = String(roomKey || '').trim().toLowerCase();
 
   useEffect(() => {
@@ -156,10 +174,10 @@ export function RoomQrModal({
       try {
         if (canvasRef.current) {
           await QRCode.toCanvas(canvasRef.current, payload, {
-            width: 280,
+            width: QR_WIDTH,
             margin: 2,
             errorCorrectionLevel: 'Q',
-            color: { dark: '#0f172a', light: '#ffffff' },
+            color: QR_COLORS,
           });
         }
       } catch (err) {
@@ -171,63 +189,37 @@ export function RoomQrModal({
 
   const handleCopyText = useCallback(async () => {
     if (!payloadText) return;
-    try {
-      await navigator.clipboard.writeText(payloadText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = payloadText;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }, [payloadText]);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+    await copyToClipboard(payloadText);
+    flagCopied();
+  }, [payloadText, flagCopied]);
 
   return (
-    <div className="qr-modal-backdrop" onClick={onClose}>
-      <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="qr-modal-header">
-          <h3>Scouting Room QR</h3>
-          <button type="button" className="qr-modal-close" onClick={onClose} aria-label="Close">
-            &#x2715;
-          </button>
-        </div>
-
-        <div className="qr-modal-meta">
-          <span className="center-chip">Room: {normalizedRoomKey || 'N/A'}</span>
-        </div>
-
-        <div className="qr-modal-canvas-wrap">
-          {errorText ? (
-            <p className="center-callout warning">{errorText}</p>
-          ) : (
-            <canvas ref={canvasRef} />
-          )}
-        </div>
-
-        <p className="qr-modal-hint">
-          Teammates can use <strong>Scan QR Code</strong> in Scouting Room to join this room.
-        </p>
-
-        <div className="qr-modal-actions">
-          <button type="button" className="center-btn" onClick={handleCopyText}>
-            {copied ? 'Copied!' : 'Copy QR Text'}
-          </button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      title="Scouting Room QR"
+      footer={
+        <Button variant="primary" onClick={handleCopyText} disabled={!payloadText}>
+          {copied ? 'Copied!' : 'Copy QR Text'}
+        </Button>
+      }
+    >
+      <div className={styles.meta}>
+        <Chip tone="accent" dot>Room: {normalizedRoomKey || 'N/A'}</Chip>
       </div>
-    </div>
+
+      {errorText ? (
+        <p className={`${styles.status} ${styles.statusError}`} role="alert">{errorText}</p>
+      ) : (
+        <div className={styles.canvasWrap}>
+          <canvas ref={canvasRef} />
+        </div>
+      )}
+
+      <p className={styles.hint}>
+        Teammates can use <strong>Scan QR Code</strong> in Scouting Room to join this room.
+      </p>
+    </Modal>
   );
 }
 
@@ -266,16 +258,8 @@ export function QrImportModal({
     setScanning(false);
   }, []);
 
-  // Close on Escape
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  // Cleanup camera on unmount
+  // Releasing the camera on unmount is not optional — a live stream keeps the
+  // phone's camera light on and drains the battery a scout needs all day.
   useEffect(() => {
     return () => {
       stopCamera();
@@ -371,69 +355,59 @@ export function QrImportModal({
     }
   }
 
-  return (
-    <div className="qr-modal-backdrop" onClick={onClose}>
-      <div className="qr-modal qr-import-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="qr-modal-header">
-          <h3>{onRoomJoin ? 'Import / Join via QR' : 'Import via QR'}</h3>
-          <button type="button" className="qr-modal-close" onClick={onClose} aria-label="Close">
-            &#x2715;
-          </button>
+  if (successText) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title={onRoomJoin ? 'Import / Join via QR' : 'Import via QR'}
+        footer={<Button variant="primary" onClick={onClose}>Done</Button>}
+      >
+        <div className={styles.successBody}>
+          <p className={`${styles.status} ${styles.statusSuccess}`} role="status">{successText}</p>
         </div>
+      </Modal>
+    );
+  }
 
-        {successText ? (
-          <div className="qr-import-success">
-            <p className="center-callout" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
-              {successText}
-            </p>
-            <button type="button" className="center-btn" onClick={onClose}>
-              Done
-            </button>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={onRoomJoin ? 'Import / Join via QR' : 'Import via QR'}
+      footer={<Button variant="primary" onClick={handlePasteSubmit} disabled={!pasteText.trim()}>Import</Button>}
+    >
+      <div className={styles.scanSection}>
+        {scanning ? (
+          <div className={styles.videoWrap}>
+            <video ref={videoRef} playsInline muted className={styles.video} />
+            <div className={styles.scanOverlay} />
+            <Button variant="quiet" onClick={stopCamera} fullWidth>
+              Stop Camera
+            </Button>
           </div>
         ) : (
-          <>
-            {/* Camera scanning */}
-            <div className="qr-scan-section">
-              {scanning ? (
-                <div className="qr-video-wrap">
-                  <video ref={videoRef} playsInline muted className="qr-video" />
-                  <div className="qr-scan-overlay" />
-                  <button type="button" className="center-btn qr-stop-btn" onClick={stopCamera}>
-                    Stop Camera
-                  </button>
-                </div>
-              ) : (
-                <button type="button" className="center-btn qr-scan-btn" onClick={startCamera}>
-                  Scan with Camera
-                </button>
-              )}
-            </div>
-
-            <div className="qr-divider">
-              <span>OR</span>
-            </div>
-
-            {/* Paste text */}
-            <div className="qr-paste-section">
-              <label className="text-sm text-muted">
-                {onRoomJoin ? 'Paste the shared entry or room code:' : 'Paste the shared code:'}
-              </label>
-              <textarea
-                className="qr-paste-input"
-                rows={3}
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                placeholder={onRoomJoin ? 'FRCMOB1:eJy0k… or room-abc123' : 'FRCMOB1:eJy0k…'}
-              />
-              <button type="button" className="center-btn" onClick={handlePasteSubmit}>
-                Import
-              </button>
-            </div>
-
-            {errorText ? <p className="center-callout warning" style={{ fontSize: '0.8rem' }}>{errorText}</p> : null}
-          </>
+          <Button onClick={startCamera} fullWidth>
+            Scan with Camera
+          </Button>
         )}
       </div>
-    </div>
+
+      <div className={styles.divider}>OR</div>
+
+      <div className={styles.pasteSection}>
+        <FieldTextarea
+          label={onRoomJoin ? 'Paste the shared entry or room code' : 'Paste the shared code'}
+          rows={3}
+          value={pasteText}
+          onChange={(e) => setPasteText(e.target.value)}
+          placeholder={onRoomJoin ? 'FRCMOB1:eJy0k… or room-abc123' : 'FRCMOB1:eJy0k…'}
+        />
+      </div>
+
+      {errorText ? (
+        <p className={`${styles.status} ${styles.statusError}`} role="alert">{errorText}</p>
+      ) : null}
+    </Modal>
   );
 }

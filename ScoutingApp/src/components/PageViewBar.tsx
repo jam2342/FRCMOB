@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 
@@ -6,6 +6,11 @@ export type ViewBarItem = {
   label: string;
   to: string;
   preserveSearch?: boolean;
+  /** A tool rather than a peer view. Rendered after a divider and quieter.
+   *  Field Calibration and On-Device Breakdown sat beside Live Scouting as
+   *  equals, which said the app's main job and a camera-calibration utility
+   *  were the same kind of thing. */
+  secondary?: boolean;
 };
 
 const MOBILE_MEDIA_QUERY = '(max-width: 1120px)';
@@ -187,19 +192,23 @@ export function PageViewBar({
                 aria-label="Page view"
                 style={{ top: menuPos.top, left: menuPos.left, minWidth: menuPos.width }}
               >
-                {items.map((item) => (
+                {items.map((item, index) => (
+                  <Fragment key={item.to}>
+                  {index === items.findIndex((entry) => entry.secondary)
+                    ? <span className="page-view-menu-divider" role="separator" />
+                    : null}
                   <NavLink
-                    key={item.to}
                     to={toFor(item)}
                     end
                     role="menuitem"
                     className={({ isActive }) =>
-                      `page-view-menu-item${isActive ? ' active' : ''}`
+                      `page-view-menu-item${item.secondary ? ' page-view-menu-item--secondary' : ''}${isActive ? ' active' : ''}`
                     }
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.label}
                   </NavLink>
+                  </Fragment>
                 ))}
               </div>,
               document.body,
@@ -217,17 +226,23 @@ export function PageViewBar({
   ]
     .filter(Boolean)
     .join(' ');
+  // A divider once, before the first secondary item — not between every pair.
+  const firstSecondary = items.findIndex((item) => item.secondary);
   return (
     <nav ref={navRef} className={navClassName} aria-label="Page view">
-      {items.map((item) => (
-        <NavLink
-          key={item.to}
-          to={toFor(item)}
-          end
-          className={({ isActive }) => `page-view-tab segmented-tabs__item${isActive ? ' active' : ''}`}
-        >
-          {item.label}
-        </NavLink>
+      {items.map((item, index) => (
+        <Fragment key={item.to}>
+          {index === firstSecondary ? <span className="page-view-divider" aria-hidden="true" /> : null}
+          <NavLink
+            to={toFor(item)}
+            end
+            className={({ isActive }) =>
+              `page-view-tab segmented-tabs__item${item.secondary ? ' page-view-tab--secondary' : ''}${isActive ? ' active' : ''}`
+            }
+          >
+            {item.label}
+          </NavLink>
+        </Fragment>
       ))}
     </nav>
   );

@@ -1,0 +1,146 @@
+{
+  "/home": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/events": {
+    "range": 1.42,
+    "max": 17,
+    "median": 12,
+    "heroes": 0
+  },
+  "/events/export": {
+    "range": 1.46,
+    "max": 19,
+    "median": 13,
+    "heroes": 0
+  },
+  "/events/dashboard": {
+    "range": 2.08,
+    "max": 24.96,
+    "median": 12,
+    "heroes": 0
+  },
+  "/scouting": {
+    "range": 2.77,
+    "max": 36,
+    "median": 13,
+    "heroes": 1
+  },
+  "/scouting/pit": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/scouting/assignments": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/scouting/coverage": {
+    "range": 3,
+    "max": 36,
+    "median": 12,
+    "heroes": 1
+  },
+  "/scouting/auto-paths": {
+    "range": 2.08,
+    "max": 24.96,
+    "median": 12,
+    "heroes": 0
+  },
+  "/scouting/calibrate": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/scouting/record": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/team-center": {
+    "range": 3,
+    "max": 36,
+    "median": 12,
+    "heroes": 1
+  },
+  "/match-center": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/match-center/predictions": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/match-center/strategy": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/compare": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/compare/alliance-advisor": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/compare/picklist": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/favorites": {
+    "range": 1.25,
+    "max": 15,
+    "median": 12,
+    "heroes": 0
+  },
+  "/settings": {
+    "range": 1.58,
+    "max": 19,
+    "median": 12,
+    "heroes": 0
+  },
+  "/privacy": {
+    "range": 1.13,
+    "max": 17,
+    "median": 15,
+    "heroes": 0
+  },
+  "/terms": {
+    "range": 1.13,
+    "max": 17,
+    "median": 15,
+    "heroes": 0
+  },
+  "/primitives": {
+    "range": 1.58,
+    "max": 19,
+    "median": 12,
+    "heroes": 0
+  },
+  "/primitives?state=modal": {
+    "range": 1.58,
+    "max": 19,
+    "median": 12,
+    "heroes": 0
+  }
+}

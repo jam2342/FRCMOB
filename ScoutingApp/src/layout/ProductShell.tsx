@@ -4,6 +4,16 @@ import { searchTeams } from '../api';
 import { BottomTabBar } from '../components/navigation/BottomTabBar';
 import { MobileSearchOverlay } from '../components/navigation/MobileSearchOverlay';
 import { MoreSheet } from '../components/navigation/MoreSheet';
+import {
+  CalendarIcon,
+  ClipboardCheckIcon,
+  DeltaIcon,
+  GridIcon,
+  ScoreboardIcon,
+  SettingsIcon,
+  StarIcon,
+  UsersIcon,
+} from '../components/ui/Icons';
 import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePwaInstall } from '../hooks/usePwaInstall';
@@ -32,15 +42,18 @@ function cx(...args: (string | false | null | undefined | 0)[]): string {
   return args.filter(Boolean).join(' ');
 }
 
+// Each item carries its icon, so the collapsed rail has something to show.
+// Collapsed, every link used to render a 14x3px dash via ::before — eight
+// identical dashes, which is a nav you cannot read.
 const NAV_ITEMS = [
-  { to: '/home', label: 'Home' },
-  { to: '/events', label: 'Events' },
-  { to: '/scouting', label: 'Scouting' },
-  { to: '/match-center', label: 'Match Center' },
-  { to: '/team-center', label: 'Team Center' },
-  { to: '/compare', label: 'Compare' },
-  { to: '/favorites', label: 'Favorites' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/home', label: 'Home', Icon: GridIcon },
+  { to: '/events', label: 'Events', Icon: CalendarIcon },
+  { to: '/scouting', label: 'Scouting', Icon: ClipboardCheckIcon },
+  { to: '/match-center', label: 'Match Center', Icon: ScoreboardIcon },
+  { to: '/team-center', label: 'Team Center', Icon: UsersIcon },
+  { to: '/compare', label: 'Compare', Icon: DeltaIcon },
+  { to: '/favorites', label: 'Favorites', Icon: StarIcon },
+  { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
 function linkClass({ isActive }: { isActive: boolean }) {
@@ -50,7 +63,6 @@ function linkClass({ isActive }: { isActive: boolean }) {
 type QuickJumpGuess = 'team' | 'event' | 'match' | 'search';
 const PAGE_SCROLL_STORAGE_PREFIX = 'scouting_page_scroll:';
 const DESKTOP_SIDEBAR_BREAKPOINT_PX = 1120;
-const FINDER_COLLAPSIBLE_PATH_PREFIXES = ['/events', '/scouting', '/match-center', '/team-center', '/compare', '/favorites'];
 const FINDER_COLLAPSED_STORAGE = 'scouting_finder_collapsed';
 const SIDEBAR_COLLAPSED_STORAGE = 'scouting_sidebar_collapsed';
 const QUICK_JUMP_MODE_OPTIONS: Array<{ value: QuickJumpMode; label: string }> = [
@@ -225,14 +237,47 @@ export function ProductShell() {
   const guessedTarget = useMemo(() => guessQuickJump(jumpInput), [jumpInput]);
   const activeScope = useMemo(() => resolveScopeFromPath(location.pathname), [location.pathname]);
   const activeTutorialSeen = hasSeenTutorial(activeScope);
-  const finderCollapsibleRoute = useMemo(
-    () => FINDER_COLLAPSIBLE_PATH_PREFIXES.some((prefix) => location.pathname.startsWith(prefix)),
-    [location.pathname],
-  );
+  /* Whether the page on screen actually has a finder column.
+   *
+   * This used to be a list of path prefixes matched with startsWith, so
+   * '/scouting' also matched /scouting/pit, /coverage, /calibrate, /record,
+   * /assignments and /auto-paths — none of which have a finder. Twelve of the
+   * app's twenty-four routes offered a "Collapse Finder" button for a finder
+   * that was not there.
+   *
+   * Observed rather than declared: a page that adds or removes its finder
+   * cannot forget to update a list it does not know exists, and the finder
+   * appears after its data loads, so a render-time check alone would miss it. */
+  // contentRef is declared above with the other shell refs.
+  const [hasFinder, setHasFinder] = useState(false);
+
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return undefined;
+    const check = () => setHasFinder(Boolean(root.querySelector('.center-sidebar')));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [location.pathname]);
   const isLiveScoutingRoute = location.pathname === '/scouting' || location.pathname === '/scouting/';
+  const contextToggleButton = (
+    <button
+      type="button"
+      className="ps-context-toggle-btn"
+      onClick={() => setContextStripCollapsed((current) => !current)}
+      aria-expanded={!contextStripCollapsed}
+      aria-label={contextStripCollapsed ? 'Expand context bar' : 'Collapse context bar'}
+      title={contextStripCollapsed ? 'Expand context bar' : 'Collapse context bar'}
+    >
+      <span>Context</span>
+      <ChevronIcon expanded={!contextStripCollapsed} />
+    </button>
+  );
+
   const sidebarCollapsed = isDesktopSidebarViewport && desktopSidebarCollapsed;
   const sidebarCollapseAvailable = isDesktopSidebarViewport;
-  const finderCollapseAvailable = isDesktopSidebarViewport && finderCollapsibleRoute && !isLiveScoutingRoute;
+  const finderCollapseAvailable = isDesktopSidebarViewport && hasFinder && !isLiveScoutingRoute;
   const finderCollapsed = finderCollapseAvailable && desktopFinderCollapsed;
   const isMobileLiveScoutingRoute = !isDesktopSidebarViewport && isLiveScoutingRoute;
   const showTopbarTools = finderCollapseAvailable || !isMobileLiveScoutingRoute;
@@ -482,8 +527,13 @@ export function ProductShell() {
         ? 'Try "houston district 2026" or "2026txhou"'
         : 'Jump to team, event, or match…';
 
-  const helperLabel =
-    jumpMode === 'auto'
+  // Only worth saying once there is something to classify. On an empty field
+  // the guess falls back to "Search", so the hint rendered as "Detected input
+  // type: Search" on every page — uppercased by the stylesheet, which made a
+  // real feature read like leftover debug output.
+  const helperLabel = !jumpInput.trim()
+    ? ''
+    : jumpMode === 'auto'
       ? `Detected input type: ${guessLabel(guessedTarget)}`
       : `Searching as: ${guessLabel(jumpMode)}`;
 
@@ -523,7 +573,6 @@ export function ProductShell() {
           </picture>
           <div>
             <strong>FRCMOB</strong>
-            <small className="ps-brand-signature">Created by Jamal Mammadzada</small>
           </div>
         </div>
         {sidebarCollapseAvailable ? (
@@ -539,12 +588,21 @@ export function ProductShell() {
                 <path d={sidebarCollapsed ? 'M6 3.5 10.5 8 6 12.5' : 'M10 3.5 5.5 8 10 12.5'} />
               </svg>
             </span>
-            <span className="ps-sidebar-toggle-label">{sidebarCollapsed ? 'Expand' : 'Collapse'}</span>
+            {/* The region, not the verb. Three panel toggles were on screen at
+                once, all reading "Collapse", which said nothing about which
+                panel each one hid. The chevron shows the direction. */}
+            <span className="ps-sidebar-toggle-label">Menu</span>
           </button>
         ) : null}
         <nav className="ps-nav">
           {NAV_ITEMS.map((item) => (
-            <NavLink key={item.to} to={item.to} className={linkClass}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={linkClass}
+              title={sidebarCollapsed ? item.label : undefined}
+            >
+              <item.Icon className="ps-nav-link-icon" />
               <span className="ps-nav-link-label">{item.label}</span>
             </NavLink>
           ))}
@@ -564,10 +622,16 @@ export function ProductShell() {
             >
               <BurgerIcon />
             </button>
-            <span className="ps-topbar-brand-meta" aria-hidden={isDesktopSidebarViewport}>
-              <span className="ps-topbar-brand-name">FRCMOB</span>
-              <small className="ps-topbar-signature">Created by Jamal Mammadzada</small>
-            </span>
+            {/* Only where the sidebar is not already showing it. This was
+                rendered on every screen with aria-hidden when the sidebar was
+                visible — hidden from a screen reader while still occupying the
+                top of the page twice. The byline moved to Settings > About:
+                permanent chrome is for things you navigate with. */}
+            {!isDesktopSidebarViewport ? (
+              <span className="ps-topbar-brand-meta">
+                <span className="ps-topbar-brand-name">FRCMOB</span>
+              </span>
+            ) : null}
             <span
               className={cx('ps-network-pill', isOnline ? 'online' : 'offline', queueSize > 0 && 'has-queue')}
               title={
@@ -602,7 +666,7 @@ export function ProductShell() {
                 title={finderCollapsed ? 'Expand finder' : 'Collapse finder'}
               >
                 <FinderIcon collapsed={finderCollapsed} />
-                <span>{finderCollapsed ? 'Expand Finder' : 'Collapse Finder'}</span>
+                <span>Finder</span>
               </button>
             ) : null}
             {!isMobileLiveScoutingRoute ? (
@@ -640,7 +704,7 @@ export function ProductShell() {
                     <span className="ps-topbar-search-btn-label">{jumpBusy ? '' : 'Search'}</span>
                   </button>
                 </form>
-                <div className="ps-topbar-search-hint">{helperLabel}</div>
+                {helperLabel ? <div className="ps-topbar-search-hint">{helperLabel}</div> : null}
               </div>
             ) : null}
           </div>
@@ -653,22 +717,17 @@ export function ProductShell() {
           aria-label="Active context and quick picks"
           data-onboard="shell-context"
         >
-          <div className="ps-context-strip-head">
-            <span className="ps-context-strip-title">Quick Context</span>
-            <button
-              type="button"
-              className="ps-context-toggle-btn"
-              onClick={() => setContextStripCollapsed((current) => !current)}
-              aria-expanded={!contextStripCollapsed}
-              aria-label={contextStripCollapsed ? 'Expand context bar' : 'Collapse context bar'}
-              title={contextStripCollapsed ? 'Expand context bar' : 'Collapse context bar'}
-            >
-              <span>{contextStripCollapsed ? 'Expand' : 'Collapse'}</span>
-              <ChevronIcon expanded={!contextStripCollapsed} />
-            </button>
-          </div>
+          {/* The header row this replaces held one uppercase label — "QUICK
+              CONTEXT" — and a collapse toggle, on a line of its own above the
+              chips. The chips say what they are ("Event: 2026 ARC"), so the
+              label named a region nobody needed named, and the toggle now sits
+              at the end of the row it collapses. One line instead of two, on
+              every screen in the app. */}
           {contextStripCollapsed ? (
-            <p className="ps-context-summary">{contextStripSummary}</p>
+            <div className="ps-context-current">
+              <p className="ps-context-summary">{contextStripSummary}</p>
+              {contextToggleButton}
+            </div>
           ) : (
           <>
           <div className="ps-context-current">
@@ -729,6 +788,7 @@ export function ProductShell() {
                 </button>
               ) : null}
             </div>
+            {contextToggleButton}
           </div>
           <div className="ps-context-quick-picks">
             {(contextPins.event.length > 0 || contextPins.team.length > 0) ? (

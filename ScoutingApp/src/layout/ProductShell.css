@@ -1,32 +1,10 @@
 @layer shell-foundation, shell-shared, shell-features, shell-mobile, shell-overrides;
 
-@import './productshell/ps-foundation-shell.css' layer(shell-foundation);
-@import './productshell/ps-foundation-utilities.css' layer(shell-foundation);
-@import './productshell/ps-foundation-events-teams-layouts.css' layer(shell-foundation);
-@import './productshell/ps-foundation-teams-insights.css' layer(shell-foundation);
-@import './productshell/ps-foundation-home-calendar.css' layer(shell-foundation);
-@import './productshell/ps-foundation-midsection.css' layer(shell-foundation);
-@import './productshell/ps-foundation-theme-overrides.css' layer(shell-foundation);
-@import './productshell/ps-foundation-light-theme.css' layer(shell-foundation);
-@import './productshell/ps-design-system-refresh.css' layer(shell-shared);
-@import './productshell/ps-ui-cleanup.css' layer(shell-shared);
-@import './productshell/ps-shared-controls.css' layer(shell-shared);
-@import './productshell/ps-motion.css' layer(shell-shared);
-@import './productshell/ps-tutorials.css' layer(shell-features);
-@import './productshell/ps-professional-polish.css' layer(shell-features);
-@import './productshell/ps-event-picker.css' layer(shell-features);
-@import './productshell/ps-pwa-install-banner.css' layer(shell-features);
-@import './productshell/ps-compare-briefing.css' layer(shell-features);
-@import './productshell/ps-qr-modals.css' layer(shell-features);
-@import './productshell/ps-dataviz-dashboard.css' layer(shell-features);
-@import './productshell/ps-autopath-drawer.css' layer(shell-features);
-@import './productshell/ps-mobile-upgrades.css' layer(shell-mobile);
-@import './productshell/ps-mobile-bottom-tabs.css' layer(shell-mobile);
-@import './productshell/ps-mobile-page-improvements.css' layer(shell-mobile);
-@import './productshell/ps-mobile-card-layouts.css' layer(shell-mobile);
-@import './productshell/ps-offline-error-home-mobile.css' layer(shell-mobile);
-@import './productshell/ps-fotmob-mobile.css' layer(shell-mobile);
-@import './productshell/ps-scouting-refinement.css' layer(shell-overrides);
+@import './productshell/shell-foundation.css' layer(shell-foundation);
+@import './productshell/shell-shared.css' layer(shell-shared);
+@import './productshell/shell-features.css' layer(shell-features);
+@import './productshell/shell-mobile.css' layer(shell-mobile);
+@import './productshell/shell-overrides.css' layer(shell-overrides);
 
 /* Search button spinner */
 @keyframes ps-spin {
@@ -48,8 +26,8 @@
   padding: 3px;
   min-height: 38px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 88%, transparent);
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 95%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
 }
 
 .ps-topbar-search-mode-pill {
@@ -57,9 +35,9 @@
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: var(--color-text-dim, #8195a9);
+  color: var(--color-text-dim);
   padding: 4px 10px;
-  font-size: 0.73rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -67,19 +45,19 @@
 }
 
 .ps-topbar-search-mode-pill:hover {
-  color: var(--color-text, #e4edf5);
+  color: var(--color-text);
 }
 
 .ps-topbar-search-mode-pill.active {
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 58%, var(--color-border, #3d4d5d));
-  color: var(--color-text, #e4edf5);
-  background: color-mix(in srgb, var(--color-accent-soft, rgba(47, 176, 114, 0.18)) 65%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent-soft) 65%, transparent);
 }
 
 .ps-topbar-search-mode-pill:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 78%, var(--color-border, #3d4d5d));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-soft, rgba(47, 176, 114, 0.18)) 80%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 78%, var(--color-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-soft) 80%, transparent);
 }
 
 /* Pin icon button — icon-only variant of ps-context-pin-btn */
@@ -138,7 +116,6 @@
   .product-shell .center-main > *,
   .product-shell .surface-card,
   .product-shell .surface-card-head,
-  .product-shell .surface-card-content,
   .product-shell .home-fotmob-layout > *,
   .product-shell .home-fotmob-card,
   .product-shell .home-card-head > div {
@@ -211,13 +188,7 @@
     grid-column: 1 / -1;
   }
 
-  .product-shell .fm-scout-hero-actions .fm-scout-mode-pill {
-    justify-content: center;
-    min-width: 0;
-  }
-
-  .product-shell .home-filter-btn,
-  .product-shell .center-mobile-sort-chips button {
+  .product-shell .home-filter-btn {
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -260,7 +231,7 @@
   }
 
   .product-shell .ps-topbar-brand-name {
-    font-size: 0.78rem;
+    font-size: var(--font-size-2xs);
     letter-spacing: 0.03em;
   }
 
@@ -271,7 +242,7 @@
   .product-shell .ps-network-pill {
     min-height: 18px;
     padding: 0 6px;
-    font-size: 0.58rem;
+    font-size: var(--font-size-legacy-10);
   }
 
   .product-shell .ps-network-pill.online:not(.has-queue) {
@@ -294,8 +265,7 @@
     gap: 8px;
   }
 
-  .product-shell .surface-card-head,
-  .product-shell .surface-card-content {
+  .product-shell .surface-card-head {
     padding-left: 10px;
     padding-right: 10px;
   }
@@ -310,7 +280,7 @@
     gap: 4px;
   }
   .product-shell .ps-topbar-brand-name {
-    font-size: 0.65rem;
+    font-size: var(--font-size-legacy-10);
   }
   .product-shell .ps-mobile-burger-btn {
     width: 28px;
@@ -337,11 +307,11 @@
   gap: 6px;
   min-height: 28px;
   padding: 4px 10px;
-  border: 1px solid var(--color-border-muted, rgba(79, 95, 112, 0.5));
+  border: 1px solid var(--color-border-muted, color-mix(in srgb, var(--color-border-strong) 50%, transparent));
   border-radius: 999px;
-  background: var(--color-surface-soft, rgba(22, 34, 46, 0.72));
-  color: var(--color-text-muted, #9fb0c1);
-  font-size: 0.72rem;
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   cursor: pointer;
 }
@@ -400,7 +370,7 @@
 
   .home-match-link-btn {
     min-height: 26px;
-    font-size: 0.66rem;
+    font-size: var(--font-size-legacy-11);
     padding: 3px 9px;
   }
 
@@ -420,15 +390,15 @@
     height: 36px;
     border: 0;
     background: transparent;
-    color: var(--color-text-muted, #9fb0c1);
+    color: var(--color-text-muted);
     cursor: pointer;
-    border-radius: var(--radius-full, 9999px);
+    border-radius: var(--radius-full);
     margin-left: auto;
     -webkit-tap-highlight-color: transparent;
   }
 
   .ps-mobile-search-trigger:active {
-    background: var(--color-surface-soft, #202c38);
+    background: var(--color-surface-soft);
   }
 
   .ps-mobile-search-trigger svg {
@@ -454,7 +424,7 @@
   border: 1px solid color-mix(in srgb, currentColor 60%, transparent);
   background: color-mix(in srgb, currentColor 18%, transparent);
   color: inherit;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 700;
   line-height: 1;
 }
@@ -463,12 +433,12 @@
   display: grid;
   gap: 6px;
   padding: 8px 14px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border, #2f3f4d) 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--color-surface, #18232f) 95%, transparent) 0%,
-      color-mix(in srgb, var(--color-surface-soft, #16222e) 90%, transparent) 100%
+      color-mix(in srgb, var(--color-surface) 95%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-soft) 90%, transparent) 100%
     );
   backdrop-filter: blur(12px);
 }
@@ -492,7 +462,7 @@
 .ps-context-strip.collapsed .ps-context-toggle-btn {
   min-height: 22px;
   padding: 0 7px;
-  font-size: 0.6rem;
+  font-size: var(--font-size-legacy-10);
 }
 
 .ps-context-strip.collapsed .ps-context-toggle-btn span {
@@ -512,32 +482,32 @@
 }
 
 .ps-context-strip-title {
-  font-size: 0.75rem;
+  font-size: var(--font-size-2xs);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-dim, #8195a9);
+  color: var(--color-text-dim);
 }
 
 .ps-context-toggle-btn {
   min-height: 36px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 88%, transparent);
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 95%, transparent);
-  color: var(--color-text-muted, #9fb0c1);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
+  color: var(--color-text-muted);
   padding: 4px 10px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
 }
 
 .ps-context-toggle-btn:hover {
-  color: var(--color-text, #e4edf5);
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 55%, var(--color-border, #3d4d5d));
+  color: var(--color-text);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
 }
 
 .ps-context-toggle-icon {
@@ -557,8 +527,8 @@
 
 .ps-context-summary {
   margin: 0;
-  font-size: 0.75rem;
-  color: var(--color-text-muted, #9fb0c1);
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
   white-space: nowrap;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -567,7 +537,7 @@
 .ps-context-strip.collapsed .ps-context-summary {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-legacy-11);
   line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
@@ -581,17 +551,27 @@
   flex-wrap: wrap;
 }
 
+/* The collapse toggle now lives at the end of the row it collapses, rather
+   than on a header line of its own. */
+.ps-context-current > .ps-context-toggle-btn {
+  margin-left: auto;
+}
+
+.ps-context-current > .ps-context-summary {
+  margin: 0;
+}
+
 .ps-context-chip {
   min-height: 36px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 95%, transparent);
-  color: var(--color-text-muted, #9fb0c1);
+  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
+  color: var(--color-text-muted);
   padding: 4px 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
@@ -602,8 +582,8 @@ button.ps-context-chip {
 }
 
 button.ps-context-chip:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 62%, var(--color-border, #3d4d5d));
-  color: var(--color-text, #e4edf5);
+  border-color: color-mix(in srgb, var(--color-accent) 62%, var(--color-border));
+  color: var(--color-text);
   transform: translateY(-1px);
 }
 
@@ -613,30 +593,30 @@ button.ps-context-chip:disabled {
 }
 
 .ps-context-chip.active {
-  color: var(--color-text, #e4edf5);
+  color: var(--color-text);
 }
 
 .ps-context-chip strong {
-  font-size: 0.84rem;
+  font-size: var(--font-size-sm);
 }
 
 .ps-context-pin-btn {
   min-height: 36px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 88%, transparent);
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 95%, transparent);
-  color: var(--color-text-dim, #8195a9);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
+  color: var(--color-text-dim);
   padding: 4px 10px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
 }
 
 .ps-context-pin-btn.active {
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 74%, var(--color-border, #3d4d5d));
-  color: var(--color-text, #e4edf5);
-  background: color-mix(in srgb, var(--color-accent-soft, rgba(47, 176, 114, 0.18)) 56%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 74%, var(--color-border));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent-soft) 56%, transparent);
 }
 
 .ps-context-pin-btn:disabled {
@@ -660,22 +640,22 @@ button.ps-context-chip:disabled {
 
 .ps-context-quick-label {
   flex: 0 0 auto;
-  font-size: 0.75rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--color-text-dim, #8195a9);
+  color: var(--color-text-dim);
 }
 
 .ps-context-quick-chip {
   flex: 0 0 auto;
   min-height: 32px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 90%, transparent);
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 94%, transparent);
-  color: var(--color-text-muted, #9fb0c1);
+  border: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+  color: var(--color-text-muted);
   padding: 4px 10px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-2xs);
   font-weight: 650;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -683,11 +663,11 @@ button.ps-context-chip:disabled {
 }
 
 .ps-context-quick-chip.event {
-  border-color: color-mix(in srgb, var(--color-info, #4f95df) 44%, var(--color-border, #3d4d5d));
+  border-color: color-mix(in srgb, var(--color-info) 44%, var(--color-border));
 }
 
 .ps-context-quick-chip.team {
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 44%, var(--color-border, #3d4d5d));
+  border-color: color-mix(in srgb, var(--color-accent) 44%, var(--color-border));
 }
 
 .product-shell .events-finder-list {
@@ -719,7 +699,7 @@ button.ps-context-chip:disabled {
 }
 
 .product-shell .events-finder-list .event-picker-item.events-finder-item strong {
-  font-size: 0.9rem;
+  font-size: var(--font-size-base);
   line-height: 1.3;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -727,7 +707,7 @@ button.ps-context-chip:disabled {
 }
 
 .product-shell .events-finder-list .event-picker-item.events-finder-item small {
-  font-size: 0.77rem;
+  font-size: var(--font-size-2xs);
   line-height: 1.32;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -741,17 +721,17 @@ button.ps-context-chip:disabled {
   }
 
   .ps-context-strip-title {
-    font-size: 0.6rem;
+    font-size: var(--font-size-legacy-10);
   }
 
   .ps-context-toggle-btn {
     min-height: 32px;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
     padding: 2px 8px;
   }
 
   .ps-context-summary {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
   }
 
   .ps-context-strip.collapsed {
@@ -766,23 +746,23 @@ button.ps-context-chip:disabled {
   }
 
   .ps-context-strip.collapsed .ps-context-summary {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
   }
 
   .ps-context-chip,
   .ps-context-pin-btn {
     min-height: 32px;
-    font-size: 0.75rem;
+    font-size: var(--font-size-2xs);
     padding: 3px 8px;
   }
 
   .ps-context-quick-label {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
   }
 
   .ps-context-quick-chip {
     min-height: 28px;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-legacy-11);
   }
 }
 
@@ -793,7 +773,7 @@ button.ps-context-chip:disabled {
     right: 0;
     top: max(56px, calc(env(safe-area-inset-top, 0px) + 50px));
     border-left: 0;
-    border-top: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 80%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
     animation: none;
@@ -806,8 +786,8 @@ button.ps-context-chip:disabled {
     padding: 12px 12px;
     background: linear-gradient(
       180deg,
-      color-mix(in srgb, var(--color-surface, #18232f) 96%, transparent) 0%,
-      color-mix(in srgb, var(--color-surface-soft, #16222e) 90%, transparent) 100%
+      color-mix(in srgb, var(--color-surface) 96%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-soft) 90%, transparent) 100%
     );
     backdrop-filter: blur(8px);
   }
@@ -817,57 +797,16 @@ button.ps-context-chip:disabled {
     gap: 10px;
   }
 
-  .product-shell .home-calendar-drawer .home-calendar-month-picker {
-    position: sticky;
-    top: 58px;
-    z-index: 5;
-    margin: 0;
-    padding: 7px;
-    border-radius: 12px;
-    border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 86%, transparent);
-    background: color-mix(in srgb, var(--color-surface-soft, #16222e) 95%, transparent);
-  }
-
   .product-shell .home-calendar-drawer .home-calendar-nav-btn {
     min-width: 34px;
     min-height: 34px;
-    font-size: 0.92rem;
+    font-size: var(--font-size-md);
     border-radius: 9px;
-  }
-
-  .product-shell .home-calendar-drawer .home-calendar-month-label {
-    font-size: 0.88rem;
-    line-height: 34px;
-  }
-
-  .product-shell .home-calendar-drawer .home-calendar-count {
-    margin: 0;
-    text-align: left;
-    font-size: 0.69rem;
   }
 
   .product-shell .home-calendar-drawer .home-calendar-event-list {
     display: grid;
     gap: 8px;
-  }
-
-  .product-shell .home-calendar-drawer .home-calendar-day-group {
-    gap: 6px;
-    padding-top: 2px;
-  }
-
-  .product-shell .home-calendar-drawer .home-calendar-day-label {
-    position: sticky;
-    top: 112px;
-    z-index: 2;
-    width: max-content;
-    margin: 0;
-    padding: 4px 8px;
-    border: 1px solid color-mix(in srgb, var(--color-accent, #2fb072) 28%, var(--color-border, #3d4d5d));
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-surface, #18232f) 94%, transparent);
-    font-size: 0.63rem;
-    letter-spacing: 0.05em;
   }
 
   .product-shell .home-calendar-drawer .home-event-item {
@@ -883,7 +822,7 @@ button.ps-context-chip:disabled {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    font-size: 0.84rem;
+    font-size: var(--font-size-sm);
     line-height: 1.42;
     padding-block: 1px;
     overflow: hidden;
@@ -893,7 +832,7 @@ button.ps-context-chip:disabled {
 
   .product-shell .home-calendar-drawer .home-event-item > small {
     display: block;
-    font-size: 0.71rem;
+    font-size: var(--font-size-legacy-11);
     line-height: 1.42;
     padding-block: 1px;
     white-space: nowrap;
@@ -901,109 +840,24 @@ button.ps-context-chip:disabled {
     text-overflow: ellipsis;
   }
 
-  .product-shell .home-calendar-drawer .home-event-item-meta {
-    gap: 6px;
-  }
-
-  .product-shell .home-calendar-drawer .home-event-item-meta small {
-    font-size: 0.68rem;
-  }
-
   .product-shell .home-calendar-drawer .home-calendar-tba-divider {
     margin: 10px 0 4px;
-    font-size: 0.67rem;
+    font-size: var(--font-size-legacy-11);
   }
 
   .product-shell .events-center-layout.mobile-calendar-open .events-calendar-card .surface-card-body {
     gap: 8px;
   }
 
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "month month"
-      "prev next";
-    gap: 8px;
-    align-items: center;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-controls .center-btn:first-of-type {
-    grid-area: prev;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-controls .center-btn:last-of-type {
-    grid-area: next;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-controls .center-btn {
-    width: 100%;
-    min-height: 34px;
-    padding: 0 10px;
-    border-radius: 9px;
-    font-size: 0.73rem;
-    white-space: nowrap;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-controls input[type='month'] {
-    grid-area: month;
-    width: 100%;
-    min-height: 34px;
-    font-size: 0.78rem;
-    text-align: center;
-    border-radius: 9px;
-    padding: 0 8px;
-  }
-
   .product-shell .events-center-layout.mobile-calendar-open .events-calendar-summary {
     margin: 2px 0 0;
-    font-size: 0.69rem;
+    font-size: var(--font-size-legacy-11);
     line-height: 1.4;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-list {
-    max-height: 48vh;
-    gap: 7px;
-    padding-right: 1px;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-tba-list {
-    max-height: 30vh;
   }
 
   .product-shell .events-center-layout.mobile-calendar-open .events-calendar-tba-label {
     margin-top: 6px;
-    font-size: 0.68rem;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-list .event-picker-item {
-    border-radius: 12px;
-    min-height: 68px;
-    padding: 10px 10px 10px;
-    gap: 5px;
-    overflow: visible;
-    align-content: center;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-list .event-picker-item strong {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    font-size: 0.84rem;
-    line-height: 1.42;
-    padding-block: 1px;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .product-shell .events-center-layout.mobile-calendar-open .events-calendar-list .event-picker-item small {
-    display: block;
-    font-size: 0.73rem;
-    line-height: 1.42;
-    padding-block: 1px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: var(--font-size-legacy-11);
   }
 }
 
@@ -1024,10 +878,10 @@ button.ps-context-chip:disabled {
 .product-shell .home-day-nav-btn {
   min-width: 34px;
   min-height: 34px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 94%, transparent);
-  color: var(--color-text-muted, #9fb0c1);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+  color: var(--color-text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1037,15 +891,15 @@ button.ps-context-chip:disabled {
 
 .product-shell .home-day-picker-btn {
   min-height: 34px;
-  border: 1px solid color-mix(in srgb, var(--color-border, #3d4d5d) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-elevated, #16212c) 95%, transparent);
-  color: var(--color-text, #e4edf5);
+  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
+  color: var(--color-text);
   padding: 5px 12px;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-base);
   font-weight: 760;
   cursor: pointer;
   max-width: min(100%, 240px);
@@ -1056,9 +910,9 @@ button.ps-context-chip:disabled {
 .product-shell .home-day-picker-btn:focus-visible,
 .product-shell .home-day-nav-btn:hover,
 .product-shell .home-day-nav-btn:focus-visible {
-  border-color: color-mix(in srgb, var(--color-accent, #2fb072) 58%, var(--color-border, #3d4d5d));
-  color: var(--color-text, #e4edf5);
-  background: color-mix(in srgb, var(--color-accent-soft, rgba(47, 176, 114, 0.18)) 38%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent-soft) 38%, transparent);
   transform: translateY(-1px);
 }
 
@@ -1109,20 +963,20 @@ button.ps-context-chip:disabled {
     min-width: 0;
     max-width: none;
     justify-content: center;
-    font-size: 0.94rem;
+    font-size: var(--font-size-md);
     padding: 5px 10px;
   }
 
   .product-shell .home-fotmob-toolbar-left p {
-    font-size: 0.74rem;
+    font-size: var(--font-size-2xs);
     margin-top: 1px;
   }
 }
 
 .product-shell .home-day-default-event {
   display: block;
-  color: var(--color-text-dim, #8195a9);
-  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-legacy-11);
   line-height: 1.25;
   max-width: 100%;
   overflow: hidden;
@@ -1139,7 +993,7 @@ button.ps-context-chip:disabled {
   .product-shell .home-mini-tab-btn {
     min-height: 30px;
     padding: 4px 8px;
-    font-size: 0.68rem;
+    font-size: var(--font-size-legacy-11);
     border-radius: 8px;
   }
 
@@ -1150,34 +1004,12 @@ button.ps-context-chip:disabled {
 
   .product-shell .home-fotmob-filters .home-filter-btn {
     padding: 7px 3px 6px;
-    font-size: 0.69rem;
+    font-size: var(--font-size-legacy-11);
     gap: 3px;
   }
 
   .product-shell .home-fotmob-filters .home-filter-btn small {
     display: none;
-  }
-
-  .product-shell .fm-home-meta-strip {
-    padding: 5px 8px;
-    gap: 4px 8px;
-    font-size: 0.64rem;
-  }
-
-  .product-shell .fm-home-meta-strip span:first-child {
-    flex: 1 1 100%;
-    min-width: 0;
-    color: var(--color-text-muted, #9fb0c1);
-    font-weight: 620;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .product-shell .home-teams-more-btn {
-    min-height: 30px;
-    padding: 4px 8px;
-    font-size: 0.68rem;
   }
 
   .product-shell .home-calendar-drawer .home-drawer-header {
@@ -1191,37 +1023,17 @@ button.ps-context-chip:disabled {
   }
 
   .product-shell .home-calendar-drawer .home-drawer-title strong {
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
     line-height: 1.15;
   }
 
   .product-shell .home-calendar-drawer .home-drawer-title small {
-    color: var(--color-text-dim, #8195a9);
-    font-size: 0.67rem;
+    color: var(--color-text-dim);
+    font-size: var(--font-size-legacy-11);
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .product-shell .home-calendar-drawer .home-calendar-month-picker {
-    top: 52px;
-    padding: 6px;
-    gap: 6px;
-  }
-
-  .product-shell .home-calendar-drawer .home-calendar-day-label {
-    position: static;
-    top: auto;
-    width: 100%;
-    margin: 0;
-    padding: 4px 2px 3px;
-    border: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-accent, #2fb072) 20%, transparent);
-    border-radius: 0;
-    background: transparent;
-    font-size: 0.61rem;
-    letter-spacing: 0.04em;
   }
 
   .product-shell .home-calendar-drawer .home-calendar-event-list {
@@ -1236,51 +1048,15 @@ button.ps-context-chip:disabled {
   }
 
   .product-shell .home-calendar-drawer .home-event-item strong {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     line-height: 1.36;
     white-space: normal;
   }
 
-  .product-shell .home-calendar-drawer .home-event-item-meta {
-    display: grid;
-    gap: 2px;
-  }
-
-  .product-shell .home-calendar-drawer .home-event-item-date {
-    color: var(--color-text-dim, #8195a9);
-    font-size: 0.66rem;
-    font-weight: 650;
-    line-height: 1.22;
-  }
-
   .product-shell .home-calendar-drawer .home-event-item-location {
-    color: var(--color-text-muted, #9fb0c1);
-    font-size: 0.68rem;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-legacy-11);
     line-height: 1.34;
-  }
-
-  .product-shell .events-calendar-list .event-picker-item {
-    min-height: 78px;
-    padding: var(--space-3);
-    gap: var(--space-1);
-    overflow: hidden;
-  }
-
-  .product-shell .events-calendar-list .event-picker-item strong {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    line-height: 1.36;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .product-shell .events-calendar-list .event-picker-item small {
-    line-height: 1.34;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 }
 
@@ -1326,7 +1102,7 @@ button.ps-context-chip:disabled {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  font-size: 0.9rem;
+  font-size: var(--font-size-base);
   line-height: 1.28;
   font-weight: 700;
   overflow: hidden;
@@ -1335,8 +1111,8 @@ button.ps-context-chip:disabled {
 }
 
 .product-shell .home-event-item-rail .home-event-item-location {
-  color: var(--color-text-muted, #9fb0c1);
-  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
   line-height: 1.32;
   white-space: nowrap;
   overflow: hidden;
@@ -1357,12 +1133,12 @@ button.ps-context-chip:disabled {
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  border: 1px solid rgba(78, 95, 113, 0.7);
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 70%, transparent);
   border-radius: 999px;
   padding: 2px 8px;
-  background: rgba(24, 39, 52, 0.78);
-  color: var(--color-text-muted, #9fb0c1);
-  font-size: 0.68rem;
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-legacy-11);
   font-weight: 650;
   line-height: 1.2;
   white-space: normal;
@@ -1371,7 +1147,7 @@ button.ps-context-chip:disabled {
 }
 
 .product-shell .home-event-item-rail .home-event-item-tag-live {
-  border-color: rgba(46, 175, 112, 0.55);
+  border-color: color-mix(in srgb, var(--color-accent-strong) 55%, transparent);
   background: rgba(29, 92, 63, 0.36);
   color: #b8f3d4;
 }
@@ -1390,15 +1166,15 @@ button.ps-context-chip:disabled {
   }
 
   .product-shell .home-event-item-rail .home-event-item-title {
-    font-size: 0.86rem;
+    font-size: var(--font-size-base);
   }
 
   .product-shell .home-event-item-rail .home-event-item-location {
-    font-size: 0.74rem;
+    font-size: var(--font-size-2xs);
   }
 
   .product-shell .home-event-item-rail .home-event-item-tag {
-    font-size: 0.64rem;
+    font-size: var(--font-size-legacy-10);
     padding: 2px 7px;
   }
 }
@@ -1406,17 +1182,6 @@ button.ps-context-chip:disabled {
 /* Final home-page polish pass.
    Keep this block at the end of ProductShell.css so it wins over imported
    foundation/mobile layers without changing component structure. */
-
-.product-shell {
-  --home-polish-ring: color-mix(in srgb, var(--ui-accent) 18%, var(--ui-border));
-  --home-polish-shadow: 0 14px 30px rgba(6, 10, 16, 0.18);
-  --home-polish-shadow-strong: 0 20px 42px rgba(6, 10, 16, 0.24);
-}
-
-.product-shell.theme-light {
-  --home-polish-shadow: 0 14px 30px rgba(35, 58, 86, 0.1);
-  --home-polish-shadow-strong: 0 20px 42px rgba(35, 58, 86, 0.14);
-}
 
 .product-shell .home-fotmob-layout {
   gap: clamp(12px, 1.4vw, 18px);
@@ -1433,12 +1198,11 @@ button.ps-context-chip:disabled {
 .product-shell .home-fotmob-toolbar,
 .product-shell .home-fotmob-card,
 .product-shell .home-event-section,
-.product-shell .home-mini-panel,
-.product-shell .home-upcoming-epa-section {
+.product-shell .home-mini-panel {
   position: relative;
 }
 
-.product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel, .home-upcoming-epa-section)::before {
+.product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel)::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -1479,7 +1243,7 @@ button.ps-context-chip:disabled {
   );
 }
 
-.product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel, .home-upcoming-epa-section) {
+.product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel) {
   border-color: color-mix(in srgb, var(--ui-border) 84%, transparent);
   box-shadow: var(--home-polish-shadow);
 }
@@ -1517,22 +1281,10 @@ button.ps-context-chip:disabled {
   min-width: 0;
 }
 
-.product-shell .home-calendar-month-picker {
-  align-items: center;
-  gap: 8px;
-}
-
-.product-shell .home-calendar-month-display,
 .product-shell .home-fotmob-toolbar-left,
 .product-shell .home-event-search-widget,
 .product-shell .home-event-search-expanded {
   min-width: 0;
-}
-
-.product-shell .home-calendar-day-label {
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 700;
 }
 
 .product-shell .home-event-search-expanded {
@@ -1596,7 +1348,6 @@ button.ps-context-chip:disabled {
 
 .product-shell .home-event-item,
 .product-shell .home-ranking-row,
-.product-shell .home-upcoming-epa-row,
 .product-shell .home-match-row {
   position: relative;
   border-color: color-mix(in srgb, var(--ui-border) 88%, transparent);
@@ -1605,7 +1356,7 @@ button.ps-context-chip:disabled {
     0 10px 22px rgba(6, 10, 16, 0.08);
 }
 
-.product-shell :is(.home-event-item, .home-ranking-row, .home-upcoming-epa-row)::before {
+.product-shell :is(.home-event-item, .home-ranking-row)::before {
   content: "";
   position: absolute;
   top: 12px;
@@ -1627,8 +1378,7 @@ button.ps-context-chip:disabled {
     transform var(--motion-fast) var(--motion-ease);
 }
 
-.product-shell :is(.home-event-item, .home-ranking-row, .home-upcoming-epa-row):hover::before,
-.product-shell .home-event-item.active::before {
+.product-shell :is(.home-event-item, .home-ranking-row):hover::before, .product-shell .home-event-item.active::before {
   opacity: 0.92;
   transform: scaleY(1);
 }
@@ -1722,7 +1472,7 @@ button.ps-context-chip:disabled {
 }
 
 .product-shell .home-drawer-backdrop {
-  background: rgba(3, 8, 12, 0.54);
+  background: color-mix(in srgb, var(--color-bg) 54%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
@@ -1780,7 +1530,6 @@ button.ps-context-chip:disabled {
 .product-shell :is(
   .home-event-item,
   .home-ranking-row,
-  .home-upcoming-epa-row,
   .home-match-link-btn,
   .home-event-search-result,
   .home-event-search-close
@@ -1826,7 +1575,7 @@ button.ps-context-chip:disabled {
     max-height: min(42vh, 320px);
   }
 
-  .product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel, .home-upcoming-epa-section) {
+  .product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel) {
     padding: 12px 11px;
     border-radius: 18px;
   }
@@ -1906,12 +1655,12 @@ button.ps-context-chip:disabled {
   position: fixed;
   inset: 0;
   z-index: 1100;
-  background: rgba(6, 11, 17, 0.78);
+  background: color-mix(in srgb, var(--color-bg) 78%, transparent);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-4, 16px);
+  padding: var(--space-4);
   animation: home-calendar-modal-fade 140ms ease-out;
 }
 
@@ -1925,55 +1674,55 @@ button.ps-context-chip:disabled {
   max-height: calc(100vh - 32px);
   display: grid;
   grid-template-rows: auto auto 1fr;
-  gap: var(--space-3, 12px);
-  background: linear-gradient(180deg, #1a232d 0%, #141c24 100%);
+  gap: var(--space-3);
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-bg-elevated) 100%);
   border: 1px solid #2f3a46;
   border-radius: 16px;
-  padding: var(--space-4, 16px);
+  padding: var(--space-4);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  color: #e7f1fb;
+  color: var(--color-text);
 }
 
 .home-calendar-modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3, 12px);
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .home-calendar-modal-title {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2, 8px);
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .home-calendar-modal-title h2 {
   margin: 0;
-  font-size: 1.15rem;
-  color: #eef7ff;
+  font-size: var(--font-size-xl);
+  color: var(--color-text);
 }
 
 .home-calendar-modal-title small {
-  color: #93a8bb;
-  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
 }
 
 .home-calendar-modal-nav {
   display: flex;
   align-items: center;
-  gap: var(--space-2, 8px);
+  gap: var(--space-2);
 }
 
 .home-calendar-modal-close {
-  border: 1px solid #3b4a58;
-  background: #1b2733;
-  color: #d8e6f4;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  font-size: 1.1rem;
+  font-size: var(--font-size-lg);
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -1982,9 +1731,9 @@ button.ps-context-chip:disabled {
 }
 
 .home-calendar-modal-close:hover {
-  border-color: #2caf71;
+  border-color: var(--color-accent-strong);
   background: linear-gradient(145deg, rgba(28, 105, 71, 0.45), rgba(19, 43, 31, 0.72));
-  color: #edfbf3;
+  color: var(--color-text);
 }
 
 .home-calendar-modal-weekdays {
@@ -1995,11 +1744,11 @@ button.ps-context-chip:disabled {
 
 .home-calendar-modal-weekday {
   text-align: center;
-  font-size: 0.72rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #8ea2b5;
+  color: var(--color-text-muted);
   padding: 6px 4px;
 }
 
@@ -2015,7 +1764,7 @@ button.ps-context-chip:disabled {
 .home-calendar-modal-day {
   border: 1px solid #2a3340;
   border-radius: 10px;
-  background: #17212b;
+  background: var(--color-surface);
   padding: 6px 6px 8px;
   display: flex;
   flex-direction: column;
@@ -2026,25 +1775,25 @@ button.ps-context-chip:disabled {
 
 .home-calendar-modal-day.expanded {
   grid-row: span 2;
-  background: #1b2631;
-  border-color: #3b4a58;
+  background: var(--color-surface);
+  border-color: var(--color-border);
   overflow: auto;
 }
 
 .home-calendar-modal-day.off-month {
-  background: #121921;
-  border-color: #222b36;
+  background: var(--color-bg-elevated);
+  border-color: var(--color-surface-soft);
   opacity: 0.55;
 }
 
 .home-calendar-modal-day-num {
-  font-size: 0.78rem;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
-  color: #cdddee;
+  color: var(--color-text);
 }
 
 .home-calendar-modal-day.off-month .home-calendar-modal-day-num {
-  color: #6c7d8e;
+  color: var(--color-text-dim);
 }
 
 .home-calendar-modal-day-events {
@@ -2055,12 +1804,12 @@ button.ps-context-chip:disabled {
 }
 
 .home-calendar-modal-chip {
-  border: 1px solid #34424f;
-  background: #1d2a36;
-  color: #d6e4f2;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
   border-radius: 6px;
   padding: 3px 6px;
-  font-size: 0.7rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -2073,18 +1822,18 @@ button.ps-context-chip:disabled {
 
 .home-calendar-modal-chip:hover,
 .home-calendar-modal-chip.active {
-  border-color: #2fb274;
-  background: linear-gradient(140deg, rgba(28, 89, 61, 0.7), rgba(20, 33, 44, 0.95));
-  color: #edfbf3;
+  border-color: var(--color-accent-strong);
+  background: linear-gradient(140deg, rgba(28, 89, 61, 0.7), color-mix(in srgb, var(--color-surface) 95%, transparent));
+  color: var(--color-text);
 }
 
 .home-calendar-modal-more {
-  font-size: 0.68rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 700;
-  color: #8ea2b5;
+  color: var(--color-text-muted);
   padding: 2px 6px;
   background: transparent;
-  border: 1px dashed #3b4a58;
+  border: 1px dashed var(--color-border);
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
@@ -2092,20 +1841,20 @@ button.ps-context-chip:disabled {
 }
 
 .home-calendar-modal-more:hover {
-  color: #edfbf3;
-  border-color: #2fb274;
+  color: var(--color-text);
+  border-color: var(--color-accent-strong);
   background: rgba(28, 89, 61, 0.35);
 }
 
 @media (max-width: 900px) {
   .home-calendar-modal {
-    padding: var(--space-3, 12px);
+    padding: var(--space-3);
   }
   .home-calendar-modal-grid {
     grid-auto-rows: minmax(76px, 1fr);
   }
   .home-calendar-modal-chip {
-    font-size: 0.66rem;
+    font-size: var(--font-size-legacy-11);
     padding: 2px 5px;
   }
 }
@@ -2120,9 +1869,9 @@ button.ps-context-chip:disabled {
 }
 
 .events-cal-nav-label {
-  font-size: 0.85rem;
+  font-size: var(--font-size-base);
   font-weight: 700;
-  color: var(--ui-text, #e8f3ff);
+  color: var(--color-text);
   flex: 1;
   text-align: center;
 }
@@ -2133,17 +1882,17 @@ button.ps-context-chip:disabled {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border: 1px solid var(--ui-border, #2f3a46);
+  border: 1px solid var(--ui-border);
   border-radius: 8px;
-  background: var(--ui-surface-soft, #1b2733);
-  color: var(--ui-text-muted, #b8cada);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .events-cal-nav-btn:hover {
-  border-color: #60a5fa;
-  color: #f0f8ff;
+  border-color: var(--color-info-text);
+  color: var(--color-text);
 }
 
 .events-cal-nav-btn .icon-inline {
@@ -2162,28 +1911,28 @@ button.ps-context-chip:disabled {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border: 1px solid var(--ui-border, #2a3540);
+  border: 1px solid var(--ui-border);
   border-radius: 9px;
-  background: var(--ui-surface-soft, #17212b);
+  background: var(--color-surface);
   cursor: pointer;
   text-align: left;
   width: 100%;
 }
 
 .events-cal-item:hover {
-  border-color: #60a5fa;
-  background: rgba(96, 165, 250, 0.07);
+  border-color: var(--color-info-text);
+  background: color-mix(in srgb, var(--color-info-text) 7%, transparent);
 }
 
 .events-cal-item.active {
-  border-color: #2caf71;
-  background: linear-gradient(140deg, rgba(28, 89, 61, 0.5), rgba(20, 33, 44, 0.9));
+  border-color: var(--color-accent-strong);
+  background: linear-gradient(140deg, rgba(28, 89, 61, 0.5), color-mix(in srgb, var(--color-surface) 90%, transparent));
 }
 
 .events-cal-item-date {
-  font-size: 0.68rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 700;
-  color: var(--ui-text-muted, #7a94a8);
+  color: var(--color-text-dim);
   white-space: nowrap;
   flex-shrink: 0;
   min-width: 44px;
@@ -2194,9 +1943,9 @@ button.ps-context-chip:disabled {
 }
 
 .events-cal-item-name {
-  font-size: 0.78rem;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
-  color: var(--ui-text, #dce8f4);
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2204,13 +1953,13 @@ button.ps-context-chip:disabled {
 }
 
 .events-cal-item.active .events-cal-item-name {
-  color: #edfbf3;
+  color: var(--color-text);
 }
 
 .events-cal-empty,
 .events-cal-tba {
-  font-size: 0.72rem;
-  color: var(--ui-text-dim, #5a7080);
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-dim);
   text-align: center;
   padding: 8px 0;
   margin: 0;
@@ -2245,13 +1994,13 @@ button.ps-context-chip:disabled {
 }
 
 .home-calendar-drawer .home-calendar-drawer-month strong {
-  font-size: 0.92rem;
-  color: #eef7ff;
+  font-size: var(--font-size-md);
+  color: var(--color-text);
 }
 
 .home-calendar-drawer .home-calendar-drawer-month small {
-  color: #93a8bb;
-  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-legacy-11);
 }
 
 .home-calendar-drawer .home-calendar-modal-weekdays {
@@ -2262,9 +2011,9 @@ button.ps-context-chip:disabled {
 
 .home-calendar-drawer .home-calendar-modal-weekday {
   text-align: center;
-  font-size: 0.66rem;
+  font-size: var(--font-size-legacy-11);
   font-weight: 700;
-  color: #8ea2b5;
+  color: var(--color-text-muted);
   padding: 4px 0;
   text-transform: uppercase;
 }
@@ -2287,11 +2036,11 @@ button.ps-context-chip:disabled {
 }
 
 .home-calendar-drawer .home-calendar-drawer-grid-inner .home-calendar-modal-day-num {
-  font-size: 0.68rem;
+  font-size: var(--font-size-legacy-11);
 }
 
 .home-calendar-drawer .home-calendar-drawer-grid-inner .home-calendar-modal-chip {
-  font-size: 0.58rem;
+  font-size: var(--font-size-legacy-10);
   padding: 1px 3px;
   border-radius: 4px;
   line-height: 1.15;
@@ -2299,7 +2048,7 @@ button.ps-context-chip:disabled {
 }
 
 .home-calendar-drawer .home-calendar-drawer-grid-inner .home-calendar-modal-more {
-  font-size: 0.58rem;
+  font-size: var(--font-size-legacy-10);
   padding: 1px 3px;
   border-radius: 4px;
   min-height: 0;
@@ -2316,4 +2065,17 @@ button.ps-context-chip:disabled {
   gap: 8px;
   padding-top: 4px;
   border-top: 1px dashed #2f3a46;
+}
+
+/* Author credit in the sidebar byline. Inherits the muted signature color so it
+   reads as part of the byline, not as a call to action. */
+.product-shell .ps-brand-signature-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.product-shell .ps-brand-signature-link:hover,
+.product-shell .ps-brand-signature-link:focus-visible {
+  color: inherit;
+  text-decoration: underline;
 }

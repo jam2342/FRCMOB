@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_FORM,
+  contentAreaTop,
+  currentSidebarWidth,
+  defaultFloatingTimerPosition,
+  floatingTimerBounds,
   applyAutoScoutDraftPayload,
   buildSavedScoutingEntry,
   driverCompetency,
@@ -170,5 +174,76 @@ describe('scoutingPage helpers', () => {
     expect(entry.entry_source).toBe('manual');
     expect(entry.auto_scout_meta).toBeNull();
     expect(entry.field_overrides).toBeNull();
+  });
+});
+
+describe('floating timer placement', () => {
+  function withSidebar(width: string) {
+    const shell = document.createElement('div');
+    shell.className = 'product-shell';
+    shell.style.setProperty('--ps-sidebar-current-width', width);
+    document.body.appendChild(shell);
+    return () => shell.remove();
+  }
+
+  it('reports no sidebar below the desktop breakpoint', () => {
+    const cleanup = withSidebar('260px');
+    // The rail is off screen under 1120px, so the timer may use the full width.
+    expect(currentSidebarWidth(900)).toBe(0);
+    expect(currentSidebarWidth(1120)).toBe(0);
+    cleanup();
+  });
+
+  it('reads the live sidebar width on desktop', () => {
+    const cleanup = withSidebar('260px');
+    expect(currentSidebarWidth(1440)).toBe(260);
+    cleanup();
+  });
+
+  it('follows the sidebar when it collapses', () => {
+    const cleanup = withSidebar('74px');
+    expect(currentSidebarWidth(1440)).toBe(74);
+    cleanup();
+  });
+
+  it('defaults clear of the sidebar instead of on top of it', () => {
+    const cleanup = withSidebar('260px');
+    // The old default was x: 10, which covered the COLLAPSE control and Home.
+    expect(defaultFloatingTimerPosition(1440).x).toBeGreaterThan(260);
+    cleanup();
+  });
+
+  it('defaults below the chrome, measured rather than assumed', () => {
+    const cleanup = withSidebar('260px');
+    const content = document.createElement('div');
+    content.className = 'ps-content';
+    document.body.appendChild(content);
+    // jsdom gives every element a zero rect, so the helper falls back — the
+    // point of the test is that it reads the element rather than hardcoding a
+    // constant that a growing context strip would outgrow.
+    expect(contentAreaTop()).toBe(74);
+    // Anchored to the bottom of the viewport, not to a constant offset from the
+    // top — every previous top-anchored default ended up on top of something
+    // when the chrome above it changed height.
+    expect(defaultFloatingTimerPosition(1440).y).toBeGreaterThan(window.innerHeight / 2);
+    content.remove();
+    cleanup();
+  });
+
+  it('will not let a drag put the timer back over the nav', () => {
+    const cleanup = withSidebar('260px');
+    // floatingTimerBounds reads the viewport itself; jsdom defaults to 1024,
+    // which is below the breakpoint where the rail exists.
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true });
+    expect(floatingTimerBounds().minX).toBeGreaterThan(260);
+    Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true });
+    cleanup();
+  });
+
+  it('keeps the full width on mobile, where there is no rail', () => {
+    const cleanup = withSidebar('260px');
+    expect(defaultFloatingTimerPosition(390)).toEqual({ x: 8, y: 64 });
+    cleanup();
   });
 });
