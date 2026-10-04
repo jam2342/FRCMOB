@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { EventScheduleItem, EventSearchItem } from '../api';
 import {
+  pickDefaultMatchKey,
+  nearestEventDayToken,
+  nearestLoadedMatchDayMs,
   buildHomeFilterCounts,
   filterHomeWindowMatches,
   pickMobileHomeAutoEventKey,
@@ -158,5 +161,65 @@ describe('homeFeed', () => {
     ];
 
     expect(pickMobileHomeAutoEventKey(events, {}, nowMs)).toBe('2026cur');
+  });
+});
+
+describe('pickDefaultMatchKey', () => {
+  const row = (match_key: string, scheduled_time: number | null, done = false) =>
+    ({
+      match_key, display_name: match_key, comp_level: 'qm', set_number: 1, match_number: 1,
+      scheduled_time, has_time: scheduled_time !== null, is_completed: done, red: [], blue: [],
+    }) as EventScheduleItem;
+  const now = Date.UTC(2026, 3, 30, 18, 0, 0);
+  const minutes = (m: number) => Math.floor(now / 1000) + m * 60;
+
+  it('prefers the live match, then the next one, then the latest result', () => {
+    expect(pickDefaultMatchKey([row('qm1', minutes(-300), true), row('qm40', minutes(-1)), row('qm41', minutes(6))], now)).toBe('qm40');
+    expect(pickDefaultMatchKey([row('qm1', minutes(-300), true), row('qm41', minutes(6)), row('qm42', minutes(12))], now)).toBe('qm41');
+    expect(pickDefaultMatchKey([row('qm1', minutes(-300), true), row('qm2', minutes(-290), true)], now)).toBe('qm2');
+    expect(pickDefaultMatchKey([], now)).toBeNull();
+  });
+});
+
+describe('nearestEventDayToken', () => {
+  const events = [
+    { event_key: '2026arc', start_date: '2026-04-29', end_date: '2026-05-02' },
+    { event_key: '2026off', start_date: '2026-10-10', end_date: '2026-10-11' },
+  ];
+
+  it('points at the closest event day in either direction', () => {
+    expect(nearestEventDayToken(events, '2026-09-28')).toBe('2026-10-10');
+    expect(nearestEventDayToken(events, '2026-05-10')).toBe('2026-05-02');
+  });
+
+  it('prefers the future on a tie and ignores events without dates', () => {
+    const tied = [
+      { event_key: 'a', start_date: '2026-05-01', end_date: '2026-05-01' },
+      { event_key: 'b', start_date: '2026-05-05', end_date: '2026-05-05' },
+      { event_key: 'c', start_date: null, end_date: null },
+    ];
+    expect(nearestEventDayToken(tied, '2026-05-03')).toBe('2026-05-05');
+    expect(nearestEventDayToken([], '2026-05-03')).toBeNull();
+  });
+
+  it('skips events already known to have no matches', () => {
+    expect(nearestEventDayToken(events, '2026-09-28', new Set(['2026off']))).toBe('2026-05-02');
+  });
+});
+
+describe('nearestLoadedMatchDayMs', () => {
+  const day = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h).getTime();
+
+  it('finds the closest other day with a loaded match', () => {
+    const matches = [
+      { scheduled_time: day(2026, 4, 30) / 1000 },
+      { scheduled_time: day(2026, 5, 2, 9) / 1000, actual_time: day(2026, 5, 2, 15) / 1000 },
+    ];
+    expect(nearestLoadedMatchDayMs(matches, day(2026, 9, 28))).toBe(new Date(2026, 4, 2).getTime());
+    expect(nearestLoadedMatchDayMs(matches, day(2026, 4, 30))).toBe(new Date(2026, 4, 2).getTime());
+  });
+
+  it('returns null when nothing has a time', () => {
+    expect(nearestLoadedMatchDayMs([{ scheduled_time: null }], day(2026, 9, 28))).toBeNull();
   });
 });

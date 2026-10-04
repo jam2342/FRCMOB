@@ -14,9 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
-from app.api.routes_analysis import router as analysis_router
+from app.api.routes_automation import router as automation_router
 from app.api.routes_auto_scouting import router as auto_scouting_router
-from app.api.routes_calibrations import router as calibrations_router
 from app.api.routes_events import router as events_router
 from app.api.routes_game_config import router as game_config_router
 from app.api.routes_maintenance import router as maintenance_router
@@ -27,12 +26,11 @@ from app.api.routes_push import router as push_router
 from app.api.routes_scouting import router as scouting_router
 from app.api.routes_scouting_insights import router as scouting_insights_router
 from app.api.routes_scouting_rooms import router as scouting_rooms_router
-from app.api.routes_storage import router as storage_router
 from app.api.routes_synergy import router as synergy_router
 from app.api.routes_statbotics import router as statbotics_router
 from app.api.routes_teams import router as teams_router
 from app.api.routes_tracks import router as tracks_router
-from app.api.routes_videos import router as videos_router
+from app.api.routes_workspaces import router as workspaces_router
 from app.api.tba import router as tba_router
 from app.core.config import (
     LOCAL_DATABASE_URL_FALLBACK,
@@ -45,7 +43,6 @@ from app.core.security import request_has_admin_access
 from app.db.session import SessionLocal
 from app.services.utils import pg_sqlstate_code as _pg_sqlstate
 from app.services.scouting_rooms.bus import scouting_room_bus
-from app.services.analysis.live_monitor import stop_all_live_monitors
 from app.services.scouting_rooms.realtime import scouting_room_hub
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -97,26 +94,7 @@ async def lifespan(app: FastAPI):
     # disable the analysis/ML pipeline. Fail before anything else starts.
     assert_no_legacy_texas_settings()
 
-    # Best-effort: ensure the FRC detector model is present (download if a URL
-    # is configured). Never blocks startup; the pipeline flags degraded runs.
-    model_status: dict[str, object] = {
-        "present": False,
-        "downloaded": False,
-        "source": None,
-        "error": "model_provisioning_not_run",
-        "checksum_verified": False,
-    }
-    try:
-        from app.services.vision.model_provisioning import ensure_primary_model_available
-
-        model_status = ensure_primary_model_available()
-        logger.info("startup.model_provisioning %s", model_status)
-    except Exception:
-        logger.exception("startup.model_provisioning unexpected failure (continuing)")
-        model_status["error"] = "model_provisioning_unexpected_failure"
-    app.state.primary_model_status = model_status
-
-    env_report = _startup_env_validation_report(model_status=model_status)
+    env_report = _startup_env_validation_report()
     for warning in env_report.get("warnings", []):
         logger.warning("startup.env_validation.warning %s", warning)
     if env_report.get("errors"):
@@ -163,15 +141,6 @@ async def lifespan(app: FastAPI):
         logger.error("Error closing Statbotics client: %s", e)
 
     try:
-        monitor_stop = stop_all_live_monitors()
-        logger.info(
-            "Live analysis monitors stopped count=%s",
-            monitor_stop.get("stopped_count") if isinstance(monitor_stop, dict) else None,
-        )
-    except Exception as e:
-        logger.error("Error stopping live analysis monitors: %s", e)
-
-    try:
         stop_scheduler()
         logger.info("Background scheduler stopped on shutdown")
     except Exception as e:
@@ -209,7 +178,7 @@ def _database_url_targets_localhost(database_url: str) -> bool:
     return (host or "").lower() in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 
-def _startup_env_validation_report(*, model_status: dict[str, object] | None = None) -> dict[str, object]:
+def _startup_env_validation_report() -> dict[str, object]:
     errors: list[str] = []
     warnings: list[str] = []
     strict_mode = bool(settings.strict_startup_env_validation)
@@ -271,26 +240,14 @@ def _startup_env_validation_report(*, model_status: dict[str, object] | None = N
     if not str(settings.statbotics_base_url or "").strip():
         errors.append("STATBOTICS_BASE_URL is empty.")
 
-    require_primary_model = bool(
-        getattr(settings, "video_tracking_require_primary_model_in_production", True)
-    )
-    require_model_checksum = bool(
-        getattr(settings, "video_tracking_require_primary_model_sha256_in_production", True)
-    )
-    if production_like and require_primary_model:
-        model_status = model_status or {}
-        if not bool(model_status.get("present")):
-            errors.append(
-                "Primary FRC detector is unavailable. Mount it or set VIDEO_TRACKING_YOLO_MODEL_URL."
-            )
-        elif require_model_checksum and not bool(model_status.get("checksum_verified")):
-            errors.append(
-                "Primary FRC detector checksum is not verified; set VIDEO_TRACKING_YOLO_MODEL_SHA256."
-            )
-
     if production_like and bool(settings.ml_shadow_auto_train_activate):
         errors.append(
             "ML_SHADOW_AUTO_TRAIN_ACTIVATE must be false in production; promote reviewed candidates explicitly."
+        )
+
+    if production_like and not bool(settings.on_device_sync_require_signed_token):
+        errors.append(
+            "ON_DEVICE_SYNC_REQUIRE_SIGNED_TOKEN must be true in production."
         )
 
     return {
@@ -465,9 +422,8 @@ async def dbapi_error_handler(request: Request, exc: DBAPIError):
 
 app.include_router(events_router)
 app.include_router(matches_router)
-app.include_router(analysis_router)
+app.include_router(automation_router)
 app.include_router(auto_scouting_router)
-app.include_router(calibrations_router)
 app.include_router(game_config_router)
 app.include_router(maintenance_router)
 app.include_router(picklists_router)
@@ -476,12 +432,11 @@ app.include_router(push_router)
 app.include_router(scouting_router)
 app.include_router(scouting_insights_router)
 app.include_router(scouting_rooms_router)
-app.include_router(storage_router)
 app.include_router(synergy_router)
 app.include_router(statbotics_router)
 app.include_router(teams_router)
 app.include_router(tracks_router)
-app.include_router(videos_router)
+app.include_router(workspaces_router)
 app.include_router(tba_router)
 app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 
@@ -528,8 +483,7 @@ def root():
 
 @app.get("/health")
 def health():
-    model_status = getattr(app.state, "primary_model_status", None)
-    env_report = _startup_env_validation_report(model_status=model_status)
+    env_report = _startup_env_validation_report()
     return {
         "ok": bool(env_report.get("ok")),
         "app_env": str(getattr(settings, "app_env", "development")),
@@ -548,7 +502,6 @@ def health():
             ),
         },
         "ml": {
-            "primary_detector": model_status,
             "shadow_enabled": bool(settings.ml_shadow_enabled),
             "auto_training_on_event_breakdown": bool(settings.ml_shadow_auto_train_on_event_breakdown),
         },
@@ -562,7 +515,10 @@ def deep_health():
 
     try:
         with SessionLocal() as db:
-            db.execute(text("SELECT 1"))
+            # An unqualified table, not SELECT 1: on 2026-09-26 the database answered
+            # but pooled sessions had an empty search_path and every real query
+            # failed, while SELECT 1 kept this check green.
+            db.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
         database_ok = True
     except SQLAlchemyError as exc:
         logger.warning("Deep health database check failed: %s", exc)
@@ -573,17 +529,14 @@ def deep_health():
         redis_ok = bool(redis_client.ping())
     except (redis.RedisError, ValueError, TypeError) as exc:
         logger.warning("Deep health redis check failed: %s", exc)
-    finally:
-        if redis_client is not None:
-            redis_client.close()
+    if redis_client is not None:
+        redis_client.close()
 
-    model_status = getattr(app.state, "primary_model_status", None)
-    env_report = _startup_env_validation_report(model_status=model_status)
+    env_report = _startup_env_validation_report()
     return {
         "ok": bool(database_ok and redis_ok and env_report.get("ok")),
         "api": True,
         "database": bool(database_ok),
         "redis": bool(redis_ok),
-        "ml_primary_detector": model_status,
         "env_validation": env_report,
     }

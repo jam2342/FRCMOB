@@ -33,8 +33,23 @@ class AutoScoutTrainingExportTests(DBTestCase):
         )
         return event_key, match_key, team_key
 
+    def test_unvalidated_phone_recordings_stay_out_of_training(self) -> None:
+        self._seed_approved_draft()
+        result = export_auto_scout_training_snapshots(
+            self.db,
+            source_version="auto_scout_field_features_v1",
+            season_year=2026,
+            replace_existing=True,
+            max_drafts=200,
+        )
+        self.assertEqual(result.get("rows_written"), 0)
+        self.assertEqual(result.get("skipped_quarantined"), 1)
+
     def test_export_writes_round2_snapshots_from_approved_draft(self) -> None:
         event_key, match_key, team_key = self._seed_approved_draft()
+        for session in self.db.query(models.OnDeviceSession):
+            session.quality_details = {"training_eligible": True}
+        self.db.commit()
         result = export_auto_scout_training_snapshots(
             self.db,
             source_version="auto_scout_field_features_v1",
@@ -58,7 +73,8 @@ class AutoScoutTrainingExportTests(DBTestCase):
         )
         self.assertIsNotNone(row)
         assert row is not None
-        self.assertEqual(row.split_tag, "holdout")
+        # One event is too few to hold any out.
+        self.assertEqual(row.split_tag, "train")
         self.assertIsNotNone((row.target or {}).get("field_value"))
 
     def test_export_rejects_unknown_field_name(self) -> None:

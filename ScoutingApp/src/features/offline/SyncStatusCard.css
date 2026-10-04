@@ -1,0 +1,10 @@
+.sync-recordings {
+  list-style: none;
+  padding: 0;
+}
+
+.sync-recordings > li {
+  border-top: 1px solid var(--color-border);
+  padding: 0.75rem 0;
+  overflow-wrap: anywhere;
+}

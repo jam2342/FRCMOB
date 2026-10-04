@@ -17,7 +17,9 @@ from app.services.ratings.constants import (
 from app.services.ratings.helpers import _event_meta_number, _extract_first_number
 from app.services.season_config import (
     CURRENT_SEASON_YEAR,
+    REBUILT_SEASON_YEAR,
     rebuilt_active_hub_duration_sec as _rebuilt_active_hub_duration_sec,
+    require_known_season_rules,
 )
 
 def _manual_game_context() -> dict[str, Any]:
@@ -34,6 +36,10 @@ def _manual_game_context() -> dict[str, Any]:
         return context
 
     context["season_year"] = int(getattr(config, "season_year", CURRENT_SEASON_YEAR))
+    require_known_season_rules(
+        int(context["season_year"]),
+        feature="rating game context",
+    )
     context["config_version"] = str(getattr(config, "version", "unknown"))
     context["phases"] = {
         "auto_sec": float(getattr(config.phases, "auto_sec", DEFAULT_PHASES["auto_sec"])),
@@ -50,7 +56,7 @@ def _manual_game_context() -> dict[str, Any]:
             endgame_sec=phase_endgame_sec,
             include_post_deactivate_grace=True,
         )
-        if int(context["season_year"]) >= 2026
+        if int(context["season_year"]) == REBUILT_SEASON_YEAR
         else phase_teleop_sec
     )
 

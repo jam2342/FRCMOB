@@ -23,9 +23,11 @@ class ScoutingFreshnessTests(unittest.TestCase):
             match_times=[],
             analyzed_matches=0,
         )
-        self.assertTrue(payload["is_outdated"])
+        # Nothing scouted is its own state, not stale data.
+        self.assertFalse(payload["is_outdated"])
+        self.assertTrue(payload["unscouted"])
         self.assertTrue(any("Using 2025 season data" in message for message in payload["warnings"]))
-        self.assertTrue(any("No analyzed matches available for 2025." in message for message in payload["warnings"]))
+        self.assertTrue(any("No scouted matches for 2025 yet." in message for message in payload["warnings"]))
 
     def test_freshness_warns_for_old_data(self):
         days_old = max(2, int(settings.scouting_data_outdated_days) + 5)

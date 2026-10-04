@@ -11,6 +11,7 @@ import {
   GridIcon,
   ScoreboardIcon,
   SettingsIcon,
+  ShieldIcon,
   StarIcon,
   UsersIcon,
 } from '../components/ui/Icons';
@@ -18,7 +19,10 @@ import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { TabTutorialOverlay } from '../components/tutorial/TabTutorialOverlay';
+import { TourPrompt } from '../components/tutorial/TourPrompt';
+import { dismissTourPrompt, tourPromptDismissed } from '../tutorial/tourPrompt';
 import {
+  countSeenTutorials,
   hasSeenTutorial,
   markTutorialSeen,
   SCOUTING_TUTORIAL_PROGRESS_EVENT,
@@ -27,8 +31,7 @@ import { smartSearchEvents } from '../utils/eventSearch';
 import { CURRENT_SEASON_YEAR } from '../pages/centerUtils';
 import { matchesRegionFilter } from '../utils/regionFilters';
 import { resolveScopeFromPath } from './appUx';
-import { useContextStrip } from './useContextStrip';
-import { usePrefetchRoutes } from '../hooks/usePrefetchRoutes';
+import { buildContextSummary, useContextStrip } from './useContextStrip';
 import {
   type QuickJumpMode,
   type TutorialScope,
@@ -49,6 +52,7 @@ const NAV_ITEMS = [
   { to: '/home', label: 'Home', Icon: GridIcon },
   { to: '/events', label: 'Events', Icon: CalendarIcon },
   { to: '/scouting', label: 'Scouting', Icon: ClipboardCheckIcon },
+  { to: '/my-team', label: 'My Team', Icon: ShieldIcon },
   { to: '/match-center', label: 'Match Center', Icon: ScoreboardIcon },
   { to: '/team-center', label: 'Team Center', Icon: UsersIcon },
   { to: '/compare', label: 'Compare', Icon: DeltaIcon },
@@ -189,7 +193,6 @@ export function ProductShell() {
   const location = useLocation();
   const { online: isOnline, queueSize, isShowingOfflineData } = useOnlineStatus();
   const pwaInstall = usePwaInstall();
-  usePrefetchRoutes(location.pathname);
   const {
     jumpMode,
     jumpRegion,
@@ -286,9 +289,12 @@ export function ProductShell() {
   const contextEventLabel = useMemo(() => formatEventDisplay(contextSnapshot.eventKey), [contextSnapshot.eventKey]);
   const contextTeamLabel = useMemo(() => formatTeamDisplay(contextSnapshot.teamKey), [contextSnapshot.teamKey]);
   const contextStripSummary = useMemo(() => {
-    const matchLabel = contextSnapshot.matchKey ? contextMatchLabel : 'No match';
-    return `Event ${contextEventLabel} · Match ${matchLabel} · Team ${contextTeamLabel}`;
-  }, [contextEventLabel, contextMatchLabel, contextSnapshot.matchKey, contextTeamLabel]);
+    return buildContextSummary(
+      hasContextEvent ? contextEventLabel : '',
+      contextSnapshot.matchKey ? contextMatchLabel : '',
+      hasContextTeam ? contextTeamLabel : '',
+    );
+  }, [contextEventLabel, contextMatchLabel, contextSnapshot.matchKey, contextTeamLabel, hasContextEvent, hasContextTeam]);
 
   useEffect(() => {
     window.localStorage.setItem(FINDER_COLLAPSED_STORAGE, desktopFinderCollapsed ? '1' : '0');
@@ -549,6 +555,14 @@ export function ProductShell() {
     if (tutorialOpen) return;
     openTutorial(activeScope);
   }, [activeScope, activeTutorialSeen, openTutorial, tutorialAutoplay, tutorialOpen]);
+
+  // One quiet offer for brand-new visitors, never on a live scouting screen.
+  const [tourPromptHidden, setTourPromptHidden] = useState<boolean>(() => tourPromptDismissed() || countSeenTutorials() > 0);
+  const showTourPrompt = !tourPromptHidden && !tutorialAutoplay && !tutorialOpen && !isLiveScoutingRoute;
+  const closeTourPrompt = useCallback(() => {
+    dismissTourPrompt();
+    setTourPromptHidden(true);
+  }, []);
 
   return (
     <div
@@ -894,6 +908,15 @@ export function ProductShell() {
       />
 
       {tutorialOpen ? <TabTutorialOverlay key={tutorialScope} scope={tutorialScope} onClose={() => setTutorialOpen(false)} /> : null}
+      {showTourPrompt ? (
+        <TourPrompt
+          onStart={() => {
+            closeTourPrompt();
+            openTutorial(activeScope);
+          }}
+          onDismiss={closeTourPrompt}
+        />
+      ) : null}
 
       <BottomTabBar
         moreOpen={mobileMoreOpen}

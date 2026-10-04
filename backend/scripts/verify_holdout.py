@@ -5,7 +5,7 @@
 #   * before swapping deployed weights (compare new vs current honestly),
 #   * whenever pct_degraded or with_signal/findings in prod looks wrong.
 #
-# Uses the model the app would actually use (settings.video_tracking_yolo_model)
+# Uses the reference server weights (the on-device ONNX is exported from them)
 # unless --model is passed. Validates against
 # media/datasets/frc_einstein_2026_holdout_reviewed_yolo (locked, never
 # trained on).
@@ -27,10 +27,32 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
 
-HOLDOUT_YAML = (
-    BACKEND_ROOT
-    / "media/datasets/frc_einstein_2026_holdout_reviewed_yolo/dataset.yaml"
-)
+HOLDOUT_DIR = BACKEND_ROOT / "media/datasets/frc_einstein_2026_holdout_reviewed_yolo"
+HOLDOUT_YAML = HOLDOUT_DIR / "dataset.yaml"
+
+
+def _resolved_holdout_yaml() -> Path:
+    # dataset.yaml carries an absolute `path:` that goes stale every time the repo moves
+    # (Desktop/Robotics -> Desktop/FRCMOB -> Desktop/Projects/FRCMOB), and ultralytics
+    # then fails with a confusing "images not found". Rewrite it to wherever the holdout
+    # actually is, into a temp file, so the tripwire keeps working without editing the
+    # locked directory.
+    import tempfile
+
+    import yaml
+
+    with HOLDOUT_YAML.open(encoding="utf-8") as fh:
+        spec = yaml.safe_load(fh) or {}
+    if Path(str(spec.get("path", ""))).resolve() == HOLDOUT_DIR.resolve():
+        return HOLDOUT_YAML
+    spec["path"] = str(HOLDOUT_DIR)
+    tmp = Path(tempfile.gettempdir()) / "frcmob_holdout_resolved.yaml"
+    with tmp.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(spec, fh)
+    return tmp
+
+
+DEFAULT_MODEL = "media/models/frc_robot_detector_v2.pt"
 
 
 def main() -> int:
@@ -40,7 +62,7 @@ def main() -> int:
     parser.add_argument(
         "--model",
         default=None,
-        help="Override model path (default: settings.video_tracking_yolo_model).",
+        help=f"Override model path (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument("--imgsz", type=int, default=1280)
     parser.add_argument(
@@ -63,9 +85,7 @@ def main() -> int:
         )
         return 2
 
-    from app.core.config import settings
-
-    model_path = args.model or settings.video_tracking_yolo_model
+    model_path = args.model or DEFAULT_MODEL
     resolved = Path(model_path)
     if not resolved.is_absolute():
         resolved = BACKEND_ROOT / resolved
@@ -85,7 +105,13 @@ def main() -> int:
 
     model = YOLO(str(resolved))
     metrics = model.val(
-        data=str(HOLDOUT_YAML), imgsz=int(args.imgsz), verbose=False, plots=False
+        data=str(_resolved_holdout_yaml()),
+        imgsz=int(args.imgsz),
+        verbose=False,
+        plots=False,
+        # Square letterbox, matching how the model is actually served. Rectangular
+        # batching quietly reports a different number than either deployment gets.
+        rect=False,
     )
     box = metrics.box
     map50 = float(box.map50)

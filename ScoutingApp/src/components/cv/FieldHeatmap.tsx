@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { TeamHeatmapResponse } from '../../api';
 import { useCanvasTokens } from '../../hooks/useCanvasTokens';
+import { SEASON } from '../../config/season';
 import './FieldHeatmap.css';
 
 /* The field's own colours. The heat gradient below is deliberately NOT in here:
@@ -17,8 +18,8 @@ const FIELD_TOKENS = [
 /* ── constants ────────────────────────────────────────────────────── */
 
 /** Default FRC field dimensions (metres) — used as fallback. */
-const DEFAULT_FIELD_W = 16.541;
-const DEFAULT_FIELD_H = 8.0693;
+const DEFAULT_FIELD_W = SEASON.fieldLengthM;
+const DEFAULT_FIELD_H = SEASON.fieldWidthM;
 
 /** Heat colour stops — from cold (blue) to hot (red). */
 const HEAT_STOPS: [number, number, number, number][] = [

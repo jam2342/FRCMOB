@@ -19,11 +19,12 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from app.game_config.schema import ShiftSchedule
+from app.services.analysis.runs import best_on_device_run
 from app.services.game_config import load_game_config
 
 # On-device PWA sync identifiers (single source of truth). Tracks/runs produced by
-# the offline PWA are unauthenticated and best-effort, so authoritative server
-# views (shift-play, heatmaps, replayer) must be able to exclude them by these.
+# the offline PWA are separately provenance-tagged and provisional, so canonical
+# server views (shift-play, heatmaps, replayer) can exclude them by default.
 ON_DEVICE_SOURCE = "on_device_pwa_v1"  # nosec B105 - not a secret
 ON_DEVICE_ANALYSIS_VERSION = "on_device_pwa_v1"  # nosec B105 - not a secret
 
@@ -101,6 +102,33 @@ def _is_attack_eligible(active: str, alliance: str) -> bool:
     return active in (alliance, "both")
 
 
+def resolve_shift_schedule(
+    schedule: ShiftSchedule,
+    *,
+    shift1_active_alliance: str | None,
+) -> ShiftSchedule:
+    """Resolve the 2026 match-dependent alternating hub order without guessing."""
+    has_dynamic_windows = any(
+        window.active in {"shift_1", "opposite_shift_1"}
+        for window in schedule.windows
+    )
+    if not has_dynamic_windows:
+        return schedule
+    first = str(shift1_active_alliance or "").strip().lower()
+    if first not in {"red", "blue"}:
+        raise ValueError("shift1_active_alliance is required for a dynamic shift schedule")
+    opposite = _opponent(first)
+    windows = []
+    for window in schedule.windows:
+        active = window.active
+        if active == "shift_1":
+            active = first
+        elif active == "opposite_shift_1":
+            active = opposite
+        windows.append(window.model_copy(update={"active": active}))
+    return schedule.model_copy(update={"windows": windows})
+
+
 def _level_from_index(index: float) -> int:
     return max(1, min(5, int(round(1.0 + (4.0 * _clamp(index, 0.0, 1.0))))))
 
@@ -130,6 +158,29 @@ def _dwell_segments(points: Sequence[TrackPoint]) -> list[tuple[TrackPoint, floa
     return segments
 
 
+def _split_dwell_segments(
+    segments: Sequence[tuple[TrackPoint, float]],
+    schedule: ShiftSchedule,
+) -> list[tuple[TrackPoint, float, float]]:
+    split_segments: list[tuple[TrackPoint, float, float]] = []
+    for point, duration in segments:
+        cursor = point.time_sec
+        segment_end = point.time_sec + duration
+        while cursor < segment_end:
+            window = _window_for(schedule, cursor)
+            if window is None:
+                next_boundary = min(
+                    (candidate.start_sec for candidate in schedule.windows if candidate.start_sec > cursor),
+                    default=segment_end,
+                )
+                cursor = min(segment_end, next_boundary)
+                continue
+            piece_end = min(segment_end, window.end_sec)
+            split_segments.append((point, cursor, piece_end - cursor))
+            cursor = piece_end
+    return split_segments
+
+
 class _OpponentIndex:
     # Time-indexed opponent positions for nearest-in-time distance lookups.
     def __init__(self, points_by_team: dict[str, list[TrackPoint]], opponent_alliance: str, alliance_by_team: dict[str, str]):
@@ -146,9 +197,33 @@ class _OpponentIndex:
         for t in sorted(merged):
             self._times.append(t)
             self._coords.append(merged[t])
+        intervals: list[tuple[float, float]] = []
+        for team_key, points in points_by_team.items():
+            if alliance_by_team.get(team_key) != opponent_alliance:
+                continue
+            valid_points = [p for p in points if p.field_x is not None and p.field_y is not None]
+            for point, duration in _dwell_segments(valid_points):
+                intervals.append((point.time_sec, point.time_sec + duration))
+        self._coverage_intervals: list[tuple[float, float]] = []
+        for start, end in sorted(intervals):
+            if self._coverage_intervals and start <= self._coverage_intervals[-1][1]:
+                prior_start, prior_end = self._coverage_intervals[-1]
+                self._coverage_intervals[-1] = (prior_start, max(prior_end, end))
+            else:
+                self._coverage_intervals.append((start, end))
 
     def has_data(self) -> bool:
         return bool(self._times)
+
+    def overlap_duration(self, start_sec: float, end_sec: float) -> float:
+        overlap = 0.0
+        for start, end in self._coverage_intervals:
+            if end <= start_sec:
+                continue
+            if start >= end_sec:
+                break
+            overlap += max(0.0, min(end, end_sec) - max(start, start_sec))
+        return overlap
 
     def min_distance(self, time_sec: float, x: float, y: float) -> float | None:
         if not self._times:
@@ -198,6 +273,7 @@ def analyze_robot_shift_play(
     points_by_team: dict[str, list[TrackPoint]],
     alliance_by_team: dict[str, str],
     schedule: ShiftSchedule | None = None,
+    shift1_active_alliance: str | None = None,
     field_length_m: float | None = None,
     field_width_m: float | None = None,
 ) -> RobotShiftPlay:
@@ -205,6 +281,10 @@ def analyze_robot_shift_play(
         schedule = load_game_config().shift_schedule
     if schedule is None:
         raise ValueError("shift_schedule is not configured for this season")
+    schedule = resolve_shift_schedule(
+        schedule,
+        shift1_active_alliance=shift1_active_alliance,
+    )
     if field_length_m is None or field_width_m is None:
         cfg_field = load_game_config().field
         field_length_m = field_length_m or float(cfg_field.length_m)
@@ -217,7 +297,7 @@ def analyze_robot_shift_play(
     defense_zone = getattr(role.defense, alliance)  # == opponent's scoring zone
 
     points = sorted(points_by_team.get(team_key, []), key=lambda p: p.time_sec)
-    segments = _dwell_segments(points)
+    segments = _split_dwell_segments(_dwell_segments(points), schedule)
 
     # Eligible window-time budgets (denominators for coverage/fractions).
     attack_eligible_sec = sum(
@@ -244,6 +324,7 @@ def analyze_robot_shift_play(
     opponent_zone_sec = 0.0
     shadow_sec = 0.0
     tracked_opp_sec = 0.0
+    simultaneous_opp_sec = 0.0
     engaged_sec = 0.0
     engaged_opp_scoring_sec = 0.0
     unengaged_sec = 0.0
@@ -254,8 +335,8 @@ def analyze_robot_shift_play(
 
     per_shift: dict[str, dict[str, Any]] = {}
 
-    for point, dt in segments:
-        window = _window_for(schedule, point.time_sec)
+    for point, segment_start, dt in segments:
+        window = _window_for(schedule, segment_start)
         if window is None:
             continue
         bucket = per_shift.setdefault(
@@ -289,18 +370,19 @@ def analyze_robot_shift_play(
 
         if opponent_active:
             tracked_opp_sec += dt
+            simultaneous_opp_sec += opp_index.overlap_duration(segment_start, segment_start + dt)
             _bin_point(defense_grid, point.field_x, point.field_y, field_length_m, field_width_m)
             in_opp_zone = point.zone_key == defense_zone
             if in_opp_zone:
                 opponent_zone_sec += dt
             shadowing = False
             if point.field_x is not None and point.field_y is not None:
-                dist = opp_index.min_distance(point.time_sec, point.field_x, point.field_y)
+                dist = opp_index.min_distance(segment_start, point.field_x, point.field_y)
                 if dist is not None and dist <= SHADOW_DISTANCE_M:
                     shadowing = True
                     shadow_sec += dt
             engaged = in_opp_zone or shadowing
-            opp_scoring = opp_scoring_presence.present(point.time_sec)
+            opp_scoring = opp_scoring_presence.present(segment_start)
             if engaged:
                 engaged_sec += dt
                 if opp_scoring:
@@ -331,14 +413,18 @@ def analyze_robot_shift_play(
         disruption = 0.0
     defense_index = (0.4 * opp_zone_frac) + (0.3 * shadow_frac) + (0.3 * disruption)
     defense_level = _level_from_index(defense_index)
-    defense_assessable = opponent_active_sec > 0 and tracked_opp_sec > 0
+    defense_assessable = (
+        opponent_active_sec > 0
+        and simultaneous_opp_sec > 0
+    )
     opp_coverage = _clamp(tracked_opp_sec / opponent_active_sec) if opponent_active_sec > 0 else 0.0
+    simultaneous_opp_coverage = (
+        _clamp(simultaneous_opp_sec / opponent_active_sec) if opponent_active_sec > 0 else 0.0
+    )
     # Defense is structurally less certain (needs simultaneous opponent tracking).
     defense_confidence = 0.0
     if defense_assessable:
-        base = 0.3 + 0.45 * opp_coverage
-        if not opp_index.has_data():
-            base = min(base, 0.5)  # no opponent tracks -> shadow/disruption blind
+        base = 0.3 + 0.45 * simultaneous_opp_coverage
         defense_confidence = round(_clamp(base * 0.85, 0.0, 0.9), 4)
 
     # ── Shift breakdown ──────────────────────────────────────────────
@@ -394,8 +480,10 @@ def analyze_robot_shift_play(
             "opponent_active_sec": opponent_active_sec,
             "tracked_attack_sec": round(tracked_attack_sec, 2),
             "tracked_opponent_sec": round(tracked_opp_sec, 2),
+            "simultaneous_opponent_sec": round(simultaneous_opp_sec, 2),
             "attack_coverage_0_1": round(attack_coverage, 4),
             "opponent_coverage_0_1": round(opp_coverage, 4),
+            "simultaneous_opponent_coverage_0_1": round(simultaneous_opp_coverage, 4),
             "opponent_tracks_available": opp_index.has_data(),
         },
     )
@@ -406,12 +494,21 @@ def analyze_match_shift_play(
     points_by_team: dict[str, list[TrackPoint]],
     alliance_by_team: dict[str, str],
     schedule: ShiftSchedule | None = None,
+    shift1_active_alliance: str | None = None,
     field_length_m: float | None = None,
     field_width_m: float | None = None,
     only_team_key: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     # only_team_key restricts the per-robot analysis to one team while still passing
     # the full points/alliance context (the opponent index needs every robot's tracks).
+    if schedule is None:
+        schedule = load_game_config().shift_schedule
+    if schedule is None:
+        raise ValueError("shift_schedule is not configured for this season")
+    schedule = resolve_shift_schedule(
+        schedule,
+        shift1_active_alliance=shift1_active_alliance,
+    )
     results: dict[str, dict[str, Any]] = {}
     for team_key, alliance in alliance_by_team.items():
         if alliance not in ("red", "blue"):
@@ -482,7 +579,7 @@ def _normalized_heatmap_payload(
 
 
 def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict[str, Any]:
-    # Aggregate shift-play across a team's analyzed matches at an event: summed
+    # Aggregate shift-play across a team's reviewed phone recordings at an event: summed
     # attack/defense heat maps and coverage-weighted offense/defense levels. Powers
     # the Team Center "Attack vs Defense" view. Lazy/on-demand (loads tracks per run).
     from app.db import models  # local import to keep the engine import-light
@@ -515,21 +612,20 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
     sample_matches = 0
 
     for match_key in match_keys:
-        run = (
-            db.query(models.AnalysisRun)
-            .filter(
-                models.AnalysisRun.match_key == match_key,
-                models.AnalysisRun.status == "completed",
-                # never let an unauthenticated on-device run shadow the real
-                # video-analysis run in this authoritative team view
-                models.AnalysisRun.version != ON_DEVICE_ANALYSIS_VERSION,
-            )
-            .order_by(models.AnalysisRun.created_at.desc(), models.AnalysisRun.id.desc())
-            .first()
-        )
-        if run is None:
+        run_row = best_on_device_run(db, match_key=match_key, team_key=normalized_team_key)
+        if run_row is None:
             continue
-        results = analyze_run_shift_play(db, run_id=run.id, only_team_key=normalized_team_key)
+        run, _session = run_row
+        try:
+            results = analyze_run_shift_play(
+                db,
+                run_id=run.id,
+                only_team_key=normalized_team_key,
+            )
+        except ValueError:
+            # Official truth is not always available yet. Unknown shift order is
+            # omitted rather than silently treating Red as active first.
+            continue
         result = results.get(normalized_team_key)
         if result is None:
             continue
@@ -627,9 +723,28 @@ def analyze_run_shift_play(db: Any, *, run_id: int, only_team_key: str | None = 
         for team_key, alliance in alliance_rows
         if team_key and alliance
     }
+    session = (
+        db.query(models.OnDeviceSession)
+        .filter(models.OnDeviceSession.analysis_run_id == run_id)
+        .first()
+    )
+    shift1_active_alliance = (
+        str(session.shift1_active_alliance or "").strip().lower() if session is not None else ""
+    ) or None
+    if shift1_active_alliance not in {"red", "blue"}:
+        from app.services.scoring.breakdown import (
+            _fetch_match_payload_from_tba,
+            _infer_rebuilt_shift1_active_alliance,
+        )
+
+        payload = _fetch_match_payload_from_tba(str(run.match_key))
+        shift1_active_alliance = (
+            _infer_rebuilt_shift1_active_alliance(payload)[0] if isinstance(payload, dict) else None
+        )
     points_by_team = points_by_team_from_tracks(tracks)
     return analyze_match_shift_play(
         points_by_team=points_by_team,
         alliance_by_team=alliance_by_team,
+        shift1_active_alliance=shift1_active_alliance,
         only_team_key=only_team_key,
     )

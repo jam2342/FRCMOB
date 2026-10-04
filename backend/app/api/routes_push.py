@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.db import models
 from app.db.session import get_db
 from app.services.push.sender import push_configured, push_unavailable_reason, send_web_push
+from app.services.workspaces import resolve_workspace_actor
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ def _serialize_subscription(row: models.PushSubscription) -> dict[str, Any]:
         "endpoint": row.endpoint,
         "event_key": row.event_key,
         "team_keys": row.team_keys if isinstance(row.team_keys, list) else [],
-        "prefs": row.prefs if isinstance(row.prefs, dict) else {},
+        # member_key binds alerts to a member server-side; it never goes back out.
+        "prefs": {k: v for k, v in (row.prefs or {}).items() if k != "member_key"} if isinstance(row.prefs, dict) else {},
         "enabled": bool(row.enabled),
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -87,8 +89,19 @@ def get_public_key():
         "public_key": str(settings.vapid_public_key).strip(),
     }
 
+def _bind_shift_alerts(prefs: dict[str, Any], request: Request, db: Session) -> dict[str, Any]:
+    # Shift alerts reveal a team's scouting assignments, so they belong to a current
+    # member of the workspace that owns the room, under that member's own name.
+    if not prefs["shift_alerts"] and not prefs["room_key"]:
+        return prefs
+    actor = resolve_workspace_actor(request, db)
+    room = db.get(models.ScoutingRoom, prefs["room_key"]) if prefs["room_key"] else None
+    if actor is None or room is None or room.workspace_id != actor.workspace_id:
+        raise HTTPException(status_code=403, detail="Shift alerts need your team workspace and one of its rooms.")
+    return prefs | {"scout_profile": actor.member.display_name, "member_key": actor.member.member_key}
+
 @router.post("/subscribe")
-def subscribe(payload: PushSubscribeRequest, db: Session = Depends(get_db)):
+def subscribe(payload: PushSubscribeRequest, request: Request, db: Session = Depends(get_db)):
     endpoint = str(payload.endpoint or "").strip()
     if not endpoint.startswith("https://"):
         raise HTTPException(status_code=400, detail="Invalid push endpoint")
@@ -102,6 +115,7 @@ def subscribe(payload: PushSubscribeRequest, db: Session = Depends(get_db)):
     if event_key and not _EVENT_KEY_RE.match(event_key):
         raise HTTPException(status_code=400, detail="Invalid event key")
 
+    prefs = _bind_shift_alerts(_normalize_prefs(payload.prefs), request, db)
     row = _load_by_endpoint(db, endpoint)
     if row is None:
         row = models.PushSubscription(
@@ -109,7 +123,7 @@ def subscribe(payload: PushSubscribeRequest, db: Session = Depends(get_db)):
             keys={"p256dh": p256dh, "auth": auth},
             event_key=event_key,
             team_keys=_normalize_team_keys(payload.team_keys),
-            prefs=_normalize_prefs(payload.prefs),
+            prefs=prefs,
             enabled=True,
             notified={},
         )
@@ -118,7 +132,7 @@ def subscribe(payload: PushSubscribeRequest, db: Session = Depends(get_db)):
         row.keys = {"p256dh": p256dh, "auth": auth}
         row.event_key = event_key
         row.team_keys = _normalize_team_keys(payload.team_keys)
-        row.prefs = _normalize_prefs(payload.prefs)
+        row.prefs = prefs
         row.enabled = True
         row.failure_count = 0
     db.commit()

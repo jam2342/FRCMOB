@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import websockets
@@ -38,6 +39,15 @@ class BackendProcess:
         env = os.environ.copy()
         env.update(
             {
+                # The smoke process must not inherit a developer's production-like
+                # APP_ENV from a local .env; this is an isolated test deployment.
+                "APP_ENV": "test",
+                # Both independent processes must validate the same scoped room
+                # tokens. Do not rely on per-process development fallbacks.
+                "ADMIN_SESSION_TOKEN_SECRET": env.get(
+                    "ADMIN_SESSION_TOKEN_SECRET",
+                    "multi-instance-smoke-shared-signing-secret",
+                ),
                 "DATABASE_URL": env.get(
                     "DATABASE_URL",
                     "postgresql+psycopg://postgres:postgres@localhost:5432/frc",
@@ -147,18 +157,73 @@ async def run() -> None:
 
         room_key = f"e2e-{secrets.token_hex(4)}"
         async with httpx.AsyncClient(timeout=8.0) as client:
+            # Rooms belong to a team workspace; each scout joins it with the code
+            # and acts under their own workspace access.
+            team = await client.post(
+                f"{base_a}/workspaces",
+                json={"name": f"smoke {room_key}", "display_name": "SmokeTest"},
+            )
+            team.raise_for_status()
+            join_code = team.json()["join_code"]
+            workspace_by_profile = {"SmokeTest": team.json()["access"]["token"]}
+            for scout_profile in ("ScoutA", "ScoutB"):
+                member = await client.post(
+                    f"{base_b}/workspaces/join",
+                    json={"join_code": join_code, "display_name": scout_profile},
+                )
+                member.raise_for_status()
+                workspace_by_profile[scout_profile] = member.json()["access"]["token"]
+
             created = await client.post(
                 f"{base_a}/scouting/rooms",
+                headers={"X-Workspace-Access": workspace_by_profile["SmokeTest"]},
                 json={
                     "room_key": room_key,
                     "title": "multi instance e2e",
                     "scout_profile": "SmokeTest",
+                    "create_if_missing": True,
                 },
             )
             created.raise_for_status()
+            access_by_profile: dict[str, dict[str, str]] = {}
+            # ScoutB joins on A and connects its socket to B: under several workers the
+            # join and the socket routinely land on different processes.
+            for scout_profile, join_base_url in (
+                ("ScoutA", base_a),
+                ("ScoutB", base_a),
+            ):
+                joined = await client.post(
+                    f"{join_base_url}/scouting/rooms",
+                    headers={"X-Workspace-Access": workspace_by_profile[scout_profile]},
+                    json={
+                        "room_key": room_key,
+                        "scout_profile": scout_profile,
+                    },
+                )
+                joined.raise_for_status()
+                access = joined.json().get("access") or {}
+                token = str(access.get("room_access_token") or "")
+                header = str(access.get("header") or "X-Scouting-Room-Access")
+                if not token:
+                    raise RuntimeError(f"Room access token missing for {scout_profile}")
+                access_by_profile[scout_profile] = {
+                    "token": token,
+                    "header": header,
+                    "workspace": workspace_by_profile[scout_profile],
+                }
 
-        ws_a_url = f"ws://{HOST}:{PORT_A}/scouting/rooms/{room_key}/ws?scout_profile=ScoutA&client_id=client-a"
-        ws_b_url = f"ws://{HOST}:{PORT_B}/scouting/rooms/{room_key}/ws?scout_profile=ScoutB&client_id=client-b"
+        ws_a_url = (
+            f"ws://{HOST}:{PORT_A}/scouting/rooms/{room_key}/ws"
+            f"?scout_profile=ScoutA&client_id=client-a"
+            f"&room_access={quote(access_by_profile['ScoutA']['token'], safe='')}"
+            f"&workspace_access={quote(access_by_profile['ScoutA']['workspace'], safe='')}"
+        )
+        ws_b_url = (
+            f"ws://{HOST}:{PORT_B}/scouting/rooms/{room_key}/ws"
+            f"?scout_profile=ScoutB&client_id=client-b"
+            f"&room_access={quote(access_by_profile['ScoutB']['token'], safe='')}"
+            f"&workspace_access={quote(access_by_profile['ScoutB']['workspace'], safe='')}"
+        )
 
         async with AsyncExitStack() as stack:
             ws_a = await stack.enter_async_context(websockets.connect(ws_a_url, open_timeout=8.0))
@@ -183,6 +248,11 @@ async def run() -> None:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 save_a = await client.post(
                     f"{base_a}/scouting/rooms/{room_key}/entries",
+                    headers={
+                        access_by_profile["ScoutA"]["header"]:
+                            access_by_profile["ScoutA"]["token"],
+                        "X-Workspace-Access": access_by_profile["ScoutA"]["workspace"],
+                    },
                     json={
                         "scout_profile": "ScoutA",
                         "entry": {
@@ -214,6 +284,11 @@ async def run() -> None:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 save_b = await client.post(
                     f"{base_b}/scouting/rooms/{room_key}/entries",
+                    headers={
+                        access_by_profile["ScoutB"]["header"]:
+                            access_by_profile["ScoutB"]["token"],
+                        "X-Workspace-Access": access_by_profile["ScoutB"]["workspace"],
+                    },
                     json={
                         "scout_profile": "ScoutB",
                         "entry": {
@@ -252,6 +327,7 @@ async def run() -> None:
                         {"base_url": base_b, "port": PORT_B},
                     ],
                     "checks": [
+                        "join_on_a_socket_on_b",
                         "instance_a_local_broadcast",
                         "instance_b_receives_a",
                         "instance_b_local_broadcast",

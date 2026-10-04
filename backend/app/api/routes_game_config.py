@@ -6,7 +6,7 @@ from app.core.security import require_write_access
 from app.db import models
 from app.db.session import get_db
 from app.services.game_config import classify_point, get_field_layout_variant, load_game_config, reload_game_config
-from app.services.vision.perimeter_resolver import resolve_perimeter_type_for_event_profile
+from app.services.perimeter_resolver import resolve_perimeter_type_for_event_profile
 
 router = APIRouter(prefix="/game-config", tags=["game-config"])
 

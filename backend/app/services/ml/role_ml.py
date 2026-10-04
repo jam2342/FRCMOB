@@ -125,9 +125,9 @@ def rebuild_role_signal_feature_snapshots(
     if not event_keys:
         return {"rows_written": 0, "skipped_no_labels": 0}
 
-    from app.services.ml.shadow import _latest_year, _split_tag_for_year
+    from app.services.ml.shadow import holdout_event_keys, split_tag_for_event
 
-    latest_year = _latest_year(year_map)
+    holdout_keys = holdout_event_keys(db, event_keys)
     target_signals = signal_names or ROLE_SIGNAL_NAMES
     rows_written = 0
     skipped_no_labels = 0
@@ -145,7 +145,8 @@ def rebuild_role_signal_feature_snapshots(
         )
 
         for rating in rating_rows:
-            team_key = str(rating.team_key or "").strip().lower()
+            # Keep the stored key for the foreign key: TBA writes B teams as "frc4788B".
+            team_key = str(rating.team_key or "").strip()
             if not team_key:
                 continue
 
@@ -161,7 +162,7 @@ def rebuild_role_signal_feature_snapshots(
                 continue
 
             feature_vector = build_role_signal_feature_vector(rating, event_year=season)
-            split_tag = _split_tag_for_year(year_map.get(event_key), latest_year)
+            split_tag = split_tag_for_event(event_key, holdout_keys)
 
             for signal_name in target_signals:
                 signal_key = f"{signal_name}_signal"

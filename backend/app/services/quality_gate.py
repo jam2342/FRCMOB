@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.core.config import settings
+from app.services.analysis.evidence import evidence_rejection_reason
 from app.services.utils import _clamp
 
 
@@ -32,6 +33,10 @@ def evaluate_summary_quality_gate(
         min_detections,
     )
     safe_summary = summary if isinstance(summary, dict) else {}
+
+    evidence_reason = evidence_rejection_reason(safe_summary)
+    if evidence_reason:
+        return False, evidence_reason, None, None
 
     throughput_metrics = safe_summary.get("throughput_metrics")
     throughput_metrics = throughput_metrics if isinstance(throughput_metrics, dict) else {}

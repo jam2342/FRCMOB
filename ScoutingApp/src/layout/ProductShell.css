@@ -89,6 +89,32 @@
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(250px, 320px);
 }
 
+/* This rule is unlayered, so it keeps three columns all the way down to
+   1120px and beats the layered 1fr at <=1420px. The layered file's `order`
+   rules (feed first, for the stacked layout) still applied between 1121 and
+   1420px, which put the match feed in the 300px left track and today's
+   events in the wide middle one — the feed's filter row clipped and, on a
+   match day, overlapped the next column. Keep DOM order while three
+   columns are showing. */
+/* No Today's Events column (nothing to list): the feed takes its track. */
+.home-fotmob-layout:not(:has(> .home-fotmob-left)) {
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
+}
+
+@media (max-width: 1120px) {
+  .home-fotmob-layout:not(:has(> .home-fotmob-left)) {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1121px) {
+  .product-shell .home-fotmob-left,
+  .product-shell .home-fotmob-center,
+  .product-shell .home-fotmob-right {
+    order: 0;
+  }
+}
+
 @media (max-width: 1120px) {
   .home-fotmob-layout {
     grid-template-columns: 1fr;
@@ -545,6 +571,9 @@
 }
 
 .ps-context-current {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -554,6 +583,7 @@
 /* The collapse toggle now lives at the end of the row it collapses, rather
    than on a header line of its own. */
 .ps-context-current > .ps-context-toggle-btn {
+  flex: none;
   margin-left: auto;
 }
 
@@ -743,6 +773,16 @@ button.ps-context-chip:disabled {
     min-height: 20px;
     min-width: 24px;
     padding: 0 5px;
+    position: relative;
+  }
+
+  /* The collapsed strip is deliberately one thin line, which made its only
+     control a 24x20 target. Grow the hit area to 44px without growing the
+     strip. */
+  .ps-context-strip.collapsed .ps-context-toggle-btn::after {
+    content: '';
+    position: absolute;
+    inset: -12px -10px;
   }
 
   .ps-context-strip.collapsed .ps-context-summary {
@@ -1630,8 +1670,23 @@ button.ps-context-chip:disabled {
 }
 
 @media (max-width: 700px) {
-  .product-shell .home-fotmob-toolbar-actions > * {
-    flex: 1 1 calc(50% - 4px);
+  /* One even row across the card. The icon-only, no-shrink, 50%-basis rules above
+     stacked into a row wider than the phone, which zoomed the whole page out. */
+  .product-shell .home-fotmob-toolbar-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .product-shell .home-fotmob-toolbar-actions .home-mini-tab-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+
+  .product-shell .home-fotmob-toolbar-actions .home-mini-tab-btn:first-child {
+    flex-grow: 1.5;
   }
 
   .product-shell .home-event-search-trigger {

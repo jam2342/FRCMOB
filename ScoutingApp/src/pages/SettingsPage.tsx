@@ -100,7 +100,9 @@ export function SettingsPage() {
   const [tutorialAutoplay, setTutorialAutoplay] = useState<boolean>(initial.tutorialAutoplay);
 
   const [statusText, setStatusText] = useState('Settings are synced locally.');
-  const [lastSavedAt, setLastSavedAt] = useState<number>(() => Date.now());
+  // statusText only renders in the admin panel, so these buttons used to
+  // clear things with no visible sign anything happened.
+  const [maintenanceNote, setMaintenanceNote] = useState('');
   const [tutorialSeenCount, setTutorialSeenCount] = useState<number>(() => countSeenTutorials());
   const [healthStatus, setHealthStatus] = useState<string>('Checking API...');
   const [publicReadonlyMode, setPublicReadonlyMode] = useState<boolean | null>(null);
@@ -243,6 +245,12 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    if (!adminModeEnabled) {
+      setOpsDashboard(null);
+      setOpsErrorText('');
+      setOpsLoading(false);
+      return;
+    }
     let cancelled = false;
     setOpsLoading(true);
     setOpsErrorText('');
@@ -262,7 +270,7 @@ export function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [adminModeEnabled]);
 
   function persistSettings(partial?: {
     theme?: ThemeMode;
@@ -284,7 +292,6 @@ export function SettingsPage() {
     });
     applyBodySettingsClasses(next);
     emitSettingsUpdated(next);
-    setLastSavedAt(Date.now());
     setStatusText('Settings saved.');
   }
 
@@ -296,11 +303,6 @@ export function SettingsPage() {
   function updateDensity(next: DensityMode) {
     setDensityMode(next);
     persistSettings({ density: next });
-  }
-
-  function updateUiMode(next: UIMode) {
-    setUiMode(next);
-    persistSettings({ uiMode: next });
   }
 
   function updateQuickJumpMode(next: QuickJumpMode) {
@@ -346,7 +348,6 @@ export function SettingsPage() {
         setAdminAuthStatus('Admin session created successfully.');
         setAdminAuthStatusTone('success');
         setStatusText('Admin mode enabled with short-lived session token.');
-        setLastSavedAt(Date.now());
         emitSettingsUpdated();
         refreshAdminSessionState();
       } else {
@@ -387,7 +388,6 @@ export function SettingsPage() {
     setAdminAuthStatus('Admin mode disabled.');
     setAdminAuthStatusTone('muted');
     setStatusText('Admin mode disabled for this browser.');
-    setLastSavedAt(Date.now());
     emitSettingsUpdated();
   }
 
@@ -400,7 +400,6 @@ export function SettingsPage() {
     setAdminAuthStatus('Saved admin session token removed.');
     setAdminAuthStatusTone('muted');
     setStatusText('Saved admin session token removed from this browser.');
-    setLastSavedAt(Date.now());
     emitSettingsUpdated();
   }
 
@@ -409,7 +408,7 @@ export function SettingsPage() {
     window.localStorage.removeItem(FAVORITES_KEYS.teams);
     refreshDiagnostics();
     setStatusText('Favorite teams/events cleared.');
-    setLastSavedAt(Date.now());
+    setMaintenanceNote('Favorites cleared.');
   }
 
   function clearCompareCache() {
@@ -417,7 +416,7 @@ export function SettingsPage() {
     window.localStorage.removeItem(COMPARE_KEYS.teams);
     refreshDiagnostics();
     setStatusText('Compare cache cleared.');
-    setLastSavedAt(Date.now());
+    setMaintenanceNote('Saved comparisons cleared.');
   }
 
   function resetTutorialProgress() {
@@ -425,7 +424,6 @@ export function SettingsPage() {
     clearTutorialChecklist();
     refreshTutorialProgress();
     setStatusText('Tutorial progress cleared. Tutorials can autoplay again.');
-    setLastSavedAt(Date.now());
   }
 
   function resetDefaults() {
@@ -436,7 +434,7 @@ export function SettingsPage() {
       quickJumpMode: 'auto',
       quickJumpRegion: 'all',
       liveRefreshSec: 60,
-      tutorialAutoplay: true,
+      tutorialAutoplay: false,
     });
     setThemeMode(defaults.theme);
     setDensityMode(defaults.density);
@@ -448,7 +446,7 @@ export function SettingsPage() {
     applyBodySettingsClasses(defaults);
     emitSettingsUpdated(defaults);
     setStatusText('Settings reset to defaults.');
-    setLastSavedAt(Date.now());
+    setMaintenanceNote('Settings reset to defaults.');
   }
   const statusToneClass =
     adminAuthStatusTone === 'success'
@@ -461,10 +459,7 @@ export function SettingsPage() {
 
   return (
     <div className={styles.layout}>
-      <SurfaceCard
-        title="Appearance"
-        right={<Chip>Saved {relativeFromTimestamp(lastSavedAt)}</Chip>}
-      >
+      <SurfaceCard title="Appearance">
         <CardBody>
           <div className={styles.optionGrid}>
             <FieldSelect
@@ -492,15 +487,8 @@ export function SettingsPage() {
       <SurfaceCard title="Workflow Defaults">
         <CardBody>
           <div className={styles.optionGrid}>
-            <FieldSelect
-              label="UI Mode"
-              value={uiMode}
-              onChange={(event) => updateUiMode(event.target.value as UIMode)}
-            >
-              <option value="full">Full Diagnostics</option>
-              <option value="simple">Simple</option>
-            </FieldSelect>
-
+            {/* "UI Mode" (Full Diagnostics / Simple) was removed: it was saved
+                but nothing in the app ever read it. */}
             <FieldSelect
               label="Quick Search Default"
               value={quickJumpMode}
@@ -536,7 +524,7 @@ export function SettingsPage() {
           <FieldStepper
             label="Live Refresh Interval"
             name="live refresh interval"
-            hint="Seconds between polls. Longer intervals survive venue wifi better."
+            hint="How often live data refreshes, in seconds. Slower refreshes cope better with venue wifi."
             value={liveRefreshSec}
             onValueChange={updateLiveRefreshSec}
             min={5}
@@ -635,16 +623,6 @@ export function SettingsPage() {
             <>
               <CardGrid dense>
                 <Stat label="Alerts" value={opsDashboard.alert_count} tone={opsDashboard.alert_count > 0 ? 'danger' : 'success'} />
-                <Stat label="Queue Pending" value={opsDashboard.queue.counts?.pending_total ?? 'N/A'} />
-                <Stat
-                  label="Queue Pressure"
-                  value={
-                    typeof opsDashboard.queue.pressure_0_1 === 'number'
-                      ? Math.round(opsDashboard.queue.pressure_0_1 * 100)
-                      : 'N/A'
-                  }
-                  unit={typeof opsDashboard.queue.pressure_0_1 === 'number' ? '%' : undefined}
-                />
                 <Stat
                   label="Regional Auto"
                   value={
@@ -725,7 +703,6 @@ export function SettingsPage() {
               </CardGrid>
               <div className={styles.chipRow}>
                 <Chip>Generated: {relativeFromTimestamp(Date.parse(opsDashboard.generated_at))}</Chip>
-                <Chip>Queue cap: {opsDashboard.queue.caps?.max_pending_jobs ?? 'N/A'}</Chip>
                 <Chip>Automation season: {opsDashboard.automation.season}</Chip>
               </div>
             </>
@@ -781,13 +758,13 @@ export function SettingsPage() {
               Clear Favorites
             </Button>
             <Button variant="quiet" onClick={clearCompareCache}>
-              Clear Compare Cache
+              Clear Saved Comparisons
             </Button>
             <Button variant="danger" onClick={resetDefaults}>
               Reset Defaults
             </Button>
           </div>
-          <p className={styles.note}>Only clears local browser state.</p>
+          <p className={styles.note} role="status">{maintenanceNote || 'These only affect this device.'}</p>
         </CardBody>
       </SurfaceCard>
 

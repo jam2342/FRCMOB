@@ -46,6 +46,44 @@
   margin-top: var(--space-3);
 }
 
+.weights {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-2);
+}
+
+.weights summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* A flex summary drops the browser's marker; without one this didn't read as
+   something that opens. */
+.weights summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--motion-fast) ease;
+}
+
+.weights[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.weights summary::-webkit-details-marker {
+  display: none;
+}
+
 .paramGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));

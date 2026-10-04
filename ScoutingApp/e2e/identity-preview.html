@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { TrackIdentityList } from '/src/features/onDevice/TrackIdentityList.tsx';
+import '/src/index.css';
+import '/src/features/onDevice/OnDeviceRun.css';
+const summaries = Array.from({ length: 24 }, (_, i) => ({ trackId: i + 1, pointCount: (i + 1) * 3, startSec: i * 4, endSec: i * 4 + 3, dominantZone: 'neutral_zone', alliance: i % 3 === 0 ? null : i % 3 === 1 ? 'red' : 'blue', suggestedTeam: null }));
+const teams = [{ teamKey: 'frc254', alliance: 'red' }, { teamKey: 'frc1690', alliance: 'blue' }];
+function App() { const [identities, setIdentities] = useState({}); return React.createElement('main', { className: 'on-device-run odr-section', style: { padding: '16px', maxWidth: '900px', margin: 'auto' } }, React.createElement('h1', {}, 'Identify robots'), React.createElement(TrackIdentityList, { summaries, identities, teams, photoUrls: {}, onAssign: (id, team) => setIdentities(old => ({ ...old, [id]: team })) })); }
+createRoot(document.getElementById('root')).render(React.createElement(App));
+</script></body></html>

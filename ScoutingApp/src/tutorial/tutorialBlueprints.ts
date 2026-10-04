@@ -14,31 +14,16 @@ export type TutorialWalkthroughStep = {
   placement?: TutorialStepPlacement;
 };
 
-type TutorialChecklistItem = {
-  id: string;
-  title: string;
-  detail: string;
-  stepId?: string;
-};
-
 export type TutorialBlueprint = {
   scope: TutorialScope;
   title: string;
-  subtitle: string;
-  icon: string;
-  estimatedMinutes: number;
   walkthrough: TutorialWalkthroughStep[];
-  checklist: TutorialChecklistItem[];
-  adoptionPlaybook: string[];
 };
 
 const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
   home: {
     scope: 'home',
     title: 'Home Command Workflow',
-    subtitle: 'Run Home as a live operations board, not a static dashboard.',
-    icon: 'HOME',
-    estimatedMinutes: 8,
     walkthrough: [
       {
         id: 'home-toolbar',
@@ -136,50 +121,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
     ],
-    checklist: [
-      {
-        id: 'home-set-context',
-        title: 'Set event context before opening other tabs',
-        detail: 'Ensures Events, Match Center, Team Center, and Compare stay aligned.',
-        stepId: 'home-toolbar',
-      },
-      {
-        id: 'home-triage-live-event',
-        title: 'Choose active event using live count and freshness',
-        detail: 'Avoids routing the team to stale event context.',
-        stepId: 'home-active-events',
-      },
-      {
-        id: 'home-open-live-match',
-        title: 'Open at least one live match from Home feed',
-        detail: 'Proves drill-down flow works before a high-pressure block.',
-        stepId: 'home-live-feed',
-      },
-      {
-        id: 'home-open-team-from-rankings',
-        title: 'Open at least one team from leaderboard',
-        detail: 'Forces rank-to-analysis flow instead of static reading.',
-        stepId: 'home-leaderboard',
-      },
-      {
-        id: 'home-calendar-review',
-        title: 'Review monthly calendar and Date TBA queue',
-        detail: 'Prevents missed event planning and travel surprises.',
-        stepId: 'home-calendar',
-      },
-    ],
-    adoptionPlaybook: [
-      'Shift lead sets context and confirms feed freshness at start.',
-      'Analysts use Home to route, not to finalize decisions.',
-      'End-of-shift handoff includes current event, next match block, and open risks.',
-    ],
   },
   events: {
     scope: 'events',
     title: 'Events Intelligence Workflow',
-    subtitle: 'Move from event discovery to action-ready event context.',
-    icon: 'EVT',
-    estimatedMinutes: 10,
     walkthrough: [
       {
         id: 'events-finder',
@@ -277,50 +222,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
     ],
-    checklist: [
-      {
-        id: 'events-search-run',
-        title: 'Run finder query and apply region filter',
-        detail: 'Builds repeatable event selection behavior for every scout.',
-        stepId: 'events-finder',
-      },
-      {
-        id: 'events-select-event',
-        title: 'Select event from result card metadata',
-        detail: 'Prevents wrong-year/wrong-location mistakes.',
-        stepId: 'events-results',
-      },
-      {
-        id: 'events-calendar-check',
-        title: 'Review monthly calendar and Date TBA list',
-        detail: 'Ensures future workload and planning are visible.',
-        stepId: 'events-calendar',
-      },
-      {
-        id: 'events-tab-pass',
-        title: 'Visit Overview, Schedule, and Teams tabs',
-        detail: 'Confirms analysts understand tab responsibilities.',
-        stepId: 'events-tabs',
-      },
-      {
-        id: 'events-open-match',
-        title: 'Open at least one match from schedule',
-        detail: 'Validates route into Match Center under real context.',
-        stepId: 'events-schedule',
-      },
-    ],
-    adoptionPlaybook: [
-      'Event scout owns event context selection and communicates key changes.',
-      'Strategy lead verifies rankings + teams before compare sessions.',
-      'Use schedule links for dispatch instead of manual deep links.',
-    ],
   },
   scouting: {
     scope: 'scouting',
     title: 'Live Scouting Operations',
-    subtitle: 'Run high-integrity live capture with room sync and role control.',
-    icon: 'SCOUT',
-    estimatedMinutes: 12,
     walkthrough: [
       {
         id: 'scouting-profile',
@@ -418,56 +323,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'left',
       },
     ],
-    checklist: [
-      {
-        id: 'scout-profile-set',
-        title: 'Set scout profile and verify team',
-        detail: 'Identity correctness prevents token and attribution issues.',
-        stepId: 'scouting-profile',
-      },
-      {
-        id: 'scout-room-join',
-        title: 'Join room and verify connected state',
-        detail: 'Ensures shared sync and collaboration features are active.',
-        stepId: 'scouting-room-join',
-      },
-      {
-        id: 'scout-room-qr',
-        title: 'Test Join via QR path once',
-        detail: 'Confirms QR onboarding fallback works on your device.',
-        stepId: 'scouting-room-join',
-      },
-      {
-        id: 'scout-target-flow',
-        title: 'Set event, match, and team before live timer',
-        detail: 'Prevents partial data and rework after save.',
-        stepId: 'scouting-match-target',
-      },
-      {
-        id: 'scout-save-sync',
-        title: 'Save one entry and confirm room sync status',
-        detail: 'Verifies local + remote persistence path.',
-        stepId: 'scouting-capture',
-      },
-      {
-        id: 'scout-leader-validation',
-        title: 'Leader validates role controls and member list',
-        detail: 'Keeps room healthy for full match block.',
-        stepId: 'scouting-lead-controls',
-      },
-    ],
-    adoptionPlaybook: [
-      'All scouts join room before first qualification block.',
-      'Team lead monitors member count and leadership continuity.',
-      'After each block, perform quick missing-entry sweep and patch.',
-    ],
   },
   'match-center': {
     scope: 'match-center',
     title: 'Match Center Breakdown Flow',
-    subtitle: 'Move from match selection to tactical conclusions quickly.',
-    icon: 'MATCH',
-    estimatedMinutes: 9,
     walkthrough: [
       {
         id: 'match-finder',
@@ -565,25 +424,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'left',
       },
     ],
-    checklist: [
-      { id: 'match-set-event', title: 'Set event and open finder list', detail: 'Establishes match context baseline.', stepId: 'match-finder' },
-      { id: 'match-open-row', title: 'Open match from row and copy deep link', detail: 'Validates dispatch + coordination path.', stepId: 'match-list' },
-      { id: 'match-hero-validate', title: 'Validate score hero before analysis', detail: 'Prevents incorrect tactical assumptions.', stepId: 'match-hero' },
-      { id: 'match-breakdown-pass', title: 'Review breakdown metrics and confidence', detail: 'Builds decision-grade match understanding.', stepId: 'match-breakdown' },
-      { id: 'match-team-pivot', title: 'Open at least one team from Team Context', detail: 'Closes loop between match and team analysis.', stepId: 'match-team-context' },
-    ],
-    adoptionPlaybook: [
-      'Dispatcher owns finder and deep-link flow.',
-      'Analyst validates hero context before calling tactical changes.',
-      'Use breakdown + team context in sequence for reliability.',
-    ],
   },
   'team-center': {
     scope: 'team-center',
     title: 'Team Center Reliability Workflow',
-    subtitle: 'Turn team data into role-fit decisions with confidence.',
-    icon: 'TEAM',
-    estimatedMinutes: 10,
     walkthrough: [
       {
         id: 'team-finder',
@@ -681,25 +525,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'left',
       },
     ],
-    checklist: [
-      { id: 'team-load-context', title: 'Load team and event from finder', detail: 'Prevents contextless analysis.', stepId: 'team-finder' },
-      { id: 'team-hero-pass', title: 'Review hero rating/EPA and live status', detail: 'Creates baseline before deep analysis.', stepId: 'team-hero' },
-      { id: 'team-tab-pass', title: 'Visit overview and events tabs', detail: 'Ensures both performance and context are reviewed.', stepId: 'team-tabs' },
-      { id: 'team-difficulty-check', title: 'Inspect schedule difficulty and open one hard match', detail: 'Validates role claims under pressure.', stepId: 'team-schedule-difficulty' },
-      { id: 'team-diagnostics-check', title: 'Use media/advanced views for one uncertain case', detail: 'Builds evidence-backed recommendations.', stepId: 'team-media-advanced' },
-    ],
-    adoptionPlaybook: [
-      'Role recommendations require both performance and schedule context.',
-      'Use Match Center pivots to validate unusual difficulty rows.',
-      'Capture uncertainty notes explicitly before compare meetings.',
-    ],
   },
   compare: {
     scope: 'compare',
     title: 'Compare Decision Workflow',
-    subtitle: 'Convert candidate pools into clear pick recommendations.',
-    icon: 'CMP',
-    estimatedMinutes: 11,
     walkthrough: [
       {
         id: 'compare-controls',
@@ -728,7 +557,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Use pool rows to add/remove teams quickly while preserving event constraints for theoretical modeling.',
         actions: [
           'Select candidates from pool list.',
-          'Watch analyzed count and rating hints.',
+          'Watch scouted-match count and rating hints.',
           'Avoid mixing out-of-event teams for theoretical mode.',
         ],
         tooltips: [
@@ -797,25 +626,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
     ],
-    checklist: [
-      { id: 'compare-set-context', title: 'Set event context in controls', detail: 'Keeps all candidates comparable.', stepId: 'compare-controls' },
-      { id: 'compare-add-candidates', title: 'Add 3-4 teams from controls/pool', detail: 'Prevents bloated comparison sessions.', stepId: 'compare-pool' },
-      { id: 'compare-refresh', title: 'Run refresh before discussing picks', detail: 'Ensures latest metrics are used.', stepId: 'compare-controls' },
-      { id: 'compare-diagnostics-review', title: 'Review diagnostics summary cards', detail: 'Balances rating and risk.', stepId: 'compare-summary' },
-      { id: 'compare-run-theoretical', title: 'Run one theoretical builder scenario', detail: 'Stress-tests composition assumptions.', stepId: 'compare-theoretical' },
-    ],
-    adoptionPlaybook: [
-      'Compare lead controls candidate list and context lock.',
-      'Recorder captures rationale for top pick and fallback.',
-      'Final shortlist must include explicit risk note per team.',
-    ],
   },
   favorites: {
     scope: 'favorites',
     title: 'Favorites Watchlist Operations',
-    subtitle: 'Maintain a high-signal watchlist for recurring decisions.',
-    icon: 'FAV',
-    estimatedMinutes: 7,
     walkthrough: [
       {
         id: 'favorites-manager',
@@ -913,25 +727,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
     ],
-    checklist: [
-      { id: 'fav-add-event', title: 'Add one event with clear purpose', detail: 'Builds intentional watchlist behavior.', stepId: 'favorites-manager' },
-      { id: 'fav-add-team', title: 'Add at least two candidate teams', detail: 'Creates a meaningful team watchlist.', stepId: 'favorites-manager' },
-      { id: 'fav-open-live-match', title: 'Open one live match from snapshot', detail: 'Validates live dispatch workflow.', stepId: 'favorites-snapshot' },
-      { id: 'fav-tab-review', title: 'Review overview/events/teams tabs', detail: 'Confirms correct mode usage.', stepId: 'favorites-tabs' },
-      { id: 'fav-prune-list', title: 'Remove one stale favorite', detail: 'Prevents watchlist bloat and noise.', stepId: 'favorites-team-cards' },
-    ],
-    adoptionPlaybook: [
-      'Watchlist owner curates entries each qualification block.',
-      'Live snapshot is reviewed before every scouting dispatch.',
-      'Stale entries are removed during end-of-shift cleanup.',
-    ],
   },
   settings: {
     scope: 'settings',
     title: 'Settings and Governance',
-    subtitle: 'Configure runtime defaults, security, and diagnostics intentionally.',
-    icon: 'CFG',
-    estimatedMinutes: 9,
     walkthrough: [
       {
         id: 'settings-appearance',
@@ -1029,26 +828,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
     ],
-    checklist: [
-      { id: 'settings-theme-density', title: 'Set theme and density defaults', detail: 'Aligns UI with crew operations.', stepId: 'settings-appearance' },
-      { id: 'settings-search-defaults', title: 'Set quick search mode + region', detail: 'Improves navigation consistency.', stepId: 'settings-workflow' },
-      { id: 'settings-tutorial-policy', title: 'Set tutorial autoplay policy', detail: 'Controls onboarding behavior per device.', stepId: 'settings-workflow' },
-      { id: 'settings-admin-session', title: 'Create and verify admin session', detail: 'Validates privileged workflow.', stepId: 'settings-runtime' },
-      { id: 'settings-ops-refresh', title: 'Refresh ops dashboard and read KPIs', detail: 'Builds data-driven maintenance behavior.', stepId: 'settings-ops' },
-      { id: 'settings-diagnostics-refresh', title: 'Refresh local diagnostics before cleanup', detail: 'Prevents blind state resets.', stepId: 'settings-diagnostics-maintenance' },
-    ],
-    adoptionPlaybook: [
-      'Settings owner publishes standard defaults for all devices.',
-      'Admin mode is enabled only during active maintenance windows.',
-      'Diagnostics review is part of shift-end routine.',
-    ],
   },
   ops: {
     scope: 'ops',
     title: 'Ops Recovery and Reliability',
-    subtitle: 'Operate queue and integrity workflows with deliberate sequencing.',
-    icon: 'OPS',
-    estimatedMinutes: 9,
     walkthrough: [
       {
         id: 'ops-runtime-access',
@@ -1126,19 +909,6 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         mobileSelector: '.settings-diagnostics-card',
         placement: 'top',
       },
-    ],
-    checklist: [
-      { id: 'ops-auth-check', title: 'Verify admin session and auth chips', detail: 'Ensures ops actions are authorized.', stepId: 'ops-runtime-access' },
-      { id: 'ops-refresh-snapshot', title: 'Refresh ops snapshot before action', detail: 'Avoids acting on stale observability.', stepId: 'ops-dashboard-read' },
-      { id: 'ops-read-queue', title: 'Review queue pressure and pending counts', detail: 'Determines urgency and scope.', stepId: 'ops-dashboard-read' },
-      { id: 'ops-run-backfill', title: 'Run targeted backfill once and review result', detail: 'Validates recovery workflow.', stepId: 'ops-backfill' },
-      { id: 'ops-post-verify', title: 'Verify dashboard after backfill', detail: 'Confirms action impact and remaining risk.', stepId: 'ops-backfill' },
-      { id: 'ops-local-check', title: 'Refresh local diagnostics before escalation', detail: 'Separates local from backend faults.', stepId: 'ops-local-diag' },
-    ],
-    adoptionPlaybook: [
-      'Ops lead performs auth + snapshot checks before any recovery action.',
-      'Recoveries are logged with before/after KPI notes.',
-      'Escalation includes local diagnostics state to reduce false positives.',
     ],
   },
 };

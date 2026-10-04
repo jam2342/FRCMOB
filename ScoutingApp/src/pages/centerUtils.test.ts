@@ -7,6 +7,7 @@ import {
   normalizeMatchKey,
   normalizeTeamKeyInput,
   summarizeFreshness,
+  friendlyDataWarning,
 } from './centerUtils';
 
 describe('centerUtils', () => {
@@ -40,6 +41,32 @@ describe('centerUtils', () => {
     });
     expect(fresh.state).toBe('fresh');
     expect(fresh.label).toContain('Fresh');
+  });
+
+  it('calls an unscouted team unscouted, not stale', () => {
+    const none = summarizeFreshness({
+      is_outdated: true,
+      latest_match_age_days: null,
+      accepted_matches: 0,
+      raw_matches: 0,
+      warnings: ['No analyzed matches available for 2026.'],
+    });
+    expect(none.state).toBe('unknown');
+    expect(none.label).toBe('Not scouted yet');
+    expect(none.detail).toBe('Nobody has scouted this team in 2026 yet.');
+  });
+
+  it("trusts the backend's unscouted flag when it sends one", () => {
+    expect(summarizeFreshness({ is_outdated: false, unscouted: true, latest_match_age_days: null, warnings: [] }).label)
+      .toBe('Not scouted yet');
+    const stale = summarizeFreshness({ is_outdated: true, unscouted: false, latest_match_age_days: 60, warnings: [] });
+    expect(stale.state).toBe('stale');
+  });
+
+  it('rewrites known backend warnings and passes others through', () => {
+    expect(friendlyDataWarning('No event-specific rating found; using latest available team rating.'))
+      .toBe("No rating for this event yet, so this shows the team's latest rating.");
+    expect(friendlyDataWarning('Something new')).toBe('Something new');
   });
 
   it('classifies abort-like transient request errors', () => {

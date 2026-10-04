@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable, Coroutine
 
 from sqlalchemy.orm import Session
+
+from app.services.clients import statbotics as statbotics_client
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,11 @@ def build_event_teams_intel_payload(
 ) -> dict[str, Any]:
     # Build event-scoped team intel payload.
     #
-    # Runs the registered async builder synchronously via asyncio.run().
+    # Runs the registered async builder on its own loop (see statbotics_client.run_sync).
     if _event_teams_intel_builder is None:
         logger.warning("intel_builders: event_teams_intel_builder not registered")
         return {}
-    return asyncio.run(
+    return statbotics_client.run_sync(
         _event_teams_intel_builder(
             db=db,
             event_key=event_key,
@@ -80,11 +81,11 @@ def build_team_intel_payload(
 ) -> dict[str, Any]:
     # Build team-scoped intel payload.
     #
-    # Runs the registered async builder synchronously via asyncio.run().
+    # Runs the registered async builder on its own loop (see statbotics_client.run_sync).
     if _team_intel_builder is None:
         logger.warning("intel_builders: team_intel_builder not registered")
         return {}
-    return asyncio.run(
+    return statbotics_client.run_sync(
         _team_intel_builder(
             db=db,
             team_key=team_key,

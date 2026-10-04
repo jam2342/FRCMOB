@@ -14,6 +14,7 @@ from app.services.season_config import (
     REBUILT_ENDGAME_WINDOW_SEC,
     REBUILT_SEASON_YEAR,
     REBUILT_TRANSITION_SHIFT_SEC,
+    require_known_season_rules,
     shift_active_alliance,
 )
 
@@ -111,9 +112,13 @@ def compute_rebuilt_phase_windows_payload(
 
 def compute_phase_windows_payload(match_time: int | None) -> dict[str, Any]:
     config = load_game_config()
+    require_known_season_rules(
+        int(config.season_year),
+        feature="phase-window computation",
+    )
 
     # Delegate to the REBUILT-specific builder for the 2026 season.
-    if int(config.season_year) >= REBUILT_SEASON_YEAR:
+    if int(config.season_year) == REBUILT_SEASON_YEAR:
         return compute_rebuilt_phase_windows_payload(match_time, config=config)
 
     total_sec = int(config.phases.total_sec)

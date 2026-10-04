@@ -14,10 +14,12 @@ describe('MatchCenter polling regressions', () => {
   });
 
   it('keeps URL match query in sync with selected match state', () => {
-    expect(source).toContain("normalizeMatchKey(searchParams.get('match')");
+    expect(source).toContain('useExternalSearchSync(searchParams');
+    expect(source).toContain("normalizeMatchKey(params.get('match')");
     expect(source).toContain('eventKeyFromMatchKey(urlMatchKey);');
     expect(source).toContain('setSelectedMatchKey((prev) => (prev === resolvedMatchKey ? prev : resolvedMatchKey));');
-    expect(source).toContain('setActiveTab((prev) => (prev === urlTab ? prev : urlTab));');
+    expect(source).toContain("const nextTab = resolveTab(urlTab, MATCH_TABS, 'overview');");
+    expect(source).toContain('setActiveTab((prev) => (prev === nextTab ? prev : nextTab));');
     expect(source).not.toContain("if (selectedMatchKey) setSelectedMatchKey('');");
   });
 

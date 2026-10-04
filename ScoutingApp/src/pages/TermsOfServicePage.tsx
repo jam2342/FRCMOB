@@ -34,10 +34,11 @@ export function TermsOfServicePage() {
           <section>
             <h4>1. What FRCMOB is</h4>
             <p>
-              FRCMOB collects scouting observations, ingests public FRC data, analyzes match video,
-              and produces team ratings, picklists, and match predictions. It is a decision-support
-              tool for competition strategy. It is not affiliated with, endorsed by, or sponsored by
-              FIRST, The Blue Alliance, Statbotics, or any video platform.
+              FRCMOB collects scouting observations, ingests public FRC data, breaks down match
+              recordings on the scout&apos;s own phone, and produces team ratings, picklists, and match
+              predictions. It is a decision-support tool for competition strategy. It is not affiliated
+              with, endorsed by, or sponsored by FIRST, The Blue Alliance, Statbotics, or any video
+              platform.
             </p>
           </section>
 
@@ -87,9 +88,10 @@ export function TermsOfServicePage() {
               analytics, and sharing it with others in your event workspace or scouting room.
             </p>
             <p>
-              Derived data from match video and scouting entries may be used to improve the
-              analysis models that power the app. This applies to numeric performance data, never to
-              recorded video, which stays on your device and is never uploaded.
+              Derived numeric data from phone recordings and scouting entries may be used to improve the
+              models that power the app. Recorded video stays on your device and is never uploaded; only
+              the robot positions it produces are synced, and your team&apos;s operator reviews them
+              before they appear anywhere public.
             </p>
             <p>
               You are responsible for having the right to upload what you upload, and for the accuracy
@@ -100,10 +102,10 @@ export function TermsOfServicePage() {
           <section>
             <h4>5. Video, recording, and event rules</h4>
             <p>
-              If you record match video with FRCMOB, you are responsible for complying with the
-              event&apos;s and venue&apos;s recording policies. Analysis of recorded video happens on
-              your own device. Public match video ingested from third-party platforms remains subject
-              to those platforms&apos; terms.
+              If you record a match with FRCMOB, you are responsible for complying with the
+              event&apos;s and venue&apos;s recording policies. The recording is processed on your own
+              device. Public match videos embedded from third-party platforms remain subject to those
+              platforms&apos; terms.
             </p>
           </section>
 
@@ -113,8 +115,8 @@ export function TermsOfServicePage() {
               Ratings, role classifications, alliance synergy scores, picklist ordering, and match
               predictions are <strong>estimates produced by statistical and machine-learning
               models</strong>. Machine-generated scouting fields are drafts carrying a confidence
-              score and require human review before they become saved entries. Computer vision on
-              competition video is imperfect: robots get occluded, bumper numbers are misread, camera
+              score and require human review before they become saved entries. On-device detection from
+              a phone recording is imperfect: robots get occluded, bumper numbers are misread, camera
               angles distort positions, and public data sources go down or return wrong values.
             </p>
             <p>

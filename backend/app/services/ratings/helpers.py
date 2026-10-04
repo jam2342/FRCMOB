@@ -10,7 +10,7 @@ import re
 from typing import Any
 
 from app.db import models
-from app.services.utils import _clamp, _mean
+from app.services.utils import _clamp, _mean, percentile_ranks
 
 from app.services.ratings.constants import (
     RECENT_BASE_WEIGHT,
@@ -180,23 +180,7 @@ def _percentile_map(
     higher_is_better: bool = True,
     default: float = 50.0,
 ) -> dict[str, float]:
-    valid = [
-        (key, float(value))
-        for key, value in raw_by_key.items()
-        if value is not None and isinstance(value, (int, float)) and not math.isnan(float(value))
-    ]
-    if not valid:
-        return {key: default for key in raw_by_key}
-
-    valid.sort(key=lambda item: item[1])
-    result = {key: default for key in raw_by_key}
-    n = len(valid)
-    for index, (key, _) in enumerate(valid):
-        pct = 50.0 if n == 1 else (index / (n - 1)) * 100.0
-        if not higher_is_better:
-            pct = 100.0 - pct
-        result[key] = _clamp(pct, 0.0, 100.0)
-    return result
+    return percentile_ranks(raw_by_key, higher_is_better=higher_is_better, default=default)
 
 def _fit_linear_model(x_values: list[float], y_values: list[float]) -> tuple[float, float]:
     if len(x_values) != len(y_values) or not x_values:

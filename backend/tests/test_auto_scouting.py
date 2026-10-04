@@ -24,13 +24,29 @@ def _seed_core_entities(db) -> tuple[str, str, str]:
     return event_key, match_key, team_key
 
 
+def _accept_recording(db, *, run: models.AnalysisRun, event_key: str, match_key: str) -> models.OnDeviceSession:
+    session = models.OnDeviceSession(
+        analysis_run_id=run.id,
+        match_key=match_key,
+        event_key=event_key,
+        principal_hash=f"principal-{run.id}",
+        client_session_id_hash=f"client-{run.id}",
+        quality_score=0.9,
+        status="accepted",
+        reviewed_at=datetime.now(timezone.utc),
+    )
+    db.add(session)
+    db.flush()
+    return session
+
+
 def _seed_analysis_rows(
     db,
     *,
     event_key: str,
     match_key: str,
     team_key: str,
-    run_version: str = "video_v3_tracks",
+    run_version: str = "on_device_pwa_v1",
     created_at: datetime | None = None,
 ) -> models.AnalysisRun:
     calibration = (
@@ -55,11 +71,13 @@ def _seed_analysis_rows(
     run = models.AnalysisRun(
         match_key=match_key,
         version=run_version,
+        run_kind="on_device",
         status="completed",
         created_at=created_at or datetime.now(timezone.utc),
     )
     db.add(run)
     db.flush()
+    _accept_recording(db, run=run, event_key=event_key, match_key=match_key)
     db.add(
         models.AnalysisRunContext(
             run_id=run.id,
@@ -237,17 +255,16 @@ class AutoScoutingServiceTests(DBTestCase):
         self.assertGreater(float((row.field_confidence or {}).get("teleop_scored") or 0.0), 0.7)
         self.assertEqual(row.missing_reasons or [], [])
 
-    def test_generate_failed_when_analysis_cannot_queue(self):
+    def test_generate_fails_without_an_accepted_recording(self):
         event_key, match_key, team_key = _seed_core_entities(self.db)
-        with patch("app.services.auto_scout.scouting._queue_analysis_if_possible", return_value=(False, "no_calibration")):
-            row, _ = auto_scouting.generate_auto_scout_draft(
-                self.db,
-                event_key=event_key,
-                match_key=match_key,
-                team_key=team_key,
-            )
+        row, _ = auto_scouting.generate_auto_scout_draft(
+            self.db,
+            event_key=event_key,
+            match_key=match_key,
+            team_key=team_key,
+        )
         self.assertEqual(row.status, "failed")
-        self.assertIn("no_calibration", row.missing_reasons or [])
+        self.assertEqual(row.missing_reasons, ["no_on_device_recording"])
 
     def test_approve_records_field_overrides(self):
         event_key, match_key, team_key = _seed_core_entities(self.db)
@@ -422,18 +439,20 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
 
     run = models.AnalysisRun(
         match_key=match_key,
-        version="video_v3_tracks",
+        version="on_device_pwa_v1",
+        run_kind="on_device",
         status="completed",
         created_at=datetime.now(timezone.utc),
     )
     db.add(run)
     db.flush()
+    _accept_recording(db, run=run, event_key=event_key, match_key=match_key)
     db.add(
         models.AnalysisRunContext(
             run_id=run.id,
             match_key=match_key,
             event_key=event_key,
-            analysis_version="video_v3_tracks",
+            analysis_version="on_device_pwa_v1",
             params_hash=f"params-{run.id}",
             calibration_id=calibration.id,
         )
@@ -460,7 +479,7 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
             team_key=team_key,
             alliance="red",
             station="r1",
-            source="video_v3_tracks",
+            source="on_device_pwa_v1",
             fuel_scoring_rate=0.88,
             cycle_time_sec=10.0,
             auto_contribution=6.2,
@@ -485,7 +504,7 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
                 shooting_time_active_seconds=21.0,
                 active_bps=0.48,
                 metric_coverage={"coverage_score": 0.84, "has_cycle_time": True},
-                source="video_v3_tracks",
+                source="on_device_pwa_v1",
             )
         )
         for index, (time_sec, zone_key, speed_mps) in enumerate(
@@ -520,7 +539,7 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
                     zone_key=zone_key,
                     speed_mps=speed_mps,
                     confidence=0.95,
-                    source="video_v3_tracks",
+                    source="on_device_pwa_v1",
                 )
             )
         db.add(
@@ -656,6 +675,18 @@ class AutoScoutBackfillTests(DBTestCase):
         auto_scouting.generate_auto_scout_drafts_for_match(self.db, event_key=event_key, match_key=match_key)
         result = backfill_missing_auto_scout_drafts(self.db, max_runs=10, max_drafts=50)
         self.assertEqual(result["matches_with_missing"], 0)
+        self.assertEqual(result["drafts_created"], 0)
+
+    def test_unreviewed_recording_does_not_produce_drafts(self):
+        _event_key, match_key, _ = _seed_six_team_match(self.db)
+        for session in self.db.query(models.OnDeviceSession).filter_by(match_key=match_key):
+            session.status = "provisional"
+        self.db.commit()
+
+        from app.services.auto_scout.backfill import backfill_missing_auto_scout_drafts
+
+        result = backfill_missing_auto_scout_drafts(self.db, max_runs=10, max_drafts=50)
+        self.assertEqual(result["runs_considered"], 0)
         self.assertEqual(result["drafts_created"], 0)
 
 

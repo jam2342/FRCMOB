@@ -62,12 +62,26 @@
 
 .es__action {
   margin-top: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+/* 44px: these are the one way out of an empty screen, usually on a phone. */
+.es__action button,
+.es__action a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 .es__action button {
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   background: var(--color-accent);
-  color: #fff;
+  /* The token the Button primitive uses on the accent; #fff was 3.3:1. */
+  color: var(--color-on-accent);
   font-size: var(--font-size-sm);
   font-weight: 600;
   border: none;

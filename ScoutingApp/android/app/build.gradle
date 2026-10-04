@@ -1,0 +1,74 @@
+apply plugin: 'com.android.application'
+
+// Upload signing is opt-in. Values come from the owner's process environment;
+// no passwords, keystore files or debug keys are used for release by default.
+def uploadNames = ['FRCMOB_UPLOAD_KEYSTORE', 'FRCMOB_UPLOAD_STORE_PASSWORD', 'FRCMOB_UPLOAD_KEY_ALIAS', 'FRCMOB_UPLOAD_KEY_PASSWORD']
+def uploadPresent = uploadNames.collect { System.getenv(it)?.trim() ? true : false }
+if (uploadPresent.any { it } && !uploadPresent.every { it }) {
+    throw new GradleException('Upload signing is incomplete. Supply all four FRCMOB_UPLOAD_* variables or unset all of them.')
+}
+def uploadConfigured = uploadPresent.every { it }
+
+android {
+    namespace = "app.frcmob.scouting"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "app.frcmob.scouting"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 2
+        versionName "0.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (uploadConfigured) {
+            upload {
+                storeFile file(System.getenv('FRCMOB_UPLOAD_KEYSTORE'))
+                storePassword System.getenv('FRCMOB_UPLOAD_STORE_PASSWORD')
+                keyAlias System.getenv('FRCMOB_UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('FRCMOB_UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (uploadConfigured) signingConfig signingConfigs.upload
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

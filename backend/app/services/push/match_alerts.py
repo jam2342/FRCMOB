@@ -8,12 +8,14 @@ import logging
 import time
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db import models
+from app.services.events.match_times import refresh_match_times
 from app.services.push.sender import push_configured, send_web_push
+from app.tba.client import TBAClient
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,19 @@ logger = logging.getLogger(__name__)
 MAX_LEAD_SEC = 60 * 60
 # Keep only this many dedupe keys per subscription.
 MAX_NOTIFIED_KEYS = 300
+
+
+def _shift_alerts_still_allowed(db, prefs: dict, room_key: str) -> bool:
+    # The subscriber must still be a member of the workspace that owns the room;
+    # a removed scout stops getting their old team's assignments.
+    member_key = str(prefs.get("member_key") or "")
+    if not member_key:
+        return False
+    member = db.execute(
+        select(models.TeamWorkspaceMember).where(models.TeamWorkspaceMember.member_key == member_key)
+    ).scalar_one_or_none()
+    room = db.get(models.ScoutingRoom, room_key)
+    return bool(member and member.removed_at is None and room and room.workspace_id == member.workspace_id)
 
 def _match_label(match: models.Match) -> str:
     comp = str(match.comp_level or "qm").lower()
@@ -65,12 +80,20 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
     sent_count = 0
     for event_key, event_subs in subs_by_event.items():
         horizon_ts = now_ts + MAX_LEAD_SEC
+        # Fields run late (or early): alert on TBA's predicted start when there is one.
+        try:
+            refresh_match_times(db, event_key=event_key, tba_matches=TBAClient().event_matches(event_key))
+        except Exception:
+            db.rollback()
+            logger.warning("push.match_times_refresh_failed event=%s", event_key, exc_info=True)
+        expected_start = func.coalesce(models.Match.predicted_time, models.Match.time)
         matches = db.execute(
             select(models.Match).where(
                 models.Match.event_key == event_key,
-                models.Match.time.isnot(None),
-                models.Match.time >= now_ts - 300,
-                models.Match.time <= horizon_ts,
+                models.Match.actual_time.is_(None),
+                expected_start.isnot(None),
+                expected_start >= now_ts - 300,
+                expected_start <= horizon_ts,
             )
         ).scalars().all()
         if not matches:
@@ -100,7 +123,7 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
             changed = False
 
             for match in matches:
-                match_time = int(match.time or 0)
+                match_time = int(match.predicted_time or match.time or 0)
                 if not (now_ts <= match_time <= now_ts + lead_sec):
                     continue
                 label = _match_label(match)
@@ -135,6 +158,8 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
                 shift_alerts = bool(prefs.get("shift_alerts"))
                 room_key = str(prefs.get("room_key") or "").strip().lower()
                 scout_profile = str(prefs.get("scout_profile") or "").strip().lower()
+                if shift_alerts and room_key and scout_profile and not _shift_alerts_still_allowed(db, prefs, room_key):
+                    shift_alerts = False
                 if shift_alerts and room_key and scout_profile:
                     dedupe_key = f"shift:{match.match_key}"
                     if dedupe_key not in notified:

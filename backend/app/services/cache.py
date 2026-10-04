@@ -36,7 +36,7 @@ class CacheLayer:
         if not self.redis_client:
             return False
         try:
-            self.redis_client.setex(key, ttl, value)
+            self.redis_client.set(key, value, ex=ttl)
             return True
         except Exception as e:
             logger.warning("Cache set error for %s: %s", key, e)
@@ -103,7 +103,7 @@ class AsyncCacheLayer:
         if client is None:
             return False
         try:
-            await client.setex(key, ttl, value)
+            await client.set(key, value, ex=ttl)
             return True
         except Exception as e:
             logger.warning("Async cache set error for %s: %s", key, e)

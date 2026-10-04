@@ -1,0 +1,50 @@
+.lite-stream {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background-color: var(--color-surface-muted);
+  background-position: center;
+  background-size: cover;
+  cursor: pointer;
+}
+
+.lite-stream__play {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: var(--shadow-md);
+  transition: transform var(--motion-fast) ease;
+}
+
+.lite-stream:hover .lite-stream__play,
+.lite-stream:focus-visible .lite-stream__play {
+  transform: scale(1.06);
+}
+
+.lite-stream__play svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* Same footprint as the iframe it stands in for, so pressing play doesn't shift the page. */
+.home-fotmob-embed-wrap .lite-stream {
+  min-height: 240px;
+}
+
+.center-stream-embed-wrap .lite-stream {
+  min-height: 320px;
+}
+
+@media (max-width: 900px) {
+  .home-fotmob-embed-wrap .lite-stream {
+    min-height: 200px;
+  }
+}

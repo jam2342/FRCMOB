@@ -4,9 +4,9 @@ The AGPL-3.0 license covers FRCMOB source code. It does not grant rights to unre
 
 ## Ultralytics YOLO
 
-The backend uses the `ultralytics` package and models derived from that toolchain. Ultralytics publishes its open-source code and models under AGPL-3.0 and offers a separate enterprise license. FRCMOB therefore uses AGPL-3.0. Preserve upstream notices and review the current [Ultralytics licensing terms](https://www.ultralytics.com/license) before redistributing weights.
+The detector training scripts use the `ultralytics` package, and the on-device detector is derived from that toolchain. Ultralytics publishes its open-source code and models under AGPL-3.0 and offers a separate enterprise license. FRCMOB therefore uses AGPL-3.0. Preserve upstream notices and review the current [Ultralytics licensing terms](https://www.ultralytics.com/license) before redistributing weights.
 
-FRCMOB's trained `.pt` and `.onnx` weights and training datasets are not included. Operators must provision authorized artifacts with `VIDEO_TRACKING_YOLO_MODEL_URL`/`VIDEO_TRACKING_YOLO_MODEL_SHA256` or `VITE_ONDEVICE_MODEL_URL`.
+FRCMOB's trained `.pt` and `.onnx` weights and training datasets are not included. Operators must provision an authorized ONNX artifact with `VITE_ONDEVICE_MODEL_URL`.
 
 ## FIRST materials and marks
 

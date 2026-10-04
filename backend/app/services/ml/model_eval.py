@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, Sequence, TypeVar
+from typing import Sequence, TypeVar
 
 T = TypeVar("T")
 
@@ -139,14 +139,3 @@ def time_split(rows: Sequence[T], *, timestamp_fn, train_ratio: float = 0.8) -> 
     split_idx = int(len(ordered) * bounded_ratio)
     split_idx = max(1, min(len(ordered) - 1, split_idx)) if len(ordered) > 1 else 1
     return list(ordered[:split_idx]), list(ordered[split_idx:])
-
-def summarize_distribution(values: Iterable[float]) -> dict[str, float]:
-    normalized = [float(v) for v in values]
-    if not normalized:
-        return {"count": 0.0, "min": 0.0, "max": 0.0, "mean": 0.0}
-    return {
-        "count": float(len(normalized)),
-        "min": min(normalized),
-        "max": max(normalized),
-        "mean": sum(normalized) / float(len(normalized)),
-    }

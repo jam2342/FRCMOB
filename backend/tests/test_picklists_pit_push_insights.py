@@ -23,6 +23,7 @@ from app.api.routes_scouting_insights import router as insights_router
 from app.db import models
 from app.db.base import Base
 from app.db.session import get_db
+from tests.workspace_helpers import seed_workspace
 
 class _EndpointTestCase(unittest.TestCase):
     routers = ()
@@ -35,6 +36,9 @@ class _EndpointTestCase(unittest.TestCase):
         )
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
         Base.metadata.create_all(self.engine)
+        with self.SessionLocal() as db:
+            workspace, _member, self.workspace_headers = seed_workspace(db)
+            self.workspace_id = workspace.id
 
         app = FastAPI()
         for router in self.routers:
@@ -49,7 +53,8 @@ class _EndpointTestCase(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = _override_get_db
-        self.client = TestClient(app)
+        self.app = app
+        self.client = TestClient(app, headers=self.workspace_headers)
 
     def tearDown(self) -> None:
         self.client.close()
@@ -214,6 +219,9 @@ class PushEndpointTests(_EndpointTestCase):
         self.assertFalse(response.json()["configured"])
 
     def test_subscribe_update_unsubscribe(self):
+        with self.SessionLocal() as db:
+            db.add(models.ScoutingRoom(room_key="room-1", workspace_id=self.workspace_id))
+            db.commit()
         payload = {
             "endpoint": "https://fcm.example/abc",
             "keys": {"p256dh": "k", "auth": "a"},
@@ -227,6 +235,9 @@ class PushEndpointTests(_EndpointTestCase):
         self.assertEqual(sub["team_keys"], ["frc254"])
         self.assertEqual(sub["prefs"]["match_lead_minutes"], 60)  # clamped
         self.assertEqual(sub["prefs"]["room_key"], "room-1")
+        # Alerts go out under the member's own name, whatever the client sent.
+        self.assertEqual(sub["prefs"]["scout_profile"], "Lead")
+        self.assertNotIn("member_key", sub["prefs"])
 
         # Re-subscribing the same endpoint updates instead of duplicating.
         response = self.client.post("/push/subscribe", json={**payload, "team_keys": ["frc1678"]})
@@ -236,6 +247,19 @@ class PushEndpointTests(_EndpointTestCase):
             "/push/unsubscribe", json={"endpoint": "https://fcm.example/abc"}
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_shift_alerts_need_the_rooms_workspace(self):
+        with self.SessionLocal() as db:
+            db.add(models.ScoutingRoom(room_key="room-1", workspace_id=self.workspace_id))
+            db.commit()
+        payload = {
+            "endpoint": "https://fcm.example/spy",
+            "keys": {"p256dh": "k", "auth": "a"},
+            "prefs": {"shift_alerts": True, "room_key": "room-1", "scout_profile": "Lead"},
+        }
+        outsider = TestClient(self.app)
+        self.assertEqual(outsider.post("/push/subscribe", json=payload).status_code, 403)
+        outsider.close()
 
     def test_subscribe_requires_https_endpoint(self):
         response = self.client.post(
@@ -277,7 +301,7 @@ class ScoutingInsightsEndpointTests(_EndpointTestCase):
                     )
                 )
             db.add(
-                models.ScoutingRoom(room_key="room-a", event_key="2026test", title="Room A")
+                models.ScoutingRoom(room_key="room-a", workspace_id=self.workspace_id, event_key="2026test", title="Room A")
             )
             db.add(
                 models.ScoutingRoomEntry(

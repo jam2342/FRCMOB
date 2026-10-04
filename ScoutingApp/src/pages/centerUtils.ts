@@ -1,6 +1,8 @@
-export const CURRENT_SEASON_YEAR = 2026;
-export const FALLBACK_SEASON_YEAR = 2025;
-const MATCH_DURATION_SEC = 150;
+import { SEASON } from '../config/season';
+
+export const CURRENT_SEASON_YEAR = SEASON.year;
+export const FALLBACK_SEASON_YEAR = SEASON.fallbackYear;
+const MATCH_DURATION_SEC = SEASON.matchSec;
 
 export type FreshnessSummary = {
   state: 'fresh' | 'stale' | 'unknown';
@@ -44,6 +46,19 @@ function fmtTimer(totalSeconds: number): string {
   const minutes = Math.floor(safeSeconds / 60);
   const seconds = safeSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+type MatchTimes = {
+  scheduled_time?: number | null;
+  predicted_time?: number | null;
+  actual_time?: number | null;
+};
+
+// When a match really starts: TBA's actual start once it has one, else its
+// predicted start (fields run late and early), else the published schedule.
+export function matchStartTime(match: MatchTimes | null | undefined): number | null {
+  if (!match) return null;
+  return match.actual_time || match.predicted_time || match.scheduled_time || null;
 }
 
 export function liveTimerLabel(
@@ -245,6 +260,27 @@ export function humanAge(days: number): string {
   return years < 1.5 ? 'over a year ago' : `${Math.round(years)} years ago`;
 }
 
+// The backend's warnings are written for operators ("No analyzed matches
+// available for 2026."). Users see them verbatim on Team Center, so the known
+// ones get a plain-language version; anything else passes through untouched.
+const DATA_WARNING_REWRITES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^No event-specific rating found; using latest available team rating\.?$/i,
+    () => "No rating for this event yet, so this shows the team's latest rating."],
+  [/^No analyzed matches available for (\d{4})\.?$/i,
+    (match) => `Nobody has scouted this team in ${match[1]} yet.`],
+  [/^No analyzed matches available in the current season scope\.?$/i,
+    () => 'Nobody has scouted this team this season yet.'],
+];
+
+export function friendlyDataWarning(text: string): string {
+  const trimmed = String(text || '').trim();
+  for (const [pattern, rewrite] of DATA_WARNING_REWRITES) {
+    const match = trimmed.match(pattern);
+    if (match) return rewrite(match);
+  }
+  return trimmed;
+}
+
 export function summarizeFreshness(payload: unknown): FreshnessSummary {
   const row = asRecord(payload);
   if (!row) return { state: 'unknown', label: 'Freshness: N/A', detail: null };
@@ -252,8 +288,21 @@ export function summarizeFreshness(payload: unknown): FreshnessSummary {
   const isOutdated = Boolean(row.is_outdated);
   const ageDays = parseNumber(row.latest_match_age_days);
   const warnings = Array.isArray(row.warnings)
-    ? row.warnings.map((value) => String(value || '').trim()).filter(Boolean)
+    ? row.warnings.map((value) => friendlyDataWarning(String(value || ''))).filter(Boolean)
     : [];
+
+  // Freshness here is about scouting data. A team nobody has scouted isn't
+  // "stale" — it has official results, just no scouting — and a red Stale
+  // chip next to 71 official matches read as broken data. The backend says so
+  // directly with `unscouted` (PR #59); older payloads are inferred from the
+  // row counts until that deploy has rolled out everywhere.
+  const scoutedMatches = (parseNumber(row.accepted_matches) ?? 0) + (parseNumber(row.raw_matches) ?? 0);
+  const unscouted = typeof row.unscouted === 'boolean'
+    ? row.unscouted
+    : ageDays === null && scoutedMatches === 0 && ('accepted_matches' in row || 'raw_matches' in row);
+  if (unscouted) {
+    return { state: 'unknown', label: 'Not scouted yet', detail: warnings[0] || null };
+  }
 
   if (isOutdated) {
     const detail = warnings[0] || (ageDays !== null ? `Latest analysed match was ${humanAge(ageDays)}.` : null);

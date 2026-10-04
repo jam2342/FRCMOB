@@ -2,8 +2,8 @@ import './AutoScoutEvidencePanel.css';
 
 import { BottomSheet } from '../ui/BottomSheet';
 import { SurfaceCard } from '../ui/SurfaceCard';
-import { VideoReplayer } from '../cv/VideoReplayer';
-import type { MatchTracksResponse } from '../../api';
+import { FieldHeatmap } from '../cv/FieldHeatmap';
+import type { TeamHeatmapResponse } from '../../api';
 import type { AutoScoutDraftRecord } from '../../pages/scoutingPage.types';
 
 type AutoScoutEvidencePanelProps = {
@@ -11,9 +11,9 @@ type AutoScoutEvidencePanelProps = {
   mobile: boolean;
   fieldName: string | null;
   draft: AutoScoutDraftRecord | null;
-  tracksData: MatchTracksResponse | null;
-  tracksLoading: boolean;
-  tracksError: string;
+  heatmapData: TeamHeatmapResponse | null;
+  heatmapLoading: boolean;
+  heatmapError: string;
   onClose: () => void;
 };
 
@@ -30,37 +30,42 @@ function renderMeta(meta: Record<string, unknown> | null | undefined): Array<[st
     .slice(0, 12);
 }
 
+function fieldSourceLabel(source: string | undefined): string {
+  if (source === 'auto') return 'Phone recording';
+  if (source === 'manual') return 'Scout entry';
+  if (source === 'blank') return 'Not filled';
+  return 'Needs review';
+}
+
 function EvidenceBody({
   fieldName,
   draft,
-  tracksData,
-  tracksLoading,
-  tracksError,
+  heatmapData,
+  heatmapLoading,
+  heatmapError,
 }: Omit<AutoScoutEvidencePanelProps, 'open' | 'mobile' | 'onClose'>) {
   if (!fieldName || !draft) {
     return <p className="center-callout muted">Select an auto-filled field to inspect its evidence.</p>;
   }
   const confidence = draft.field_confidence?.[fieldName];
   const refs = draft.field_evidence_refs?.[fieldName] || [];
-  const primaryTimeSec = refs.length > 0 ? refs[0].t_sec : null;
 
   return (
     <div className="auto-scout-evidence">
       <div className="auto-scout-evidence__summary">
         <strong>{formatFieldLabel(fieldName)}</strong>
         <span>Confidence {typeof confidence === 'number' ? `${Math.round(confidence * 100)}%` : 'N/A'}</span>
-        <span>Provenance {draft.field_provenance?.[fieldName] || 'needs_review'}</span>
+        <span>Source: {fieldSourceLabel(draft.field_provenance?.[fieldName])}</span>
       </div>
 
-      {tracksLoading ? <p className="center-callout muted">Loading tracking evidence…</p> : null}
-      {tracksError ? <p className="center-callout warning">{tracksError}</p> : null}
-      {tracksData ? (
-        <VideoReplayer
-          className="auto-scout-evidence__replayer"
-          data={tracksData}
-          videoUrl={tracksData.local_video_url || tracksData.video_url}
-          seekToTimeSec={primaryTimeSec}
-        />
+      {heatmapLoading ? <p className="center-callout muted">Loading recorded positions…</p> : null}
+      {heatmapError ? <p className="center-callout warning">{heatmapError}</p> : null}
+      {heatmapData ? (
+        heatmapData.total_points > 0 ? (
+          <FieldHeatmap data={heatmapData} />
+        ) : (
+          <p className="center-callout muted">No recorded positions for this robot in this match.</p>
+        )
       ) : null}
 
       <div className="auto-scout-evidence__refs">
@@ -79,7 +84,7 @@ function EvidenceBody({
             ))}
           </div>
         )) : (
-          <p className="center-callout muted">No evidence refs recorded for this field.</p>
+          <p className="center-callout muted">No supporting details were recorded for this field. Check it manually before saving.</p>
         )}
       </div>
     </div>

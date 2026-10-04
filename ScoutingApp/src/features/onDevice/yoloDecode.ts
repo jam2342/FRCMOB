@@ -7,7 +7,9 @@ export type Box = { x1: number; y1: number; x2: number; y2: number; score: numbe
 
 // Letterbox geometry for fitting a (w x h) frame into a square `size` input while
 // preserving aspect ratio — returns the scale + padding to undo it afterwards.
-export type Letterbox = { scale: number; padX: number; padY: number };
+// offsetX/offsetY: where the model's input region starts in the frame, when the input
+// is a crop of the frame rather than the whole of it.
+export type Letterbox = { scale: number; padX: number; padY: number; offsetX?: number; offsetY?: number };
 
 export function letterboxParams(w: number, h: number, size: number): Letterbox {
   const scale = Math.min(size / w, size / h);
@@ -16,11 +18,13 @@ export function letterboxParams(w: number, h: number, size: number): Letterbox {
 
 // Map a box from letterboxed input-pixel space back to original-frame pixels.
 export function undoLetterbox(box: Box, lb: Letterbox): Box {
+  const ox = lb.offsetX ?? 0;
+  const oy = lb.offsetY ?? 0;
   return {
-    x1: (box.x1 - lb.padX) / lb.scale,
-    y1: (box.y1 - lb.padY) / lb.scale,
-    x2: (box.x2 - lb.padX) / lb.scale,
-    y2: (box.y2 - lb.padY) / lb.scale,
+    x1: (box.x1 - lb.padX) / lb.scale + ox,
+    y1: (box.y1 - lb.padY) / lb.scale + oy,
+    x2: (box.x2 - lb.padX) / lb.scale + ox,
+    y2: (box.y2 - lb.padY) / lb.scale + oy,
     score: box.score,
   };
 }

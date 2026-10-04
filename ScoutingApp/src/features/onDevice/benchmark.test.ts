@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { benchmark, summarizeTimings } from './benchmark';
+import { benchmark, summarizeInferenceTelemetry, summarizeTimings } from './benchmark';
 
 describe('benchmark harness', () => {
   it('summarizeTimings computes median, p90, max, fps', () => {
@@ -14,6 +14,18 @@ describe('benchmark harness', () => {
 
   it('summarizeTimings handles empty input', () => {
     expect(summarizeTimings([])).toMatchObject({ iterations: 0, fps: 0 });
+  });
+
+  it('summarizes provider, model, and thermal drift for sync metadata', () => {
+    const telemetry = summarizeInferenceTelemetry(
+      [10, 10, 11, 11, 15, 16],
+      'robot-v2',
+      'webgpu',
+    );
+    expect(telemetry.modelVersion).toBe('robot-v2');
+    expect(telemetry.executionProvider).toBe('webgpu');
+    expect(telemetry.iterations).toBe(6);
+    expect(telemetry.thermalDriftPct).toBeGreaterThan(0);
   });
 
   it('benchmark runs warmup + iterations and reports a summary', async () => {

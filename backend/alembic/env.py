@@ -19,6 +19,14 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
+def _include_object(obj, name, type_, reflected, compare_to):
+    # Trigram search indexes are expression indexes created in raw SQL
+    # (20260308_0007); the models don't declare them.
+    if type_ == "index" and isinstance(name, str) and name.endswith("_trgm"):
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -26,7 +34,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
-        compare_server_default=True,
+        compare_server_default=False,
+        include_object=_include_object,
     )
 
     with context.begin_transaction():
@@ -45,7 +54,10 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            compare_server_default=True,
+            # Migrations set server defaults as a database-level fallback while the
+            # models supply Python defaults; comparing them is 130+ lines of noise.
+            compare_server_default=False,
+            include_object=_include_object,
         )
 
         with context.begin_transaction():

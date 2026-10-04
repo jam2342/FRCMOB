@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
+from app.services.auto_scout.common import _safe_float, _approx_track_coverage
 from app.core.config import settings
 from app.db import models
 from app.services.auto_scout.ml import (
@@ -15,7 +16,6 @@ from app.services.auto_scout.ml import (
     auto_scout_field_target_to_float,
     build_auto_scout_field_feature_vector,
 )
-from app.services.game_config import load_game_config
 
 
 @dataclass(slots=True)
@@ -34,37 +34,6 @@ def auto_scout_training_source_version() -> str:
     if configured:
         return configured
     return "auto_scout_field_features_v1"
-
-
-def _safe_float(value: object) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return max(low, min(high, value))
-
-
-def _match_total_sec() -> float:
-    try:
-        return float(load_game_config().phases.total_sec)
-    except Exception:
-        return 160.0
-
-
-def _approx_track_coverage(tracks: list[models.RobotTrack]) -> tuple[float, float]:
-    if not tracks:
-        return 0.0, 0.0
-    total_sec = max(_match_total_sec(), 1.0)
-    min_time = min(float(track.time_sec) for track in tracks)
-    max_time = max(float(track.time_sec) for track in tracks)
-    tracked_sec = max(0.0, max_time - min_time)
-    coverage = _clamp(tracked_sec / total_sec, 0.0, 1.0)
-    return coverage, tracked_sec
 
 
 def _load_draft_context(
@@ -208,6 +177,10 @@ def export_auto_scout_training_snapshots(
     event_keys = {str(row.event_key or "").strip().lower() for row in approved_rows if str(row.event_key or "").strip()}
     event_years = _event_year_map(db, event_keys)
     latest_year = max(event_years.values()) if event_years else None
+    # Local import: ml.shadow imports this module.
+    from app.services.ml.shadow import holdout_event_keys, split_tag_for_event
+
+    holdout_keys = holdout_event_keys(db, event_keys)
 
     if replace_existing:
         scopes = [auto_scout_field_scope(field) for field in selected_fields]
@@ -225,6 +198,20 @@ def export_auto_scout_training_snapshots(
     rows_written = 0
     skipped_missing_context = 0
     skipped_missing_target = 0
+    # Phone recordings stay out of training until real-phone validation marks a
+    # session training_eligible (see docs/PROD_RUNBOOK.md, on-device promotion).
+    quarantined_run_ids = {
+        int(run_id)
+        for run_id, details in db.query(
+            models.OnDeviceSession.analysis_run_id, models.OnDeviceSession.quality_details
+        ).filter(
+            models.OnDeviceSession.analysis_run_id.in_(
+                {int(row.analysis_run_id) for row in approved_rows if row.analysis_run_id is not None}
+            )
+        )
+        if not (isinstance(details, dict) and details.get("training_eligible") is True)
+    }
+    skipped_quarantined = 0
 
     for row in approved_rows:
         event_key = str(row.event_key or "").strip().lower()
@@ -233,6 +220,9 @@ def export_auto_scout_training_snapshots(
         approved_payload = row.approved_payload if isinstance(row.approved_payload, dict) else {}
         approved_form = approved_payload.get("form_patch") if isinstance(approved_payload.get("form_patch"), dict) else {}
         if not event_key or not match_key or not team_key or not approved_form:
+            continue
+        if row.analysis_run_id is not None and int(row.analysis_run_id) in quarantined_run_ids:
+            skipped_quarantined += 1
             continue
 
         context = _load_draft_context(
@@ -255,7 +245,7 @@ def export_auto_scout_training_snapshots(
             throughput=context.throughput,
             quality=context.quality,
         )
-        split_tag = "holdout" if latest_year is not None and event_years.get(event_key) == latest_year else "train"
+        split_tag = split_tag_for_event(event_key, holdout_keys)
 
         for field_name in selected_fields:
             if field_name not in approved_form:
@@ -302,6 +292,7 @@ def export_auto_scout_training_snapshots(
         "rows_written": rows_written,
         "skipped_missing_context": skipped_missing_context,
         "skipped_missing_target": skipped_missing_target,
+        "skipped_quarantined": skipped_quarantined,
         "per_field_rows": per_field_rows,
         "latest_year": latest_year,
     }

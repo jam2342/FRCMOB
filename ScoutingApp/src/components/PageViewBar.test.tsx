@@ -82,7 +82,7 @@ describe('PageViewBar', () => {
     );
   });
 
-  it('does not preserve search by default for non-scouting view bars', () => {
+  it('preserves event selection and the current event tab across event tools', () => {
     render(
       <MemoryRouter initialEntries={['/events?event=2026week0&tab=teams']}>
         <Routes>
@@ -92,7 +92,7 @@ describe('PageViewBar', () => {
     );
 
     const exportLink = screen.getByRole('link', { name: 'Export' });
-    expect(exportLink).toHaveAttribute('href', '/events/export');
+    expect(exportLink).toHaveAttribute('href', '/events/export?event=2026week0&tab=teams');
   });
 
   it('collapses to a single dropdown pill on mobile and reveals tabs on open', () => {
@@ -235,5 +235,33 @@ describe('PageViewBar', () => {
     expect(screen.getByRole('button', { name: 'Switch scouting tool' })).toBeInTheDocument();
     expect(removeListener).toHaveBeenCalledWith('scroll', expect.any(Function));
     expect(removeWindowListener).toHaveBeenCalledWith('resize', expect.any(Function));
+  });
+});
+
+describe('PageViewBar desktop-only items', () => {
+  it('hides desktop-only tabs on phones, where those pages redirect away', () => {
+    stubMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/events']}>
+        <Routes>
+          <Route path="/events" element={<PageViewBar items={EVENTS_VIEWS} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Export' })).toBeNull();
+  });
+
+  it('keeps them on desktop', () => {
+    stubMatchMedia(false);
+    render(
+      <MemoryRouter initialEntries={['/events']}>
+        <Routes>
+          <Route path="/events" element={<PageViewBar items={EVENTS_VIEWS} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Export' })).toBeInTheDocument();
   });
 });

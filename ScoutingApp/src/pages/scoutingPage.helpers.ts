@@ -3,6 +3,7 @@
  * Pure logic - no React dependency.
  */
 
+import { persistRecoverableScoutDraft, readRecoverableScoutDraft } from '../features/offline/scoutRecovery';
 import type {
   AutoScoutDraftPayload,
   AutoScoutFieldOverride,
@@ -36,19 +37,23 @@ import {
   asRecord,
   clampNumber,
   parseNumber,
-  liveTimerLabel,
+  liveTimerLabel, matchStartTime,
   teamNumberFromTeamKey,
   titleizeKey,
 } from './centerUtils';
+import { SCOUT_POINTS_SCALE, SEASON } from '../config/season';
+import { inferMatchCompleted, matchHasScores } from './matchStatus';
+
+export { inferMatchCompleted, matchHasScores };
 
 const SCOUTING_ENTRIES_STORAGE = 'scouting_manual_entries_v2';
 const SCOUTING_ENTRIES_STORAGE_LEGACY = 'scouting_manual_entries_v1';
 const SCOUTING_TIMER_FLOAT_STORAGE = 'scouting_timer_float_pos_v1';
 const SCOUTING_MOBILE_COMPACT_STORAGE = 'scouting_mobile_compact_mode_v1';
 
-const MATCH_DURATION_SEC = 150;
-const AUTO_PHASE_SEC = 20;
-const ENDGAME_SEC = 30;
+const MATCH_DURATION_SEC = SEASON.matchSec;
+const AUTO_PHASE_SEC = SEASON.autoSec;
+const ENDGAME_SEC = SEASON.endgameSec;
 
 const FLOAT_TIMER_VIEWPORT_PADDING = 6;
 const FLOAT_TIMER_MIN_VISIBLE_X = 36;
@@ -593,10 +598,10 @@ export function overallScoutRating(
   const manual01 = clampNumber(manualRating.score_0_100 / 100, 0, 1);
   const driver01 = clampNumber(driverScore.score_0_100 / 100, 0, 1);
 
-  const autoPointsSignal = logistic01(points.auto, 4.5, 1.6);
-  const teleopPointsSignal = logistic01(points.teleop, 16, 4);
+  const autoPointsSignal = logistic01(points.auto, SCOUT_POINTS_SCALE.auto.midpoint, SCOUT_POINTS_SCALE.auto.spread);
+  const teleopPointsSignal = logistic01(points.teleop, SCOUT_POINTS_SCALE.teleop.midpoint, SCOUT_POINTS_SCALE.teleop.spread);
   const endgamePointsSignal = clampNumber(points.endgame / Math.max(1, MAX_ENDGAME_POINTS), 0, 1);
-  const totalPointsSignal = logistic01(points.total, 27, 5.5);
+  const totalPointsSignal = logistic01(points.total, SCOUT_POINTS_SCALE.total.midpoint, SCOUT_POINTS_SCALE.total.spread);
   const pointsSignal = clampNumber(
     0.42 * totalPointsSignal +
       0.22 * teleopPointsSignal +
@@ -878,7 +883,7 @@ export function entryHeadUp(entry: SavedScoutingEntry): string {
   const api = entry.scouting_api_rating?.score_0_100 ?? null;
   const manual = entry.manual_rating.score_0_100;
   if (api !== null && api >= 80) return 'High-value target based on manual + API alignment.';
-  if (manual >= 78) return 'Strong manual scouting report; prioritize follow-up clips.';
+  if (manual >= 78) return 'Strong manual scouting report; confirm it with another scout.';
   if (manual <= 48) return 'Risk profile elevated; validate with additional scouts.';
   return 'Balanced profile; use with alliance-fit context.';
 }
@@ -1140,8 +1145,14 @@ export function normalizeEntry(value: unknown): SavedScoutingEntry | null {
   };
 }
 
-export function readStoredEntries(): SavedScoutingEntry[] {
-  const raw = window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE) || window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE_LEGACY);
+// Entries are kept per team workspace, so a device that switches teams never
+// shows one team's room entries in another. Outside any workspace they use the
+// original key.
+export function scoutingEntriesStorageKey(workspaceId: number | null): string {
+  return workspaceId ? `${SCOUTING_ENTRIES_STORAGE}:w${workspaceId}` : SCOUTING_ENTRIES_STORAGE;
+}
+
+function parseStoredEntries(raw: string | null): SavedScoutingEntry[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -1150,6 +1161,17 @@ export function readStoredEntries(): SavedScoutingEntry[] {
   } catch {
     return [];
   }
+}
+
+export function readStoredEntries(workspaceId: number | null = null): SavedScoutingEntry[] {
+  const unscoped = () =>
+    window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE) || window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE_LEGACY);
+  if (!workspaceId) return parseStoredEntries(unscoped());
+  const scoped = window.localStorage.getItem(scoutingEntriesStorageKey(workspaceId));
+  if (scoped !== null) return parseStoredEntries(scoped);
+  // First time in this team on this device: bring along the scout's own notes,
+  // never entries that came from some room.
+  return parseStoredEntries(unscoped()).filter((entry) => !normalizeRoomKey(entry.room_key || ''));
 }
 
 export function entryFileName(eventKey: string, scoutProfile: string): string {
@@ -1175,7 +1197,7 @@ export function preferredMatchKey(rows: EventScheduleItem[]): string {
   const withTimer = rows
     .map((row) => ({
       row,
-      timer: liveTimerLabel(row.scheduled_time, nowMs),
+      timer: liveTimerLabel(matchStartTime(row), nowMs),
     }))
     .sort((a, b) => {
       const aTime = a.row.scheduled_time || 0;
@@ -1202,26 +1224,6 @@ export function compLevelLabel(compLevel: string): string {
   if (normalized === 'f') return 'Final';
   if (normalized === 'playoff' || normalized === 'elim' || normalized === 'elimination') return 'Playoff';
   return titleizeKey(normalized || 'Match');
-}
-
-function matchHasScores(match: EventScheduleItem): boolean {
-  return (
-    typeof match.red_score === 'number' &&
-    typeof match.blue_score === 'number' &&
-    Number.isFinite(match.red_score) &&
-    Number.isFinite(match.blue_score)
-  );
-}
-
-export function inferMatchCompleted(match: EventScheduleItem, nowMs: number): boolean {
-  const timer = liveTimerLabel(match.scheduled_time, nowMs);
-  return (
-    Boolean(match.is_completed) ||
-    match.winner_alliance === 'red' ||
-    match.winner_alliance === 'blue' ||
-    match.winner_alliance === 'tie' ||
-    (matchHasScores(match) && timer.state === 'ended')
-  );
 }
 
 export function inferWinnerAlliance(match: EventScheduleItem, nowMs: number): 'red' | 'blue' | 'tie' | null {
@@ -1474,4 +1476,29 @@ export function apiSnapshotFromIntel(intelPayload: unknown, selectedEventKey: st
     tba_rank: parseNumber(ranking?.rank),
     warnings,
   };
+}
+
+// Unsaved match reports, so an accidental tab tap, refresh or app eviction
+// doesn't throw away a half-scouted match. One draft per workspace/match/team.
+const SCOUT_DRAFT_PREFIX = 'frcmob_scout_draft_v1:';
+
+export type ScoutDraft<F, R> = { form: F; rp: R; notes: string; saved_at_ms: number };
+
+export function scoutDraftKey(workspaceId: number | null, matchKey: string, teamKey: string): string {
+  return `${SCOUT_DRAFT_PREFIX}w${workspaceId ?? 0}:${matchKey.toLowerCase()}:${teamKey.toLowerCase()}`;
+}
+
+export function readScoutDraft<F, R>(key: string): ScoutDraft<F, R> | null {
+  try {
+    const raw = readRecoverableScoutDraft(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ScoutDraft<F, R>;
+    return parsed && typeof parsed === 'object' && parsed.form ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeScoutDraft<F, R>(key: string, draft: ScoutDraft<F, R> | null): boolean {
+  return persistRecoverableScoutDraft(key, draft ? JSON.stringify(draft) : null);
 }

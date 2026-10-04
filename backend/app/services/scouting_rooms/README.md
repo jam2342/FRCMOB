@@ -22,7 +22,7 @@ Contains the `RoleClassifier`, which assigns a team to one of four roles based o
 Each team gets four role signal scores (0–100), one per role. Versatility vs. specialization is also tracked — a team with one very high role score is a specialist, while a team with moderate scores across multiple roles is versatile.
 
 **`realtime.py`**
-Orchestrates real-time sync between analysis workers and connected clients. Listens for analysis events, formats them into WebSocket payloads, and routes them through the bus.
+Orchestrates real-time sync between uvicorn workers and connected clients: room events are formatted as WebSocket payloads and routed through the Redis bus so every process sees them.
 
 **`scope.py`**
 Manages room scoping — rooms can be event-level (all matches at an event) or match-level (a specific match). Scope determines which updates a given client receives and which teams are tracked in the room.
@@ -41,7 +41,7 @@ Cleanup jobs for stale rooms. If a room has had no active connections for a peri
 3. The client receives the current state snapshot for that room.
 
 **Live Updates:**
-1. An analysis worker completes processing and emits a findings update.
+1. A scout saves an entry or a leader changes assignments, and the handling process publishes the update.
 2. `realtime.py` picks up the event and formats it as a WebSocket message.
 3. The bus broadcasts to all clients in the relevant room.
 4. Clients update their UI with the new data.

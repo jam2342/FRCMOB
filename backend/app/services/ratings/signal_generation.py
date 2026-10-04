@@ -11,7 +11,6 @@ from app.db import models
 from app.services.ratings.anti_defense import _anti_defense_tier
 from app.services.ratings.constants import (
     CYCLE_TREND_DELTA_THRESHOLD,
-    FALLBACK_MODEL_LABEL,
     PENALTY_TREND_DELTA_THRESHOLD,
     RELIABILITY_TREND_DELTA_THRESHOLD,
     SIGNAL_MIN_CONFIDENCE,
@@ -108,20 +107,7 @@ def generate_team_signals(
     anti_defense_tier_label = _anti_defense_tier(anti_defense_drop_index)
 
     if use_fallback_model:
-        if not str(rating_algorithm_mode).startswith(FALLBACK_MODEL_LABEL):
-            pass  # caller handles rating_algorithm_mode
-        cons.append(
-            _make_signal(
-                "No analyzed clips yet",
-                float(video_findings_count),
-                50.0,
-                [],
-                category="coverage",
-                rationale="Fallback external-intel model is active until video-analyzed clips are available.",
-                impact="risk_up",
-                signal_confidence=confidence,
-            )
-        )
+        # No "no clips" con here: broadcast video is retired, so it could never clear.
         if statbotics_epa_percentile is not None:
             if statbotics_epa_percentile >= 78.0:
                 pros.append(

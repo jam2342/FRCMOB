@@ -1,0 +1,428 @@
+{
+  "mixed_events": {
+    "confidence": {
+      "frc118": {
+        "avg_analysis_quality": 0.79,
+        "avg_identity_quality": 0.78,
+        "coverage_factor": 1.0,
+        "good_match_factor": 0.1,
+        "match_quality_weight_factor": 0.9043000000000001,
+        "recent_match_factor": 0.05,
+        "stability_factor": 1.0,
+        "throughput_coverage": 0.79,
+        "trend_coverage_factor": 0.0
+      }
+    },
+    "features": {
+      "frc118": {
+        "anti_defense_cycle_increase": null,
+        "anti_defense_drop_index": null,
+        "anti_defense_escape_time_sec": null,
+        "anti_defense_obstacle_eff": null,
+        "anti_defense_open_matches": 1.0,
+        "anti_defense_pressure_coverage": 1.0,
+        "anti_defense_pressured_matches": 0.0,
+        "anti_defense_reliability_drop": null,
+        "anti_defense_scoring_drop": null,
+        "anti_defense_stage_early_quals_share": 1.0,
+        "anti_defense_stage_elims_share": 0.0,
+        "anti_defense_stage_late_quals_share": 0.0,
+        "anti_defense_stage_match_count": 1.0,
+        "anti_defense_stage_multiplier": 0.7941666666666667,
+        "auto_points_est": 5.4,
+        "bps_median": 0.6,
+        "capacity": 7.649999999999999,
+        "capacity_utilization": 0.8,
+        "ccwm": null,
+        "climb_max": 0.7855000000000001,
+        "climb_output": 30.000000000000004,
+        "climb_success": 0.61,
+        "consistency_var": 0.0,
+        "cycle_trend_delta": null,
+        "decision_quality": 0.487,
+        "defense_presence": 17.5,
+        "dpr": null,
+        "event_strength_bps": null,
+        "event_strength_confidence": null,
+        "expected_net_points": 32.27,
+        "explicit_penalty_points_per_match": 35.0,
+        "hub_awareness_ratio": 0.0,
+        "inferred_penalty_points_per_match": 6.0,
+        "match_quality_weight_avg": 0.9043000000000001,
+        "match_quality_weight_min": 0.9043000000000001,
+        "max_burst_bps": 0.6,
+        "opr": null,
+        "penalty_points_per_match": 37.1,
+        "penalty_trend_delta": null,
+        "protected_zone_pressure": 1.5,
+        "recent_matches_used": 1.0,
+        "reliability_trend_delta": null,
+        "rp_contribution_raw": 102.3835,
+        "season_strength_bps": null,
+        "season_strength_confidence": null,
+        "severe_penalty_rate": 2.0,
+        "shift_productivity": 0.09803921568627452,
+        "shot_stability_var": 0.0,
+        "stability_raw": 1.0,
+        "statbotics_norm_epa": null,
+        "teleop_points_est": 8.0,
+        "terrain_mobility": null,
+        "throughput_coverage": 0.79,
+        "throughput_trend_delta": null,
+        "top_speed": null,
+        "uptime": 0.8,
+        "video_findings_count": 1.0
+      }
+    },
+    "ratings": [
+      {
+        "confidence_0_1": 0.6254,
+        "cons": [
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "auto_contribution",
+                "value": 5.4
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "risk_up",
+            "label": "Autonomous floor needs work",
+            "metric": "auto_contribution",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Auto contribution percentile is currently below the event median. Includes analyzed match data.",
+            "rule_id": "autonomous_floor_needs_work",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          },
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "fuel_scoring_rate",
+                "value": 0.88
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "risk_up",
+            "label": "Teleop baseline is limited",
+            "metric": "fuel_scoring_rate",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Throughput percentile is limiting offensive floor. Includes analyzed match data.",
+            "rule_id": "teleop_baseline_is_limited",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          }
+        ],
+        "driver_skill_0_100": 45.087,
+        "event_key": "2026txhou",
+        "evidence": [
+          {
+            "clip_url": null,
+            "match_key": "2026txhou_qm1",
+            "metric": "auto_contribution",
+            "value": 5.4
+          },
+          {
+            "clip_url": null,
+            "match_key": "2026txhou_qm1",
+            "metric": "fuel_scoring_rate",
+            "value": 0.88
+          }
+        ],
+        "model_version": "rating_v14_rebuilt_hub_terrain",
+        "nickname": "Robonauts",
+        "pros": [
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "auto_contribution",
+                "value": 5.4
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "upside",
+            "label": "Autonomous floor is serviceable",
+            "metric": "auto_contribution",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Auto contribution percentile is holding above the median. Includes analyzed match data.",
+            "rule_id": "autonomous_floor_is_serviceable",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          },
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "fuel_scoring_rate",
+                "value": 0.88
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "upside",
+            "label": "Teleop baseline is stable",
+            "metric": "fuel_scoring_rate",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Throughput percentile indicates repeatable teleop scoring. Includes analyzed match data.",
+            "rule_id": "teleop_baseline_is_stable",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          }
+        ],
+        "rating_0_100": 43.773,
+        "robot_level_0_100": 45.087,
+        "subscores": {
+          "anti_defense": 50.0,
+          "auto_contribution": 50.0,
+          "capacity_utilization": 50.0,
+          "consistency": 50.0,
+          "defense_presence": 50.0,
+          "endgame": 50.0,
+          "manual_points_impact": 50.0,
+          "penalty_discipline": 50.0,
+          "results_anchor": 50.0,
+          "rp_contribution": 50.0,
+          "shift_productivity": 50.0,
+          "throughput": 50.0
+        },
+        "team_key": "frc118",
+        "team_number": 118
+      }
+    ]
+  },
+  "sparse": {
+    "confidence": {
+      "frc118": {
+        "avg_analysis_quality": 0.79,
+        "avg_identity_quality": 0.78,
+        "coverage_factor": 1.0,
+        "good_match_factor": 0.1,
+        "match_quality_weight_factor": 0.9043000000000001,
+        "recent_match_factor": 0.05,
+        "stability_factor": 1.0,
+        "throughput_coverage": 0.79,
+        "trend_coverage_factor": 0.0
+      }
+    },
+    "features": {
+      "frc118": {
+        "anti_defense_cycle_increase": null,
+        "anti_defense_drop_index": null,
+        "anti_defense_escape_time_sec": null,
+        "anti_defense_obstacle_eff": null,
+        "anti_defense_open_matches": 1.0,
+        "anti_defense_pressure_coverage": 1.0,
+        "anti_defense_pressured_matches": 0.0,
+        "anti_defense_reliability_drop": null,
+        "anti_defense_scoring_drop": null,
+        "anti_defense_stage_early_quals_share": 1.0,
+        "anti_defense_stage_elims_share": 0.0,
+        "anti_defense_stage_late_quals_share": 0.0,
+        "anti_defense_stage_match_count": 1.0,
+        "anti_defense_stage_multiplier": 0.7941666666666667,
+        "auto_points_est": 5.4,
+        "bps_median": 0.6,
+        "capacity": 7.649999999999999,
+        "capacity_utilization": 0.8,
+        "ccwm": null,
+        "climb_max": 0.61,
+        "climb_output": 0.0,
+        "climb_success": 0.61,
+        "consistency_var": 0.0,
+        "cycle_trend_delta": null,
+        "decision_quality": 0.5619999999999999,
+        "defense_presence": 17.5,
+        "dpr": null,
+        "event_strength_bps": null,
+        "event_strength_confidence": null,
+        "expected_net_points": 5.4,
+        "explicit_penalty_points_per_match": 0.0,
+        "hub_awareness_ratio": null,
+        "inferred_penalty_points_per_match": 0.0,
+        "match_quality_weight_avg": 0.9043000000000001,
+        "match_quality_weight_min": 0.9043000000000001,
+        "max_burst_bps": 0.6,
+        "opr": null,
+        "penalty_points_per_match": 0.0,
+        "penalty_trend_delta": null,
+        "protected_zone_pressure": 0.0,
+        "recent_matches_used": 1.0,
+        "reliability_trend_delta": null,
+        "rp_contribution_raw": 5.67,
+        "season_strength_bps": null,
+        "season_strength_confidence": null,
+        "severe_penalty_rate": 0.0,
+        "shift_productivity": 0.09803921568627452,
+        "shot_stability_var": 0.0,
+        "stability_raw": 1.0,
+        "statbotics_norm_epa": null,
+        "teleop_points_est": 0.0,
+        "terrain_mobility": null,
+        "throughput_coverage": 0.79,
+        "throughput_trend_delta": null,
+        "top_speed": null,
+        "uptime": 0.8,
+        "video_findings_count": 1.0
+      }
+    },
+    "ratings": [
+      {
+        "confidence_0_1": 0.6254,
+        "cons": [
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "auto_contribution",
+                "value": 5.4
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "risk_up",
+            "label": "Autonomous floor needs work",
+            "metric": "auto_contribution",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Auto contribution percentile is currently below the event median. Includes analyzed match data.",
+            "rule_id": "autonomous_floor_needs_work",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          },
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "fuel_scoring_rate",
+                "value": 0.88
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "risk_up",
+            "label": "Teleop baseline is limited",
+            "metric": "fuel_scoring_rate",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Throughput percentile is limiting offensive floor. Includes analyzed match data.",
+            "rule_id": "teleop_baseline_is_limited",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          }
+        ],
+        "driver_skill_0_100": 45.087,
+        "event_key": "2026txhou",
+        "evidence": [
+          {
+            "clip_url": null,
+            "match_key": "2026txhou_qm1",
+            "metric": "auto_contribution",
+            "value": 5.4
+          },
+          {
+            "clip_url": null,
+            "match_key": "2026txhou_qm1",
+            "metric": "fuel_scoring_rate",
+            "value": 0.88
+          }
+        ],
+        "model_version": "rating_v14_rebuilt_hub_terrain",
+        "nickname": "Robonauts",
+        "pros": [
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "auto_contribution",
+                "value": 5.4
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "upside",
+            "label": "Autonomous floor is serviceable",
+            "metric": "auto_contribution",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Auto contribution percentile is holding above the median. Includes analyzed match data.",
+            "rule_id": "autonomous_floor_is_serviceable",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          },
+          {
+            "category": "baseline",
+            "confidence_0_1": 0.6254,
+            "delta": 0.0,
+            "evidence": [
+              {
+                "clip_url": null,
+                "match_key": "2026txhou_qm1",
+                "metric": "fuel_scoring_rate",
+                "value": 0.88
+              }
+            ],
+            "evidence_count": 1,
+            "impact": "upside",
+            "label": "Teleop baseline is stable",
+            "metric": "fuel_scoring_rate",
+            "metric_value": 50.0,
+            "percentile": 50.0,
+            "rationale": "Throughput percentile indicates repeatable teleop scoring. Includes analyzed match data.",
+            "rule_id": "teleop_baseline_is_stable",
+            "sample_size": 1,
+            "signal_confidence_0_1": 0.6254
+          }
+        ],
+        "rating_0_100": 45.447,
+        "robot_level_0_100": 45.087,
+        "subscores": {
+          "anti_defense": 50.0,
+          "auto_contribution": 50.0,
+          "capacity_utilization": 50.0,
+          "consistency": 50.0,
+          "defense_presence": 50.0,
+          "endgame": 50.0,
+          "manual_points_impact": 50.0,
+          "penalty_discipline": 50.0,
+          "results_anchor": 50.0,
+          "rp_contribution": 50.0,
+          "shift_productivity": 50.0,
+          "throughput": 50.0
+        },
+        "team_key": "frc118",
+        "team_number": 118
+      }
+    ]
+  }
+}

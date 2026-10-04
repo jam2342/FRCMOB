@@ -55,6 +55,9 @@ const CONDITIONAL = new Map([
   ['/events/dashboard', 'no event loaded in this page\u2019s own picker'],
   ['/scouting/record', 'hero is the match clock; recording needs a camera'],
   ['/compare/alliance-advisor', 'needs an alliance built, which is a POST behind admin auth'],
+  // Coverage is private to a team workspace (2026-09-26); a guard browser has
+  // none, so it measures the "set up your team" gate, not the page.
+  ['/scouting/coverage', 'needs a team workspace, which the guard browser does not have'],
 ]);
 
 // Routes that are a list, a form, a canvas or a document. A screen is allowed

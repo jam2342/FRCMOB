@@ -5,7 +5,16 @@ import { MatchRecorder } from './MatchRecorder';
 import { type Mat3 } from './homography';
 
 vi.mock('./detector', () => ({
-  createDetector: vi.fn(async () => ({ session: {}, inputName: 'input', outputName: 'output' })),
+  ON_DEVICE_MODEL_URL: '/models/test.onnx',
+  ON_DEVICE_MODEL_VERSION: 'test-model',
+  createDeviceDetector: vi.fn(async () => ({
+    modelVersion: 'test-model',
+    confThreshold: 0.25,
+    session: {},
+    inputName: 'input',
+    outputName: 'output',
+    executionProvider: 'wasm',
+  })),
   detectRobots: vi.fn(async () => []),
 }));
 
@@ -102,5 +111,17 @@ describe('MatchRecorder lifecycle', () => {
 
     expect(timestamps.length).toBeGreaterThan(capturedBeforeRestart);
     expect(timestamps.every((timeSec, index) => index === 0 || timeSec > timestamps[index - 1])).toBe(true);
+  });
+
+  it('starts the breakdown when the scout stops recording', async () => {
+    setMediaDevices(vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] }) as unknown as MediaStream));
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const onComplete = vi.fn();
+    render(<MatchRecorder resolvePose={() => IDENTITY} onFrame={vi.fn()} onComplete={onComplete} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start recording/i }));
+    await act(flushPromises);
+    fireEvent.click(screen.getByRole('button', { name: /stop recording/i }));
+    expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });
