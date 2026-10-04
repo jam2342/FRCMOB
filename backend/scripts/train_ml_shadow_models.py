@@ -309,7 +309,7 @@ def main() -> int:
     parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--activate", action="store_true")
     parser.add_argument("--no-activate", dest="activate", action="store_false")
-    parser.set_defaults(activate=True)
+    parser.set_defaults(activate=False)
     parser.add_argument("--rebuild-snapshots", action="store_true")
     parser.add_argument("--event-key", default=None)
     parser.add_argument("--limit-events", type=int, default=30)

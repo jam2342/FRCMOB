@@ -108,6 +108,13 @@ function formatContextMatch(matchKey: string, eventKey: string): string {
   return matchKey.toUpperCase();
 }
 
+// Only name what is actually selected; "Match No match · Team Team 254" read
+// like a template that forgot to fill itself in.
+export function buildContextSummary(eventLabel: string, matchLabel: string, teamLabel: string): string {
+  const parts = [eventLabel, matchLabel, teamLabel].map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : 'Nothing selected yet';
+}
+
 function pushRecent(
   current: ContextQuickPickState,
   kind: ContextQuickPickKind,
@@ -200,13 +207,6 @@ export function useContextStrip(locationSearch: string) {
     [contextRecents.team, pinnedTeamSet],
   );
 
-  const contextStripSummary = useMemo(() => {
-    const eventLabel = contextSnapshot.eventKey || 'none';
-    const matchLabel = formatContextMatch(contextSnapshot.matchKey, contextSnapshot.eventKey);
-    const teamLabel = contextSnapshot.teamKey ? contextSnapshot.teamKey.toUpperCase() : 'none';
-    return `Event ${eventLabel} · Match ${matchLabel} · Team ${teamLabel}`;
-  }, [contextSnapshot.eventKey, contextSnapshot.matchKey, contextSnapshot.teamKey]);
-
   const hasContextStripContent = Boolean(
     contextSnapshot.eventKey ||
     contextSnapshot.matchKey ||
@@ -256,7 +256,6 @@ export function useContextStrip(locationSearch: string) {
     contextStripCollapsed,
     setContextStripCollapsed,
     hasContextStripContent,
-    contextStripSummary,
     contextMatchLabel,
     contextPins,
     contextRecents,

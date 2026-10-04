@@ -12,6 +12,12 @@ export type TimingSummary = {
   fps: number; // derived from the median
 };
 
+export type InferenceTelemetry = TimingSummary & {
+  thermalDriftPct: number;
+  executionProvider: string | null;
+  modelVersion: string;
+};
+
 export function summarizeTimings(samples: number[]): TimingSummary {
   if (samples.length === 0) return { iterations: 0, msMedian: 0, msP90: 0, msMax: 0, fps: 0 };
   const s = [...samples].sort((a, b) => a - b);
@@ -25,6 +31,22 @@ export function summarizeTimings(samples: number[]): TimingSummary {
     msMax: s[s.length - 1],
     fps: msMedian > 0 ? 1000 / msMedian : 0,
   };
+}
+
+export function summarizeInferenceTelemetry(
+  samples: number[],
+  modelVersion: string,
+  executionProvider: string | null,
+): InferenceTelemetry {
+  const summary = summarizeTimings(samples);
+  const third = Math.max(1, Math.floor(samples.length / 3));
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+  const first = mean(samples.slice(0, third));
+  const last = mean(samples.slice(-third));
+  const thermalDriftPct = samples.length > 1 && first > 0
+    ? Math.round(((last - first) / first) * 100)
+    : 0;
+  return { ...summary, thermalDriftPct, executionProvider, modelVersion };
 }
 
 // Run an async stage `warmup` then `iterations` times, timing each, and summarize.
@@ -43,11 +65,13 @@ export async function benchmark(
     await run();
     samples.push(performance.now() - t);
   }
-  const summary = summarizeTimings(samples);
-  const third = Math.max(1, Math.floor(samples.length / 3));
-  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
-  const first = mean(samples.slice(0, third));
-  const last = mean(samples.slice(-third));
-  const thermalDriftPct = first > 0 ? Math.round(((last - first) / first) * 100) : 0;
-  return { ...summary, thermalDriftPct };
+  const telemetry = summarizeInferenceTelemetry(samples, '', null);
+  return {
+    iterations: telemetry.iterations,
+    msMedian: telemetry.msMedian,
+    msP90: telemetry.msP90,
+    msMax: telemetry.msMax,
+    fps: telemetry.fps,
+    thermalDriftPct: telemetry.thermalDriftPct,
+  };
 }

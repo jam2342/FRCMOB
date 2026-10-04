@@ -1,6 +1,7 @@
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SavedRuns } from '../features/onDevice/SavedRuns';
 import { OnDeviceRun } from '../features/onDevice/OnDeviceRun';
 
 export function OnDeviceRunPage() {
@@ -11,12 +12,13 @@ export function OnDeviceRunPage() {
         <SurfaceCardGroup>
           <SurfaceCard
             title="On-Device Match Breakdown"
-            subtitle="Record a match on your phone and break it down offline — detect, track, identify, and score offense/defense on-device, then sync to the central dataset."
+            subtitle="Film or upload a match, identify the robots, then view their position heatmaps. Offense and defense estimates appear after sync when enough data is available."
             expandable={false}
             mobileCollapsible={false}
           >
             <OnDeviceRun />
           </SurfaceCard>
+          <SavedRuns />
         </SurfaceCardGroup>
       </div>
     </>

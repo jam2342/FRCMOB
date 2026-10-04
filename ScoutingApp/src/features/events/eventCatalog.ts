@@ -59,7 +59,7 @@ export async function loadSeasonEventCatalog(options?: EventCatalogOptions): Pro
   const preferLiveNow = options?.preferLiveNow ?? true;
   const remoteTeamCountFetchLimit = Math.max(0, Math.floor(options?.remoteTeamCountFetchLimit ?? 0));
 
-  let suggested: EventSearchItem[] = [];
+  let suggested: EventSearchItem[];
   try {
     const payload = await getSuggestedEvents(preferredYear, fallbackYear, limit, {
       preferLiveNow,

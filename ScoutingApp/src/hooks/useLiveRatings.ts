@@ -34,6 +34,8 @@ export type UseLiveRatingsResult = {
   refreshNow: () => void;
 };
 
+const FINISHED_EVENT_REFRESH_MS = 10 * 60 * 1000;
+
 function intervalMsFromSetting(liveRefreshSec: number): number {
   const raw = Number(liveRefreshSec);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_LIVE_INTERVAL_MS;
@@ -42,13 +44,19 @@ function intervalMsFromSetting(liveRefreshSec: number): number {
 
 export function useLiveRatings(
   eventKey: string | null | undefined,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; live?: boolean },
 ): UseLiveRatingsResult {
   const enabledOption = options?.enabled ?? true;
+  const live = options?.live ?? true;
   const visible = usePageVisibility();
   const { online } = useOnlineStatus();
   const liveRefreshSec = useLiveRefreshSetting();
-  const intervalMs = useMemo(() => intervalMsFromSetting(liveRefreshSec), [liveRefreshSec]);
+  // A finished event's ratings don't move; polling it every few seconds only cost
+  // requests. Load it, then look again rarely in case a recompute lands.
+  const intervalMs = useMemo(
+    () => (online && live ? intervalMsFromSetting(liveRefreshSec) : FINISHED_EVENT_REFRESH_MS),
+    [online, live, liveRefreshSec],
+  );
 
   const [ratings, setRatings] = useState<EventTeamRatingItem[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -63,7 +71,9 @@ export function useLiveRatings(
   // depend on render state.
   const prevByTeamRef = useRef<Map<string, number>>(new Map());
 
-  const enabled = Boolean(eventKey) && enabledOption && online;
+  // The API serves the last saved ratings while offline. Run once on entry, then
+  // check rarely until connectivity returns; the normal live cadence resumes then.
+  const enabled = Boolean(eventKey) && enabledOption;
 
   const run = useCallback(
     async (reason: SingleFlightPollReason) => {

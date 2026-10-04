@@ -1,0 +1,4 @@
+# Trained weights ship with the private deploy but never with `git archive`, which is
+# how the public repo is synced (docs/THIRD_PARTY_ASSETS.md: weights are not included).
+ScoutingApp/public/models/** binary export-ignore
+ScoutingApp/public/models export-ignore

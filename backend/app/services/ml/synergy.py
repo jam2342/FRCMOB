@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from datetime import datetime, timezone
 from itertools import combinations
@@ -16,6 +15,7 @@ from app.services.utils import (
     _mean as _mean_or_none,
     _weighted_mean as _weighted_mean_or_none,
     _weighted_median,
+    percentile_ranks,
 )
 
 SYNERGY_MODEL_VERSION = "synergy_v4_rolefit_tuned"
@@ -75,19 +75,7 @@ def _quality_and_coverage(
     return run_quality, coverage_score
 
 def _percentile_scores(raw_by_key: dict[str, float | None]) -> dict[str, float]:
-    valid = [
-        (key, float(value))
-        for key, value in raw_by_key.items()
-        if value is not None and not math.isnan(float(value))
-    ]
-    if not valid:
-        return {key: 50.0 for key in raw_by_key}
-    valid.sort(key=lambda row: row[1])
-    n = len(valid)
-    result = {key: 50.0 for key in raw_by_key}
-    for idx, (key, _) in enumerate(valid):
-        result[key] = 50.0 if n == 1 else (idx / (n - 1)) * 100.0
-    return result
+    return percentile_ranks(raw_by_key)
 
 def _event_team_keys(db: Session, event_key: str) -> set[str]:
     return {

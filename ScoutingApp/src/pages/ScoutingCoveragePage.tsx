@@ -11,6 +11,7 @@ import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { Table, type TableColumn } from '../components/ui/primitives';
 import './ScoutingCoveragePage.css';
+import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 
 type LeaderboardRow = ScoutingCoverageResponse['leaderboard'][number];
 
@@ -76,7 +77,7 @@ function relativeTime(iso: string | null): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function ScoutingCoveragePage() {
+function ScoutingCoverageWorkspacePage() {
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } =
     useEventKeyParam(STORAGE_KEY);
   const isMobile = useMobileLayout();
@@ -271,5 +272,15 @@ export function ScoutingCoveragePage() {
         </SurfaceCardGroup>
       </div>
     </>
+  );
+}
+
+// Team-only: scouting coverage reports are private to a workspace, so nothing loads until
+// the device has joined one.
+export function ScoutingCoveragePage() {
+  return (
+    <WorkspaceGate feature="Scouting coverage reports" viewBar={<PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />}>
+      <ScoutingCoverageWorkspacePage />
+    </WorkspaceGate>
   );
 }

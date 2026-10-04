@@ -94,3 +94,11 @@ describe('yolo decode', () => {
     expect((top.y1 + top.y2) / 2).toBeCloseTo(640, 1);
   });
 });
+
+describe('undoLetterbox with a crop offset', () => {
+  it('maps a box from a field crop back to full-frame pixels', () => {
+    // Crop starts at (0, 330) of the frame, read at native resolution.
+    const box = undoLetterbox({ x1: 100, y1: 50, x2: 140, y2: 90, score: 0.9 }, { scale: 1, padX: 0, padY: 0, offsetX: 0, offsetY: 330 });
+    expect(box).toEqual({ x1: 100, y1: 380, x2: 140, y2: 420, score: 0.9 });
+  });
+});

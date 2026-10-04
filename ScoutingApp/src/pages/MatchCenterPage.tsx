@@ -6,17 +6,13 @@ import {
   getEventScheduleWithSynergy,
   getEventTeamLiveForm,
   getMatchPhases,
-  getMatchTracks,
 } from '../api';
 import type {
   EventScheduleItem,
-  EventTeamLiveFormEntry,
   EventTeamLiveFormResponse,
   MatchPhasesResponse,
-  MatchTracksResponse,
   ScheduleWithSynergyMatch,
 } from '../api';
-import { VideoReplayer } from '../components/cv/VideoReplayer';
 import { EventPicker } from '../components/EventPicker';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -24,6 +20,7 @@ import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
 import { Table, type TableColumn } from '../components/ui/primitives';
@@ -32,7 +29,7 @@ import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import {
   EyeIcon, PieChartIcon, UsersIcon, ClockIcon,
-  ChevronDownIcon, VideoIcon, TrophyIcon,
+  ChevronDownIcon, ChevronLeftIcon, VideoIcon, TrophyIcon,
   CalendarIcon, SignalIcon, ScoreboardIcon, RobotIcon, GamepadIcon,
   FlagIcon, TargetIcon, StarIcon, HandshakeIcon, LinkIcon,
 } from '../components/ui/Icons';
@@ -42,7 +39,7 @@ import {
   eventKeyFromMatchKey,
   fmtDateShort,
   fmtUnix,
-  liveTimerLabel,
+  liveTimerLabel, matchStartTime,
   metric,
   normalizeEventKey,
   normalizeMatchKey,
@@ -50,6 +47,12 @@ import {
   titleizeKey,
 } from './centerUtils';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
+import { SEASON } from '../config/season';
+import { LiteStreamEmbed } from '../components/LiteStreamEmbed';
+import { pickDefaultMatchKey } from './homeFeed';
+import { inferMatchCompleted, matchHasScores } from './matchStatus';
+import { TeamFormStrip } from '../components/TeamFormStrip';
+import { resolveTab } from './tabUtils';
 
 const MATCH_CENTER_VIEW_PREFS_STORAGE = 'scouting_match_center_view_prefs_v1';
 const MATCH_CENTER_RECENT_STORAGE = 'scouting_match_center_recent_matches_v1';
@@ -111,56 +114,6 @@ function writeMatchCenterRecentMatches(next: MatchCenterRecentMatchesMap) {
   window.localStorage.setItem(MATCH_CENTER_RECENT_STORAGE, JSON.stringify(next));
 }
 
-function matchHasScores(match: EventScheduleItem | null): boolean {
-  return (
-    typeof match?.red_score === 'number' &&
-    typeof match?.blue_score === 'number' &&
-    Number.isFinite(match.red_score) &&
-    Number.isFinite(match.blue_score) &&
-    match.red_score >= 0 &&
-    match.blue_score >= 0
-  );
-}
-
-function inferMatchCompleted(match: EventScheduleItem | null, nowMs: number): boolean {
-  if (!match) return false;
-  const timer = liveTimerLabel(match.scheduled_time ?? null, nowMs);
-  const winner = match.winner_alliance || null;
-  return (
-    Boolean(match.is_completed) ||
-    winner === 'red' ||
-    winner === 'blue' ||
-    winner === 'tie' ||
-    (matchHasScores(match) && timer.state === 'ended')
-  );
-}
-
-function isMatchTab(value: string | null): value is MatchTab {
-  return value === 'overview' || value === 'breakdown' || value === 'teams';
-}
-
-function teamFormStrip(entry: EventTeamLiveFormEntry | null) {
-  const form = entry?.recent_form || [];
-  if (form.length === 0) {
-    return <span className="center-form-empty">No recent form</span>;
-  }
-  return (
-    <span className="center-form-strip" aria-label="Last five matches">
-      {form.map((result, idx) => (
-        <span
-          key={`${entry?.team_key || 'team'}-form-${idx}`}
-          className={`center-form-pill ${
-            result === 'W' ? 'win' : result === 'L' ? 'loss' : 'tie'
-          }`.trim()}
-          title={`Result ${result}`}
-        >
-          {result}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 export function MatchCenterPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -178,7 +131,7 @@ export function MatchCenterPage() {
     defaultEventKey,
   );
   const tabParam = searchParams.get('tab');
-  const defaultTab: MatchTab = isMatchTab(tabParam) ? tabParam : 'overview';
+  const defaultTab = resolveTab(tabParam, MATCH_TABS, 'overview');
 
   const [eventInput, setEventInput] = useState(defaultEventKey);
   const [selectedEventKey, setSelectedEventKey] = useState(defaultEventKey);
@@ -198,8 +151,6 @@ export function MatchCenterPage() {
   const [synergyMatches, setSynergyMatches] = useState<Record<string, ScheduleWithSynergyMatch>>({});
   const [matchPhases, setMatchPhases] = useState<MatchPhasesResponse | null>(null);
 
-  const [matchTracks, setMatchTracks] = useState<MatchTracksResponse | null>(null);
-  const [loadingTracks, setLoadingTracks] = useState(false);
 
   const [loadingEventData, setLoadingEventData] = useState(false);
   const [loadingPhases, setLoadingPhases] = useState(false);
@@ -225,17 +176,18 @@ export function MatchCenterPage() {
     if (!isMobileLayout) setMobileFinderOpen(false);
   }, [isMobileLayout]);
 
-  // Keep internal selection state in sync with URL query params for deep links.
-  // This runs only when URL params change to avoid state<->URL ping-pong loops.
-  useEffect(() => {
-    const urlEventKey = normalizeEventKey(searchParams.get('event'));
+  // A link to another match (or back/forward) changes the URL under the page;
+  // bring the selection over to it. See useExternalSearchSync for why the
+  // writer below has to sit this round out.
+  const urlSync = useExternalSearchSync(searchParams, (params) => {
+    const urlEventKey = normalizeEventKey(params.get('event'));
     const storedEventKey = readStoredCenterContext().eventKey;
     const provisionalEventKey = urlEventKey || storedEventKey;
-    const urlMatchKey = normalizeMatchKey(searchParams.get('match'), provisionalEventKey);
+    const urlMatchKey = normalizeMatchKey(params.get('match'), provisionalEventKey);
     const eventFromMatchKey = eventKeyFromMatchKey(urlMatchKey);
     const resolvedEventKey = eventFromMatchKey || urlEventKey;
     const resolvedMatchKey = normalizeMatchKey(urlMatchKey, resolvedEventKey || provisionalEventKey);
-    const urlTab = searchParams.get('tab');
+    const urlTab = params.get('tab');
 
     if (resolvedEventKey) {
       setEventInput((prev) => (prev === resolvedEventKey ? prev : resolvedEventKey));
@@ -244,10 +196,9 @@ export function MatchCenterPage() {
     if (resolvedMatchKey) {
       setSelectedMatchKey((prev) => (prev === resolvedMatchKey ? prev : resolvedMatchKey));
     }
-    if (isMatchTab(urlTab)) {
-      setActiveTab((prev) => (prev === urlTab ? prev : urlTab));
-    }
-  }, [searchParams]);
+    const nextTab = resolveTab(urlTab, MATCH_TABS, 'overview');
+    setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
+  });
 
   useEffect(() => {
     setVisibleMatchCount(70);
@@ -289,12 +240,14 @@ export function MatchCenterPage() {
   }, [recentMatchesByEvent]);
 
   useEffect(() => {
+    if (!urlSync.shouldWrite()) return;
     const next = new URLSearchParams();
     if (selectedEventKey) next.set('event', selectedEventKey);
     if (selectedMatchKey) next.set('match', selectedMatchKey);
     next.set('tab', activeTab);
 
     if (next.toString() !== searchParams.toString()) {
+      urlSync.markWritten(next.toString());
       setSearchParams(next, { replace: true });
     }
     writeCenterContext({
@@ -302,7 +255,7 @@ export function MatchCenterPage() {
       matchKey: selectedMatchKey,
       sourcePath: '/match-center',
     });
-  }, [activeTab, searchParams, selectedEventKey, selectedMatchKey, setSearchParams]);
+  }, [activeTab, searchParams, selectedEventKey, selectedMatchKey, setSearchParams, urlSync]);
 
   useEffect(() => {
     if (selectedEventKey) return;
@@ -363,7 +316,7 @@ export function MatchCenterPage() {
         setScheduleRows(rows);
         const now = Date.now();
         const hasLive = rows.some(
-          (row) => !inferMatchCompleted(row, now) && liveTimerLabel(row.scheduled_time ?? null, now).state === 'live',
+          (row) => !inferMatchCompleted(row, now) && liveTimerLabel(matchStartTime(row), now).state === 'live',
         );
         setEventHasLiveMatch(hasLive);
         setEventName(scheduleResult.value.event_name || null);
@@ -412,8 +365,8 @@ export function MatchCenterPage() {
       setLastUpdatedAt(Date.now());
       setStatusText(
         errors.length > 0
-          ? `Partial data for ${selectedEventKey}.`
-          : `${selectedEventKey} loaded.`,
+          ? 'Some data is missing'
+          : 'Up to date',
       );
       return errors.length === 0;
     } finally {
@@ -461,7 +414,8 @@ export function MatchCenterPage() {
       }
     }
     if (!selectedMatchKey || !hasSelected) {
-      setSelectedMatchKey(normalizeMatchKey(scheduleRows[0].match_key, selectedEventKey));
+      const fallbackKey = pickDefaultMatchKey(scheduleRows, Date.now()) || scheduleRows[0].match_key;
+      setSelectedMatchKey(normalizeMatchKey(fallbackKey, selectedEventKey));
     }
   }, [scheduleRows, selectedEventKey, selectedMatchKey]);
 
@@ -496,21 +450,6 @@ export function MatchCenterPage() {
     };
   }, [selectedMatchKey]);
 
-  /* ── lazy-load robot tracks for the selected match ──────────── */
-  useEffect(() => {
-    if (!selectedMatchKey) {
-      setMatchTracks(null);
-      return;
-    }
-    let cancelled = false;
-    setLoadingTracks(true);
-    getMatchTracks(selectedMatchKey)
-      .then((res) => { if (!cancelled) setMatchTracks(res); })
-      .catch(() => { if (!cancelled) setMatchTracks(null); })
-      .finally(() => { if (!cancelled) setLoadingTracks(false); });
-    return () => { cancelled = true; };
-  }, [selectedMatchKey]);
-
   const filteredMatches = useMemo(() => {
     const query = matchFilter.trim().toLowerCase();
     if (!query) return scheduleRows;
@@ -533,8 +472,8 @@ export function MatchCenterPage() {
     const rows = [...filteredMatches];
     if (summarySortMode === 'status') {
       rows.sort((a, b) => {
-        const aTimer = liveTimerLabel(a.scheduled_time, nowMs);
-        const bTimer = liveTimerLabel(b.scheduled_time, nowMs);
+        const aTimer = liveTimerLabel(matchStartTime(a), nowMs);
+        const bTimer = liveTimerLabel(matchStartTime(b), nowMs);
         const aCompleted = inferMatchCompleted(a, nowMs);
         const bCompleted = inferMatchCompleted(b, nowMs);
         const score = (completed: boolean, state: string) => {
@@ -592,15 +531,16 @@ export function MatchCenterPage() {
     );
   }, [normalizedSelectedMatchKey, scheduleRows, selectedEventKey]);
 
+  const selectedMatchStart = matchStartTime(selectedMatch);
   const selectedMatchTimer = useMemo(
-    () => liveTimerLabel(selectedMatch?.scheduled_time ?? null, nowMs),
-    [nowMs, selectedMatch?.scheduled_time],
+    () => liveTimerLabel(selectedMatchStart, nowMs),
+    [nowMs, selectedMatchStart],
   );
   const selectedMatchProgress = useMemo(() => {
     if (!selectedMatch?.scheduled_time) return null;
     const startSec = selectedMatch.scheduled_time;
     const elapsedSec = Math.max(0, Math.floor(nowMs / 1000) - startSec);
-    return Math.max(0, Math.min(100, (elapsedSec / 150) * 100));
+    return Math.max(0, Math.min(100, (elapsedSec / SEASON.matchSec) * 100));
   }, [nowMs, selectedMatch?.scheduled_time]);
   const selectedWinner = selectedMatch?.winner_alliance || null;
   const selectedHasScores = matchHasScores(selectedMatch);
@@ -670,7 +610,7 @@ export function MatchCenterPage() {
     };
 
     const strictLive = rows.find(
-      (row) => !inferMatchCompleted(row, nowMs) && liveTimerLabel(row.scheduled_time ?? null, nowMs).state === 'live',
+      (row) => !inferMatchCompleted(row, nowMs) && liveTimerLabel(matchStartTime(row), nowMs).state === 'live',
     );
     if (strictLive) return strictLive;
 
@@ -791,13 +731,7 @@ export function MatchCenterPage() {
         ) : null}
         {liveStream?.embed_url ? (
           <div className="center-stream-embed-wrap">
-            <iframe
-              title={`Live stream for ${selectedEventKey}`}
-              src={liveStream.embed_url}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              referrerPolicy="strict-origin-when-cross-origin"
-              allowFullScreen
-            />
+            <LiteStreamEmbed key={liveStream.embed_url} title={`Live stream for ${selectedEventKey}`} src={liveStream.embed_url} />
           </div>
         ) : (
           <p className="center-callout muted">No stream embed available.</p>
@@ -813,20 +747,16 @@ export function MatchCenterPage() {
     <PageViewBar items={MATCH_HUB_VIEWS} />
     <div className="match-center-page">
     <div className={`center-layout center-layout-match mobile-finder-layout scouting-layout-grid ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
-      {isMobileLayout ? (
-        <SegmentedTabs
-          className="mobile-view-toggle"
-          itemClassName="mobile-view-toggle-btn"
-          ariaLabel="Match mobile view switch"
-          value={mobileFinderOpen ? 'finder' : 'center'}
-          onChange={(next) => setMobileFinderOpen(next === 'finder')}
-          items={[
-            { value: 'finder', label: 'Match Finder' },
-            { value: 'center', label: 'Match Center', disabled: !selectedMatch },
-          ]}
-        />
-      ) : null}
+      {/* Phones used to get a Match Finder / Match Center toggle here, the
+          second of four stacked tab rows before any content. The finder now
+          opens from "Change match" in the score hero, and closes by picking
+          a match or with the button below. */}
       <aside className="center-sidebar">
+        {isMobileLayout && selectedMatch ? (
+          <button type="button" className="center-btn ghost mc-back-to-match" onClick={() => setMobileFinderOpen(false)}>
+            <ChevronLeftIcon className="icon-inline" /> Back to {selectedMatch.display_name}
+          </button>
+        ) : null}
         <SurfaceCard title="Match Finder" compactable>
           <EventPicker
             value={selectedEventKey}
@@ -850,7 +780,7 @@ export function MatchCenterPage() {
           />
           <div className="center-status-row compact">
             <span className="center-chip">{statusText}</span>
-            <span className="center-chip">{relativeFromTimestamp(lastUpdatedAt)} · {effectiveRefreshSec}s</span>
+            <span className="center-chip" title={`Refreshes every ${effectiveRefreshSec}s`}>Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
           </div>
           {eventError ? <p className="center-callout warning">{eventError}</p> : null}
           <div className="center-actions-row primary-actions">
@@ -954,7 +884,7 @@ export function MatchCenterPage() {
               <EmptyState compact title="No matches found" description="No matches found for this filter." />
             ) : null}
             {visibleFilteredMatches.map((match) => {
-              const timer = liveTimerLabel(match.scheduled_time, nowMs);
+              const timer = liveTimerLabel(matchStartTime(match), nowMs);
               const winner = match.winner_alliance || null;
               const hasScores = matchHasScores(match);
               const isCompleted =
@@ -985,7 +915,7 @@ export function MatchCenterPage() {
                     }}
                   >
                     <strong>{match.display_name}</strong>
-                    <small>{fmtDateShort(match.scheduled_time)}</small>
+                    <small>{fmtDateShort(matchStartTime(match))}</small>
                     <span className={`center-status-pill ${effectiveState}`}>
                       {hasScores ? `${match.red_score}-${match.blue_score}` : timer.value}
                     </span>
@@ -1060,6 +990,16 @@ export function MatchCenterPage() {
                   />
                 </div>
               ) : null}
+              <button
+                type="button"
+                className="center-btn ghost mc-change-match"
+                onClick={() => {
+                  setMobileFinderOpen(true);
+                  window.scrollTo({ top: 0 });
+                }}
+              >
+                Change match
+              </button>
             </div>
             <SegmentedTabs
               className="fm-tab-bar"
@@ -1128,7 +1068,14 @@ export function MatchCenterPage() {
 
         {!selectedMatch ? (
           <SurfaceCard title="No Match Selected" subtitle="Choose a match from the Finder.">
-            <EmptyState compact title="No match selected" description="Pick a match to load live data, stream, synergy, and form." />
+            <EmptyState
+              compact
+              title="No match selected"
+              description="Pick a match to load live data, stream, synergy, and form."
+              action={isMobileLayout ? (
+                <button type="button" onClick={() => setMobileFinderOpen(true)}>Pick a match</button>
+              ) : undefined}
+            />
           </SurfaceCard>
         ) : null}
 
@@ -1167,23 +1114,10 @@ export function MatchCenterPage() {
                   liveStream.watch_url as the Live Stream card below, and
                   "Teams" ran the same setActiveTab('teams') as the Teams tab
                   directly above. Four controls, two actions, one screen.
-                  The mobile action row keeps its copies — the tab strip is not
-                  rendered there, so they are the only way to reach either. */}
+                  Phones had the same pair again as an action row; the mobile
+                  hero renders its own tab strip and the stream card sits right
+                  below, so that row went too. */}
             </SurfaceCard>
-            ) : null}
-
-            {/* ── Mobile: FotMob-style action row ── */}
-            {isMobileLayout ? (
-              <div className="fm-actions-row">
-                {liveStream?.watch_url ? (
-                  <a href={liveStream.watch_url} target="_blank" rel="noreferrer" className="center-btn" title="Watch live broadcast">
-                    <VideoIcon className="icon-inline" /> Watch
-                  </a>
-                ) : null}
-                <button type="button" className="center-btn ghost" onClick={() => setActiveTab('teams')}>
-                  <UsersIcon className="icon-inline" /> Teams
-                </button>
-              </div>
             ) : null}
 
             {/* ── Mobile: FotMob-style content stack ── */}
@@ -1195,14 +1129,7 @@ export function MatchCenterPage() {
                     <h4><VideoIcon className="icon-inline" /> {selectedIsLive ? 'Live Broadcast' : 'Match Stream'}</h4>
                   </div>
                   {liveStream?.embed_url ? (
-                    <iframe
-                      className="fm-video-embed"
-                      src={liveStream.embed_url}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allowFullScreen
-                      title="Match broadcast"
-                    />
+                    <LiteStreamEmbed key={liveStream.embed_url} className="fm-video-embed" title="Match broadcast" src={liveStream.embed_url} />
                   ) : liveStream?.watch_url ? (
                     <a href={liveStream.watch_url} target="_blank" rel="noreferrer" className="fm-video-link">
                       <VideoIcon className="icon-inline" /> Open stream
@@ -1235,7 +1162,7 @@ export function MatchCenterPage() {
                           <span className="fm-team-name">#{team.team_number} {team.nickname || team.team_key}</span>
                           <span className="fm-team-form">
                             {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
-                            {teamFormStrip(entry)}
+                            <TeamFormStrip entry={entry} />
                           </span>
                         </button>
                       );
@@ -1259,7 +1186,7 @@ export function MatchCenterPage() {
                           <span className="fm-team-name">#{team.team_number} {team.nickname || team.team_key}</span>
                           <span className="fm-team-form">
                             {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
-                            {teamFormStrip(entry)}
+                            <TeamFormStrip entry={entry} />
                           </span>
                         </button>
                       );
@@ -1302,21 +1229,6 @@ export function MatchCenterPage() {
                     </div>
                   ) : null}
                 </div>
-
-                {/* CV Video Replayer */}
-                {loadingTracks ? (
-                  <div style={{ minHeight: 200 }}>
-                    <SkeletonBlock rows={6} compact />
-                  </div>
-                ) : matchTracks && matchTracks.total_rows > 0 ? (
-                  <SurfaceCard title="CV Video Replayer" collapsible>
-                    <VideoReplayer
-                      key={matchTracks.match_key}
-                      data={matchTracks}
-                      videoUrl={matchTracks.local_video_url}
-                    />
-                  </SurfaceCard>
-                ) : null}
               </div>
             ) : null}
 
@@ -1348,7 +1260,7 @@ export function MatchCenterPage() {
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
-                              {teamFormStrip(entry)}
+                              <TeamFormStrip entry={entry} />
                             </span>
                           </button>
                         );
@@ -1374,7 +1286,7 @@ export function MatchCenterPage() {
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
-                              {teamFormStrip(entry)}
+                              <TeamFormStrip entry={entry} />
                             </span>
                           </button>
                         );
@@ -1440,22 +1352,6 @@ export function MatchCenterPage() {
                 ) : null}
               </SurfaceCard>
 
-              {/* ── CV Video Replayer ────────────────────────── */}
-              {loadingTracks ? (
-                <SurfaceCard title="CV Video Replayer" subtitle="Loading tracking data..." compactable>
-                  <div style={{ minHeight: 300 }}>
-                    <SkeletonBlock rows={8} />
-                  </div>
-                </SurfaceCard>
-              ) : matchTracks && matchTracks.total_rows > 0 ? (
-                <SurfaceCard title="CV Video Replayer" collapsible compactable>
-                  <VideoReplayer
-                    key={matchTracks.match_key}
-                    data={matchTracks}
-                    videoUrl={matchTracks.local_video_url}
-                  />
-                </SurfaceCard>
-              ) : null}
             </div>
             ) : null}
           </SurfaceCardGroup>
@@ -1489,7 +1385,7 @@ export function MatchCenterPage() {
               </article>
               <article className="center-kpi-card">
                 <span><CalendarIcon className="icon-inline" /> Scheduled</span>
-                <strong>{fmtDateShort(selectedMatch.scheduled_time)}</strong>
+                <strong>{fmtDateShort(matchStartTime(selectedMatch))}</strong>
               </article>
             </div>
 
@@ -1571,7 +1467,7 @@ export function MatchCenterPage() {
                       #{team.team_number} {team.nickname || team.team_key}
                     </strong>
                     <small>{team.station ? `Station ${team.station}` : 'Station N/A'}</small>
-                    <div>{teamFormStrip(entry)}</div>
+                    <div><TeamFormStrip entry={entry} /></div>
                     <button type="button" className="center-btn ghost" onClick={() => openTeamCenter(team.team_key)} title={`View Team ${team.team_number}`}>
                       <EyeIcon className="icon-inline" /> Team Details
                     </button>

@@ -22,6 +22,27 @@ function buildRatings(form = EMPTY_FORM) {
   return { points, driver, manual, overall };
 }
 
+describe('overall scout rating points scale', () => {
+  // Midpoints came from an earlier game (27 total points), so any REBUILT robot
+  // scoring fuel read as maximum. A typical robot should now sit mid-scale.
+  function pointsComponent(auto: number, teleop: number) {
+    const base = buildRatings();
+    const points = { ...base.points, auto, teleop, endgame: 0, total: auto + teleop };
+    return overallScoutRating(points, base.manual, base.driver).components.points_0_100;
+  }
+
+  it('separates a typical robot from an elite one', () => {
+    const typical = pointsComponent(9, 28);
+    const elite = pointsComponent(25, 100);
+    const weak = pointsComponent(2, 8);
+    expect(weak).toBeLessThan(typical);
+    expect(typical).toBeLessThan(elite);
+    expect(typical).toBeGreaterThan(25);
+    expect(typical).toBeLessThan(60);
+    expect(elite).toBeGreaterThan(65);
+  });
+});
+
 describe('scoutingPage helpers', () => {
   it('merges auto-scout draft patches into the live form without clobbering unrelated fields', () => {
     const baseForm = {

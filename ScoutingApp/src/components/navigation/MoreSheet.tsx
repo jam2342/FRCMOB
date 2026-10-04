@@ -15,6 +15,16 @@ interface MoreSheetItem {
 
 const SHEET_ITEMS: MoreSheetItem[] = [
   {
+    to: '/my-team',
+    label: 'My Team',
+    category: 'main',
+    icon: (
+      <svg viewBox="0 0 24 24">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     to: '/team-center',
     label: 'Team Center',
     category: 'main',
@@ -91,6 +101,7 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
   const [closing, setClosing] = useState(false);
   const touchStartY = useRef(0);
   const sheetRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   function startClose() {
     setClosing(true);
@@ -107,11 +118,44 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
 
   useEffect(() => {
     if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') startClose();
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusable = Array.from(sheetRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
+    (focusable[0] ?? sheetRef.current)?.focus();
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setClosing(true);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = Array.from(sheetRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
+      if (items.length === 0) {
+        event.preventDefault();
+        sheetRef.current?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !sheetRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
   }, [open]);
 
   function handleTouchStart(e: React.TouchEvent) {
@@ -141,14 +185,17 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
         id="mobile-more-sheet"
         ref={sheetRef}
         className={`ms${closing ? ' ms--closing' : ''}`}
-        aria-label="More navigation"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-more-sheet-title"
+        tabIndex={-1}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
         <div className="ms__handle" aria-hidden="true" />
 
         <div className="ms__section">
-          <h3 className="ms__section-title">Pages</h3>
+          <h3 id="mobile-more-sheet-title" className="ms__section-title">Pages</h3>
           <div className="ms__grid">
             {mainItems.map((item) => (
               <NavLink

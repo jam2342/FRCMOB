@@ -1,0 +1,121 @@
+/* My Team: create/join a team workspace and manage its members. Tokens only. */
+
+.my-team__lede,
+.my-team__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.my-team__setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--space-4);
+}
+
+.my-team__form,
+.my-team__inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.my-team__inline-form {
+  margin-top: var(--space-3);
+}
+
+.my-team__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.my-team__you-are {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.my-team__row-actions,
+.my-team__code-actions,
+.my-team__member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.my-team__code-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.my-team__code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 7vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.my-team__members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.my-team__member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-width-1) solid var(--color-border);
+}
+
+.my-team__member:last-child {
+  border-bottom: none;
+}
+
+.my-team__member-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.my-team__member-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.my-team__you,
+.my-team__member-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+
+@media (max-width: 480px) {
+  .my-team__member-actions {
+    flex-basis: 100%;
+  }
+}
+
+.my-team__you-are strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+}

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { clearSyncIssue, lastSyncIssue } from '../../features/offline/syncReceipt';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { flush, type DroppedMutationInfo } from '../../utils/offlineQueue';
 import { downloadCsv } from '../../utils/csvExport';
@@ -21,7 +23,7 @@ function formatSavedAt(value: unknown): string {
 }
 
 function downloadLocalEntriesCsv() {
-  let entries: unknown[] = [];
+  let entries: unknown;
   try {
     entries = JSON.parse(window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE) ?? '[]');
   } catch {
@@ -80,7 +82,7 @@ function downloadLocalEntriesCsv() {
   });
 
   const date = new Date().toISOString().slice(0, 10);
-  downloadCsv(`scouting-entries-offline-${date}.csv`, headers, rows);
+  void downloadCsv(`scouting-entries-offline-${date}.csv`, headers, rows).catch(() => window.alert('The export could not be saved. Your scouting entries are still on this phone.'));
 }
 
 /**
@@ -89,7 +91,10 @@ function downloadLocalEntriesCsv() {
  */
 export function OfflineIndicator() {
   const { online, queueSize } = useOnlineStatus();
-  const [dropped, setDropped] = useState<DroppedMutationInfo | null>(null);
+  const [dropped, setDropped] = useState<DroppedMutationInfo | null>(() => {
+    const issue = lastSyncIssue();
+    return issue ? { reason: issue.reason as DroppedMutationInfo['reason'], count: issue.count, labels: issue.labels } : null;
+  });
 
   useEffect(() => {
     const onDropped = (e: Event) => {
@@ -106,15 +111,19 @@ export function OfflineIndicator() {
         <span className="offline-banner-status">
           <span className="offline-banner-dot offline-dot-danger" />
           {dropped.count} queued change{dropped.count > 1 ? 's' : ''}{' '}
-          {dropped.reason === 'server-rejected'
-            ? 'were rejected by the server and removed from the sync queue'
-            : 'could not be saved for offline sync'}
+          {dropped.reason === 'conflict'
+            ? "conflicted with a teammate; your original edit is still saved on this phone"
+            : dropped.reason === 'server-rejected'
+              ? 'were rejected by the server; your original edit is still saved on this phone'
+              : 'could not be saved for offline sync'}
           {dropped.labels.length > 0 ? ` (${dropped.labels.slice(0, 3).join(', ')}${dropped.labels.length > 3 ? ', …' : ''})` : ''}
         </span>
-        <button onClick={downloadLocalEntriesCsv} className="offline-banner-sync-btn">
-          Download local CSV
-        </button>
-        <button onClick={() => setDropped(null)} className="offline-banner-sync-btn">
+        {dropped.reason === 'storage-failure' ? (
+          <button onClick={downloadLocalEntriesCsv} className="offline-banner-sync-btn">Download local CSV</button>
+        ) : (
+          <Link to="/my-team" className="offline-banner-sync-btn">Recover saved edits</Link>
+        )}
+        <button onClick={() => { clearSyncIssue(); setDropped(null); }} className="offline-banner-sync-btn">
           Dismiss
         </button>
       </div>
@@ -155,10 +164,13 @@ export function OfflineIndicator() {
       )}
       {!online && (
         <>
+          {/* What's waiting is the number that matters offline. The local
+              entry count is every entry this phone has ever kept (up to 600),
+              which read like a sync backlog when it wasn't one. */}
           <span className="offline-banner-hint">
-            {localEntryCount > 0
-              ? `${localEntryCount} entr${localEntryCount === 1 ? 'y' : 'ies'} saved locally`
-              : 'Your scouting data is saved locally'}
+            {queueSize > 0
+              ? `${queueSize} change${queueSize === 1 ? '' : 's'} will sync when you're back online`
+              : 'Anything you save stays on this phone'}
           </span>
           {localEntryCount > 0 && (
             <button onClick={downloadLocalEntriesCsv} className="offline-banner-sync-btn">

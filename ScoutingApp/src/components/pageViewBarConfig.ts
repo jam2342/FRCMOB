@@ -13,22 +13,22 @@ export const SCOUTING_VIEWS: ViewBarItem[] = [
 ];
 
 export const EVENTS_VIEWS: ViewBarItem[] = [
-  { label: 'Events', to: '/events' },
-  { label: 'Export', to: '/events/export' },
-  { label: 'Dashboard', to: '/events/dashboard' },
+  { label: 'Events', to: '/events', preserveSearch: true },
+  { label: 'Export', to: '/events/export', preserveSearch: true, desktopOnly: true },
+  { label: 'Dashboard', to: '/events/dashboard', preserveSearch: true, desktopOnly: true },
 ];
 
 export const COMPARE_VIEWS: ViewBarItem[] = [
-  { label: 'Compare', to: '/compare' },
-  { label: 'Alliance Advisor', to: '/compare/alliance-advisor' },
-  { label: 'Picklist', to: '/compare/picklist' },
+  { label: 'Compare', to: '/compare', preserveSearch: true },
+  { label: 'Alliance Advisor', to: '/compare/alliance-advisor', preserveSearch: true },
+  { label: 'Picklist', to: '/compare/picklist', preserveSearch: true },
 ];
 
 export const MATCH_HUB_VIEWS: ViewBarItem[] = [
   // "Match Hub" was a synonym for the section the sidebar calls "Match Center",
   // so the same page had two names depending on where you clicked. Every other
   // family names the landing page for what it shows, not for its section.
-  { label: 'Match', to: '/match-center' },
-  { label: 'Predictions', to: '/match-center/predictions' },
-  { label: 'Strategy', to: '/match-center/strategy' },
+  { label: 'Match', to: '/match-center', preserveSearch: true },
+  { label: 'Predictions', to: '/match-center/predictions', preserveSearch: true },
+  { label: 'Strategy', to: '/match-center/strategy', preserveSearch: true },
 ];

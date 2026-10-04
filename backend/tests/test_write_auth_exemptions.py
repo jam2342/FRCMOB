@@ -66,6 +66,22 @@ class WriteAuthExemptionsTests(unittest.TestCase):
             enforce_write_request_access(request)
         self.assertEqual(context.exception.status_code, 403)
 
+    def test_alliance_scoring_is_open_to_non_admins(self):
+        # A read-only computation sent as POST: Alliance Advisor and Compare use it.
+        enforce_write_request_access(_make_request("POST", "/synergy/event/2026arc/theoretical-alliance"))
+        enforce_write_request_access(_make_request("POST", "/api/synergy/event/2026arc/theoretical-alliance"))
+
+    def test_other_synergy_writes_stay_admin_gated(self):
+        for path in ("/synergy/event/2026arc/precompute", "/synergy/event/2026arc/theoretical-alliance/x"):
+            with self.assertRaises(HTTPException) as context:
+                enforce_write_request_access(_make_request("POST", path))
+            self.assertEqual(context.exception.status_code, 403)
+
+    def test_public_readonly_mode_blocks_alliance_scoring_too(self):
+        settings.public_readonly_mode = True
+        with self.assertRaises(HTTPException):
+            enforce_write_request_access(_make_request("POST", "/synergy/event/2026arc/theoretical-alliance"))
+
     def test_pit_photo_media_is_public_but_other_media_stays_admin_gated(self):
         from app.main import _enforce_media_access
 

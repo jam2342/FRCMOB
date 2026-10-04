@@ -1,3 +1,5 @@
+import { exportPrintableReport } from '../platform/exportFile';
+import { isNativeApp } from '../platform/runtime';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -19,13 +21,14 @@ import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { metric, pct, normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
+import { readMyTeamKey, saveMyTeamKey, workspaceTeamKey } from '../features/workspace/myTeam';
+import { matchWinProbability } from '../features/predictions/winProbability';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & types                                                  */
 /* ------------------------------------------------------------------ */
 
 const STORAGE_KEY = 'scouting_center_event_key';
-const MY_TEAM_STORAGE = 'scouting_manual_my_team_v1';
 
 const COMP_LEVEL_ORDER: Record<string, number> = { qm: 0, ef: 1, qf: 2, sf: 3, f: 4 };
 
@@ -37,12 +40,6 @@ function matchSortKey(m: { comp_level: string; set_number: number; match_number:
 function teamNum(teamKey: string): string {
   const n = teamNumberFromTeamKey(teamKey);
   return n ? String(n) : teamKey;
-}
-
-function derivedWinProb(redSynergy: number | null, blueSynergy: number | null): number | null {
-  if (redSynergy == null || blueSynergy == null) return null;
-  const diff = redSynergy - blueSynergy;
-  return 1 / (1 + Math.exp(-diff / 15));
 }
 
 function averageMetric(values: Array<number | null | undefined>): number | null {
@@ -138,11 +135,8 @@ function buildBriefing(
   const oppSynergyScore = oppSyn?.alliance_synergy_score_0_100 ?? null;
 
   // Win probability from MY alliance perspective
-  const redProb = derivedWinProb(
-    synergyMatch?.red.synergy.alliance_synergy_score_0_100 ?? null,
-    synergyMatch?.blue.synergy.alliance_synergy_score_0_100 ?? null,
-  );
-  const winProb = redProb != null ? (isRed ? redProb : 1 - redProb) : null;
+  const win = matchWinProbability(synergyMatch);
+  const winProb = win ? (isRed ? win.red : win.blue) : null;
 
   // Strongest / weakest opponent by rating
   const ratedOpponents = opponents.filter((o) => o.rating != null);
@@ -271,7 +265,7 @@ function buildBriefing(
   if (ratedCount < allProfiles.length) {
     const missing = allProfiles.length - ratedCount;
     strategyWhy.push(
-      `${missing} of ${allProfiles.length} robots have limited rating coverage, so plan for wider-than-normal performance variance.`,
+      `${missing} of ${allProfiles.length} robot${allProfiles.length === 1 ? '' : 's'} ${allProfiles.length === 1 ? 'has' : 'have'} limited rating coverage, so plan for wider-than-normal performance variance.`,
     );
   }
 
@@ -347,32 +341,28 @@ export function StrategyBriefingPage() {
 
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
   const [eventName, setEventName] = useState('');
-  const [myTeamKey, setMyTeamKey] = useState(() => {
-    try { return localStorage.getItem(MY_TEAM_STORAGE) || ''; } catch { return ''; }
-  });
+  const [myTeamKey, setMyTeamKey] = useState(() => readMyTeamKey());
   const [myTeamInput, setMyTeamInput] = useState(() => {
-    try {
-      const stored = localStorage.getItem(MY_TEAM_STORAGE) || '';
-      const num = teamNumberFromTeamKey(stored);
-      return num ? String(num) : '';
-    } catch {
-      return '';
-    }
+    const num = teamNumberFromTeamKey(readMyTeamKey());
+    return num ? String(num) : '';
   });
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
 
   const [schedule, setSchedule] = useState<EventScheduleItem[] | null>(null);
+  // Until the schedule loads, assume live so a running event isn't shown as finished.
+  const eventHasMatchesLeft = schedule == null || schedule.some((match) => !match.is_completed);
   const [synergyMatches, setSynergyMatches] = useState<ScheduleWithSynergyMatch[]>([]);
   const [ratings, setRatings] = useState<EventTeamRatingItem[]>([]);
   const [liveFormStatuses, setLiveFormStatuses] = useState<Record<string, EventTeamLiveFormEntry>>({});
 
   const [expandedMatch, setExpandedMatch] = useState<string | null>(null);
 
-  // Persist my team
+  // Persist my team (people without a workspace only; see myTeam.ts)
   useEffect(() => {
-    if (myTeamKey) localStorage.setItem(MY_TEAM_STORAGE, myTeamKey);
+    if (myTeamKey) saveMyTeamKey(myTeamKey);
   }, [myTeamKey]);
+  const teamFromWorkspace = workspaceTeamKey();
 
   // Fetch all data
   const fetchData = useCallback(async (key: string) => {
@@ -514,6 +504,13 @@ export function StrategyBriefingPage() {
               </span>
             ) : null}
           </div>
+          {teamFromWorkspace ? (
+            <p className="center-callout muted">
+              {myTeamKey === teamFromWorkspace
+                ? "Your team's workspace sets this."
+                : `Briefing Team ${teamNum(myTeamKey)} for this visit; your workspace's team is ${teamNum(teamFromWorkspace)}.`}
+            </p>
+          ) : null}
 
           {!myTeamKey && schedule ? (
             <p className="center-callout muted" style={{ marginTop: '0.5rem' }}>
@@ -526,10 +523,14 @@ export function StrategyBriefingPage() {
         {eventKey ? (
           <SurfaceCard
             title="Live Ratings"
-            subtitle="Updates automatically as new match analysis lands."
+            subtitle="Updates on its own as match results come in."
             className="no-print"
           >
-            <LiveRatingsPanel eventKey={eventKey} title="Event ratings — live" />
+            <LiveRatingsPanel
+              eventKey={eventKey}
+              live={eventHasMatchesLeft}
+              title={eventHasMatchesLeft ? 'Event ratings — live' : 'Event ratings'}
+            />
           </SurfaceCard>
         ) : null}
 
@@ -537,16 +538,16 @@ export function StrategyBriefingPage() {
         {briefings.length > 0 ? (
           <SurfaceCard
             title="Upcoming Match Briefings"
-            subtitle={`${briefings.length} matches with tactical analysis for Team ${teamNum(myTeamKey)}.`}
+            subtitle={`${briefings.length} match${briefings.length === 1 ? '' : 'es'} with tactical analysis for Team ${teamNum(myTeamKey)}.`}
             right={
               <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
                 <button
                   type="button"
                   className="center-btn ghost no-print"
-                  onClick={() => window.print()}
-                  title="Print or save the briefings as a PDF for the drive team clipboard"
+                  onClick={() => void exportPrintableReport('strategy-briefings.html').catch(() => window.alert('The report could not be exported. Please try again.'))}
+                  title={isNativeApp() ? 'Save or share an offline HTML report' : 'Print or save the briefings as a PDF for the drive team clipboard'}
                 >
-                  Print / PDF
+                  {isNativeApp() ? 'Save report' : 'Print / PDF'}
                 </button>
                 <span className="center-chip">
                   {ratings.length > 0 ? `${ratings.length} rated teams` : 'No ratings'}

@@ -1,20 +1,21 @@
 # API routes for alliance-selection picklists.
 #
-# Picklists are shared, hand-ordered team rankings used on alliance-selection
-# morning. Concurrency model: each write echoes the `version` it loaded; a
+# Picklists are hand-ordered team rankings used on alliance-selection morning,
+# private to the team workspace that made them. Concurrency model: each write echoes the `version` it loaded; a
 # stale version gets a 409 with the current document so the client can merge.
 
 import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import models
 from app.db.session import get_db
+from app.services.workspaces import WorkspaceActor, require_workspace_actor, require_workspace_writer
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +89,19 @@ def _serialize_picklist(row: models.EventPicklist) -> dict[str, Any]:
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
 
-def _load_picklist_or_404(db: Session, picklist_id: int) -> models.EventPicklist:
-    row = db.get(models.EventPicklist, picklist_id)
-    if row is None:
+def _load_picklist_or_404(
+    db: Session, picklist_id: int, actor: WorkspaceActor, *, for_update: bool = False
+) -> models.EventPicklist:
+    statement = select(models.EventPicklist).where(
+        models.EventPicklist.id == picklist_id,
+        models.EventPicklist.workspace_id == actor.workspace_id,
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    row = db.execute(statement).scalar_one_or_none()
+    # Another workspace's picklist is reported as missing, not forbidden, so ids
+    # don't reveal what other teams keep.
+    if row is None or row.workspace_id != actor.workspace_id:
         raise HTTPException(status_code=404, detail="Picklist not found")
     return row
 
@@ -109,12 +120,17 @@ class PicklistUpdateRequest(BaseModel):
 
 @router.get("")
 def list_picklists(
+    request: Request,
     event_key: str = Query(..., max_length=48),
     include_archived: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
+    actor = require_workspace_actor(request, db)
     normalized = _normalize_event_key(event_key)
-    stmt = select(models.EventPicklist).where(models.EventPicklist.event_key == normalized)
+    stmt = select(models.EventPicklist).where(
+        models.EventPicklist.workspace_id == actor.workspace_id,
+        models.EventPicklist.event_key == normalized,
+    )
     if not include_archived:
         stmt = stmt.where(models.EventPicklist.archived.is_(False))
     stmt = stmt.order_by(models.EventPicklist.updated_at.desc())
@@ -127,11 +143,13 @@ def list_picklists(
     }
 
 @router.post("")
-def create_picklist(payload: PicklistCreateRequest, db: Session = Depends(get_db)):
+def create_picklist(payload: PicklistCreateRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
     normalized = _normalize_event_key(payload.event_key)
     existing_count = len(
         db.execute(
             select(models.EventPicklist.id).where(
+                models.EventPicklist.workspace_id == actor.workspace_id,
                 models.EventPicklist.event_key == normalized,
                 models.EventPicklist.archived.is_(False),
             )
@@ -144,9 +162,10 @@ def create_picklist(payload: PicklistCreateRequest, db: Session = Depends(get_db
         )
     title = str(payload.title or "Picklist").strip()[:120] or "Picklist"
     row = models.EventPicklist(
+        workspace_id=actor.workspace_id,
         event_key=normalized,
         title=title,
-        created_by=str(payload.created_by or "").strip()[:40] or None,
+        created_by=str(payload.created_by or "").strip()[:40] or actor.member.display_name,
         slots=_normalize_slots(payload.slots),
         version=1,
     )
@@ -156,17 +175,18 @@ def create_picklist(payload: PicklistCreateRequest, db: Session = Depends(get_db
     return {"ok": True, "picklist": _serialize_picklist(row)}
 
 @router.get("/{picklist_id}")
-def get_picklist(picklist_id: int, db: Session = Depends(get_db)):
-    row = _load_picklist_or_404(db, picklist_id)
+def get_picklist(picklist_id: int, request: Request, db: Session = Depends(get_db)):
+    row = _load_picklist_or_404(db, picklist_id, require_workspace_actor(request, db))
     return {"ok": True, "picklist": _serialize_picklist(row)}
 
 @router.put("/{picklist_id}")
 def update_picklist(
     picklist_id: int,
     payload: PicklistUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    row = _load_picklist_or_404(db, picklist_id)
+    row = _load_picklist_or_404(db, picklist_id, require_workspace_writer(request, db), for_update=True)
     if int(payload.version or 0) != int(row.version or 1):
         # Stale client: return the current document so the UI can reconcile.
         return {
@@ -192,8 +212,8 @@ def update_picklist(
     return {"ok": True, "picklist": _serialize_picklist(row)}
 
 @router.delete("/{picklist_id}")
-def delete_picklist(picklist_id: int, db: Session = Depends(get_db)):
-    row = _load_picklist_or_404(db, picklist_id)
+def delete_picklist(picklist_id: int, request: Request, db: Session = Depends(get_db)):
+    row = _load_picklist_or_404(db, picklist_id, require_workspace_writer(request, db), for_update=True)
     db.delete(row)
     db.commit()
     return {"ok": True, "deleted_id": picklist_id}

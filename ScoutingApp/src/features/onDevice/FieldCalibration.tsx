@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { CameraCapture } from './CameraCapture';
+import { FIELD_LENGTH_M, FIELD_WIDTH_M } from './fieldZones';
 import { type Calibration, type Point, calibrateFromTaps, fieldReferenceCorners, projectPoint } from './homography';
 import { openDb, saveCalibration } from './offlineStore';
-
-// 2026 REBUILT field dimensions (metres). Stable for the season; ideally sourced from
-// the game-config endpoint later, but hardcoding the current season keeps calibration
-// fully offline (the whole point of the on-device flow).
-const FIELD_LENGTH_M = 16.541;
-const FIELD_WIDTH_M = 8.0693;
+import { grayscaleFromRgba, type GrayImage } from './opticalFlowCore';
 
 // The 4 taps, in order, with field-relative prompts (origin = blue-station x scoring-table
 // corner; +X toward red station, +Y toward the audience side — per game_config.field_layout).
@@ -23,8 +19,10 @@ const FIELD_CORNERS = fieldReferenceCorners(FIELD_LENGTH_M, FIELD_WIDTH_M);
 
 type Props = {
   // Called when a calibration is accepted, so a parent flow can keep the homography.
-  onCalibrated?: (calibration: Calibration) => void;
+  onCalibrated?: (calibration: CalibrationCapture) => void;
 };
+
+export type CalibrationCapture = Calibration & { referenceFrame: GrayImage };
 
 export function FieldCalibration({ onCalibrated }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -111,10 +109,8 @@ export function FieldCalibration({ onCalibrated }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !image) return;
-    const maxWidth = 900;
-    const scale = Math.min(1, maxWidth / image.naturalWidth);
-    const cw = Math.round(image.naturalWidth * scale);
-    const ch = Math.round(image.naturalHeight * scale);
+    const cw = image.naturalWidth;
+    const ch = image.naturalHeight;
     canvas.width = cw;
     canvas.height = ch;
     const ctx = canvas.getContext('2d');
@@ -167,20 +163,41 @@ export function FieldCalibration({ onCalibrated }: Props) {
   }, [image, taps, calibration]);
 
   const accept = useCallback(async () => {
-    if (!calibration) return;
+    if (!calibration || !image) return;
+    const referenceCanvas = document.createElement('canvas');
+    referenceCanvas.width = image.naturalWidth;
+    referenceCanvas.height = image.naturalHeight;
+    const referenceContext = referenceCanvas.getContext('2d');
+    if (!referenceContext) {
+      setError('Could not save the calibration frame. Please re-calibrate.');
+      return;
+    }
+    referenceContext.drawImage(image, 0, 0, referenceCanvas.width, referenceCanvas.height);
+    const pixels = referenceContext.getImageData(0, 0, referenceCanvas.width, referenceCanvas.height);
+    const referenceFrame = grayscaleFromRgba(pixels.data, referenceCanvas.width, referenceCanvas.height);
     // persist locally so the offline breakdown can reuse it without re-tapping
     try {
       const db = await openDb();
       try {
-        await saveCalibration(db, { id: 'current', homography: calibration.homography, createdAt: Date.now() });
+        await saveCalibration(db, {
+          id: 'current',
+          homography: calibration.homography,
+          createdAt: Date.now(),
+          calibrationVersion: 'manual_corners_v1',
+          rmseM: calibration.rmseM,
+          verified: true,
+          imageWidth: referenceFrame.width,
+          imageHeight: referenceFrame.height,
+          referenceGray: referenceFrame.data,
+        });
       } finally {
         db.close();
       }
     } catch {
       // non-fatal: calibration still usable in-memory if IndexedDB is unavailable
     }
-    onCalibrated?.(calibration);
-  }, [calibration, onCalibrated]);
+    onCalibrated?.({ ...calibration, referenceFrame });
+  }, [calibration, image, onCalibrated]);
 
   useEffect(() => {
     mountedRef.current = true;

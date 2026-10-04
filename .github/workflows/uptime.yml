@@ -1,0 +1,38 @@
+# Production once ran for five months with the backend stopped and nobody noticed.
+# This checks the live site end to end (Vercel rewrite -> VM -> Postgres/Redis).
+# A failed scheduled run emails whoever last edited the cron.
+# Every 2 hours keeps it to ~360 Actions minutes a month on the free private plan.
+name: uptime
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deep-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the live API, database and Redis
+        run: |
+          body=$(curl -fsS --max-time 60 --retry 2 --retry-delay 20 \
+            https://scouting-app-iryg.vercel.app/api/health/deep) || {
+            echo "::error::Live API unreachable through the Vercel rewrite (backend VM down or IP changed?)"
+            exit 1
+          }
+          printf '%s' "$body" | python3 -c '
+          import json, sys
+          h = json.load(sys.stdin)
+          print(json.dumps({k: h.get(k) for k in ("ok", "database", "redis")}))
+          problems = [name for name in ("database", "redis") if not h.get(name)]
+          errors = (h.get("env_validation") or {}).get("errors") or []
+          if errors:
+              problems.append("env validation (%s)" % "; ".join(errors))
+          if problems:
+              print("::error::Unhealthy: " + ", ".join(problems))
+              sys.exit(1)
+          '

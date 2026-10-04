@@ -5,12 +5,12 @@ import {
   approveAutoScoutDraft,
   generateAutoScoutDraft,
   getAutoScoutDraft,
-  getMatchTracks,
+  getTeamHeatmap,
   rejectAutoScoutDraft,
 } from '../api';
 import type {
   AutoScoutSeasonSupport,
-  MatchTracksResponse,
+  TeamHeatmapResponse,
 } from '../api';
 import {
   applyAutoScoutDraftPayload,
@@ -62,9 +62,9 @@ export function useAutoScoutDraft({
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState('');
   const [evidenceField, setEvidenceField] = useState<string | null>(null);
-  const [tracksData, setTracksData] = useState<MatchTracksResponse | null>(null);
-  const [tracksLoading, setTracksLoading] = useState(false);
-  const [tracksError, setTracksError] = useState('');
+  const [heatmapData, setHeatmapData] = useState<TeamHeatmapResponse | null>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [heatmapError, setHeatmapError] = useState('');
   const lastAppliedSignatureRef = useRef<string>('');
 
   const ready = Boolean(eventKey && matchKey && teamKey);
@@ -79,8 +79,8 @@ export function useAutoScoutDraft({
     setSeasonSupport(null);
     setError('');
     setEvidenceField(null);
-    setTracksData(null);
-    setTracksError('');
+    setHeatmapData(null);
+    setHeatmapError('');
     lastAppliedSignatureRef.current = '';
   }, [eventKey, matchKey, teamKey]);
 
@@ -144,21 +144,23 @@ export function useAutoScoutDraft({
 
   const openEvidence = useCallback(async (fieldName: string) => {
     setEvidenceField(fieldName);
-    if (tracksData || tracksLoading || !ready) return;
-    setTracksLoading(true);
+    if (heatmapData || heatmapLoading || !ready) return;
+    setHeatmapLoading(true);
     try {
-      const payload = await getMatchTracks(matchKey, {
-        team_key: teamKey,
-        limit: 40000,
+      // Drafts come from phone recordings; an operator reviewing them may be looking
+      // at a recording that is itself still unreviewed.
+      const payload = await getTeamHeatmap(teamKey, eventKey, {
+        match_key: matchKey,
+        include_unreviewed: true,
       });
-      setTracksData(payload);
-      setTracksError('');
+      setHeatmapData(payload);
+      setHeatmapError('');
     } catch (nextError) {
-      setTracksError(normalizeError(nextError, 'Unable to load tracking evidence.'));
+      setHeatmapError(normalizeError(nextError, 'Unable to load the recorded positions.'));
     } finally {
-      setTracksLoading(false);
+      setHeatmapLoading(false);
     }
-  }, [matchKey, ready, teamKey, tracksData, tracksLoading]);
+  }, [eventKey, matchKey, ready, teamKey, heatmapData, heatmapLoading]);
 
   const closeEvidence = useCallback(() => setEvidenceField(null), []);
 
@@ -278,9 +280,9 @@ export function useAutoScoutDraft({
     evidenceField,
     openEvidence,
     closeEvidence,
-    tracksData,
-    tracksLoading,
-    tracksError,
+    heatmapData,
+    heatmapLoading,
+    heatmapError,
     hasReadyDraft: draft?.status === 'ready' || draft?.status === 'low_confidence' || draft?.status === 'approved',
     managedFormFields,
     derivedInsights: draft?.draft_payload?.derived_insights || {},

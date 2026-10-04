@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SEASON } from '../../config/season';
+import { readBumperColour } from './bumperColour';
+import { captureRobotThumbs } from './robotThumb';
+import { fieldRoi } from './fieldCrop';
 
-import { createDetector, detectRobots, type Detector } from './detector';
+import { summarizeInferenceTelemetry, type InferenceTelemetry } from './benchmark';
+import {
+  createDeviceDetector,
+  detectRobots,
+  ON_DEVICE_MODEL_URL,
+  type Detector,
+} from './detector';
 import { type Mat3 } from './homography';
 import { type RawDetection } from './simpleTracker';
 
@@ -10,23 +20,29 @@ import { type RawDetection } from './simpleTracker';
 // injected so a static calibration (default) or an optical-flow-stabilized pose (step 4)
 // can be swapped in without touching the recorder.
 
-const MODEL_URL = String(
-  import.meta.env.VITE_ONDEVICE_MODEL_URL || '/models/frc_robot_detector_v2.onnx',
-);
-
 export type CapturedFrame = { timeSec: number; detections: RawDetection[]; homography: Mat3 };
 
 type Props = {
   // image-pixel -> field-metre homography to use for `frameCanvas` at `timeSec`
   resolvePose: (frameCanvas: HTMLCanvasElement, timeSec: number) => Mat3 | null;
   onFrame: (frame: CapturedFrame) => void;
+  onComplete?: () => void;
+  onTelemetry?: (telemetry: InferenceTelemetry) => void;
   targetFps?: number;
   confThreshold?: number;
 };
 
 type DetectorState = 'idle' | 'loading' | 'ready' | 'error';
 
-export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThreshold = 0.35 }: Props) {
+export function MatchRecorder({
+  resolvePose,
+  onFrame,
+  onComplete,
+  onTelemetry,
+  targetFps = 3, // 2 fps measurably lost positions against a dense 10 fps run of the same match
+  // Unset: the loaded model's own cutoff (modelArtifact.ts), tuned per model.
+  confThreshold,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<Detector | null>(null);
@@ -38,6 +54,7 @@ export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThresho
   const startRequestRef = useRef(0);
   const recordingRunRef = useRef(0);
   const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inferenceSamplesRef = useRef<number[]>([]);
 
   const [detectorState, setDetectorState] = useState<DetectorState>('idle');
   const [detectorError, setDetectorError] = useState('');
@@ -53,7 +70,7 @@ export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThresho
       setDetectorError('');
     }
     try {
-      const det = await createDetector(MODEL_URL);
+      const det = await createDeviceDetector();
       detectorRef.current = det;
       if (mountedRef.current) setDetectorState('ready');
       return det;
@@ -123,18 +140,38 @@ export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThresho
     try {
       const homography = resolvePose(canvas, timeSec);
       if (homography) {
-        const boxes = await detectRobots(detector, canvas, w, h, { confThreshold });
+        const inferenceStarted = performance.now();
+        const roi = fieldRoi(homography, w, h, SEASON.fieldLengthM, SEASON.fieldWidthM);
+        const boxes = await detectRobots(detector, canvas, w, h, { confThreshold: confThreshold ?? detector.confThreshold, roi });
+        inferenceSamplesRef.current.push(performance.now() - inferenceStarted);
+        onTelemetry?.(
+          summarizeInferenceTelemetry(
+            inferenceSamplesRef.current,
+            detector.modelVersion,
+            detector.executionProvider,
+          ),
+        );
         if (!isCurrentRun()) return;
-        const dets: RawDetection[] = boxes.map((b) => ({
-          bbox: [b.x1, b.y1, b.x2, b.y2],
-          confidence: b.score,
-        }));
+        const dets: RawDetection[] = boxes.map((b) => {
+          const bbox: [number, number, number, number] = [b.x1, b.y1, b.x2, b.y2];
+          // the canvas still holds this frame: it is redrawn only for the next sample
+          return { bbox, confidence: b.score, colour: readBumperColour(ctx, bbox, w, h) };
+        });
+        const thumbs = await captureRobotThumbs(canvas, dets.map((d) => d.bbox));
+        thumbs.forEach((thumb, i) => {
+          if (thumb) dets[i].thumb = thumb;
+        });
+        if (!isCurrentRun()) return;
         onFrame({ timeSec, detections: dets, homography });
         setFrames((n) => n + 1);
         setDetections((n) => n + dets.length);
       }
-    } catch {
-      // drop this frame; keep recording
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      if (/re-calibrate/i.test(message)) {
+        setCameraError(message);
+        stopCamera();
+      }
     }
     if (!isCurrentRun()) return;
     const elapsed = performance.now() - tStart;
@@ -143,7 +180,7 @@ export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThresho
       loopTimeoutRef.current = null;
       void loop(runId);
     }, wait);
-  }, [confThreshold, onFrame, resolvePose, targetFps]);
+  }, [confThreshold, onFrame, onTelemetry, resolvePose, stopCamera, targetFps]);
 
   const start = useCallback(async () => {
     const requestId = ++startRequestRef.current;
@@ -207,7 +244,7 @@ export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThresho
       {detectorState === 'error' ? (
         <p className="field-calibration__error">
           Detector unavailable: {detectorError}. Set VITE_ONDEVICE_MODEL_URL or place the model at{' '}
-          {MODEL_URL}.
+          {ON_DEVICE_MODEL_URL}.
         </p>
       ) : null}
       {cameraError ? <p className="field-calibration__error">{cameraError}</p> : null}
@@ -225,7 +262,14 @@ export function MatchRecorder({ resolvePose, onFrame, targetFps = 3, confThresho
             Start recording
           </button>
         ) : (
-          <button type="button" className="center-btn ghost" onClick={stopCamera}>
+          <button
+            type="button"
+            className="center-btn ghost"
+            onClick={() => {
+              stopCamera();
+              onComplete?.();
+            }}
+          >
             Stop recording
           </button>
         )}

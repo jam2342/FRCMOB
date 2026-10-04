@@ -211,6 +211,7 @@ class TrackProductionTests(unittest.TestCase):
         results = analyze_match_shift_play(
             points_by_team=points_by_team,
             alliance_by_team={"frc1111": "red", "frc2222": "blue"},
+            shift1_active_alliance="red",
         )
         self.assertIn("frc1111", results)
         attacker = results["frc1111"]

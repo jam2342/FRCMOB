@@ -1,5 +1,5 @@
 import type { EventScheduleItem, EventSearchItem } from '../api';
-import { liveTimerLabel } from './centerUtils';
+import { liveTimerLabel, matchStartTime } from './centerUtils';
 
 export type HomeFilter = 'all' | 'live' | 'upcoming' | 'completed';
 
@@ -46,7 +46,7 @@ export function resolveHomeMatchState(
   match: EventScheduleItem,
   nowMs: number,
 ): ReturnType<typeof liveTimerLabel>['state'] {
-  const timer = liveTimerLabel(match.scheduled_time, nowMs);
+  const timer = liveTimerLabel(matchStartTime(match), nowMs);
   const winner = match.winner_alliance || null;
   const isCompleted =
     Boolean(match.is_completed) ||
@@ -208,4 +208,86 @@ export function pickMobileHomeAutoEventKey(
     });
 
   return ranked[0]?.eventKey || '';
+}
+
+// The match a viewer means when they open an event without picking one: what is
+// live, else the next one up, else the most recent result. Opening QM1 from the
+// morning in the afternoon was the old default.
+export function pickDefaultMatchKey(rows: EventScheduleItem[], nowMs: number): string | null {
+  if (rows.length === 0) return null;
+  const live = rows.find((row) => resolveHomeMatchState(row, nowMs) === 'live');
+  if (live) return live.match_key;
+  const upcoming = rows.find((row) => resolveHomeMatchState(row, nowMs) === 'upcoming');
+  if (upcoming) return upcoming.match_key;
+  const finished = rows.filter((row) => resolveHomeMatchState(row, nowMs) === 'ended');
+  if (finished.length > 0) return finished[finished.length - 1].match_key;
+  return rows[0].match_key;
+}
+
+
+function dateTokenDayNumber(token: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(token || '');
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000;
+}
+
+// An empty day on Home is a dead end unless it points somewhere. Returns the
+// closest day (YYYY-MM-DD) that has an event running, looking both ways;
+// a tie goes to the future because that's the day a fan can still watch.
+// `skipEventKeys` holds events whose schedule came back empty (off-season
+// events often have no match list): pointing at them just lands on another
+// empty day.
+export function nearestEventDayToken(
+  events: Pick<EventSearchItem, 'start_date' | 'end_date' | 'event_key'>[],
+  dayToken: string,
+  skipEventKeys: ReadonlySet<string> = new Set(),
+): string | null {
+  const target = dateTokenDayNumber(dayToken);
+  if (target === null) return null;
+  let best: { token: string; distance: number; future: boolean } | null = null;
+  for (const event of events) {
+    if (skipEventKeys.has(String(event.event_key || '').toLowerCase())) continue;
+    const start = String(event.start_date || '').slice(0, 10);
+    const end = String(event.end_date || '').slice(0, 10) || start;
+    const startDay = dateTokenDayNumber(start);
+    const endDay = dateTokenDayNumber(end) ?? startDay;
+    if (startDay === null || endDay === null) continue;
+    if (startDay <= target && target <= endDay) continue;
+    const future = startDay > target;
+    const token = future ? start : end;
+    const distance = future ? startDay - target : target - endDay;
+    if (!best || distance < best.distance || (distance === best.distance && future && !best.future)) {
+      best = { token, distance, future };
+    }
+  }
+  return best ? best.token : null;
+}
+
+function localDayStart(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// The closest other day that has a match we have actually loaded. Preferred
+// over event dates because an event on the calendar can still have no match
+// list (off-season events usually don't), and a jump button that lands on
+// another empty day is worse than none.
+export function nearestLoadedMatchDayMs(
+  matches: Pick<EventScheduleItem, 'scheduled_time' | 'predicted_time' | 'actual_time'>[],
+  dayMs: number,
+): number | null {
+  const target = localDayStart(dayMs);
+  let best: { day: number; distance: number } | null = null;
+  for (const match of matches) {
+    const startSec = matchStartTime(match);
+    if (!startSec) continue;
+    const day = localDayStart(startSec * 1000);
+    if (day === target) continue;
+    const distance = Math.abs(day - target);
+    if (!best || distance < best.distance || (distance === best.distance && day > best.day)) {
+      best = { day, distance };
+    }
+  }
+  return best ? best.day : null;
 }

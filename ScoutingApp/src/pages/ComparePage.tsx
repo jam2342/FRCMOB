@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageViewBar } from '../components/PageViewBar';
 import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
@@ -6,7 +6,6 @@ import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import {
   getEventTeamsIntel,
   getTeamIntel,
-  getTheoreticalAlliance,
   searchTeams,
 } from '../api';
 import type {
@@ -14,11 +13,11 @@ import type {
   EventTeamRatingItem,
   TeamBreakdownResponse,
   TeamCompetitionsResponse,
-  TheoreticalAllianceResponse,
 } from '../api';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
 import styles from './ComparePage.module.css';
+import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { usePageVisibility } from '../hooks/usePageVisibility';
@@ -37,55 +36,21 @@ import {
   titleizeKey,
 } from './centerUtils';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
+import { resolveTab } from './tabUtils';
 const COMPARE_STORAGE_KEYS = {
   event: 'scouting_compare_event_key',
   teams: 'scouting_compare_team_keys',
 } as const;
 
-const COMPARE_TABS = ['summary', 'detailed', 'alliance'] as const;
+// The Alliance tab moved to Alliance Advisor (one builder, one place); an old
+// ?tab=alliance link is forwarded there with the compared teams.
+const COMPARE_TABS = ['summary', 'detailed'] as const;
 type CompareTab = (typeof COMPARE_TABS)[number];
 
 /* Compare puts twelve figures beside each other, so it stays a table for far
    longer than a five-column board does. useMobileLayout's 1120 is the width the
    surrounding page already switches at, and matching it keeps the two in step. */
 const COMPARE_CARD_BREAKPOINT = 1120;
-
-type TheoreticalTeamRow = TheoreticalAllianceResponse['teams'][number];
-type TheoreticalPairRow = TheoreticalAllianceResponse['compatibility']['pair_breakdown'][number];
-type SelectionRow = NonNullable<
-  TheoreticalAllianceResponse['selection_model']
->['top_desirability'][number];
-
-const THEORETICAL_TEAM_COLUMNS: TableColumn<TheoreticalTeamRow>[] = [
-  { key: 'team_key', label: 'Team' },
-  { key: 'rating', label: 'Rating', numeric: true, render: (row) => metric(row.rating_0_100, 2) },
-  { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.model_confidence_0_1, 1) },
-  { key: 'compatibility', label: 'Compatibility', numeric: true, render: (row) => metric(row.compatibility_score_0_100, 2) },
-  { key: 'pros', label: 'Pros', numeric: true, render: (row) => metric(row.pros_score_0_100, 2) },
-  { key: 'cons', label: 'Cons Risk', numeric: true, render: (row) => metric(row.cons_risk_0_100, 2) },
-  { key: 'weighted', label: 'Weighted', numeric: true, render: (row) => metric(row.weighted_score_0_100, 2) },
-  { key: 'pick', label: 'Pick Prob.', numeric: true, render: (row) => pct(row.selection_pick_probability_0_1, 1) },
-];
-
-const PAIR_COLUMNS: TableColumn<TheoreticalPairRow>[] = [
-  { key: 'pair', label: 'Pair', render: (row) => `${row.team_key_a} + ${row.team_key_b}` },
-  { key: 'synergy', label: 'Synergy Points', numeric: true, render: (row) => metric(row.synergy_points, 3) },
-  { key: 'base', label: 'Base', numeric: true, render: (row) => metric(row.base_synergy_points, 3) },
-  { key: 'role', label: 'Role Adj.', numeric: true, render: (row) => metric(row.role_adjustment_points, 3) },
-  { key: 'complement', label: 'Complement', numeric: true, render: (row) => metric(row.complement_bonus_points, 3) },
-  { key: 'risk', label: 'Risk Penalty', numeric: true, render: (row) => metric(row.risk_penalty_points, 3) },
-  { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence, 1) },
-  { key: 'source', label: 'Source', render: (row) => titleizeKey(row.source) },
-];
-
-const SELECTION_COLUMNS: TableColumn<SelectionRow>[] = [
-  { key: 'team_key', label: 'Selection Team' },
-  { key: 'rank', label: 'Rank', numeric: true },
-  { key: 'strength', label: 'Strength', numeric: true, render: (row) => metric(row.strength_score, 2) },
-  { key: 'desirability', label: 'Desirability', numeric: true, render: (row) => metric(row.selection_desirability, 2) },
-  { key: 'r1', label: 'R1 Pick Prob.', numeric: true, render: (row) => pct(row.first_round_pick_probability_0_1, 1) },
-  { key: 'r2', label: 'R2 Pick Prob.', numeric: true, render: (row) => pct(row.second_round_pick_probability_0_1, 1) },
-];
 
 type CompareTeamBundle = {
   team_key: string;
@@ -112,10 +77,6 @@ type CompareMetricHighlight = {
   spread: string;
 };
 
-function isCompareTab(value: string | null): value is CompareTab {
-  return value === 'summary' || value === 'detailed' || value === 'alliance';
-}
-
 function normalizeEventKeyInput(raw: string): string {
   return raw.trim().toLowerCase();
 }
@@ -139,20 +100,6 @@ function compareTeamLabel(teamKey: string, breakdown: TeamBreakdownResponse | nu
   if (breakdown?.team.team_number) return `#${breakdown.team.team_number}`;
   const teamNumber = teamNumberFromTeamKey(teamKey);
   return teamNumber !== null ? `#${teamNumber}` : teamKey.toUpperCase();
-}
-
-function normalizedTheoreticalWeights(
-  compatibilityWeight: number,
-  prosWeight: number,
-  consWeight: number,
-): { compatibility: number; pros: number; cons: number } {
-  const sum = Math.max(0, compatibilityWeight) + Math.max(0, prosWeight) + Math.max(0, consWeight);
-  if (sum <= 0) return { compatibility: 0.6, pros: 0.25, cons: 0.15 };
-  return {
-    compatibility: Math.max(0, compatibilityWeight) / sum,
-    pros: Math.max(0, prosWeight) / sum,
-    cons: Math.max(0, consWeight) / sum,
-  };
 }
 
 function emptyBundle(teamKey: string, eventKey: string): CompareTeamBundle {
@@ -321,7 +268,7 @@ export function ComparePage() {
       '',
   );
   const tabParam = searchParams.get('tab');
-  const defaultTab: CompareTab = isCompareTab(tabParam) ? tabParam : 'summary';
+  const defaultTab = resolveTab(tabParam, COMPARE_TABS, 'summary');
 
   const [selectedEventKey, setSelectedEventKey] = useState(defaultEventKey);
   const [eventInput, setEventInput] = useState(defaultEventKey);
@@ -331,36 +278,55 @@ export function ComparePage() {
   const [addingTeam, setAddingTeam] = useState(false);
   const [compareTeamKeys, setCompareTeamKeys] = useState<string[]>(() => readStoredCompareTeamKeys());
   const [teamBundles, setTeamBundles] = useState<Record<string, CompareTeamBundle>>({});
+  const teamBundlesRef = useRef(teamBundles);
+  const failedContextsRef = useRef(new Set<string>());
+  teamBundlesRef.current = teamBundles;
 
   const [eventTeams, setEventTeams] = useState<EventTeamsIntelResponse | null>(null);
   const [loadingEventTeams, setLoadingEventTeams] = useState(false);
 
-  const [theoreticalTeamKeys, setTheoreticalTeamKeys] = useState<[string, string, string]>(['', '', '']);
-  const [theoreticalCompatibilityWeight, setTheoreticalCompatibilityWeight] = useState(60);
-  const [theoreticalProsWeight, setTheoreticalProsWeight] = useState(25);
-  const [theoreticalConsWeight, setTheoreticalConsWeight] = useState(15);
-  const [includeSelectionModel, setIncludeSelectionModel] = useState(true);
-  const [selectionScale, setSelectionScale] = useState(35);
-  const [selectionRankWeight, setSelectionRankWeight] = useState(1);
-  const [selectionSimulations, setSelectionSimulations] = useState(400);
-  const [theoreticalResult, setTheoreticalResult] = useState<TheoreticalAllianceResponse | null>(null);
-  const [loadingTheoretical, setLoadingTheoretical] = useState(false);
   const [refreshingCompare, setRefreshingCompare] = useState(false);
 
   const [statusText, setStatusText] = useState('Add teams to compare.');
   const [errorText, setErrorText] = useState('');
-  const [theoreticalErrorText, setTheoreticalErrorText] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [eventPoolVisibleCount, setEventPoolVisibleCount] = useState(120);
   const [mobileFinderOpen, setMobileFinderOpen] = useState(false);
 
+  // A link here from elsewhere in the app (global search, back/forward)
+  // changes the URL under a mounted page.
+  const allianceAdvisorPath = useMemo(() => {
+    const params = new URLSearchParams();
+    if (selectedEventKey) params.set('event', selectedEventKey);
+    if (compareTeamKeys.length > 0) params.set('teams', compareTeamKeys.slice(0, 3).join(','));
+    const query = params.toString();
+    return `/compare/alliance-advisor${query ? `?${query}` : ''}`;
+  }, [compareTeamKeys, selectedEventKey]);
+
+  // Old links and bookmarks to Compare's Alliance tab land in Alliance Advisor.
   useEffect(() => {
+    if (searchParams.get('tab') === 'alliance') navigate(allianceAdvisorPath, { replace: true });
+  }, [allianceAdvisorPath, navigate, searchParams]);
+
+  const urlSync = useExternalSearchSync(searchParams, (params) => {
+    const urlEvent = normalizeEventKeyInput(params.get('event') || '');
+    const urlTab = params.get('tab');
+    if (urlEvent && urlEvent !== selectedEventKey) {
+      setSelectedEventKey(urlEvent);
+      setEventInput(urlEvent);
+    }
+    setActiveTab(resolveTab(urlTab, COMPARE_TABS, 'summary'));
+  });
+
+  useEffect(() => {
+    if (!urlSync.shouldWrite()) return;
     const normalizedEvent = normalizeEventKeyInput(selectedEventKey);
     const next = new URLSearchParams();
     if (normalizedEvent) next.set('event', normalizedEvent);
     if (activeTab !== 'summary') next.set('tab', activeTab);
 
     if (next.toString() !== searchParams.toString()) {
+      urlSync.markWritten(next.toString());
       setSearchParams(next, { replace: true });
     }
 
@@ -372,7 +338,7 @@ export function ComparePage() {
 
     window.localStorage.setItem(COMPARE_STORAGE_KEYS.teams, JSON.stringify(compareTeamKeys));
     writeCenterContext({ eventKey: normalizedEvent, sourcePath: '/compare' });
-  }, [activeTab, compareTeamKeys, searchParams, selectedEventKey, setSearchParams]);
+  }, [activeTab, compareTeamKeys, searchParams, selectedEventKey, setSearchParams, urlSync]);
 
   useEffect(() => {
     setEventPoolVisibleCount(120);
@@ -438,7 +404,8 @@ export function ComparePage() {
       if (!teamKey) return;
       const contextEventKey = selectedEventKey || '';
 
-      const existing = teamBundles[teamKey];
+      const contextKey = `${contextEventKey}:${teamKey}`;
+      const existing = teamBundlesRef.current[teamKey];
       if (!force && existing && existing.last_updated_at && existing.event_key === contextEventKey && !existing.error) {
         return;
       }
@@ -508,7 +475,9 @@ export function ComparePage() {
             last_updated_at: Date.now(),
           },
         }));
+        failedContextsRef.current.delete(contextKey);
       } catch (error) {
+        failedContextsRef.current.add(contextKey);
         setTeamBundles((prev) => ({
           ...prev,
           [teamKey]: {
@@ -522,15 +491,18 @@ export function ComparePage() {
         }));
       }
     },
-    [selectedEventKey, teamBundles],
+    [selectedEventKey],
   );
 
   useEffect(() => {
     for (const teamKey of compareTeamKeys) {
       const bundle = teamBundles[teamKey];
       const contextEventKey = selectedEventKey || '';
+      const contextKey = `${contextEventKey}:${teamKey}`;
       const needsLoad = !bundle || bundle.event_key !== contextEventKey || (!bundle.loading && !bundle.breakdown);
-      if (needsLoad) {
+      // A failed context waits for the row's explicit Retry action instead of
+      // retrying in a tight loop on bad wifi.
+      if (needsLoad && !bundle?.loading && !failedContextsRef.current.has(contextKey)) {
         void loadCompareBundle(teamKey, true);
       }
     }
@@ -657,7 +629,7 @@ export function ComparePage() {
         return rank !== null ? `#${rank}` : 'N/A';
       },
     },
-    { key: 'fuel', label: 'Fuel', numeric: true, render: (row) => metric(row.breakdown?.averages?.fuel_scoring_rate, 2) },
+    { key: 'fuel', label: 'Fuel/active min', numeric: true, render: (row) => metric(row.breakdown?.averages?.fuel_scoring_rate, 1) },
     { key: 'cycle', label: 'Cycle', numeric: true, render: (row) => metric(row.breakdown?.averages?.cycle_time_sec, 2) },
     { key: 'auto', label: 'Auto', numeric: true, render: (row) => metric(row.breakdown?.averages?.auto_contribution, 2) },
     { key: 'climb', label: 'Climb', numeric: true, render: (row) => pct(row.breakdown?.averages?.climb_success_prob, 1) },
@@ -711,7 +683,7 @@ export function ComparePage() {
       },
       {
         id: 'fuel',
-        label: 'Fuel Scoring Rate (per min)',
+        label: 'Fuel per active-hub min',
         better: 'high' as const,
         getValue: (row: (typeof compareRows)[number]) => row.breakdown?.averages?.fuel_scoring_rate ?? null,
         format: (value: number) => metric(value, 2),
@@ -776,27 +748,15 @@ export function ComparePage() {
     return highlights;
   }, [compareRows]);
 
-  const theoreticalTeamOptions = useMemo(() => {
-    return [...eventTeamPool].sort((a, b) => a.team_number - b.team_number);
-  }, [eventTeamPool]);
-
   const visibleEventTeamPool = useMemo(
     () => eventTeamPool.slice(0, Math.max(1, eventPoolVisibleCount)),
     [eventPoolVisibleCount, eventTeamPool],
-  );
-
-  const theoreticalWeightsPreview = useMemo(
-    () =>
-      normalizedTheoreticalWeights(theoreticalCompatibilityWeight, theoreticalProsWeight, theoreticalConsWeight),
-    [theoreticalCompatibilityWeight, theoreticalConsWeight, theoreticalProsWeight],
   );
 
   function openEventContext() {
     const normalized = normalizeEventKeyInput(eventInput);
     setSelectedEventKey(normalized);
     setEventInput(normalized);
-    setTheoreticalResult(null);
-    setTheoreticalErrorText('');
     setErrorText('');
     setStatusText(normalized ? `Event: ${normalized}.` : 'Event cleared.');
     if (isMobileLayout) setMobileFinderOpen(false);
@@ -812,7 +772,6 @@ export function ComparePage() {
 
   function removeCompareTeam(teamKey: string) {
     setCompareTeamKeys((prev) => prev.filter((value) => value !== teamKey));
-    setTheoreticalResult(null);
   }
 
   function addCompareTeam(teamKeyInput: string): boolean {
@@ -905,101 +864,7 @@ export function ComparePage() {
     setCompareTeamKeys([]);
     setTeamBundles({});
     setCompareInput('');
-    setTheoreticalTeamKeys(['', '', '']);
-    setTheoreticalResult(null);
-    setTheoreticalErrorText('');
     setStatusText('Cleared.');
-  }
-
-  function setTheoreticalSlot(slot: 0 | 1 | 2, value: string) {
-    const normalized = value.trim().toLowerCase();
-    setTheoreticalTeamKeys((prev) => {
-      const next: [string, string, string] = [prev[0], prev[1], prev[2]];
-      next[slot] = normalized;
-      return next;
-    });
-    setTheoreticalResult(null);
-    setTheoreticalErrorText('');
-  }
-
-  function autofillTheoreticalTeams() {
-    if (!selectedEventKey || eventTeamPool.length < 3) {
-      setTheoreticalErrorText('Pick an event with at least 3 teams to use Theoretical Builder.');
-      return;
-    }
-
-    const candidates: string[] = [];
-
-    const append = (teamKey: string | null | undefined) => {
-      const normalized = (teamKey || '').trim().toLowerCase();
-      if (!normalized || candidates.includes(normalized)) return;
-      if (!eventTeamKeySet.has(normalized)) return;
-      candidates.push(normalized);
-    };
-
-    for (const teamKey of compareTeamKeys) append(teamKey);
-    for (const team of eventTeamPool) append(team.team_key);
-
-    if (candidates.length < 3) {
-      setTheoreticalErrorText('Need 3 unique event teams for Theoretical Builder.');
-      return;
-    }
-
-    setTheoreticalTeamKeys([candidates[0], candidates[1], candidates[2]]);
-    setTheoreticalResult(null);
-    setTheoreticalErrorText('');
-  }
-
-  async function runTheoreticalBuilder() {
-    if (!selectedEventKey || eventTeamPool.length === 0) {
-      setTheoreticalErrorText('Select an event before running Theoretical Builder.');
-      return;
-    }
-
-    const teams = theoreticalTeamKeys.map((teamKey) => teamKey.trim().toLowerCase()).filter(Boolean);
-    if (teams.length !== 3 || new Set(teams).size !== 3) {
-      setTheoreticalErrorText('Choose 3 unique teams for the theoretical alliance.');
-      return;
-    }
-
-    const missing = teams.filter((teamKey) => !eventTeamKeySet.has(teamKey));
-    if (missing.length > 0) {
-      setTheoreticalErrorText(`Teams must come from ${selectedEventKey}. Invalid: ${missing.join(', ')}`);
-      return;
-    }
-
-    const weights = normalizedTheoreticalWeights(
-      theoreticalCompatibilityWeight,
-      theoreticalProsWeight,
-      theoreticalConsWeight,
-    );
-
-    setLoadingTheoretical(true);
-    setTheoreticalErrorText('');
-
-    try {
-      const payload = await getTheoreticalAlliance(selectedEventKey, {
-        team_keys: teams,
-        compatibility_weight: weights.compatibility,
-        pros_weight: weights.pros,
-        cons_weight: weights.cons,
-        include_selection_model: includeSelectionModel,
-        selection_rank_weight: Math.max(0, selectionRankWeight),
-        selection_scale: Math.max(1, selectionScale),
-        selection_captains: 8,
-        selection_simulations: Math.max(50, Math.min(5000, Math.round(selectionSimulations))),
-        selection_rank_source: 'auto',
-      });
-
-      setTheoreticalResult(payload);
-      setLastUpdatedAt(Date.now());
-      setStatusText(`Theoretical scored: ${payload.team_keys.join(', ')}.`);
-    } catch (error) {
-      setTheoreticalResult(null);
-      setTheoreticalErrorText((error as Error).message || 'Theoretical builder failed.');
-    } finally {
-      setLoadingTheoretical(false);
-    }
   }
 
   function openTeamCenter(teamKey: string) {
@@ -1091,7 +956,7 @@ export function ComparePage() {
           <div className="center-status-row">
             <span className="center-chip">{compareTeamKeys.length}/4 teams</span>
             <span className="center-chip">{eventTeams?.teams_count ?? 0} pool</span>
-            <span className="center-chip">{relativeFromTimestamp(lastUpdatedAt)}</span>
+            <span className="center-chip">Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
           </div>
 
           {errorText ? <p className="center-callout danger">{errorText}</p> : null}
@@ -1102,10 +967,10 @@ export function ComparePage() {
           title="Event Team Pool"
           subtitle={
             selectedEventKey
-              ? 'Theoretical Builder is restricted to this event roster.'
+              ? 'Teams at this event. Tap one to add it.'
               : 'Pick an event key to load a constrained team pool.'
           }
-          right={<span className="center-chip">{loadingEventTeams ? 'Loading...' : `${eventTeamPool.length} teams`}</span>}
+          right={<span className="center-chip">{loadingEventTeams ? 'Loading...' : `${eventTeamPool.length} team${eventTeamPool.length === 1 ? '' : 's'}`}</span>}
           className="compare-pool-card"
         >
           {!selectedEventKey ? (
@@ -1135,7 +1000,7 @@ export function ComparePage() {
                         #{team.team_number} {team.nickname || team.team_key}
                       </strong>
                       <small>
-                        {team.team_key} · analyzed {team.analyzed} · rating {metric(team.rating_0_100, 1)}
+                        {team.team_key} · scouted {team.analyzed} · rating {metric(team.rating_0_100, 1)}
                       </small>
                     </button>
                   );
@@ -1201,6 +1066,11 @@ export function ComparePage() {
           ) : (
             <p className="center-callout muted">Add teams to build compare diagnostics.</p>
           )}
+          {compareTeamKeys.length >= 2 && selectedEventKey ? (
+            <p className="center-callout muted">
+              Try these teams as an alliance in <Link to={allianceAdvisorPath}>Alliance Advisor</Link>.
+            </p>
+          ) : null}
         </SurfaceCard>
 
         {activeTab === 'summary' ? (
@@ -1277,8 +1147,8 @@ export function ComparePage() {
                       <strong>{pct(row.rating?.confidence_0_1, 1)}</strong>
                     </div>
                     <div className="center-kpi-card">
-                      <span>Fuel Rate / min</span>
-                      <strong>{metric(row.breakdown?.averages?.fuel_scoring_rate, 2)}</strong>
+                      <span>Fuel / active min</span>
+                      <strong>{metric(row.breakdown?.averages?.fuel_scoring_rate, 1)}</strong>
                     </div>
                     <div className="center-kpi-card">
                       <span>Cycle Time</span>
@@ -1390,8 +1260,9 @@ export function ComparePage() {
                       type="button"
                       className="center-btn ghost"
                       onClick={() => void loadCompareBundle(row.team_key, true, true)}
+                      disabled={row.loading}
                     >
-                      Refresh Team
+                      {row.error ? 'Retry' : 'Refresh Team'}
                     </button>
                   </div>
                 </article>
@@ -1401,201 +1272,6 @@ export function ComparePage() {
           </SurfaceCardGroup>
         ) : null}
 
-        {activeTab === 'alliance' ? (
-          <SurfaceCardGroup groupId="compare-center-theoretical">
-            <SurfaceCard
-              title="Theoretical Team Builder"
-              subtitle="Build a 3-team alliance and score compatibility."
-              className="compare-theoretical-card"
-              compactable
-            >
-            {!selectedEventKey ? (
-              <p className="center-callout warning">Select an event first.</p>
-            ) : null}
-
-            <div className="theoretical-builder-grid">
-              <div className="theoretical-team-grid">
-                {[0, 1, 2].map((slot) => (
-                  <label key={`theoretical-slot-${slot}`} className="center-stack-form">
-                    <span className="center-label">Team Slot {slot + 1}</span>
-                    <select
-                      className="center-input"
-                      value={theoreticalTeamKeys[slot]}
-                      onChange={(event) => setTheoreticalSlot(slot as 0 | 1 | 2, event.target.value)}
-                    >
-                      <option value="">Select team...</option>
-                      {theoreticalTeamOptions.map((team) => (
-                        <option key={`theoretical-option-${slot}-${team.team_key}`} value={team.team_key.toLowerCase()}>
-                          #{team.team_number} {team.nickname || team.team_key}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
-
-              <div className="theoretical-weight-grid">
-                <label className="center-stack-form">
-                  <span className="center-label">
-                    Compatibility Weight ({metric(theoreticalWeightsPreview.compatibility * 100, 1)}%)
-                  </span>
-                  <input
-                    className="center-input"
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={theoreticalCompatibilityWeight}
-                    onChange={(event) => setTheoreticalCompatibilityWeight(Number(event.target.value))}
-                  />
-                </label>
-
-                <label className="center-stack-form">
-                  <span className="center-label">Pros Weight ({metric(theoreticalWeightsPreview.pros * 100, 1)}%)</span>
-                  <input
-                    className="center-input"
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={theoreticalProsWeight}
-                    onChange={(event) => setTheoreticalProsWeight(Number(event.target.value))}
-                  />
-                </label>
-
-                <label className="center-stack-form">
-                  <span className="center-label">Cons Penalty ({metric(theoreticalWeightsPreview.cons * 100, 1)}%)</span>
-                  <input
-                    className="center-input"
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={theoreticalConsWeight}
-                    onChange={(event) => setTheoreticalConsWeight(Number(event.target.value))}
-                  />
-                </label>
-              </div>
-
-              <div className="theoretical-advanced-grid">
-                <label className="center-stack-form">
-                  <span className="center-label">Selection Model</span>
-                  <select
-                    className="center-input"
-                    value={includeSelectionModel ? 'on' : 'off'}
-                    onChange={(event) => setIncludeSelectionModel(event.target.value === 'on')}
-                  >
-                    <option value="on">Enabled</option>
-                    <option value="off">Disabled</option>
-                  </select>
-                </label>
-
-                <label className="center-stack-form">
-                  <span className="center-label">Selection Scale</span>
-                  <input
-                    className="center-input"
-                    type="number"
-                    min={1}
-                    max={200}
-                    step={1}
-                    value={selectionScale}
-                    onChange={(event) => setSelectionScale(Number(event.target.value || 35))}
-                  />
-                </label>
-
-                <label className="center-stack-form">
-                  <span className="center-label">Rank Weight</span>
-                  <input
-                    className="center-input"
-                    type="number"
-                    min={0}
-                    max={4}
-                    step={0.1}
-                    value={selectionRankWeight}
-                    onChange={(event) => setSelectionRankWeight(Number(event.target.value || 1))}
-                  />
-                </label>
-
-                <label className="center-stack-form">
-                  <span className="center-label">Selection Simulations</span>
-                  <input
-                    className="center-input"
-                    type="number"
-                    min={50}
-                    max={5000}
-                    step={50}
-                    value={selectionSimulations}
-                    onChange={(event) => setSelectionSimulations(Number(event.target.value || 400))}
-                  />
-                </label>
-              </div>
-
-              <div className="center-actions-row">
-                <button type="button" className="center-btn ghost" onClick={autofillTheoreticalTeams}>
-                  Autofill Teams
-                </button>
-                <button type="button" className="center-btn" onClick={() => void runTheoreticalBuilder()} disabled={loadingTheoretical}>
-                  {loadingTheoretical ? 'Scoring...' : 'Run Builder'}
-                </button>
-              </div>
-            </div>
-
-            {theoreticalErrorText ? <p className="center-callout warning">{theoreticalErrorText}</p> : null}
-
-            {theoreticalResult ? (
-              <div className="center-stack-gap">
-                <div className="center-kpi-grid">
-                  <div className="center-kpi-card">
-                    <span>Weighted Score</span>
-                    <strong>{metric(theoreticalResult.weighted_total_score_0_100, 2)} / 100</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Compatibility Score</span>
-                    <strong>{metric(theoreticalResult.compatibility.compatibility_score_0_100, 2)} / 100</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Alliance Synergy Points</span>
-                    <strong>{metric(theoreticalResult.compatibility.alliance_synergy_points, 3)}</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Compatibility Confidence</span>
-                    <strong>{pct(theoreticalResult.compatibility.confidence_0_1, 1)}</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Pros Score</span>
-                    <strong>{metric(theoreticalResult.pros_cons.alliance_pros_score_0_100, 2)} / 100</strong>
-                  </div>
-                  <div className="center-kpi-card">
-                    <span>Cons Risk</span>
-                    <strong>{metric(theoreticalResult.pros_cons.alliance_cons_risk_0_100, 2)} / 100</strong>
-                  </div>
-                </div>
-
-                <Table
-                  columns={THEORETICAL_TEAM_COLUMNS}
-                  rows={theoreticalResult.teams}
-                  rowKey={(row) => `theoretical-team-row-${row.team_key}`}
-                />
-
-                <Table
-                  columns={PAIR_COLUMNS}
-                  rows={theoreticalResult.compatibility.pair_breakdown}
-                  rowKey={(_row, index) => `theoretical-pair-${index}`}
-                  empty="No pair synergy data."
-                />
-
-                {theoreticalResult.selection_model ? (
-                  <Table
-                    columns={SELECTION_COLUMNS}
-                    rows={theoreticalResult.selection_model.top_desirability.slice(0, 12)}
-                    rowKey={(row) => `selection-desirability-${row.team_key}`}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-            </SurfaceCard>
-          </SurfaceCardGroup>
-        ) : null}
       </section>
     </div>
     </>

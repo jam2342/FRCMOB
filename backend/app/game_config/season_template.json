@@ -18,10 +18,10 @@
     "windows": [
       { "key": "auto", "start_sec": 0, "end_sec": 20, "active": "both" },
       { "key": "transition", "start_sec": 20, "end_sec": 30, "active": "both" },
-      { "key": "shift_1", "start_sec": 30, "end_sec": 55, "active": "red" },
-      { "key": "shift_2", "start_sec": 55, "end_sec": 80, "active": "blue" },
-      { "key": "shift_3", "start_sec": 80, "end_sec": 105, "active": "red" },
-      { "key": "shift_4", "start_sec": 105, "end_sec": 130, "active": "blue" },
+      { "key": "shift_1", "start_sec": 30, "end_sec": 55, "active": "shift_1" },
+      { "key": "shift_2", "start_sec": 55, "end_sec": 80, "active": "opposite_shift_1" },
+      { "key": "shift_3", "start_sec": 80, "end_sec": 105, "active": "shift_1" },
+      { "key": "shift_4", "start_sec": 105, "end_sec": 130, "active": "opposite_shift_1" },
       { "key": "endgame", "start_sec": 130, "end_sec": 160, "active": "both" }
     ],
     "role_zones": {

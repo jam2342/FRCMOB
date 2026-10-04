@@ -44,13 +44,15 @@ const RANKING_COLUMNS: TableColumn<RankingRow>[] = [
   { key: 'consistency', label: 'Consistency', numeric: true, render: (row) => row.subscores.consistency.toFixed(0) },
 ];
 import { metric, pct, normalizeTeamKeyInput } from './centerUtils';
+import { readMyTeamKey } from '../features/workspace/myTeam';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = 'dataviz_event_key';
-const MY_TEAM_STORAGE = 'scouting_manual_my_team_v1';
+// The shared center key, like every other page: a private one meant the event
+// picked everywhere else didn't carry over here.
+const STORAGE_KEY = 'scouting_center_event_key';
 
 /* radar chart subscore keys & labels */
 const SUBSCORE_KEYS = [
@@ -411,17 +413,20 @@ function DonutChart({
 /*  Page component                                                     */
 /* ------------------------------------------------------------------ */
 
+// Desktop-only page. The redirect lives out here so the page's hooks never
+// run on a phone: rendered inline, useEventKeyParam wrote ?event= back onto
+// this route in the same pass and cancelled the redirect, leaving a blank
+// screen.
 export function DataVizPage() {
   const isMobile = useMobileLayout();
+  if (isMobile) return <Navigate to="/events" replace />;
+  return <DataVizPageContent />;
+}
+
+function DataVizPageContent() {
+  const isMobile = useMobileLayout();
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
-  const [teamInput, setTeamInput] = useState(() => {
-    try {
-      const saved = localStorage.getItem(MY_TEAM_STORAGE);
-      return saved ? JSON.parse(saved) : '';
-    } catch {
-      return '';
-    }
-  });
+  const [teamInput, setTeamInput] = useState(() => readMyTeamKey().replace(/^frc/, ''));
 
   /* ── data state ─────────────────────────────── */
   const [ratings, setRatings] = useState<EventTeamRatingItem[]>([]);
@@ -557,8 +562,6 @@ export function DataVizPage() {
 
   const surfaceGroupId = 'dataviz-main';
 
-  if (isMobile) return <Navigate to="/events" replace />;
-
   /* ── render ─────────────────────────────────── */
   return (
     <div className="center-page-container dataviz-page">
@@ -620,7 +623,7 @@ export function DataVizPage() {
             {/* Rating Distribution */}
             <SurfaceCard
               title="Team Rating Distribution"
-              subtitle={`Top ${topTeams.length} of ${ratings.length} teams`}
+              subtitle={`Top ${topTeams.length} of ${ratings.length} team${ratings.length === 1 ? '' : 's'}`}
             >
               <div className="dviz-chart-container">
                 {topTeams.length > 0 ? (
@@ -665,7 +668,7 @@ export function DataVizPage() {
             {ratings.length > 0 && (
               <SurfaceCard
                 title="Full Rankings"
-                subtitle={`All ${ratings.length} teams`}
+                subtitle={`All ${ratings.length} team${ratings.length === 1 ? '' : 's'}`}
                 collapsible
               >
                 <Table
@@ -706,7 +709,7 @@ export function DataVizPage() {
             {matchTrends.length > 0 && (
               <SurfaceCard
                 title="Match-by-Match Trends"
-                subtitle={`${breakdown?.recent_matches?.length ?? 0} matches`}
+                subtitle={`${breakdown?.recent_matches?.length ?? 0} match${breakdown?.recent_matches?.length === 1 ? '' : 'es'}`}
               >
                 <div className="dviz-trends-grid">
                   {matchTrends.map((t) => (
@@ -741,7 +744,7 @@ export function DataVizPage() {
             {breakdown?.averages && (
               <SurfaceCard
                 title="Performance Averages"
-                subtitle="Across analyzed matches"
+                subtitle="Across scouted matches"
               >
                 <div className="center-kpi-grid dviz-kpi-grid">
                   {METRIC_KEYS.map((key) => {

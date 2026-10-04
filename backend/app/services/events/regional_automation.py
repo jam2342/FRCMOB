@@ -12,11 +12,7 @@ import redis
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.services.events.pipeline import (
-    ANALYSIS_VERSION,
-    get_queue,
-    run_event_pipeline as _run_event_pipeline,
-)
+from app.services.events.pipeline import refresh_event, train_shadow_models_after_refresh
 from app.services.utils import (
     automation_redis_key as _automation_redis_key,
     decode_redis_float as _decode_redis_float,
@@ -26,6 +22,7 @@ from app.tba.client import TBAClient
 logger = logging.getLogger(__name__)
 
 AUTOMATION_LOCK_TTL_SEC = 15 * 60
+EVENT_REFRESHED_KEY_PREFIX = "automation:regional:event_refreshed:"
 
 class RegionalAutomationError(RuntimeError):
     def __init__(self, status_code: int, detail: str):
@@ -82,32 +79,72 @@ def _is_event_completed(event_payload: dict, today_utc: date, include_ended_toda
             return False
     return False
 
+def _event_refreshed_at(redis_conn: redis.Redis, event_keys: list[str]) -> dict[str, float]:
+    if not event_keys:
+        return {}
+    values = redis_conn.mget([f"{EVENT_REFRESHED_KEY_PREFIX}{key}" for key in event_keys])
+    return {
+        key: parsed
+        for key, raw in zip(event_keys, values)
+        if (parsed := _decode_redis_float(raw)) is not None
+    }
+
+
+def _mark_event_refreshed(event_key: str) -> None:
+    try:
+        redis.from_url(settings.redis_url).set(
+            f"{EVENT_REFRESHED_KEY_PREFIX}{event_key}", str(datetime.now(timezone.utc).timestamp())
+        )
+    except redis.RedisError:
+        logger.warning("regional_automation.mark_refreshed_failed event=%s", event_key)
+
+
+def _events_due_for_refresh(events: list[dict], today_utc: date) -> tuple[list[dict], int]:
+    # Refresh what can still change: never-refreshed events and ones that ended in the
+    # last few days. Settled events get a capped re-check, longest-unchecked first, so
+    # a full pass spreads over several ticks instead of re-ingesting everything each time.
+    settle_days = max(0, int(settings.automation_regional_settle_days))
+    keys = [str(event.get("key")) for event in events if isinstance(event.get("key"), str)]
+    try:
+        refreshed_at = _event_refreshed_at(redis.from_url(settings.redis_url), keys)
+    except redis.RedisError:
+        logger.warning("regional_automation.refresh_state_unavailable; refreshing all")
+        return events, 0
+
+    due: list[dict] = []
+    settled: list[tuple[float, dict]] = []
+    for event in events:
+        key = event.get("key")
+        if not isinstance(key, str):
+            continue
+        last = refreshed_at.get(key)
+        end_raw = event.get("end_date")
+        try:
+            ended = date.fromisoformat(end_raw) if isinstance(end_raw, str) else None
+        except ValueError:
+            ended = None
+        if last is None or ended is None or (today_utc - ended).days <= settle_days:
+            due.append(event)
+        else:
+            settled.append((last, event))
+    settled.sort(key=lambda item: item[0])
+    recheck_cap = max(0, int(settings.automation_regional_max_rechecks_per_tick))
+    rechecks = [event for _, event in settled[:recheck_cap]]
+    return due + rechecks, len(settled) - len(rechecks)
+
+
 def run_regional_post_event_breakdowns(
     *,
     season: int,
     db: Session,
-    force_analysis: bool = False,
     include_all_events: bool = False,
     include_out_of_region_events_for_in_region_teams: bool = True,
     include_ended_today: bool = False,
     allow_previous_season_fallback: bool | None = None,
-    all_matches_in_region_events: bool = False,
-    auto_calibrate_missing: bool = True,
-    auto_calibration_overwrite_existing: bool = False,
-    auto_calibration_refresh_video: bool = False,
-    auto_calibration_sample_count: int = 18,
-    auto_calibration_min_inliers: int = 4,
-    auto_calibration_ransac_reproj_threshold_px: float = 3.0,
-    auto_calibration_focus_time_sec: float | None = None,
     max_events: int = 300,
     max_teams: int = 1000,
-    max_matches_per_event: int = 42,
-    max_new_jobs_per_tick: int = 220,
-    max_queue_pending_jobs: int | None = None,
-    clone_event_calibration: bool = True,
-    require_video: bool = True,
-    require_calibration: bool = False,
     run_post_compute: bool = True,
+    refresh_all: bool = False,
     synergy_model_version: str = "",
     quality_threshold: float = 0.35,
 ) -> dict[str, Any]:
@@ -115,24 +152,9 @@ def run_regional_post_event_breakdowns(
         raise RegionalAutomationError(400, "season must be between 2015 and 2100")
     if quality_threshold < 0.0 or quality_threshold > 1.0:
         raise RegionalAutomationError(400, "quality_threshold must be between 0 and 1")
-    if auto_calibration_sample_count < 1 or auto_calibration_sample_count > 80:
-        raise RegionalAutomationError(400, "auto_calibration_sample_count must be between 1 and 80")
-    if auto_calibration_min_inliers < 4 or auto_calibration_min_inliers > 64:
-        raise RegionalAutomationError(400, "auto_calibration_min_inliers must be between 4 and 64")
-    if (
-        auto_calibration_ransac_reproj_threshold_px <= 0.1
-        or auto_calibration_ransac_reproj_threshold_px > 25.0
-    ):
-        raise RegionalAutomationError(
-            400,
-            "auto_calibration_ransac_reproj_threshold_px must be > 0.1 and <= 25.0",
-        )
-    if auto_calibration_focus_time_sec is not None and auto_calibration_focus_time_sec < 0:
-        raise RegionalAutomationError(400, "auto_calibration_focus_time_sec must be >= 0")
 
     tba = TBAClient()
     today_utc = datetime.now(timezone.utc).date()
-    queue = get_queue()
 
     def collect_scope_for_season(target_season: int) -> tuple[set[str], dict[str, dict], list[dict]]:
         try:
@@ -251,66 +273,36 @@ def run_regional_post_event_breakdowns(
             candidate_events = prev_candidate_events
             completed_events = prev_completed_events
 
-    selected_events = completed_events[: max(1, min(max_events, 1000))]
-    per_event_schedule_cap = max(1, min(int(max_matches_per_event), 5000))
-    remaining_job_budget = max(1, min(int(max_new_jobs_per_tick), 20000))
-    queue_pending_cap = (
-        int(max_queue_pending_jobs)
-        if max_queue_pending_jobs is not None
-        else int(settings.analysis_queue_max_pending_jobs)
+    candidate_events = completed_events[: max(1, min(max_events, 1000))]
+    selected_events, skipped_settled = (
+        (candidate_events, 0) if refresh_all else _events_due_for_refresh(candidate_events, today_utc)
     )
-    queue_pending_cap = max(10, min(queue_pending_cap, 20000))
 
     event_results: list[dict] = []
     for event in selected_events:
-        if remaining_job_budget <= 0:
-            break
         event_key = event.get("key")
         if not isinstance(event_key, str) or not event_key:
             continue
-        event_is_in_region = _is_in_region_event_payload(event)
-        if include_all_events:
-            allowed_team_keys = None
-        else:
-            allowed_team_keys = None if (all_matches_in_region_events and event_is_in_region) else in_region_team_keys
-        event_new_jobs_cap = max(1, min(per_event_schedule_cap, remaining_job_budget))
-        event_result = _run_event_pipeline(
+        event_result = refresh_event(
             db,
-            queue,
             event_key=event_key,
-            force_analysis=force_analysis,
-            allowed_team_keys=allowed_team_keys,
-            clone_event_calibration=clone_event_calibration,
-            require_video=require_video,
-            require_calibration=require_calibration,
             run_post_compute=run_post_compute,
+            train_ml=False,
             synergy_model_version=synergy_model_version,
             quality_threshold=quality_threshold,
-            auto_calibrate_missing=auto_calibrate_missing,
-            auto_calibration_overwrite_existing=auto_calibration_overwrite_existing,
-            auto_calibration_refresh_video=auto_calibration_refresh_video,
-            auto_calibration_sample_count=int(auto_calibration_sample_count),
-            auto_calibration_min_inliers=int(auto_calibration_min_inliers),
-            auto_calibration_ransac_reproj_threshold_px=float(auto_calibration_ransac_reproj_threshold_px),
-            auto_calibration_focus_time_sec=auto_calibration_focus_time_sec,
-            max_new_jobs=event_new_jobs_cap,
-            max_pending_jobs=queue_pending_cap,
         )
-        remaining_job_budget = max(0, remaining_job_budget - int(event_result.get("scheduled") or 0))
-        if include_all_events:
-            event_result["target_scope"] = "all_teams_in_event"
-        elif all_matches_in_region_events and event_is_in_region:
-            event_result["target_scope"] = "all_matches_in_region_event"
-        if not include_all_events and event_result.get("status") == "no_target_teams_detected":
-            event_result["status"] = "no_in_region_teams_detected"
-            event_result["in_region_teams_in_event"] = 0
-        elif not include_all_events:
-            event_result["in_region_teams_in_event"] = int(event_result.get("target_teams_in_event") or 0)
-        event_result["queue_caps"] = {
-            "max_new_jobs_for_event": int(event_new_jobs_cap),
-            "max_pending_jobs": int(queue_pending_cap),
-        }
+        event_result["in_region"] = _is_in_region_event_payload(event)
         event_results.append(event_result)
+        if event_result.get("status") == "processed":
+            _mark_event_refreshed(event_key)
+
+    # One training pass per tick: the shadow models learn from the whole season, not one event.
+    ml_shadow = (
+        train_shadow_models_after_refresh(db, event_key=str(event_results[-1]["event_key"]))
+        if run_post_compute and event_results
+        else {"triggered": False, "detail": "no_events_refreshed"}
+    )
+    ml_shadow.pop("ratings_result", None)
 
     return {
         "ok": True,
@@ -319,7 +311,6 @@ def run_regional_post_event_breakdowns(
         "effective_season": effective_season,
         "season_fallback_used": season_fallback_used,
         "fallback_from_season": fallback_from_season,
-        "analysis_version": ANALYSIS_VERSION,
         "model_version": synergy_model_version,
         "quality_threshold": quality_threshold,
         "include_all_events": bool(include_all_events),
@@ -327,12 +318,9 @@ def run_regional_post_event_breakdowns(
         "candidate_event_count": len(candidate_events),
         "completed_event_count": len(completed_events),
         "processed_event_count": len(event_results),
-        "queue_caps": {
-            "max_matches_per_event": int(per_event_schedule_cap),
-            "max_new_jobs_per_tick": int(max_new_jobs_per_tick),
-            "remaining_job_budget": int(remaining_job_budget),
-            "max_pending_jobs": int(queue_pending_cap),
-        },
+        "skipped_settled_event_count": skipped_settled,
+        "failed_event_count": sum(1 for row in event_results if row.get("status") != "processed"),
+        "ml_shadow": ml_shadow,
         "events": event_results,
     }
 
@@ -342,28 +330,14 @@ def run_regional_automation_tick(
     db: Session,
     force_tick: bool = False,
     min_interval_minutes: int | None = None,
-    force_analysis: bool = False,
     include_all_events: bool | None = None,
     include_out_of_region_events_for_in_region_teams: bool | None = None,
     include_ended_today: bool | None = None,
     allow_previous_season_fallback: bool | None = None,
-    all_matches_in_region_events: bool | None = None,
-    auto_calibrate_missing: bool | None = None,
-    auto_calibration_overwrite_existing: bool | None = None,
-    auto_calibration_refresh_video: bool | None = None,
-    auto_calibration_sample_count: int | None = None,
-    auto_calibration_min_inliers: int | None = None,
-    auto_calibration_ransac_reproj_threshold_px: float | None = None,
-    auto_calibration_focus_time_sec: float | None = None,
     max_events: int | None = None,
     max_teams: int | None = None,
-    max_matches_per_event: int | None = None,
-    max_new_jobs_per_tick: int | None = None,
-    max_queue_pending_jobs: int | None = None,
-    clone_event_calibration: bool | None = None,
-    require_video: bool | None = None,
-    require_calibration: bool | None = None,
     run_post_compute: bool | None = None,
+    refresh_all: bool = False,
     synergy_model_version: str = "",
     quality_threshold: float = 0.35,
 ) -> dict[str, Any]:
@@ -422,15 +396,8 @@ def run_regional_automation_tick(
         }
 
     try:
-        default_focus_time = (
-            float(settings.automation_regional_auto_calibration_focus_time_sec)
-            if float(settings.automation_regional_auto_calibration_focus_time_sec) > 0
-            else None
-        )
-
         run_result = run_regional_post_event_breakdowns(
             season=season,
-            force_analysis=force_analysis,
             include_all_events=(
                 bool(settings.automation_regional_include_all_events)
                 if include_all_events is None
@@ -451,112 +418,22 @@ def run_regional_automation_tick(
                 if allow_previous_season_fallback is None
                 else allow_previous_season_fallback
             ),
-            all_matches_in_region_events=(
-                False if all_matches_in_region_events is None else all_matches_in_region_events
-            ),
-            auto_calibrate_missing=(
-                bool(settings.automation_regional_auto_calibrate_missing)
-                if auto_calibrate_missing is None
-                else auto_calibrate_missing
-            ),
-            auto_calibration_overwrite_existing=(
-                bool(settings.automation_regional_auto_calibration_overwrite_existing)
-                if auto_calibration_overwrite_existing is None
-                else auto_calibration_overwrite_existing
-            ),
-            auto_calibration_refresh_video=(
-                bool(settings.automation_regional_auto_calibration_refresh_video)
-                if auto_calibration_refresh_video is None
-                else auto_calibration_refresh_video
-            ),
-            auto_calibration_sample_count=(
-                int(settings.automation_regional_auto_calibration_sample_count)
-                if auto_calibration_sample_count is None
-                else int(auto_calibration_sample_count)
-            ),
-            auto_calibration_min_inliers=(
-                int(settings.automation_regional_auto_calibration_min_inliers)
-                if auto_calibration_min_inliers is None
-                else int(auto_calibration_min_inliers)
-            ),
-            auto_calibration_ransac_reproj_threshold_px=(
-                float(settings.automation_regional_auto_calibration_ransac_reproj_threshold_px)
-                if auto_calibration_ransac_reproj_threshold_px is None
-                else float(auto_calibration_ransac_reproj_threshold_px)
-            ),
-            auto_calibration_focus_time_sec=(
-                default_focus_time if auto_calibration_focus_time_sec is None else auto_calibration_focus_time_sec
-            ),
             max_events=(
                 int(settings.automation_regional_max_events) if max_events is None else int(max_events)
             ),
             max_teams=(
                 int(settings.automation_regional_max_teams) if max_teams is None else int(max_teams)
             ),
-            max_matches_per_event=(
-                int(settings.automation_regional_max_matches_per_event)
-                if max_matches_per_event is None
-                else int(max_matches_per_event)
-            ),
-            max_new_jobs_per_tick=(
-                int(settings.automation_regional_max_new_jobs_per_tick)
-                if max_new_jobs_per_tick is None
-                else int(max_new_jobs_per_tick)
-            ),
-            max_queue_pending_jobs=(
-                int(settings.analysis_queue_max_pending_jobs)
-                if max_queue_pending_jobs is None
-                else int(max_queue_pending_jobs)
-            ),
-            clone_event_calibration=(
-                bool(settings.automation_regional_clone_event_calibration)
-                if clone_event_calibration is None
-                else clone_event_calibration
-            ),
-            require_video=(
-                bool(settings.automation_regional_require_video) if require_video is None else require_video
-            ),
-            require_calibration=(
-                bool(settings.automation_regional_require_calibration)
-                if require_calibration is None
-                else require_calibration
-            ),
             run_post_compute=(
                 bool(settings.automation_regional_run_post_compute)
                 if run_post_compute is None
                 else run_post_compute
             ),
+            refresh_all=refresh_all,
             synergy_model_version=synergy_model_version,
             quality_threshold=quality_threshold,
             db=db,
         )
-
-        events_payload = run_result.get("events") if isinstance(run_result, dict) else []
-        events_payload = events_payload if isinstance(events_payload, list) else []
-        total_scheduled = 0
-        total_skipped = 0
-        total_blocked = 0
-        blocked_reason_counts: dict[str, int] = {}
-        for event_payload in events_payload:
-            if not isinstance(event_payload, dict):
-                continue
-            total_scheduled += int(event_payload.get("scheduled") or 0)
-            total_skipped += int(event_payload.get("skipped") or 0)
-            total_blocked += int(event_payload.get("blocked") or 0)
-            blocked_rows = event_payload.get("blocked_matches")
-            if not isinstance(blocked_rows, list):
-                continue
-            for blocked in blocked_rows:
-                if not isinstance(blocked, dict):
-                    continue
-                reasons = blocked.get("reasons")
-                if not isinstance(reasons, list):
-                    continue
-                for reason in reasons:
-                    token = str(reason or "").strip().lower()
-                    if not token:
-                        continue
-                    blocked_reason_counts[token] = int(blocked_reason_counts.get(token, 0)) + 1
 
         finished_ts = datetime.now(timezone.utc).timestamp()
         redis_conn.set(last_run_key, str(finished_ts))
@@ -566,12 +443,10 @@ def run_regional_automation_tick(
             "season_fallback_used": run_result.get("season_fallback_used") if isinstance(run_result, dict) else None,
             "processed_event_count": run_result.get("processed_event_count") if isinstance(run_result, dict) else None,
             "completed_event_count": run_result.get("completed_event_count") if isinstance(run_result, dict) else None,
-            "totals": {
-                "scheduled_matches": int(total_scheduled),
-                "skipped_matches": int(total_skipped),
-                "blocked_matches": int(total_blocked),
-            },
-            "blocked_reason_counts": blocked_reason_counts,
+            "failed_event_count": run_result.get("failed_event_count") if isinstance(run_result, dict) else None,
+            "skipped_settled_event_count": (
+                run_result.get("skipped_settled_event_count") if isinstance(run_result, dict) else None
+            ),
             "finished_at": datetime.fromtimestamp(finished_ts, tz=timezone.utc).isoformat(),
         }
         redis_conn.set(last_result_key, json.dumps(summary))

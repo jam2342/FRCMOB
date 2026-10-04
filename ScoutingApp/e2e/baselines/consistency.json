@@ -14,6 +14,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -55,6 +58,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -92,6 +98,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"
@@ -136,6 +145,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -167,7 +179,6 @@
     "contentTop": 160,
     "scrollers": [],
     "duplicates": [
-      "Auto Draft x2",
       "Match Center x12",
       "Scout Match x10"
     ],
@@ -182,6 +193,10 @@
       "/scouting": [
         "Live Scouting",
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team",
+        "Set up your team"
       ],
       "/match-center": [
         "Match Center"
@@ -237,6 +252,10 @@
         "Live Scouting",
         "Scouting"
       ],
+      "/my-team": [
+        "My Team",
+        "Set up your team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -271,9 +290,7 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": [
-      "16px"
-    ]
+    "cardGaps": []
   },
   "/scouting/assignments": {
     "startOffset": 16,
@@ -291,6 +308,10 @@
         "Live Scouting",
         "Scouting"
       ],
+      "/my-team": [
+        "My Team",
+        "Set up your team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -325,16 +346,12 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": [
-      "16px"
-    ]
+    "cardGaps": []
   },
   "/scouting/coverage": {
     "startOffset": 16,
     "contentTop": 160,
-    "scrollers": [
-      "coverage-grid-wrap"
-    ],
+    "scrollers": [],
     "duplicates": [],
     "destinations": {
       "/home": [
@@ -347,6 +364,10 @@
         "Live Scouting",
         "Scouting"
       ],
+      "/my-team": [
+        "My Team",
+        "Set up your team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -381,9 +402,7 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": [
-      "16px"
-    ]
+    "cardGaps": []
   },
   "/scouting/auto-paths": {
     "startOffset": 16,
@@ -400,6 +419,9 @@
       "/scouting": [
         "Live Scouting",
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"
@@ -455,6 +477,9 @@
         "Live Scouting",
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -506,6 +531,9 @@
       "/scouting": [
         "Live Scouting",
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"
@@ -559,6 +587,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center",
         "This team’s matches"
@@ -598,6 +629,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match",
         "Match Center"
@@ -628,9 +662,7 @@
   "/match-center/predictions": {
     "startOffset": 16,
     "contentTop": 160,
-    "scrollers": [
-      "center-pre-block"
-    ],
+    "scrollers": [],
     "duplicates": [],
     "destinations": {
       "/home": [
@@ -641,6 +673,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match",
@@ -683,6 +718,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match",
@@ -732,6 +770,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -774,6 +815,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"
@@ -818,6 +862,10 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team",
+        "Set up your team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -840,9 +888,7 @@
         "Picklist"
       ]
     },
-    "cardGaps": [
-      "16px"
-    ]
+    "cardGaps": []
   },
   "/favorites": {
     "startOffset": null,
@@ -861,6 +907,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"
@@ -896,6 +945,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"
@@ -938,6 +990,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -977,6 +1032,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -1015,6 +1073,9 @@
       "/scouting": [
         "Scouting"
       ],
+      "/my-team": [
+        "My Team"
+      ],
       "/match-center": [
         "Match Center"
       ],
@@ -1052,6 +1113,9 @@
       ],
       "/scouting": [
         "Scouting"
+      ],
+      "/my-team": [
+        "My Team"
       ],
       "/match-center": [
         "Match Center"

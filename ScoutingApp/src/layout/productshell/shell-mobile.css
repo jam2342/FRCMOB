@@ -114,6 +114,42 @@
   .surface-card--compactable .surface-card-head-actions {
     row-gap: 6px;
   }
+
+  /* The stacked header exists so a card's own controls (the `right` slot) get
+     the full width. A card with only minimize/fullscreen spent a whole row on
+     two buttons — on Team Center that was ten extra rows. Keep those on the
+     title line, as 44px icon buttons (the aria-label still says what they do). */
+  .product-shell .surface-card-head:not(:has(.surface-card-right)) {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .product-shell .surface-card-head:not(:has(.surface-card-right)) > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .product-shell .surface-card-head:not(:has(.surface-card-right)) .surface-card-head-actions {
+    width: auto;
+    flex: none;
+  }
+
+  .product-shell .surface-card-collapse-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .product-shell .surface-card-collapse-btn,
+  .product-shell .surface-card-expand-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* ── mobile-bottom-tabs ───────────────────────────────── */
@@ -1037,6 +1073,8 @@
      ──────────────────────────────────────────────────────────────────────── */
 
   .fm-content-stack {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     display: grid;
     gap: 10px;
   }
@@ -1276,6 +1314,8 @@
      ──────────────────────────────────────────────────────────────────────── */
 
   .fm-event-header {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     background: var(--color-bg-elevated);
     border: 1px solid rgba(40, 56, 70, 0.6);
     border-radius: 16px;
@@ -1346,6 +1386,7 @@
   }
 
   .fm-event-header .fm-event-header-error {
+    overflow-wrap: anywhere;
     margin: 0;
     padding: 4px 8px;
     border-radius: 6px;
@@ -1760,11 +1801,27 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 700;
-    white-space: nowrap;
+    /* Five stats share 360px; a long label wraps instead of being clipped. */
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  /* The rating is this page's one key number, but it sat at the same 13px
+     as the four stats beside it. It takes the mobile display step and a
+     wider cell; the others step up to body size. */
+  .fm-team-hero-stat.highlight {
+    flex: 1.5;
+    align-content: center;
   }
 
   .fm-team-hero-stat.highlight strong {
     color: var(--color-success-text);
+    font-size: var(--font-size-3xl);
+  }
+
+  .fm-team-hero-stat:not(.highlight) strong {
+    font-size: var(--font-size-md);
   }
 
   .fm-team-hero-stat.warning strong {
@@ -2625,14 +2682,16 @@
     white-space: nowrap;
   }
 
+  /* Alliance text tokens, not the dark-theme pastels this had: in light
+     theme those measured 1.75:1 on the match row. */
   .home-match-compact-side.red {
     text-align: right;
-    color: #f5a3ab;
+    color: var(--color-alliance-red-text);
   }
 
   .home-match-compact-side.blue {
     text-align: left;
-    color: #93bbf0;
+    color: var(--color-alliance-blue-text);
   }
 
   .home-match-compact-score {
@@ -3340,3 +3399,59 @@
   }
 }
 
+
+/* ── smallest-phones ──────────────────────────────────── */
+
+/* At ~250px the four-way view toggle (Setup/Room/Data/Board) gives each
+   button about 53px for an icon and a word, and the word clipped to "Setu",
+   "Boar". The word is what tells them apart, so the icon goes. */
+@media (max-width: 300px) {
+  .mobile-view-toggle-btn .segmented-tabs__icon {
+    display: none;
+  }
+
+  .mobile-view-toggle-btn {
+    padding-inline: 4px;
+  }
+}
+
+/* ── match-center-finder-access ───────────────────────── */
+
+/* Replace the Match Finder / Match Center toggle on phones: the hero opens
+   the finder, and the finder offers the way back. */
+@media (max-width: 1120px) {
+  .product-shell .mc-change-match {
+    justify-self: center;
+    align-self: center;
+    min-height: 44px;
+    margin-top: var(--space-2);
+    padding-inline: var(--space-4);
+  }
+
+  .product-shell .mc-back-to-match {
+    min-height: 44px;
+    justify-self: start;
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* Give both alliances room on a narrow phone, including enlarged text. */
+@media (max-width: 480px) {
+  .fm-score-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fm-score-center {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .fm-alliance {
+    grid-row: 2;
+  }
+
+  .fm-red { text-align: left; }
+  .fm-blue { text-align: right; }
+}

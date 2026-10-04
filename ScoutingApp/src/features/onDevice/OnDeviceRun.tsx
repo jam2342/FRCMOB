@@ -3,32 +3,65 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getEventSchedule,
   syncOnDeviceSession,
-  type OnDeviceSessionSyncResponse,
-  type TeamHeatmapResponse,
 } from '../../api';
-import { FieldHeatmap } from '../../components/cv/FieldHeatmap';
-import { FieldCalibration } from './FieldCalibration';
+import { RunResults } from './RunResults';
+import { useSavedRuns } from './useSavedRuns';
+import { FieldCalibration, type CalibrationCapture } from './FieldCalibration';
 import { MatchRecorder, type CapturedFrame } from './MatchRecorder';
 import { VideoFileProcessor } from './VideoFileProcessor';
-import { type Calibration, type Mat3 } from './homography';
-import { getCalibration, markSessionSynced, openDb, saveSession, type StoredSession } from './offlineStore';
-import { assignTrackIds, type RawFrame } from './simpleTracker';
+import { type InferenceTelemetry } from './benchmark';
+import { ON_DEVICE_MODEL_VERSION } from './detector';
+import { type Mat3 } from './homography';
 import {
-  assemblePointsByTeam,
-  produceTrackPoints,
-  type Frame,
-  type TrackPoint,
-} from './trackProduction';
+  getCalibration,
+  markSessionSynced,
+  markSessionSyncFailed,
+  openDb,
+  saveSession,
+  type OnDeviceSessionPayload,
+  type StoredSession,
+} from './offlineStore';
+import { classifyRecordingSyncFailure, RECORDING_SYNC_LABELS } from './recordingSyncStatus';
+import { recordConfirmedSync } from '../offline/syncReceipt';
+import { suggestionGroups, suggestionsFor } from './pathSuggestions';
+import { buildRobotPaths } from './robotPaths';
+import { type RawFrame } from './simpleTracker';
+import { assemblePointsByTeam, type TrackPoint } from './trackProduction';
 import { voteTrackIdentity } from './identityVote';
-import { createCvPoseResolver, loadOpenCv, type CvPoseResolver } from './opticalFlow';
+import {
+  createCvPoseResolver,
+  createLocalPoseResolver,
+  grayFromCanvas,
+  loadOpenCv,
+  registerCalibrationFrame,
+  USE_LOCAL_OPTICAL_FLOW,
+  type CvPoseResolver,
+} from './opticalFlow';
+import type { GrayImage } from './opticalFlowCore';
 import { flushPendingOnDeviceSessions } from './sync';
+import { RecorderOfflineStatus } from '../offline/RecorderOfflineStatus';
 import './OnDeviceRun.css';
+import { TrackIdentityList, type PathSuggestion } from './TrackIdentityList';
+import { getWorkspaceSession, getWorkspaceToken } from '../workspace/workspaceSession';
+import { readCenterContextFromSearch } from '../../layout/centerContext';
+
+function initialContext(): { eventKey: string; matchKey: string } {
+  if (typeof window === 'undefined') return { eventKey: '', matchKey: '' };
+  const query = window.location.hash.split('?')[1] || '';
+  const context = readCenterContextFromSearch(query ? `?${query}` : '');
+  return context.matchKey ? { eventKey: context.eventKey || '', matchKey: context.matchKey } : { eventKey: '', matchKey: '' };
+}
 
 // The on-device match-breakdown flow, end to end:
 //   setup (which match + its 6 teams) → calibrate (4-tap homography) → capture (camera +
 //   in-browser detect) → identify (track + closed-set OCR vote / tap-ID) → result
 //   (assemble per-team field tracks, store offline, sync → server shift-play).
 // Every step is one of the tested onDevice modules; this screen is the glue + UI.
+
+// Long enough that simply passing through camera mode on the way to "Upload video"
+// never starts the blocking OpenCV.js compile, short enough that a scout who stays on
+// the camera path still has stabilisation ready before they finish framing the shot.
+const OPENCV_LOAD_GRACE_MS = 1500;
 
 type Stage = 'setup' | 'calibrate' | 'capture' | 'identify' | 'result';
 type Alliance = 'red' | 'blue';
@@ -40,45 +73,12 @@ type TrackSummary = {
   startSec: number;
   endSec: number;
   suggestedTeam: string | null; // from OCR vote when reads exist (none yet → null)
+  alliance: Alliance | null; // from bumper colour
+  thumb: Blob | null; // clearest photo of the robot on this path
 };
 
 const MIN_TRACK_POINTS = 3;
 const STAGES: Stage[] = ['setup', 'calibrate', 'capture', 'identify', 'result'];
-
-// 1–5 segmented level bar for offense/defense.
-function LevelMeter({
-  label,
-  level,
-  confidence,
-  assessable = true,
-  variant,
-}: {
-  label: string;
-  level: number;
-  confidence?: number;
-  assessable?: boolean;
-  variant: 'offense' | 'defense';
-}) {
-  return (
-    <div className={`odr-meter odr-meter--${variant}`}>
-      <span className="odr-meter__label">
-        <span>{label}</span>
-        {assessable ? (
-          <span className="odr-meter__value">
-            {level}/5{confidence != null ? ` · ${Math.round(confidence * 100)}%` : ''}
-          </span>
-        ) : (
-          <span className="odr-meter__na">n/a</span>
-        )}
-      </span>
-      <div className="odr-meter__bar" aria-hidden="true">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <span key={n} className={`odr-meter__seg${assessable && n <= level ? ' is-on' : ''}`} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function newId(): string {
   try {
@@ -105,50 +105,53 @@ function dominantZone(points: TrackPoint[]): string | null {
   return best;
 }
 
-// Wrap a raw count grid (analyze_match_shift_play heatmap) in the TeamHeatmapResponse
-// shape FieldHeatmap renders.
-function rawGridToHeatmap(grid: number[][], teamKey: string): TeamHeatmapResponse {
-  const rows = grid.length;
-  const cols = grid[0]?.length ?? 0;
-  let peak = 0;
-  let total = 0;
-  for (const row of grid) {
-    for (const v of row) {
-      total += v;
-      if (v > peak) peak = v;
-    }
-  }
-  return {
-    ok: true,
-    team_key: teamKey,
-    event_key: '',
-    match_key: null,
-    total_points: total,
-    match_count: 1,
-    field_length_m: 16.541,
-    field_width_m: 8.0693,
-    grid_cols: cols,
-    grid_rows: rows,
-    sigma: 0,
-    grid: grid.map((row) => row.map((v) => (peak ? Math.round((v / peak) * 1e4) / 1e4 : 0))),
-  };
+function formatMatchClock(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Which engine ran the detector, in words: the line a real-phone test is read from.
+function engineLabel(provider: string | null | undefined): string {
+  if (provider === 'webgpu') return 'the GPU (WebGPU)';
+  if (provider === 'wasm') return 'the CPU (WASM)';
+  return provider || 'an unknown engine';
 }
 
 export function OnDeviceRun() {
   const [stage, setStage] = useState<Stage>('setup');
-  const [eventKey, setEventKey] = useState('');
-  const [matchKey, setMatchKey] = useState('');
+  // Set when an uploaded video stopped playing before the match ended.
+  const [coveredUntilSec, setCoveredUntilSec] = useState<number | null>(null);
+  // Start from the match already picked elsewhere in the app; typing a raw
+  // match key on a phone in the stands is the slowest part of setup.
+  const [eventKey, setEventKey] = useState(() => initialContext().eventKey);
+  const [matchKey, setMatchKey] = useState(() => initialContext().matchKey);
   const [teams, setTeams] = useState<MatchTeam[]>([]);
+  const [shift1ActiveAlliance, setShift1ActiveAlliance] = useState<Alliance | ''>('');
   const [setupBusy, setSetupBusy] = useState(false);
   const [setupError, setSetupError] = useState('');
+  const [loadedContext, setLoadedContext] = useState('');
+  const setupSequence = useRef(0);
+  const [calibrationError, setCalibrationError] = useState('');
 
   const baseHomographyRef = useRef<Mat3 | null>(null);
+  const calibrationFrameRef = useRef<GrayImage | null>(null);
+  const registeredStaticPoseRef = useRef<Mat3 | null>(null);
+  const calibrationMetaRef = useRef<{
+    version: string;
+    rmseM: number | null;
+    verified: boolean;
+  } | null>(null);
   const capturedRef = useRef<CapturedFrame[]>([]);
+  const poseTelemetryRef = useRef({ frames: 0, fallbackFrames: 0, opticalFlowFrames: 0 });
+  const inferenceTelemetryRef = useRef<InferenceTelemetry | null>(null);
   const [capturedCount, setCapturedCount] = useState(0);
+  const [breakdownTelemetry, setBreakdownTelemetry] = useState<InferenceTelemetry | null>(null);
 
   // Capture source: live camera (handheld, optical-flow stabilized) or an uploaded clip
   // (desktop, static calibration — one fixed camera view).
   const [captureMode, setCaptureMode] = useState<'camera' | 'video'>('camera');
+  const mountedRef = useRef(true);
+  const [timingAnchorSec, setTimingAnchorSec] = useState(0);
 
   // Optical-flow camera stabilization (carries the calibrated pose through shake).
   const cvResolverRef = useRef<CvPoseResolver | null>(null);
@@ -157,11 +160,33 @@ export function OnDeviceRun() {
 
   const [trackPoints, setTrackPoints] = useState<Record<number, TrackPoint[]>>({});
   const [summaries, setSummaries] = useState<TrackSummary[]>([]);
+  // Object URLs for the path photos, released when the list changes or the page closes.
+  const photoUrls = useMemo(() => {
+    const urls: Record<number, string> = {};
+    if (typeof URL.createObjectURL !== 'function') return urls;
+    for (const s of summaries) if (s.thumb) urls[s.trackId] = URL.createObjectURL(s.thumb);
+    return urls;
+  }, [summaries]);
+  useEffect(
+    () => () => {
+      for (const url of Object.values(photoUrls)) URL.revokeObjectURL(url);
+    },
+    [photoUrls],
+  );
   const [identities, setIdentities] = useState<Record<number, string>>({}); // trackId -> teamKey
+  const [pathSuggestion, setPathSuggestion] = useState<PathSuggestion | null>(null);
 
-  const [syncResult, setSyncResult] = useState<OnDeviceSessionSyncResponse | null>(null);
+  const [savedSession, setSavedSession] = useState<StoredSession | null>(null);
+  const { sessions: savedRuns } = useSavedRuns();
   const [resultBusy, setResultBusy] = useState(false);
   const [resultNote, setResultNote] = useState('');
+  const resultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (stage === 'result') {
+      resultRef.current?.scrollIntoView?.({ block: 'start' });
+      resultRef.current?.querySelector<HTMLElement>('h3')?.focus({ preventScroll: true });
+    }
+  }, [stage]);
 
   const candidateTeamKeys = useMemo(() => teams.map((t) => t.teamKey), [teams]);
 
@@ -174,19 +199,51 @@ export function OnDeviceRun() {
     cvResolverRef.current?.dispose();
     cvResolverRef.current = null;
     setCapturedCount(0);
+    poseTelemetryRef.current = { frames: 0, fallbackFrames: 0, opticalFlowFrames: 0 };
+    inferenceTelemetryRef.current = null;
+    setBreakdownTelemetry(null);
     setTrackPoints({});
     setSummaries([]);
     setIdentities({});
-    setSyncResult(null);
+    setPathSuggestion(null);
+    setSavedSession(null);
     setResultBusy(false);
     setResultNote('');
+    setTimingAnchorSec(0);
   }, []);
 
+  const setupContext = `${normalizedEventKey}:${normalizedMatchKey}`;
+  const currentSetupContext = useRef(setupContext);
+  currentSetupContext.current = setupContext;
+  const teamsReady = loadedContext === setupContext && teams.length > 0;
+
+  function changeSetupInput(field: 'match' | 'event', value: string) {
+    ++setupSequence.current;
+    setSetupBusy(false);
+    setSetupError('');
+    setLoadedContext('');
+    setTeams([]);
+    setShift1ActiveAlliance('');
+    if (field === 'match') setMatchKey(value);
+    else setEventKey(value);
+  }
+
   const loadTeams = useCallback(async () => {
+    const sequence = ++setupSequence.current;
+    const context = `${normalizedEventKey}:${normalizedMatchKey}`;
     setSetupBusy(true);
     setSetupError('');
+    setLoadedContext('');
+    setTeams([]);
     try {
+      if (!/^\d{4}[a-z0-9]+_(?:qm\d+|ef\d+m\d+|qf\d+m\d+|sf\d+m\d+|f\d+m\d+)$/.test(normalizedMatchKey)) {
+        throw new Error('Enter a match key such as 2026txhou_qm1.');
+      }
+      if (normalizedMatchKey.split('_')[0] !== normalizedEventKey) {
+        throw new Error('The event key must match the event at the start of the match key.');
+      }
       const sched = await getEventSchedule(normalizedEventKey, false, { includeTeams: true });
+      if (sequence !== setupSequence.current || currentSetupContext.current !== context) return;
       const match = sched.matches.find((m) => m.match_key === normalizedMatchKey);
       if (!match) throw new Error('Match not found in this event schedule.');
       const loaded: MatchTeam[] = [
@@ -195,17 +252,29 @@ export function OnDeviceRun() {
       ];
       if (loaded.length === 0) throw new Error('No teams listed for this match yet.');
       resetRunState();
+      setShift1ActiveAlliance('');
       setTeams(loaded);
+      setLoadedContext(context);
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not load the match.');
+      if (sequence === setupSequence.current && currentSetupContext.current === context) {
+        setSetupError(err instanceof Error ? err.message : 'Could not load the match.');
+      }
     } finally {
-      setSetupBusy(false);
+      if (sequence === setupSequence.current) setSetupBusy(false);
     }
   }, [normalizedEventKey, normalizedMatchKey, resetRunState]);
 
   // ── calibrate ─────────────────────────────────────────────────────────
-  const onCalibrated = useCallback((cal: Calibration) => {
+  const onCalibrated = useCallback((cal: CalibrationCapture) => {
     baseHomographyRef.current = cal.homography;
+    calibrationFrameRef.current = cal.referenceFrame;
+    registeredStaticPoseRef.current = null;
+    setCalibrationError('');
+    calibrationMetaRef.current = {
+      version: 'manual_corners_v1',
+      rmseM: Number.isFinite(cal.rmseM) ? cal.rmseM : null,
+      verified: true,
+    };
     setStage('capture');
   }, []);
 
@@ -215,34 +284,93 @@ export function OnDeviceRun() {
       db = await openDb();
       const saved = await getCalibration(db, 'current');
       if (saved) {
+        if (
+          !saved.imageWidth || !saved.imageHeight || !saved.referenceGray ||
+          saved.referenceGray.length !== saved.imageWidth * saved.imageHeight
+        ) {
+          setCalibrationError('Saved calibration has no matching camera frame. Please re-calibrate.');
+          return;
+        }
         baseHomographyRef.current = saved.homography;
+        calibrationFrameRef.current = {
+          data: new Float32Array(saved.referenceGray),
+          width: saved.imageWidth,
+          height: saved.imageHeight,
+        };
+        registeredStaticPoseRef.current = null;
+        setCalibrationError('');
+        calibrationMetaRef.current = {
+          version: saved.calibrationVersion || 'manual_corners_v1_legacy',
+          rmseM: Number.isFinite(saved.rmseM) ? Number(saved.rmseM) : null,
+          verified: Boolean(saved.verified),
+        };
         setStage('capture');
       }
     } catch {
-      // no saved calibration; stay on the calibrate stage
+      setCalibrationError('Could not load the saved calibration. Please re-calibrate.');
     } finally {
       db?.close();
     }
   }, []);
 
   // ── capture → identify ──────────────────────────────────────────────────
-  // Per-frame pose: when stabilization is ready, carry the calibrated homography by
-  // optical-flow motion (survives shake); otherwise fall back to the static calibration.
-  const resolvePose = useCallback((canvas: HTMLCanvasElement): Mat3 | null => {
+  const captureToMatchOffsetSec = captureMode === 'video' ? -timingAnchorSec : timingAnchorSec;
+
+  const registerStaticPose = useCallback((canvas: HTMLCanvasElement): Mat3 | null => {
+    if (registeredStaticPoseRef.current) return registeredStaticPoseRef.current;
     const base = baseHomographyRef.current;
     if (!base) return null;
-    const resolver = cvResolverRef.current;
-    if (resolver) return resolver.resolve(canvas) ?? base;
-    return base;
+    const reference = calibrationFrameRef.current;
+    if (!reference) return base;
+    const registered = registerCalibrationFrame(base, reference, grayFromCanvas(canvas));
+    registeredStaticPoseRef.current = registered;
+    return registered;
   }, []);
+
+  // Per-frame pose: when stabilization is ready, carry the calibrated homography by
+  // optical-flow motion (survives shake); otherwise fall back to the static calibration.
+  const resolvePose = useCallback((canvas: HTMLCanvasElement, timeSec: number): Mat3 | null => {
+    const base = baseHomographyRef.current;
+    if (!base) return null;
+    const matchTimeSec = timeSec + captureToMatchOffsetSec;
+    if (matchTimeSec < 0 || matchTimeSec > 165) return null;
+    poseTelemetryRef.current.frames += 1;
+    const resolver = cvResolverRef.current;
+    if (resolver) {
+      poseTelemetryRef.current.opticalFlowFrames += 1;
+      const pose = resolver.resolve(canvas) ?? base;
+      if (resolver.lostFrames() > 0) poseTelemetryRef.current.fallbackFrames += 1;
+      return pose;
+    }
+    if (stabilize) poseTelemetryRef.current.fallbackFrames += 1;
+    return registerStaticPose(canvas);
+  }, [captureToMatchOffsetSec, registerStaticPose, stabilize]);
 
   // Video clips are one fixed camera view, so each sampled frame uses the base
   // calibration directly (optical-flow carry is for the handheld camera path).
-  const resolvePoseStatic = useCallback((): Mat3 | null => baseHomographyRef.current, []);
+  const resolvePoseStatic = useCallback((_canvas: HTMLCanvasElement, timeSec: number): Mat3 | null => {
+    const matchTimeSec = timeSec + captureToMatchOffsetSec;
+    if (matchTimeSec < 0 || matchTimeSec > 165) return null;
+    if (baseHomographyRef.current) poseTelemetryRef.current.frames += 1;
+    return registerStaticPose(_canvas);
+  }, [captureToMatchOffsetSec, registerStaticPose]);
+
+  const onInferenceTelemetry = useCallback((telemetry: InferenceTelemetry) => {
+    inferenceTelemetryRef.current = telemetry;
+  }, []);
 
   // Lazily load OpenCV.js and build the stabilized resolver on entering the capture
   // stage. Heavy WASM, so only when stabilization is on; degrades to the static pose on
   // failure. Torn down on leaving capture or toggling the option.
+  //
+  // The load is held behind a short grace period because it is genuinely blocking, not
+  // merely slow: OpenCV.js is an ~8 MB emscripten bundle injected as a classic script,
+  // and compiling it occupies the main thread. Capture opens in camera mode, so without
+  // this delay a scout who lands on the capture step and immediately picks "Upload video"
+  // has already started a compile that nothing can cancel. That compile then starves
+  // onnxruntime's WebGPU session creation, so the detector never finishes initialising
+  // and the upload run hangs before producing a single track -- it also blocks the
+  // timers inside loadOpenCv, so its own load timeout cannot fire to release it.
   useEffect(() => {
     cvResolverRef.current?.dispose();
     cvResolverRef.current = null;
@@ -251,49 +379,80 @@ export function OnDeviceRun() {
       setStabStatus('off');
       return;
     }
+    // The local core needs no download and no compile, so there is nothing to wait for
+    // and nothing to stall the main thread -- the grace period below exists only for the
+    // OpenCV build it replaces.
+    if (USE_LOCAL_OPTICAL_FLOW) {
+      cvResolverRef.current = createLocalPoseResolver(base, calibrationFrameRef.current ?? undefined);
+      setStabStatus('ready');
+      return () => {
+        cvResolverRef.current?.dispose();
+        cvResolverRef.current = null;
+      };
+    }
+
     let cancelled = false;
     setStabStatus('loading');
-    loadOpenCv()
-      .then((cv) => {
-        if (cancelled) return;
-        cvResolverRef.current = createCvPoseResolver(cv, base);
-        setStabStatus('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setStabStatus('error');
-      });
+    const graceTimer = setTimeout(() => {
+      if (cancelled) return;
+      loadOpenCv()
+        .then((cv) => {
+          if (cancelled) return;
+          cvResolverRef.current = createCvPoseResolver(cv, base, calibrationFrameRef.current ?? undefined);
+          setStabStatus('ready');
+        })
+        .catch(() => {
+          if (!cancelled) setStabStatus('error');
+        });
+    }, OPENCV_LOAD_GRACE_MS);
     return () => {
       cancelled = true;
+      clearTimeout(graceTimer);
       cvResolverRef.current?.dispose();
       cvResolverRef.current = null;
     };
   }, [stage, stabilize, captureMode]);
 
-  const onFrame = useCallback((frame: CapturedFrame) => {
-    capturedRef.current.push(frame);
-    setCapturedCount(capturedRef.current.length);
+  // The sync flow awaits IndexedDB and the network, so its state updates can land after
+  // the screen is gone. Without this guard React schedules an update against a torn-down
+  // tree -- which surfaced as an unhandled "window is not defined" in CI, where the
+  // slower run let the teardown win the race.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  const buildTracks = useCallback(() => {
+  const onFrame = useCallback((frame: CapturedFrame) => {
+    // Track points use match-elapsed time. Drop pre-match video frames and carry
+    // the numeric anchor as provenance so the server can audit the alignment.
+    const matchTimeSec = frame.timeSec + captureToMatchOffsetSec;
+    if (matchTimeSec < 0 || matchTimeSec > 165) return;
+    capturedRef.current.push({ ...frame, timeSec: matchTimeSec });
+    setCapturedCount(capturedRef.current.length);
+  }, [captureToMatchOffsetSec]);
+
+  const buildTracks = useCallback((result?: { coveredUntilSec: number | null }) => {
+    if (capturedRef.current.length === 0) return;
+    setBreakdownTelemetry(inferenceTelemetryRef.current);
+    setCoveredUntilSec(result?.coveredUntilSec ?? null);
     const captured = capturedRef.current;
     const rawFrames: RawFrame[] = captured.map((f) => ({
       timeSec: f.timeSec,
+      homography: f.homography,
       detections: f.detections,
     }));
-    const tracked = assignTrackIds(rawFrames);
-    const homoByTime = new Map(captured.map((f) => [f.timeSec, f.homography]));
-    const frames: Frame[] = tracked.map((tf) => ({
-      timeSec: tf.timeSec,
-      homography: homoByTime.get(tf.timeSec) ?? null,
-      detections: tf.detections,
-    }));
-    const produced = produceTrackPoints(frames);
-
+    // Fragments of one robot are stitched into a single path, so each robot is ideally
+    // one tap; its bumper colour says which alliance's teams to offer first.
+    const paths = buildRobotPaths(rawFrames, { minPoints: MIN_TRACK_POINTS });
+    const produced: Record<number, TrackPoint[]> = {};
     const rows: TrackSummary[] = [];
     const seedIds: Record<number, string> = {};
-    for (const [idStr, points] of Object.entries(produced)) {
-      if (points.length < MIN_TRACK_POINTS) continue;
-      const trackId = Number(idStr);
+    for (const path of paths) {
+      const points = path.points;
+      const trackId = path.pathId;
+      produced[trackId] = points;
       // Closed-set OCR vote (no in-browser reads yet → unresolved); tap-ID resolves it.
       const vote = voteTrackIdentity([], candidateTeamKeys);
       if (vote.resolved && vote.teamKey) seedIds[trackId] = vote.teamKey;
@@ -304,6 +463,8 @@ export function OnDeviceRun() {
         startSec: points[0].timeSec,
         endSec: points[points.length - 1].timeSec,
         suggestedTeam: vote.resolved ? vote.teamKey : null,
+        alliance: path.alliance,
+        thumb: path.thumb,
       });
     }
     rows.sort((a, b) => b.pointCount - a.pointCount);
@@ -313,28 +474,88 @@ export function OnDeviceRun() {
     setStage('identify');
   }, [candidateTeamKeys]);
 
+  // Likely continuations of each path (pathSuggestions.ts), offered after an assignment.
+  const suggestionPaths = useMemo(
+    () => summaries.map((s) => ({ pathId: s.trackId, points: trackPoints[s.trackId] ?? [], alliance: s.alliance })),
+    [summaries, trackPoints],
+  );
+  const pathGroups = useMemo(() => suggestionGroups(suggestionPaths), [suggestionPaths]);
+
   const assignIdentity = useCallback((trackId: number, teamKey: string) => {
+    const next = { ...identities };
+    if (teamKey) next[trackId] = teamKey;
+    else delete next[trackId];
+    setIdentities(next);
+    const trackIds = teamKey ? suggestionsFor(suggestionPaths, pathGroups, trackId, teamKey, next) : [];
+    setPathSuggestion(trackIds.length ? { teamKey, seedId: trackId, trackIds } : null);
+  }, [identities, pathGroups, suggestionPaths]);
+
+  const applyPathSuggestion = useCallback(() => {
+    if (!pathSuggestion) return;
     setIdentities((prev) => {
       const next = { ...prev };
-      if (teamKey) next[trackId] = teamKey;
-      else delete next[trackId];
+      for (const id of pathSuggestion.trackIds) if (!next[id]) next[id] = pathSuggestion.teamKey;
       return next;
     });
-  }, []);
+    setPathSuggestion(null);
+  }, [pathSuggestion]);
 
   // ── result: assemble → store offline → sync ───────────────────────────
   const finishAndSync = useCallback(async () => {
     setResultBusy(true);
     setResultNote('');
-    setSyncResult(null);
+    setSavedSession(null);
     const pointsByTeam = assemblePointsByTeam(trackPoints, identities);
-    const session: StoredSession = {
+    const eligiblePointCount = summaries.reduce((total, summary) => total + summary.pointCount, 0);
+    const assignedPointCount = summaries.reduce(
+      (total, summary) => total + (identities[summary.trackId] ? summary.pointCount : 0),
+      0,
+    );
+    const identityConfidence = eligiblePointCount > 0
+      ? assignedPointCount / eligiblePointCount
+      : 0;
+    const pose = poseTelemetryRef.current;
+    const poseFallbackRatio = pose.frames > 0 ? pose.fallbackFrames / pose.frames : 1;
+    const poseSource: OnDeviceSessionPayload['poseSource'] = captureMode === 'video'
+      ? 'static'
+      : pose.opticalFlowFrames === 0
+        ? 'static'
+        : pose.fallbackFrames > 0
+          ? 'mixed'
+          : 'optical_flow';
+    const inference = inferenceTelemetryRef.current;
+    const calibration = calibrationMetaRef.current;
+    const payload: OnDeviceSessionPayload = {
+      pointsByTeam,
+      schemaVersion: 'on_device_session_v2',
+      modelVersion: inference?.modelVersion || ON_DEVICE_MODEL_VERSION,
+      calibrationVersion: calibration?.version || 'manual_corners_v1_legacy',
+      calibrationRmseM: calibration?.rmseM ?? null,
+      calibrationVerified: Boolean(calibration?.verified),
+      captureSource: captureMode,
+      poseSource,
+      poseFallbackRatio,
+      identityConfidence,
+      identitySource: 'manual',
+      timingSource: captureMode === 'camera' ? 'manual' : 'video_offset',
+      captureToMatchOffsetSec,
+      shift1ActiveAlliance: shift1ActiveAlliance || null,
+      shift1Source: shift1ActiveAlliance ? 'manual_scout_selection' : null,
+      executionProvider: inference?.executionProvider ?? null,
+      sampledFrameCount: inference?.iterations ?? capturedRef.current.length,
+      inferenceMedianMs: inference?.msMedian ?? null,
+      inferenceP90Ms: inference?.msP90 ?? null,
+      thermalDriftPct: inference?.thermalDriftPct ?? null,
+    };
+    let session: StoredSession = {
       id: newId(),
       eventKey: normalizedEventKey,
       matchKey: normalizedMatchKey,
       createdAt: Date.now(),
       synced: false,
-      payload: { points_by_team: pointsByTeam },
+      workspaceId: getWorkspaceSession()?.workspace.id ?? null,
+      workspaceName: getWorkspaceSession()?.workspace.name,
+      payload,
     };
 
     // Always persist locally first, so an offline run is never lost.
@@ -348,29 +569,65 @@ export function OnDeviceRun() {
         db.close();
       }
     } catch {
-      // IndexedDB unavailable — fall through and still attempt the network sync
+      // Keep the identification screen and captured data available for another save attempt.
     }
 
+    if (!mountedRef.current) return;
+    if (!storedLocally) {
+      setResultNote('This recording could not be saved on this phone. Keep this page open and try saving again after checking browser storage.');
+      setResultBusy(false);
+      return;
+    }
+    setSavedSession(session);
     setStage('result');
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setResultNote('Saved offline. It will sync automatically when you reconnect.');
       setResultBusy(false);
       return;
     }
+    if (!getWorkspaceToken()) {
+      // The server only accepts runs from a team member; the run stays pending
+      // here and goes up with the next sync after the scout joins their team.
+      setResultNote('Saved on this device. Join your team on My Team to sync runs to your team.');
+      setResultBusy(false);
+      return;
+    }
     try {
+      const workspace = getWorkspaceSession();
+      if (!workspace) {
+        setResultNote(RECORDING_SYNC_LABELS['join-team']);
+        return;
+      }
+      if (session.workspaceId != null && session.workspaceId !== workspace.workspace.id) {
+        setResultNote(RECORDING_SYNC_LABELS['other-team']);
+        return;
+      }
+      if (session.workspaceId == null) {
+        session = { ...session, workspaceId: workspace.workspace.id, workspaceName: workspace.workspace.name };
+        const db = await openDb();
+        try { await saveSession(db, session); }
+        finally { db.close(); }
+      }
+      const current = getWorkspaceSession();
+      if (current?.workspace.id !== workspace.workspace.id || current.token !== workspace.token) {
+        setResultNote('Saved on this phone. Your team changed during the upload preparation; check My Team to sync.');
+        return;
+      }
       const res = await syncOnDeviceSession({
         id: session.id,
         eventKey: session.eventKey,
         matchKey: session.matchKey,
         createdAt: session.createdAt,
+        workspaceId: session.workspaceId,
         payload: session.payload,
-      });
-      setSyncResult(res);
+      }, workspace.token);
+      recordConfirmedSync();
+      if (mountedRef.current) setSavedSession({ ...session, synced: true, syncResult: res });
       if (storedLocally) {
         try {
           const db = await openDb();
           try {
-            await markSessionSynced(db, session.id);
+            await markSessionSynced(db, session.id, res);
           } finally {
             db.close();
           }
@@ -379,17 +636,27 @@ export function OnDeviceRun() {
         }
       }
       // Flush any earlier pending runs after the current one is marked synced.
-      void flushPendingOnDeviceSessions();
+      void flushPendingOnDeviceSessions().catch(() => { /* saved locally; sync card offers retry */ });
     } catch (err) {
-      setResultNote(
-        `Saved offline (sync failed: ${err instanceof Error ? err.message : 'network error'}). It will retry when you reconnect.`,
-      );
+      try {
+        const db = await openDb();
+        try { await markSessionSyncFailed(db, session.id, err); }
+        finally { db.close(); }
+      } catch { /* the original session remains saved; My Team can retry */ }
+      if (mountedRef.current) setResultNote(RECORDING_SYNC_LABELS[classifyRecordingSyncFailure(err).kind]);
     } finally {
-      setResultBusy(false);
+      if (mountedRef.current) setResultBusy(false);
     }
-  }, [identities, normalizedEventKey, normalizedMatchKey, trackPoints]);
+  }, [captureMode, captureToMatchOffsetSec, identities, normalizedEventKey, normalizedMatchKey, shift1ActiveAlliance, summaries, trackPoints]);
 
   const resolvedCount = Object.keys(identities).length;
+  const persistedSession = savedRuns.find((run) => run.id === savedSession?.id);
+  const resultSession = savedSession ? {
+    ...savedSession,
+    ...persistedSession,
+    synced: savedSession.synced || persistedSession?.synced || false,
+    syncResult: persistedSession?.syncResult ?? savedSession.syncResult,
+  } : null;
 
   return (
     <div className="on-device-run">
@@ -418,9 +685,10 @@ export function OnDeviceRun() {
       {stage === 'setup' ? (
         <div className="odr-section">
           <p className="odr-hint">
-            Pick the match you&apos;re filming. Its six teams become the closed set for bumper-OCR
-            identity and set each robot&apos;s alliance for the offense/defense split.
+            Pick the match you&apos;re filming. Its six teams are used to label the robots and
+            to tell attack from defense.
           </p>
+          <RecorderOfflineStatus />
           <div className="odr-form">
             <label className="odr-field">
               <span className="odr-label">Match key</span>
@@ -431,7 +699,7 @@ export function OnDeviceRun() {
                 autoCapitalize="none"
                 placeholder="e.g. 2026txhou_qm1"
                 value={matchKey}
-                onChange={(e) => setMatchKey(e.target.value)}
+                onChange={(e) => changeSetupInput('match', e.target.value)}
               />
             </label>
             <label className="odr-field">
@@ -442,7 +710,7 @@ export function OnDeviceRun() {
                 autoCapitalize="none"
                 placeholder="inferred from match key"
                 value={eventKey}
-                onChange={(e) => setEventKey(e.target.value)}
+                onChange={(e) => changeSetupInput('event', e.target.value)}
               />
             </label>
           </div>
@@ -456,8 +724,8 @@ export function OnDeviceRun() {
               {setupBusy ? 'Loading…' : 'Load match teams'}
             </button>
           </div>
-          {setupError ? <p className="odr-error">{setupError}</p> : null}
-          {teams.length > 0 ? (
+          {setupError ? <p className="odr-error" role="alert">{setupError}</p> : null}
+          {teamsReady ? (
             <>
               <div className="odr-teams">
                 {(['red', 'blue'] as const).map((alliance) => (
@@ -473,8 +741,30 @@ export function OnDeviceRun() {
                   </div>
                 ))}
               </div>
+              <label className="odr-field">
+                <span className="odr-label">Alliance with the active hub in Shift 1</span>
+                <select
+                  className="odr-select"
+                  aria-label="Alliance with the active hub in Shift 1"
+                  value={shift1ActiveAlliance}
+                  onChange={(event) => setShift1ActiveAlliance(event.target.value as Alliance | '')}
+                >
+                  <option value="">From the official results</option>
+                  <option value="red">Red</option>
+                  <option value="blue">Blue</option>
+                </select>
+                <span className="odr-hint">
+                  Leave this alone: the server reads it from the match's official results,
+                  even if you sync before they're posted. Pick a colour only if you saw the
+                  field display and the match won't get official results.
+                </span>
+              </label>
               <div className="odr-actions">
-                <button type="button" className="center-btn" onClick={() => setStage('calibrate')}>
+                <button
+                  type="button"
+                  className="center-btn"
+                  onClick={() => setStage('calibrate')}
+                >
                   Continue to calibration
                 </button>
               </div>
@@ -486,6 +776,7 @@ export function OnDeviceRun() {
       {stage === 'calibrate' ? (
         <div className="odr-section">
           <FieldCalibration onCalibrated={onCalibrated} />
+          {calibrationError ? <p className="field-calibration__error">{calibrationError}</p> : null}
           <div className="odr-actions">
             <button type="button" className="center-btn ghost" onClick={() => void applySavedCalibration()}>
               Use saved calibration
@@ -510,13 +801,50 @@ export function OnDeviceRun() {
                 onClick={() => {
                   capturedRef.current = [];
                   setCapturedCount(0);
+                  poseTelemetryRef.current = {
+                    frames: 0,
+                    fallbackFrames: 0,
+                    opticalFlowFrames: 0,
+                  };
+                  inferenceTelemetryRef.current = null;
+                  registeredStaticPoseRef.current = null;
                   setCaptureMode(mode);
+                  setTimingAnchorSec(0);
                 }}
               >
                 {mode === 'camera' ? 'Record (camera)' : 'Upload video'}
               </button>
             ))}
           </div>
+
+          <label className="odr-field">
+            <span className="odr-label">
+              {captureMode === 'video'
+                ? 'Match starts at video timestamp (seconds)'
+                : 'Match clock at recording start (seconds)'}
+            </span>
+            <input
+              className="odr-input"
+              type="number"
+              inputMode="decimal"
+              aria-label={captureMode === 'video'
+                ? 'Match starts at video timestamp (seconds)'
+                : 'Match clock at recording start (seconds)'}
+              min="0"
+              max="300"
+              step="0.1"
+              value={timingAnchorSec}
+              onChange={(event) => {
+                const next = Number(event.target.value);
+                setTimingAnchorSec(Number.isFinite(next) ? Math.max(0, Math.min(300, next)) : 0);
+              }}
+            />
+            <span className="odr-hint">
+              {captureMode === 'video'
+                ? 'Pregame frames before this timestamp are dropped; remaining timestamps start at match second 0.'
+                : 'Use 0 when recording begins with the match, or enter the elapsed match seconds if recording starts late.'}
+            </span>
+          </label>
 
           {captureMode === 'camera' ? (
             <>
@@ -537,25 +865,32 @@ export function OnDeviceRun() {
                   <span className="odr-switch__status is-error">static fallback</span>
                 ) : null}
               </label>
-              <MatchRecorder resolvePose={resolvePose} onFrame={onFrame} />
+              <MatchRecorder
+                resolvePose={resolvePose}
+                onFrame={onFrame}
+                onTelemetry={onInferenceTelemetry}
+                onComplete={buildTracks}
+              />
             </>
           ) : (
             <>
               <p className="odr-hint">
-                Upload a match clip (a fixed wide-camera view works best). Frames are sampled and
+                Choose a phone recording of the match (a fixed wide field view works best). Frames are sampled and
                 robots detected on-device, then identified and synced — no camera or second screen
                 needed.
               </p>
               <VideoFileProcessor
+                matchStartSec={timingAnchorSec}
                 resolvePose={resolvePoseStatic}
                 onFrame={onFrame}
                 onComplete={buildTracks}
+                onTelemetry={onInferenceTelemetry}
               />
             </>
           )}
 
           <div className="odr-actions">
-            <button type="button" className="center-btn" onClick={buildTracks} disabled={capturedCount === 0}>
+            <button type="button" className="center-btn" onClick={() => buildTracks()} disabled={capturedCount === 0}>
               Identify robots{capturedCount > 0 ? ` (${capturedCount} frames)` : ''}
             </button>
             <button type="button" className="center-btn ghost" onClick={() => setStage('calibrate')}>
@@ -568,47 +903,23 @@ export function OnDeviceRun() {
       {stage === 'identify' ? (
         <div className="odr-section">
           <p className="odr-hint">
-            {summaries.length} track{summaries.length === 1 ? '' : 's'} produced. Bumper-OCR auto-ID
-            isn&apos;t available on-device yet, so assign each track to a team (tap-ID — the
-            documented fallback). Unassigned tracks are dropped.
+            Found {summaries.length} robot path{summaries.length === 1 ? '' : 's'}. Pick the team
+            for each one; any you leave blank are left out.
           </p>
-          <div className="odr-tracks">
-            {summaries.map((t) => (
-              <div
-                key={t.trackId}
-                className={`odr-track${identities[t.trackId] ? ' odr-track--assigned' : ''}`}
-              >
-                <div className="odr-track__info">
-                  <span className="odr-track__title">
-                    Track {t.trackId} · {t.pointCount} pts
-                  </span>
-                  <span className="odr-track__meta">
-                    {t.dominantZone ? t.dominantZone.replace(/_/g, ' ') : 'no zone'} ·{' '}
-                    {t.startSec.toFixed(1)}–{t.endSec.toFixed(1)}s
-                    {t.suggestedTeam ? ` · OCR → ${t.suggestedTeam}` : ''}
-                  </span>
-                </div>
-                <select
-                  className="odr-select"
-                  aria-label={`Assign track ${t.trackId} to a team`}
-                  value={identities[t.trackId] ?? ''}
-                  onChange={(e) => assignIdentity(t.trackId, e.target.value)}
-                >
-                  <option value="">— ignore —</option>
-                  {teams.map((team) => (
-                    <option key={team.teamKey} value={team.teamKey}>
-                      {team.teamKey.replace(/^frc/i, '')} ({team.alliance})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-            {summaries.length === 0 ? (
-              <p className="odr-error">
-                No tracks met the minimum length. Re-record with a steadier, closer view.
-              </p>
-            ) : null}
-          </div>
+          {breakdownTelemetry ? (
+            <p className="muted">
+              Ran on {engineLabel(breakdownTelemetry.executionProvider)} ·{' '}
+              {breakdownTelemetry.msMedian.toFixed(0)} ms per frame
+            </p>
+          ) : null}
+          {coveredUntilSec !== null ? (
+            <p className="field-calibration__error">
+              The video stopped playing {formatMatchClock(coveredUntilSec)} into the match, so these
+              paths only cover up to there. Upload it again, or trim the clip to just the match.
+            </p>
+          ) : null}
+          {resultNote ? <p className="odr-error" role="alert">{resultNote}</p> : null}
+          <TrackIdentityList summaries={summaries} identities={identities} photoUrls={photoUrls} teams={teams} onAssign={assignIdentity} suggestion={pathSuggestion} onApplySuggestion={applyPathSuggestion} onDismissSuggestion={() => setPathSuggestion(null)} />
           <div className="odr-actions">
             <button
               type="button"
@@ -616,7 +927,7 @@ export function OnDeviceRun() {
               onClick={() => void finishAndSync()}
               disabled={resolvedCount === 0 || resultBusy}
             >
-              {resultBusy ? 'Saving…' : `Finish & sync${resolvedCount > 0 ? ` (${resolvedCount})` : ''}`}
+              {resultBusy ? 'Saving…' : `Save & view results${resolvedCount > 0 ? ` (${resolvedCount})` : ''}`}
             </button>
             <button type="button" className="center-btn ghost" onClick={() => setStage('capture')}>
               Back
@@ -626,59 +937,12 @@ export function OnDeviceRun() {
       ) : null}
 
       {stage === 'result' ? (
-        <div className="odr-section">
+        <div className="odr-section" ref={resultRef}>
           {resultNote ? <p className="odr-hint">{resultNote}</p> : null}
-          {syncResult ? (
-            <>
-              <p className="odr-summary">
-                Synced <strong>{syncResult.points_persisted}</strong> points across{' '}
-                <strong>{syncResult.team_count}</strong> robots (run #{syncResult.run_id}
-                {syncResult.reused_run ? ', updated' : ''}).
-                {syncResult.skipped_unknown_teams.length > 0
-                  ? ` Skipped unknown: ${syncResult.skipped_unknown_teams.join(', ')}.`
-                  : ''}
-              </p>
-              {syncResult.shift_play ? (
-                <div className="odr-robots">
-                  {Object.entries(syncResult.shift_play).map(([teamKey, sp]) => (
-                    <div key={teamKey} className="odr-robot">
-                      <div className="odr-robot__head">
-                        <span className="odr-robot__team">{teamKey.replace(/^frc/i, 'Team ')}</span>
-                        <span className={`odr-badge odr-badge--${sp.alliance}`}>{sp.alliance}</span>
-                      </div>
-                      <div className="odr-meters">
-                        <LevelMeter
-                          variant="offense"
-                          label="Offense"
-                          level={sp.offense.level_1_5}
-                          confidence={sp.offense.confidence_0_1}
-                        />
-                        <LevelMeter
-                          variant="defense"
-                          label="Defense"
-                          level={sp.defense.level_1_5}
-                          confidence={sp.defense.confidence_0_1}
-                          assessable={sp.defense.assessable}
-                        />
-                      </div>
-                      {sp.heatmaps ? (
-                        <div className="odr-heatmaps">
-                          <div>
-                            <p className="odr-heatmap__title">Attack (own shifts)</p>
-                            <FieldHeatmap data={rawGridToHeatmap(sp.heatmaps.attack, teamKey)} />
-                          </div>
-                          <div>
-                            <p className="odr-heatmap__title">Defense (opponent shifts)</p>
-                            <FieldHeatmap data={rawGridToHeatmap(sp.heatmaps.defense, teamKey)} />
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </>
+          {resultSession ? (
+            <RunResults session={resultSession} syncing={resultBusy} />
           ) : null}
+          <p className="odr-hint">Reopen this run below in Saved runs on this device.</p>
           <div className="odr-actions">
             <button
               type="button"

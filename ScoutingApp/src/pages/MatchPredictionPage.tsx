@@ -4,6 +4,7 @@ import {
   getEventScheduleWithSynergy,
   getEventPredictions,
   getEventSchedule,
+  isClientAdminModeEnabled,
 } from '../api';
 import type {
   EventScheduleWithSynergyResponse,
@@ -18,6 +19,7 @@ import { buildMatchCenterPath, metric, pct, teamNumberFromTeamKey } from './cent
 import { MOBILE_LAYOUT_BREAKPOINT } from '../hooks/useMobileLayout';
 import { Stat, Table, type TableColumn } from '../components/ui/primitives';
 import styles from './MatchPredictionPage.module.css';
+import { matchWinProbability, type WinProbabilitySource } from '../features/predictions/winProbability';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & helpers                                                */
@@ -64,6 +66,56 @@ function wasPredictionCorrect(pred: MatchPrediction): boolean | null {
   if (!pred.is_completed || !pred.winner || pred.winner === 'tie' || pred.red_prob == null) return null;
   const { red } = favouredAlliance(pred);
   return (red && pred.winner === 'red') || (!red && pred.winner === 'blue');
+}
+
+// "(Y)"/"(N)" after the score asked the reader to guess what was being
+// answered. Say it, with a mark so the row can be scanned.
+function ResultVerdict({ correct }: { correct: boolean }) {
+  return (
+    <span className={correct ? styles.verdictRight : styles.verdictWrong}>
+      {correct ? ' ✓ Called it' : ' ✗ Missed'}
+    </span>
+  );
+}
+
+// Phones: one short card per match. The table's stacked fallback gave every
+// match six labelled lines (~230px), so an event's 141 matches ran to 40,000px.
+// Synergy and edge stay on the wider table; the call and the result are what
+// someone checking from the stands wants.
+function renderPredictionCards(rows: MatchPrediction[], onOpenMatch: (matchKey: string) => void) {
+  return (
+    <div className={styles.cards}>
+      {rows.map((pred) => {
+        const favoured = favouredAlliance(pred);
+        const correct = wasPredictionCorrect(pred);
+        const cardTone = correct === true ? styles.rowCorrect : correct === false ? styles.rowWrong : '';
+        return (
+          <button
+            key={pred.match_key}
+            type="button"
+            className={`${styles.card} ${cardTone}`.trim()}
+            onClick={() => onOpenMatch(pred.match_key)}
+          >
+            <span className={styles.cardHead}>
+              <strong>{pred.display_name}</strong>
+              <span className={`prediction-label ${favoured.red ? 'text-red' : 'text-blue'}`}>{favoured.label}</span>
+            </span>
+            <span className={styles.cardLine}>
+              <span className="text-red">{pred.red_teams.map((team) => teamNum(team)).join(' · ')}</span>
+              <strong className="text-red">{pred.is_completed ? pred.red_score : ''}</strong>
+            </span>
+            <span className={styles.cardLine}>
+              <span className="text-blue">{pred.blue_teams.map((team) => teamNum(team)).join(' · ')}</span>
+              <strong className="text-blue">{pred.is_completed ? pred.blue_score : ''}</strong>
+            </span>
+            <span className={styles.cardFoot}>
+              {!pred.is_completed ? 'Upcoming' : correct !== null ? <ResultVerdict correct={correct} /> : 'Tie'}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn<MatchPrediction>[] {
@@ -113,9 +165,11 @@ function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn
   },
   {
     key: 'confidence',
-    label: 'Confidence',
+    label: 'Edge',
     numeric: true,
-    render: (pred) => pct(Math.min(pred.red_confidence, pred.blue_confidence), 0),
+    // How far the call is from a coin flip. This showed the synergy projection's
+    // confidence, which is 0 for every match, so the column always read 0%.
+    render: (pred) => (pred.red_prob == null ? '—' : pct(Math.abs(pred.red_prob - 0.5) * 2, 0)),
   },
   {
     key: 'result',
@@ -125,29 +179,19 @@ function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn
       const correct = wasPredictionCorrect(pred);
       const tone = pred.winner === 'red' ? 'text-red' : pred.winner === 'blue' ? 'text-blue' : '';
       return (
+        <>
         <span className={`prediction-result ${tone}`.trim()}>
           {pred.red_score}–{pred.blue_score}
-          {correct === true ? ' (Y)' : correct === false ? ' (N)' : ''}
         </span>
+        {correct !== null ? <ResultVerdict correct={correct} /> : null}
+        </>
       );
     },
   },
   ];
 }
 
-/** Derive win probability from synergy scores with sigmoid-like logic. */
-function derivedWinProb(
-  redSynergy: number | null,
-  blueSynergy: number | null,
-): { redProb: number; blueProb: number } | null {
-  if (redSynergy == null || blueSynergy == null) return null;
-  const diff = redSynergy - blueSynergy;
-  const scale = 15;
-  const redProb = 1 / (1 + Math.exp(-diff / scale));
-  return { redProb, blueProb: 1 - redProb };
-}
-
-type PredictionSource = 'ml_model' | 'synergy_derived';
+type PredictionSource = WinProbabilitySource;
 
 type MatchPrediction = {
   match_key: string;
@@ -249,26 +293,11 @@ export function MatchPredictionPage() {
         const rSyn = m.red.synergy.alliance_synergy_score_0_100;
         const bSyn = m.blue.synergy.alliance_synergy_score_0_100;
 
-        // Prefer ML model prediction when available, fall back to synergy-derived
-        const mlPred = m.prediction;
-        let redProb: number | null = null;
-        let blueProb: number | null = null;
-        let source: PredictionSource | null = null;
-        let mlEdge: number | null = null;
-
-        if (mlPred?.available && mlPred.red_win_prob != null) {
-          redProb = mlPred.red_win_prob;
-          blueProb = mlPred.blue_win_prob ?? (1 - mlPred.red_win_prob);
-          source = 'ml_model';
-          mlEdge = mlPred.edge_confidence_0_1 ?? null;
-        } else {
-          const derived = derivedWinProb(rSyn, bSyn);
-          if (derived) {
-            redProb = derived.redProb;
-            blueProb = derived.blueProb;
-            source = 'synergy_derived';
-          }
-        }
+        const win = matchWinProbability(m);
+        const redProb = win?.red ?? null;
+        const blueProb = win?.blue ?? null;
+        const source: PredictionSource | null = win?.source ?? null;
+        const mlEdge = win?.edgeConfidence ?? null;
 
         return {
           match_key: m.match_key,
@@ -357,13 +386,7 @@ export function MatchPredictionPage() {
           {synergyData ? (
             <div>
               <p className="center-event-status">
-                <strong>{synergyData.event_name || eventKey}</strong> — {predictions.length} matches,{' '}
-                {synergyData.projection_count} synergy projections
-                {synergyData.ml_prediction_count ? (
-                  <span style={{ opacity: 0.7 }}>
-                    {' '}· {synergyData.ml_prediction_count} ML predictions
-                  </span>
-                ) : null}
+                <strong>{synergyData.event_name || eventKey}</strong> — {predictions.length} match{predictions.length === 1 ? '' : 'es'}
               </p>
             </div>
           ) : null}
@@ -373,16 +396,16 @@ export function MatchPredictionPage() {
 
         {/* ---- Model Accuracy ---- */}
         {stats.completed > 0 ? (
-          <SurfaceCard title="Prediction Accuracy">
-            {/* Accuracy and Correct were two of five identical boxes saying one
-                thing: 82.9% is 116 of 141. The count is the baseline, not a
-                sibling, so it sits under the figure it explains. */}
+          <SurfaceCard
+            title="Hindsight check"
+            subtitle="Today's ratings already include these results, so this measures fit, not how well matches were forecast."
+          >
             <div className="page-hero">
               <Stat
                 size="display"
-                label="Accuracy"
+                label="Agrees with result"
                 value={stats.accuracy != null ? `${(stats.accuracy * 100).toFixed(1)}%` : '—'}
-                sub={`${stats.correct} of ${stats.completed} completed matches called right`}
+                sub={`${stats.correct} of ${stats.completed} completed matches`}
                 tone={
                   stats.accuracy == null
                     ? 'default'
@@ -405,7 +428,7 @@ export function MatchPredictionPage() {
         {predictions.length > 0 ? (
           <SurfaceCard
             title="Match Predictions"
-            subtitle={`${filteredPredictions.length} matches`}
+            subtitle={`${filteredPredictions.length} match${filteredPredictions.length === 1 ? '' : 'es'}`}
             right={
               <div className="center-filter-chips">
                 {(['all', 'upcoming', 'completed'] as FilterMode[]).map((mode) => (
@@ -426,6 +449,7 @@ export function MatchPredictionPage() {
               rows={filteredPredictions}
               rowKey={(pred) => pred.match_key}
               cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+              renderCards={(narrowRows) => renderPredictionCards(narrowRows, openMatchCenter)}
               rowClassName={(pred) => {
                 const correct = wasPredictionCorrect(pred);
                 if (correct === null) return undefined;
@@ -436,7 +460,9 @@ export function MatchPredictionPage() {
         ) : null}
 
         {/* ---- TBA Predictions (reference) ---- */}
-        {tbaPredictions ? (
+        {/* Raw JSON: useful when checking our numbers against TBA's, but it
+            is a debugging view, so only admins see it. */}
+        {tbaPredictions && isClientAdminModeEnabled() ? (
           <SurfaceCard
             title="TBA Predictions"
             collapsible
@@ -451,4 +477,3 @@ export function MatchPredictionPage() {
     </>
   );
 }
-

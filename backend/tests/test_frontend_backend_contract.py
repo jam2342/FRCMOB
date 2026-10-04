@@ -15,9 +15,11 @@ _FRONTEND_FETCH_CALL = re.compile(
 _FRONTEND_METHOD = re.compile(r'method\s*:\s*"(GET|POST|PUT|PATCH|DELETE)"')
 _BACKEND_ROUTER_PREFIX = re.compile(r'APIRouter\(\s*prefix="([^"]*)"')
 _BACKEND_ROUTE_DECORATOR = re.compile(
-    r'@router\.(get|post|put|patch|delete|websocket)\("([^"]*)"\)'
+    r'@router\.(get|post|put|patch|delete|websocket)\(\s*"([^"]*)"'
 )
-_BACKEND_APP_DECORATOR = re.compile(r'@app\.(get|post|put|patch|delete)\("([^"]*)"\)')
+_BACKEND_APP_DECORATOR = re.compile(
+    r'@app\.(get|post|put|patch|delete)\(\s*"([^"]*)"'
+)
 
 def _normalize_path(path: str) -> str:
     value = str(path or "").strip()

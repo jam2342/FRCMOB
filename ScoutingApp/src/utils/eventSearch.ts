@@ -1,5 +1,6 @@
 import { getSuggestedEvents, searchEvents, type EventSearchItem } from '../api';
 import { getEventSearchIndexSnapshot, mergeEventsIntoSearchIndex } from './eventSearchIndex';
+import { SEASON } from '../config/season';
 
 const TOKEN_ALIASES: Record<string, string> = {
   house: 'houston',
@@ -223,8 +224,8 @@ export async function smartSearchEvents(
     };
   }
 
-  const preferredYear = options?.preferredYear ?? 2026;
-  const fallbackYear = options?.fallbackYear ?? 2025;
+  const preferredYear = options?.preferredYear ?? SEASON.year;
+  const fallbackYear = options?.fallbackYear ?? SEASON.fallbackYear;
   const fastMode = options?.fastMode === true;
   const localOnly = options?.localOnly === true;
   const maxResults = Math.max(1, Math.min(options?.maxResults ?? 60, 240));

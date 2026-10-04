@@ -2,10 +2,35 @@ from __future__ import annotations
 
 import unittest
 
-from app.api.routes_events import _parse_2026_alliance_truth, _truth_context
+from app.services.scoring.truth import _parse_2026_alliance_truth, _truth_context
 
 
 class ScoreBreakdownWeightedAllocationTests(unittest.TestCase):
+    def test_auto_hub_fuel_uses_event_copr_and_preserves_known_tower_points(self):
+        rows = _parse_2026_alliance_truth(
+            team_keys=["frc1", "frc2", "frc3"],
+            alliance="red",
+            breakdown={
+                "hubScore": {"autoPoints": 90, "teleopPoints": 30},
+                "autoTowerRobot1": "Level1",
+            },
+            context=_truth_context(),
+            auto_fuel_copr_by_team={"frc1": 60, "frc2": 30, "frc3": -5},
+        )
+        self.assertEqual([row["auto_points"] for row in rows], [75.0, 30.0, 0.0])
+        self.assertTrue(all(row["status"]["auto_allocation"] == "event_auto_fuel_copr" for row in rows))
+
+    def test_auto_hub_fuel_without_complete_copr_is_unknown(self):
+        rows = _parse_2026_alliance_truth(
+            team_keys=["frc1", "frc2", "frc3"],
+            alliance="red",
+            breakdown={"hubScore": {"autoPoints": 90, "teleopPoints": 30}},
+            context=_truth_context(),
+            auto_fuel_copr_by_team={"frc1": 60, "frc2": 30},
+        )
+        self.assertTrue(all(row["auto_points"] is None for row in rows))
+        self.assertTrue(all(row["status"]["auto_allocation"] == "unknown" for row in rows))
+
     def test_2026_parser_uses_team_weights_for_teleop_shares(self):
         rows = _parse_2026_alliance_truth(
             team_keys=["frc1", "frc2", "frc3"],

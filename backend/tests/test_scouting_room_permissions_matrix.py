@@ -15,6 +15,7 @@ from app.api import routes_scouting_rooms
 from app.core.config import settings
 from app.core.security import (
     ROOM_ACCESS_HEADER,
+    WORKSPACE_ACCESS_HEADER,
     enforce_write_request_access,
     issue_room_access_token,
     parse_room_access_token,
@@ -23,6 +24,32 @@ from app.core.security import (
 from app.db import models
 from app.db.base import Base
 from app.db.session import get_db
+from tests.workspace_helpers import add_seeded_member, headers_for, seed_workspace
+
+
+class _ScoutClient(TestClient):
+    # Room identity comes from the workspace member, so each scout a test names
+    # acts as its own non-leader member, the way separate devices would. The
+    # scout is read from the request's room token, body or query.
+    def __init__(self, app, member_headers):
+        super().__init__(app)
+        self._member_headers = member_headers
+
+    def request(self, method, url, **kwargs):
+        headers = dict(kwargs.pop("headers", None) or {})
+        if WORKSPACE_ACCESS_HEADER not in headers:
+            token = parse_room_access_token(headers.get(ROOM_ACCESS_HEADER))
+            body = kwargs.get("json") if isinstance(kwargs.get("json"), dict) else {}
+            params = kwargs.get("params") if isinstance(kwargs.get("params"), dict) else {}
+            profile = (
+                (token or {}).get("scout_profile")
+                or body.get("scout_profile")
+                or params.get("scout_profile")
+                or params.get("for_scout_profile")
+                or "Viewer"
+            )
+            headers.update(self._member_headers(str(profile)))
+        return super().request(method, url, headers=headers, **kwargs)
 
 
 class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
@@ -68,7 +95,13 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = _override_get_db
-        self.client = TestClient(app)
+        self._members: dict[str, dict[str, str]] = {}
+        self.client = _ScoutClient(app, self._headers_for_scout)
+        # Every scout these tests name is on the team up front, as they would be at
+        # an event: room leadership can only go to a current member.
+        for name in ("Owner Scout", "Non Leader Scout", "Secondary Scout", "Scout C", "Scout D",
+                     "Scout Remote", "Scout X", "Scout Y", "Scout Z", "Someone Else"):
+            self._headers_for_scout(name)
 
         self._orig_broadcast_room_message = routes_scouting_rooms._broadcast_room_message
         self._orig_broadcast_presence_message = routes_scouting_rooms._broadcast_presence_message
@@ -92,6 +125,8 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
         settings.admin_api_key = self._prior_admin_key
 
     def _seed_minimal_rows(self, db: Session) -> None:
+        workspace, _member, self.workspace_headers = seed_workspace(db)
+        self.workspace_id = workspace.id
         db.add(models.Event(event_key="2026txhou", name="Houston", year=2026))
         db.add(models.Team(team_key="frc118", team_number=118, nickname="Robonauts"))
         db.add(models.Team(team_key="frc148", team_number=148, nickname="Robowranglers"))
@@ -116,6 +151,16 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
             )
         )
         db.commit()
+
+    def _headers_for_scout(self, profile: str) -> dict[str, str]:
+        key = profile.strip().lower()
+        if key not in self._members:
+            with self.SessionLocal() as db:
+                workspace = db.get(models.TeamWorkspace, self.workspace_id)
+                member = add_seeded_member(db, workspace, display_name=profile.strip())
+                db.commit()
+                self._members[key] = headers_for(member)
+        return self._members[key]
 
     def _create_or_join_room(self, *, scout_profile: str, room_key: str = "room-perm") -> dict:
         response = self.client.post(
@@ -167,7 +212,7 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
         created_payload = create_with_key.json()
         self.assertEqual(str(((created_payload.get("room") or {}).get("room_key") or "")), "room-does-not-exist")
 
-    def test_same_client_id_can_reclaim_profile_without_token(self):
+    def test_member_rejoins_from_any_client_without_token(self):
         create = self.client.post(
             "/scouting/rooms",
             json={
@@ -205,13 +250,15 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
                 "create_if_missing": False,
             },
         )
-        self.assertEqual(different_client.status_code, 409, different_client.text)
+        # The name is the authenticated member's, so another client is their other device.
+        self.assertEqual(different_client.status_code, 200, different_client.text)
 
-    def test_create_or_join_backfills_missing_room_owner_in_response(self):
+    def test_ownerless_room_is_claimed_only_by_a_workspace_leader(self):
         with self.SessionLocal() as db:
             db.add(
                 models.ScoutingRoom(
                     room_key="room-missing-owner",
+                    workspace_id=self.workspace_id,
                     event_key="2026txhou",
                     title="Legacy Room",
                     created_by=None,
@@ -219,17 +266,18 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
             )
             db.commit()
 
-        payload = self._create_or_join_room(
-            scout_profile="Owner Scout",
-            room_key="room-missing-owner",
-        )
-        room = payload.get("room") or {}
-        access = payload.get("access") or {}
+        member = self._create_or_join_room(scout_profile="Owner Scout", room_key="room-missing-owner")
+        self.assertEqual(str((member.get("access") or {}).get("room_role") or "").lower(), "editor")
+        self.assertEqual(str((member.get("room") or {}).get("created_by") or ""), "")
 
-        self.assertEqual(str(room.get("created_by") or ""), "Owner Scout")
-        self.assertEqual(str(room.get("leader_scout_profile") or ""), "Owner Scout")
-        self.assertTrue(str(room.get("leader_source") or "").startswith("owner"))
-        self.assertEqual(str(access.get("room_role") or "").lower(), "owner")
+        leader = self.client.post(
+            "/scouting/rooms",
+            json={"room_key": "room-missing-owner", "scout_profile": "Lead"},
+            headers=self.workspace_headers,
+        )
+        self.assertEqual(leader.status_code, 200, leader.text)
+        self.assertEqual(str(leader.json()["access"]["room_role"]).lower(), "owner")
+        self.assertEqual(str(leader.json()["room"]["created_by"] or ""), "Lead")
 
     def test_create_room_database_error_returns_503_instead_of_500(self):
         original_upsert_room = routes_scouting_rooms._upsert_room

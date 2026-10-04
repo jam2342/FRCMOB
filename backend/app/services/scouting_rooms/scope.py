@@ -59,8 +59,10 @@ def build_data_freshness_payload(
                 f"Data is scoped to {scoped_year}; current configured season is {active_year}."
             )
 
+    # No rows at all means nobody has scouted this team, which is not the same as stale data.
+    unscouted = analyzed_matches <= 0 and not raw_count
     if analyzed_matches <= 0 and isinstance(scoped_year, int):
-        warnings.append(f"No analyzed matches available for {scoped_year}.")
+        warnings.append(f"No scouted matches for {scoped_year} yet.")
         if bool(quality_gate_enabled) and raw_count and raw_count > 0:
             warnings.append(
                 f"Quality gate excluded all {raw_count} candidate matches for {scoped_year}; "
@@ -91,7 +93,8 @@ def build_data_freshness_payload(
         )
 
     return {
-        "is_outdated": len(warnings) > 0,
+        "is_outdated": len(warnings) > 0 and not unscouted,
+        "unscouted": unscouted,
         "outdated_days_threshold": outdated_days_threshold,
         "latest_match_time": latest_match_time,
         "latest_match_age_days": (

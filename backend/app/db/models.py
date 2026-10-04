@@ -162,7 +162,11 @@ class Match(Base):
     comp_level: Mapped[str] = mapped_column(String)
     set_number: Mapped[int] = mapped_column(Integer)
     match_number: Mapped[int] = mapped_column(Integer)
+    # Unix seconds. `time` is the published schedule; TBA's predicted time tracks
+    # the field running late or early, and actual_time is set once it starts.
     time: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    predicted_time: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_time: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     event: Mapped["Event"] = relationship(back_populates="matches", lazy="select")
     match_teams: Mapped[list["MatchTeam"]] = relationship(back_populates="match", lazy="select")
@@ -208,6 +212,7 @@ class AnalysisRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
     version: Mapped[str] = mapped_column(String, default="v0")
+    run_kind: Mapped[str] = mapped_column(String, default="video", index=True)
     status: Mapped[str] = mapped_column(String, default="queued")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
 
@@ -217,11 +222,78 @@ class AnalysisRun(Base):
     artifacts: Mapped[list["Artifact"]] = relationship(back_populates="analysis_run", lazy="select")
     quality: Mapped["AnalysisQuality | None"] = relationship(back_populates="run", uselist=False, lazy="select")
     auto_scout_drafts: Mapped[list["AutoScoutDraft"]] = relationship(back_populates="analysis_run", lazy="select")
+    on_device_session: Mapped["OnDeviceSession | None"] = relationship(
+        back_populates="analysis_run", uselist=False, lazy="select"
+    )
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('queued', 'running', 'completed', 'failed', 'requeued')",
             name="ck_analysis_runs_status",
+        ),
+        CheckConstraint(
+            "run_kind IN ('video', 'official_truth', 'on_device')",
+            name="ck_analysis_runs_run_kind",
+        ),
+    )
+
+
+class OnDeviceSession(Base):
+    __tablename__ = "on_device_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Unique through the named constraint below, as the migration created it.
+    analysis_run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), index=True)
+    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
+    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
+    room_key: Mapped[str | None] = mapped_column(
+        ForeignKey("scouting_rooms.room_key"), nullable=True, index=True
+    )
+    # The team that sent the run (None for admin syncs and runs from before workspaces).
+    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("team_workspaces.id"), nullable=True, index=True)
+    principal_hash: Mapped[str] = mapped_column(String, index=True)
+    client_session_id_hash: Mapped[str] = mapped_column(String)
+    schema_version: Mapped[str] = mapped_column(String, default="on_device_session_v2")
+    model_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    calibration_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    calibration_rmse_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pose_fallback_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    identity_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    identity_source: Mapped[str] = mapped_column(String, default="unknown")
+    timing_source: Mapped[str] = mapped_column(String, default="unknown")
+    capture_to_match_offset_sec: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    shift1_active_alliance: Mapped[str | None] = mapped_column(String, nullable=True)
+    shift1_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    quality_details: Mapped[dict] = mapped_column(JSON, default=lambda: {})
+    status: Mapped[str] = mapped_column(String, default="provisional", index=True)
+    review_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utc_now, onupdate=_utc_now
+    )
+
+    analysis_run: Mapped["AnalysisRun"] = relationship(
+        back_populates="on_device_session", lazy="select"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("analysis_run_id", name="on_device_sessions_analysis_run_id_key"),
+        UniqueConstraint(
+            "principal_hash",
+            "client_session_id_hash",
+            name="uq_on_device_session_principal_client",
+        ),
+        CheckConstraint(
+            "status IN ('provisional', 'accepted', 'rejected')",
+            name="ck_on_device_sessions_status",
+        ),
+        CheckConstraint(
+            "quality_score >= 0 AND quality_score <= 1",
+            name="ck_on_device_sessions_quality_score",
         ),
     )
 
@@ -381,9 +453,10 @@ class Artifact(Base):
 
 class FieldCalibration(Base):
     __tablename__ = "field_calibrations"
+    __table_args__ = (UniqueConstraint("match_key", name="field_calibrations_match_key_key"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True, unique=True)
+    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
     event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
     frame_time_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
     image_width: Mapped[int] = mapped_column(Integer)
@@ -391,6 +464,7 @@ class FieldCalibration(Base):
     image_points: Mapped[list[dict]] = mapped_column(JSON)
     field_points: Mapped[list[dict]] = mapped_column(JSON)
     homography: Mapped[list[list[float]]] = mapped_column(JSON)
+    calibration_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -609,10 +683,56 @@ class MLShadowPrediction(Base):
         ),
     )
 
+class TeamWorkspace(Base):
+    # A team's private space. Picklists, pit scouting and scouting rooms belong to
+    # exactly one; public data (events, ratings, video findings) belongs to none.
+    __tablename__ = "team_workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String)
+    frc_team_number: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # SHA-256 of the normalized join code. The code itself is only ever returned
+    # when it is issued, so a database leak doesn't hand out workspace access.
+    join_code_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
+    join_code_rotated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    # Locked workspaces can't be joined or recovered: the pre-workspace "Legacy
+    # data" bucket mixes rows from every team, so nobody may claim it wholesale.
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utc_now,
+        onupdate=_utc_now,
+    )
+
+    members: Mapped[list["TeamWorkspaceMember"]] = relationship(back_populates="workspace", lazy="select")
+
+class TeamWorkspaceMember(Base):
+    __tablename__ = "team_workspace_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("team_workspaces.id"), index=True)
+    # Random, never reused: access tokens name the member by this, so removing a
+    # member (removed_at) revokes every token they hold.
+    member_key: Mapped[str] = mapped_column(String, unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String)
+    role: Mapped[str] = mapped_column(String, default="member")
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    removed_by_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    workspace: Mapped["TeamWorkspace"] = relationship(back_populates="members", lazy="select")
+
+    __table_args__ = (
+        Index("ix_team_workspace_members_workspace_active", "workspace_id", "removed_at"),
+    )
+
 class ScoutingRoom(Base):
     __tablename__ = "scouting_rooms"
 
     room_key: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("team_workspaces.id"), index=True)
     event_key: Mapped[str | None] = mapped_column(
         ForeignKey("events.event_key"), nullable=True, index=True
     )
@@ -787,6 +907,7 @@ class EventPicklist(Base):
     __tablename__ = "event_picklists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("team_workspaces.id"), index=True)
     # Plain string (no FK) so a picklist can be drafted before event ingest completes.
     event_key: Mapped[str] = mapped_column(String, index=True)
     title: Mapped[str] = mapped_column(String, default="Picklist")
@@ -808,13 +929,14 @@ class EventPicklist(Base):
     )
 
     __table_args__ = (
-        Index("ix_event_picklists_event_archived", "event_key", "archived"),
+        Index("ix_event_picklists_workspace_event_archived", "workspace_id", "event_key", "archived"),
     )
 
 class PitScoutingEntry(Base):
     __tablename__ = "pit_scouting_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("team_workspaces.id"), index=True)
     # Plain strings (no FK) so pit data can be captured before event ingest.
     event_key: Mapped[str] = mapped_column(String, index=True)
     team_key: Mapped[str] = mapped_column(String, index=True)
@@ -832,7 +954,8 @@ class PitScoutingEntry(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("event_key", "team_key", name="uq_pit_scouting_event_team"),
+        # Per workspace: two teams scouting the same robot keep separate notes.
+        UniqueConstraint("workspace_id", "event_key", "team_key", name="uq_pit_scouting_workspace_event_team"),
     )
 
 class PushSubscription(Base):
@@ -840,7 +963,7 @@ class PushSubscription(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # Web Push endpoint URL is unique per browser subscription.
-    endpoint: Mapped[str] = mapped_column(String, unique=True, index=True)
+    endpoint: Mapped[str] = mapped_column(String, index=True)
     # {p256dh, auth} encryption keys from PushSubscription.getKey().
     keys: Mapped[dict] = mapped_column(JSON, default=lambda: {})
     event_key: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
@@ -861,5 +984,6 @@ class PushSubscription(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
         Index("ix_push_subscriptions_event_enabled", "event_key", "enabled"),
     )

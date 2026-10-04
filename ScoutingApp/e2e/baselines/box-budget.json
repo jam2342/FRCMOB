@@ -12,24 +12,24 @@
     "nested": 6
   },
   "/events/dashboard": {
-    "boxes": 2,
-    "nested": 0
+    "boxes": 4,
+    "nested": 1
   },
   "/scouting": {
-    "boxes": 35,
+    "boxes": 34,
     "nested": 13
   },
   "/scouting/pit": {
-    "boxes": 2,
+    "boxes": 1,
     "nested": 0
   },
   "/scouting/assignments": {
-    "boxes": 2,
+    "boxes": 1,
     "nested": 0
   },
   "/scouting/coverage": {
-    "boxes": 3,
-    "nested": 1
+    "boxes": 1,
+    "nested": 0
   },
   "/scouting/auto-paths": {
     "boxes": 2,
@@ -52,7 +52,7 @@
     "nested": 11
   },
   "/match-center/predictions": {
-    "boxes": 5,
+    "boxes": 4,
     "nested": 1
   },
   "/match-center/strategy": {
@@ -68,7 +68,7 @@
     "nested": 0
   },
   "/compare/picklist": {
-    "boxes": 2,
+    "boxes": 1,
     "nested": 0
   },
   "/favorites": {

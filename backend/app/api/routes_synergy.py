@@ -10,7 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import require_admin_access, require_write_access, sanitize_external_error
+from app.core.security import (
+    request_has_admin_access,
+    require_admin_access,
+    require_write_access,
+    sanitize_external_error,
+)
 from app.db import models
 from app.db.session import get_db
 from app.services.ml.synergy import (
@@ -456,6 +461,10 @@ def score_theoretical_alliance(
     if auto_precompute_effective and settings.public_readonly_mode:
         auto_precompute_effective = False
         warnings.append("Auto precompute disabled in public mode; using existing synergy projections only.")
+    if auto_precompute_effective and not projection_rows and not request_has_admin_access(request):
+        # Scoring an alliance is open to everyone; building projections is an admin job.
+        auto_precompute_effective = False
+        warnings.append("Synergy projections haven't been built for this event yet; scoring without them.")
 
     if auto_precompute_effective and not projection_rows:
         require_admin_access(request, "Synergy auto precompute")

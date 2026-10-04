@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import weakref
 from typing import Any
 from urllib.parse import urlencode
 
@@ -21,9 +22,11 @@ RETRY_BACKOFF_MS = 200
 MAX_CACHE_ENTRIES = 3000
 DEFAULT_STALE_TTL_SEC = 900
 
-# Persistent async client with connection pooling
-_CLIENT: httpx.AsyncClient | None = None
-_CLIENT_LOCK: asyncio.Lock | None = None
+# One pooled client per event loop. An AsyncClient's connections belong to the loop
+# that opened them: reusing the API loop's client from asyncio.run() (ratings in the
+# worker, scheduler threads) failed with "Event loop is closed" and silently dropped
+# EPA. Keyed weakly so a finished asyncio.run loop doesn't keep its client alive.
+_CLIENTS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient]" = weakref.WeakKeyDictionary()
 
 # Response cache with TTL (fresh + stale)
 _CACHE: dict[str, tuple[float, float, float, Any]] = {}
@@ -196,35 +199,33 @@ def _build_url(path: str) -> str:
     return f"{settings.statbotics_base_url.rstrip('/')}{path}"
 
 async def _get_client() -> httpx.AsyncClient:
-    # Get or create persistent async HTTP client with connection pooling.
-    global _CLIENT, _CLIENT_LOCK
-
-    # Lazily initialize the lock
-    if _CLIENT_LOCK is None:
-        _CLIENT_LOCK = asyncio.Lock()
-
-    if _CLIENT is None:
-        async with _CLIENT_LOCK:
-            if _CLIENT is None:
-                _CLIENT = httpx.AsyncClient(
-                    timeout=DEFAULT_TIMEOUT,
-                    limits=httpx.Limits(
-                        max_connections=10,
-                        max_keepalive_connections=5,
-                    ),
-                )
-    return _CLIENT
+    loop = asyncio.get_running_loop()
+    client = _CLIENTS.get(loop)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
+            timeout=DEFAULT_TIMEOUT,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+        _CLIENTS[loop] = client
+    return client
 
 async def close_client() -> None:
-    # Close the persistent HTTP client.
-    global _CLIENT, _CLIENT_LOCK
-    if _CLIENT is not None:
-        if _CLIENT_LOCK is None:
-            _CLIENT_LOCK = asyncio.Lock()
-        async with _CLIENT_LOCK:
-            if _CLIENT is not None:
-                await _CLIENT.aclose()
-                _CLIENT = None
+    # Closes the running loop's client; callers that own a short-lived loop call this
+    # before it ends so its connections are released.
+    client = _CLIENTS.pop(asyncio.get_running_loop(), None)
+    if client is not None and not client.is_closed:
+        await client.aclose()
+
+def run_sync(coro: Any) -> Any:
+    # Entry point for synchronous callers (ratings, scheduler threads): a fresh loop,
+    # and that loop's client is closed before the loop goes away.
+    async def _runner() -> Any:
+        try:
+            return await coro
+        finally:
+            await close_client()
+
+    return asyncio.run(_runner())
 
 async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> Any:
     # Fetch and cache JSON response with retry logic.
@@ -326,8 +327,18 @@ async def _fetch_json(path: str) -> Any:
 
 # Public API Functions
 
+def _require_team_number(team_number: int) -> int:
+    # Off-season B teams ("frc1234b") parse to 0 upstream. Statbotics has no such
+    # team, so asking only wastes a request and counts a failure against the
+    # circuit breaker that also guards real lookups.
+    if not isinstance(team_number, int) or team_number <= 0:
+        raise RuntimeError(f"Statbotics has no team {team_number!r}")
+    return team_number
+
+
 async def get_team(team_number: int) -> dict[str, Any]:
     # Fetch team profile by team number.
+    _require_team_number(team_number)
     payload = await _fetch_json(f"/team/{team_number}")
     if not isinstance(payload, dict):
         raise RuntimeError("Unexpected Statbotics team response format")
@@ -335,6 +346,7 @@ async def get_team(team_number: int) -> dict[str, Any]:
 
 async def get_team_event(team_number: int, event_key: str) -> dict[str, Any]:
     # Fetch team event profile.
+    _require_team_number(team_number)
     payload = await _fetch_json(f"/team_event/{team_number}/{event_key}")
     if not isinstance(payload, dict):
         raise RuntimeError("Unexpected Statbotics team_event response format")
@@ -349,6 +361,7 @@ async def get_event(event_key: str) -> dict[str, Any]:
 
 async def get_team_year(team_number: int, year: int) -> dict[str, Any]:
     # Fetch team year profile.
+    _require_team_number(team_number)
     payload = await _fetch_json(f"/team_year/{team_number}/{year}")
     if not isinstance(payload, dict):
         raise RuntimeError("Unexpected Statbotics team_year response format")

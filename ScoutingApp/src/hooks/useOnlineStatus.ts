@@ -1,20 +1,8 @@
+import { resolveApiBaseUrl } from '../platform/runtime';
 import { useSyncExternalStore } from 'react';
 import { size as offlineQueueSize } from '../utils/offlineQueue';
 
-const _CONFIGURED_API = String(
-  (import.meta.env.VITE_API_URL || import.meta.env.NEXT_PUBLIC_API_URL || '') as string,
-).trim();
-
-function _resolveHealthUrl(): string {
-  const fallback = import.meta.env.PROD ? '/api' : 'http://localhost:8000';
-  let base = _CONFIGURED_API || fallback;
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && /^http:\/\//i.test(base)) {
-    base = '/api';
-  }
-  return base.replace(/\/+$/, '') + '/health';
-}
-
-const HEALTH_URL = _resolveHealthUrl();
+const HEALTH_URL = resolveApiBaseUrl() + '/health';
 const POLL_INTERVAL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 5_000;
 

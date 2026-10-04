@@ -9,9 +9,6 @@
  * scouting form's counter/scale sections.
  */
 
-export const SEASON_YEAR = 2026;
-export const SEASON_NAME = 'REBUILT';
-
 /* ------------------------------------------------------------------ */
 /*  Match scouting form fields                                         */
 /* ------------------------------------------------------------------ */
@@ -87,24 +84,6 @@ export function countersFor(section: MatchFormSection): MatchCounterDef[] {
 export function scalesFor(section: MatchFormSection): MatchScaleDef[] {
   return MATCH_SCALE_FIELDS.filter((field) => field.section === section);
 }
-
-/** 2026 endgame states (keep in sync with backend season template). */
-export const ENDGAME_MODES = [
-  { value: 'none', label: 'None' },
-  { value: 'kept_scoring', label: 'Kept scoring' },
-  { value: 'parked', label: 'Parked' },
-  { value: 'climb_level_1', label: 'Climb L1' },
-  { value: 'climb_level_2', label: 'Climb L2' },
-  { value: 'climb_level_3', label: 'Climb L3' },
-] as const;
-
-/** 2026 ranking points. */
-export const RP_FLAGS = [
-  { key: 'energized', label: 'Energized' },
-  { key: 'supercharged', label: 'Supercharged' },
-  { key: 'traversal', label: 'Traversal' },
-  { key: 'coop', label: 'Co-op' },
-] as const;
 
 /* ------------------------------------------------------------------ */
 /*  Pit scouting form schema                                           */

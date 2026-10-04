@@ -74,8 +74,8 @@ function computeDesktopPanelStyle(rect: DOMRect, placement: Exclude<TutorialStep
   const width = Math.min(DESKTOP_PANEL_WIDTH_PX, window.innerWidth - DESKTOP_VIEWPORT_MARGIN_PX * 2);
   const fallbackHeight = Math.min(DESKTOP_PANEL_HEIGHT_PX, window.innerHeight - DESKTOP_VIEWPORT_MARGIN_PX * 2);
   const maxTop = window.innerHeight - fallbackHeight - DESKTOP_VIEWPORT_MARGIN_PX;
-  let top = DESKTOP_VIEWPORT_MARGIN_PX;
-  let left = DESKTOP_VIEWPORT_MARGIN_PX;
+  let top: number;
+  let left: number;
 
   if (placement === 'right') {
     left = rect.right + TARGET_GAP_PX;

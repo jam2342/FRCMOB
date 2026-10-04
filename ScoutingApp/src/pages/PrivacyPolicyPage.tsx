@@ -131,9 +131,10 @@ export function PrivacyPolicyPage() {
           <section>
             <h4>Public data we ingest</h4>
             <p>
-              FRCMOB pulls event schedules, match results, team information, rankings, and public
-              match video from The Blue Alliance, the official FRC Events API, Statbotics, and public
-              video platforms. That data is already public and is governed by those services&apos; own
+              FRCMOB pulls event schedules, match results, team information, rankings, and links to
+              public match videos from The Blue Alliance, the official FRC Events API, and Statbotics,
+              and embeds those videos from their video platform. That data is already public and is
+              governed by those services&apos; own
               terms. We cache it to keep the app fast and usable on weak venue wifi.
             </p>
           </section>
@@ -156,9 +157,9 @@ export function PrivacyPolicyPage() {
             <h4>Infrastructure providers</h4>
             <p>
               The app runs on third-party infrastructure that necessarily processes data in order to
-              host it: a frontend host, cloud compute for the API and analysis worker, a managed
-              Postgres database, a managed Redis instance, and your browser vendor&apos;s push service
-              for notifications. These providers act as processors for storage and delivery; they are
+              host it: a frontend host, a cloud server that runs the API with its Postgres database and
+              Redis cache, an off-site database backup service, and your browser vendor&apos;s push
+              service for notifications. These providers act as processors for storage and delivery; they are
               not permitted to use the data for their own purposes.
             </p>
           </section>
