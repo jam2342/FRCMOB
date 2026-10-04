@@ -52,9 +52,6 @@ def _now_ts() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
-
-
-
 def _phase_weights() -> dict[str, float]:
     config = load_game_config()
     phases = getattr(config, "phases", None)
@@ -211,51 +208,3 @@ def get_fuel_phase_calibration(force_refresh: bool = False) -> dict[str, Any]:
         db.close()
 
 
-def estimate_fuel_rate_per_min(
-    *,
-    throughput_score_0_100: float | None,
-    auto_score_0_100: float | None,
-) -> dict[str, Any]:
-    calibration = get_fuel_phase_calibration()
-    teleop_cfg = calibration.get("teleop") if isinstance(calibration.get("teleop"), dict) else {}
-    auto_cfg = calibration.get("auto") if isinstance(calibration.get("auto"), dict) else {}
-    weights = calibration.get("phase_weights") if isinstance(calibration.get("phase_weights"), dict) else {}
-    teleop_weight = _as_float(weights.get("teleop_weight")) or (120.0 / 140.0)
-    auto_weight = _as_float(weights.get("auto_weight")) or (20.0 / 140.0)
-
-    teleop_rate = None
-    if isinstance(throughput_score_0_100, (int, float)):
-        teleop_rate = (
-            _as_float(teleop_cfg.get("intercept")) or DEFAULT_TELEOP_INTERCEPT
-        ) + (
-            (_as_float(teleop_cfg.get("slope")) or DEFAULT_TELEOP_SLOPE)
-            * float(throughput_score_0_100)
-        )
-
-    auto_rate = None
-    if isinstance(auto_score_0_100, (int, float)):
-        auto_rate = (
-            _as_float(auto_cfg.get("intercept")) or DEFAULT_AUTO_INTERCEPT
-        ) + (
-            (_as_float(auto_cfg.get("slope")) or DEFAULT_AUTO_SLOPE)
-            * float(auto_score_0_100)
-        )
-
-    combined = None
-    if isinstance(teleop_rate, (int, float)) and isinstance(auto_rate, (int, float)):
-        combined = (float(teleop_rate) * teleop_weight) + (float(auto_rate) * auto_weight)
-    elif isinstance(teleop_rate, (int, float)):
-        combined = float(teleop_rate)
-    elif isinstance(auto_rate, (int, float)):
-        combined = float(auto_rate)
-
-    return {
-        "fuel_rate_per_min": (
-            round(_clamp(float(combined), 0.0, 180.0), 3)
-            if isinstance(combined, (int, float))
-            else None
-        ),
-        "teleop_rate_per_min": round(float(teleop_rate), 3) if isinstance(teleop_rate, (int, float)) else None,
-        "auto_rate_per_min": round(float(auto_rate), 3) if isinstance(auto_rate, (int, float)) else None,
-        "calibration": calibration,
-    }

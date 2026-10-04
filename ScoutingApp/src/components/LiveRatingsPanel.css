@@ -67,6 +67,20 @@
   cursor: default;
 }
 
+.live-ratings-panel__more {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .live-ratings-panel__error {
   font-size: var(--font-size-sm);
   color: var(--color-danger-text);

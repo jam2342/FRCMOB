@@ -50,6 +50,16 @@ describe('userSettings', () => {
     expect(getStoredSettings().liveRefreshSec).toBe(120);
   });
 
+  // An unset key used to read as "on", so every first visit opened the full
+  // tutorial over the page no matter what the default said.
+  it('keeps the tutorial off for a fresh browser but honours an explicit choice', () => {
+    expect(getStoredSettings().tutorialAutoplay).toBe(false);
+    saveStoredSettings({ tutorialAutoplay: true });
+    expect(getStoredSettings().tutorialAutoplay).toBe(true);
+    window.localStorage.setItem('scouting_tutorial_autoplay', '0');
+    expect(getStoredSettings().tutorialAutoplay).toBe(false);
+  });
+
   it('normalizes favorites and applies body classes', () => {
     const events = saveFavoriteEvents(['2026txhou', 'invalid', '2026txhou']);
     const teams = saveFavoriteTeams(['frc118', '118', 'bad']);

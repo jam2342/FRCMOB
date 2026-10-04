@@ -13,9 +13,6 @@ def pg_sqlstate_code(exc: Exception) -> str | None:
 # ── Canonical project paths ────────────────────────────────────────────────
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MEDIA_ROOT = BACKEND_ROOT / "media"
-VIDEOS_ROOT = MEDIA_ROOT / "videos"
-ANALYSIS_FRAMES_ROOT = MEDIA_ROOT / "analysis_frames"
-FRAMES_ROOT = MEDIA_ROOT / "frames"
 
 # ── FRC comp-level ordering (shared across routes/services) ────────────────
 COMP_LEVEL_ORDER: dict[str, int] = {
@@ -118,6 +115,37 @@ def _weighted_std(pairs: list[tuple[float, float]]) -> float | None:
     if denominator <= 1e-9:
         return None
     return math.sqrt(max(0.0, numerator / denominator))
+
+def percentile_ranks(
+    raw_by_key: dict[str, float | None],
+    *,
+    higher_is_better: bool = True,
+    default: float = 50.0,
+) -> dict[str, float]:
+    # Equal values share the average of their positions. Ranking ties by list order
+    # gave identical robots percentiles anywhere from 0 to ~96 depending on row order
+    # (most of a REBUILT field ties at "never climbed").
+    valid = sorted(
+        (float(value), key)
+        for key, value in raw_by_key.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+    )
+    result = {key: default for key in raw_by_key}
+    n = len(valid)
+    if n == 0:
+        return result
+    start = 0
+    while start < n:
+        end = start
+        while end + 1 < n and valid[end + 1][0] == valid[start][0]:
+            end += 1
+        pct = 50.0 if n == 1 else ((start + end) / 2.0) / (n - 1) * 100.0
+        if not higher_is_better:
+            pct = 100.0 - pct
+        for index in range(start, end + 1):
+            result[valid[index][1]] = _clamp(pct, 0.0, 100.0)
+        start = end + 1
+    return result
 
 def automation_redis_key(scope: str, season: int, key_type: str) -> str:
     return f"automation:{scope}:season:{season}:{key_type}"

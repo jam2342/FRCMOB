@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   deletePitPhoto,
   getEventTeamsIntel,
@@ -18,6 +18,9 @@ import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { hapticSuccess, hapticTap } from '../utils/haptics';
 import { asRecord, parseNumber } from './centerUtils';
 import './PitScoutingPage.css';
+import { useWorkspace } from '../features/workspace/useWorkspace';
+import { readPitDraft, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../features/offline/pitDrafts';
+import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & helpers                                                */
@@ -70,82 +73,81 @@ async function compressPhoto(file: File): Promise<string> {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function PitScoutingPage() {
-  const { eventKey, eventInput, setEventInput, commitInput, selectEvent } =
+function PitScoutingWorkspacePage() {
+  const workspaceId = useWorkspace()!.workspace.id;
+  const { eventKey, fetchTrigger, eventInput, setEventInput, commitInput, selectEvent } =
     useEventKeyParam(STORAGE_KEY);
 
   const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [entriesByTeam, setEntriesByTeam] = useState<Map<string, PitScoutingEntry>>(new Map());
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const [form, setForm] = useState<Record<string, unknown>>({});
+  const [formDirty, setFormDirty] = useState(false);
+  const [serverNotesReady, setServerNotesReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingForm, setSavingForm] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [statusText, setStatusText] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const editVersionRef = useRef(0);
+  const formRef = useRef<Record<string,unknown>>({});
+  const contextRef = useRef({eventKey,selectedTeam});
+  contextRef.current = {eventKey,selectedTeam};
+  const errorRef = useRef<HTMLParagraphElement | null>(null);
+  const [draftStored, setDraftStored] = useState(false);
 
   const selectedEntry = selectedTeam ? entriesByTeam.get(selectedTeam) ?? null : null;
 
   /* ---- Data loading ---------------------------------------------- */
 
-  const fetchTeams = useCallback(async (key: string) => {
-    setLoading(true);
-    setErrorText('');
-    try {
-      const payload = await getEventTeamsIntel(key, {
-        include_tba: true,
-        include_statbotics: false,
-        include_season_fallback: false,
-        include_rating_details: false,
-        include_rating_signals: false,
-      });
-      const rows = (Array.isArray(payload.teams) ? payload.teams : [])
-        .map((entry) => {
-          const row = asRecord(entry);
-          return {
-            team_key: String(row?.team_key || '').toLowerCase(),
-            team_number: parseNumber(row?.team_number) ?? 0,
-            nickname: typeof row?.nickname === 'string' ? row.nickname : null,
-          };
-        })
-        .filter((row) => row.team_key.length > 0)
-        .sort((a, b) => a.team_number - b.team_number);
-      setTeams(rows);
-    } catch (err) {
-      setErrorText((err as Error).message || 'Failed to load event teams.');
-      setTeams([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchEntries = useCallback(async (key: string) => {
-    try {
-      const result = await listPitEntries(key);
-      const map = new Map<string, PitScoutingEntry>();
-      for (const entry of result.entries ?? []) {
-        map.set(entry.team_key.toLowerCase(), entry);
-      }
-      setEntriesByTeam(map);
-    } catch {
-      // Pit data may simply not exist yet — leave the map empty.
-    }
-  }, []);
-
   useEffect(() => {
-    if (!eventKey) return;
-    setSelectedTeam('');
-    void fetchTeams(eventKey);
-    void fetchEntries(eventKey);
-  }, [eventKey, fetchTeams, fetchEntries]);
+    let cancelled = false;
+    setSelectedTeam(''); setTeams([]); setEntriesByTeam(new Map()); setErrorText(''); setStatusText('');
+    if (!eventKey) {setLoading(false); return;}
+    setLoading(true); setServerNotesReady(false);
+    void Promise.all([
+      getEventTeamsIntel(eventKey, {include_tba:true,include_statbotics:false,include_season_fallback:false,include_rating_details:false,include_rating_signals:false}),
+      listPitEntries(eventKey),
+    ]).then(([payload, result]) => {
+      if (cancelled) return;
+      setServerNotesReady(true);
+      setTeams((payload.teams ?? []).map(entry => {
+        const row = asRecord(entry);
+        return {team_key:String(row?.team_key || '').toLowerCase(),team_number:parseNumber(row?.team_number) ?? 0,nickname:typeof row?.nickname === 'string' ? row.nickname : null};
+      }).filter(row=>row.team_key).sort((a,b)=>a.team_number-b.team_number));
+      setEntriesByTeam(new Map((result.entries ?? []).map(entry=>[entry.team_key.toLowerCase(),entry])));
+      const lastTeam = readPitSelection(workspaceId,eventKey);
+      if (lastTeam && (payload.teams ?? []).some(team => String(team.team_key || '').toLowerCase() === lastTeam)) setSelectedTeam(lastTeam);
+    }).catch(err => {
+      if (cancelled) return;
+      const lastTeam = readPitSelection(workspaceId,eventKey);
+      if (lastTeam && readPitDraft(workspaceId,eventKey,lastTeam)) {
+        setTeams([{team_key:lastTeam,team_number:Number(lastTeam.slice(3)),nickname:'Saved draft'}]); setSelectedTeam(lastTeam);
+        setErrorText('Server notes could not be loaded. Your local draft is open. Reload the event after reconnecting before sharing it.');
+      } else setErrorText('Could not load teams and saved pit notes. Try loading the event again. '+((err as Error).message || ''));
+    }).finally(()=>{if(!cancelled) setLoading(false);});
+    return () => { cancelled = true; };
+  }, [eventKey, fetchTrigger, workspaceId]);
 
   useEffect(() => {
     if (!selectedTeam) return;
-    const entry = entriesByTeam.get(selectedTeam);
-    setForm(entry?.payload ? { ...entry.payload } : {});
+    const draft = readPitDraft(workspaceId,eventKey,selectedTeam);
+    const payload = draft ?? entriesByTeam.get(selectedTeam)?.payload ?? {};
+    formRef.current = {...payload}; setForm(formRef.current);
+    setFormDirty(Boolean(draft)); setDraftStored(pitDraftPersisted(workspaceId,eventKey,selectedTeam));
+    editVersionRef.current = 0; setStatusText('');
+    // Entries are loaded before team selection; updates must not overwrite edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTeam]);
+  }, [selectedTeam,eventKey,workspaceId]);
+
+  useEffect(() => {
+    if (!formDirty || draftStored) return;
+    const warn = (event: BeforeUnloadEvent) => {event.preventDefault();};
+    window.addEventListener('beforeunload',warn);return ()=>window.removeEventListener('beforeunload',warn);
+  }, [formDirty,draftStored]);
+
+  useEffect(() => { if(errorText) errorRef.current?.scrollIntoView({block:'nearest'}); }, [errorText]);
 
   /* ---- Stats ------------------------------------------------------ */
 
@@ -160,25 +162,46 @@ export function PitScoutingPage() {
   /* ---- Actions ----------------------------------------------------- */
 
   function setField(key: string, value: unknown) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    const next = {...formRef.current,[key]:value};
+    formRef.current = next; setForm(next);
+    const stored = savePitDraft(workspaceId,eventKey,selectedTeam,next);
+    setDraftStored(stored);
+    if (!stored) setErrorText('This device could not save your draft. Keep this page open and use Save entry before leaving.');
+    setFormDirty(true);
+    editVersionRef.current += 1;
+  }
+
+  function selectTeamForEditing(teamKey: string) {
+    if (teamKey === selectedTeam) return;
+    if (formDirty && !draftStored && !window.confirm('This draft could not be saved on your device. Discard it and switch teams?')) return;
+    rememberPitSelection(workspaceId,eventKey,teamKey);
+    setSelectedTeam(teamKey);
   }
 
   async function handleSave() {
     if (!eventKey || !selectedTeam) return;
+    if (savingForm || !serverNotesReady) return;
+    const invalid = PIT_FORM_SECTIONS.flatMap(section=>section.fields).find(field=>field.type === 'number' && typeof formRef.current[field.key] === 'number' && Number(formRef.current[field.key]) < 0);
+    if (invalid) {setErrorText(`${invalid.label} must be zero or a positive number.`); return;}
     setSavingForm(true);
     setErrorText('');
+    const savedEditVersion = editVersionRef.current;
+    const savedForm = {...formRef.current};
     try {
       const result = await upsertPitEntry({
         event_key: eventKey,
         team_key: selectedTeam,
         scout_profile: readScoutProfile() || undefined,
-        payload: form,
+        payload: savedForm,
       });
+      if (contextRef.current.eventKey !== eventKey) return;
       setEntriesByTeam((prev) => {
         const next = new Map(prev);
         next.set(result.entry.team_key.toLowerCase(), result.entry);
         return next;
       });
+      clearConfirmedPitDraft(workspaceId,eventKey,selectedTeam,savedForm);
+      if (contextRef.current.selectedTeam === selectedTeam && editVersionRef.current === savedEditVersion) {setFormDirty(false);setDraftStored(false);}
       hapticSuccess();
       setStatusText(`Saved pit entry for #${teamNumber(selectedTeam)}.`);
     } catch (err) {
@@ -190,10 +213,12 @@ export function PitScoutingPage() {
 
   async function handlePhotoSelected(file: File | null) {
     if (!file || !eventKey || !selectedTeam) return;
+    if (!file.type.startsWith('image/')) {setErrorText('Choose an image file, such as a JPG or PNG.'); if(fileInputRef.current) fileInputRef.current.value=''; return;}
     setUploadingPhoto(true);
     setErrorText('');
     try {
-      const dataUrl = await compressPhoto(file);
+      let dataUrl: string;
+      try {dataUrl = await compressPhoto(file);} catch {throw new Error('Could not read this photo. Choose another JPG or PNG and try again.');}
       const result = await uploadPitPhoto({
         event_key: eventKey,
         team_key: selectedTeam,
@@ -264,6 +289,7 @@ export function PitScoutingPage() {
                 <button
                   key={option}
                   type="button"
+                  aria-pressed={active}
                   className={`center-chip clickable ${active ? 'pit-chip-active' : ''}`}
                   onClick={() => {
                     hapticTap();
@@ -284,6 +310,7 @@ export function PitScoutingPage() {
         return (
           <button
             type="button"
+            aria-pressed={value === true}
             className={`center-btn ${value === true ? '' : 'ghost'}`}
             onClick={() => {
               hapticTap();
@@ -299,6 +326,7 @@ export function PitScoutingPage() {
             <input
               className="center-input"
               type="number"
+              min={0}
               inputMode="decimal"
               value={typeof value === 'number' ? value : typeof value === 'string' ? value : ''}
               onChange={(event) => {
@@ -354,13 +382,14 @@ export function PitScoutingPage() {
           >
             <EventPicker
               value={eventKey}
-              onSelect={selectEvent}
+              onSelect={key => {if(formDirty && !draftStored && !window.confirm('This draft could not be saved on your device. Discard it and change events?')) {setEventInput(eventKey);return;} selectEvent(key);}}
               inputValue={eventInput}
               onInputChange={setEventInput}
-              onSubmit={commitInput}
+              onSubmit={() => {if(formDirty && !draftStored && !window.confirm('This draft could not be saved on your device. Discard it and reload teams?')) {setEventInput(eventKey);return;} commitInput();}}
               loading={loading}
+              disabled={savingForm || uploadingPhoto}
             />
-            {errorText ? <p className="center-callout warning">{errorText}</p> : null}
+            {errorText && !selectedTeam ? <p ref={errorRef} className="center-callout warning" role="alert">{errorText}</p> : null}
             {statusText ? <p className="center-success-text">{statusText}</p> : null}
           </SurfaceCard>
 
@@ -387,7 +416,8 @@ export function PitScoutingPage() {
                       ]
                         .filter(Boolean)
                         .join(' ')}
-                      onClick={() => setSelectedTeam(team.team_key)}
+                      disabled={savingForm || uploadingPhoto}
+                      onClick={() => selectTeamForEditing(team.team_key)}
                       aria-label={`Team ${team.team_number}${hasForm ? ', completed' : ''}${hasPhotos ? ', has photos' : ''}`}
                       title={team.nickname ?? undefined}
                     >
@@ -412,7 +442,7 @@ export function PitScoutingPage() {
                   type="button"
                   className="center-btn"
                   onClick={() => void handleSave()}
-                  disabled={savingForm}
+                  disabled={savingForm || !serverNotesReady}
                 >
                   {savingForm ? 'Saving…' : 'Save entry'}
                 </button>
@@ -420,6 +450,8 @@ export function PitScoutingPage() {
               expandable={false}
               mobileCollapsible={false}
             >
+              {formDirty ? <p className="my-team__note" role="status">{draftStored ? "Draft saved on this device. Save entry shares it with your team." : "Unsaved changes — keep this page open until you save."}</p> : null}
+              {errorText ? <p ref={errorRef} className="center-callout warning" role="alert">{errorText}</p> : null}
               {/* Photos */}
               <div className="pit-photos">
                 {(selectedEntry?.photos ?? []).map((photo) => (
@@ -430,6 +462,7 @@ export function PitScoutingPage() {
                       className="pit-photo-delete"
                       onClick={() => void handleDeletePhoto(photo)}
                       aria-label="Delete photo"
+                      disabled={!serverNotesReady}
                     >
                       <span aria-hidden="true">x</span>
                     </button>
@@ -442,7 +475,7 @@ export function PitScoutingPage() {
                     accept="image/*"
                     capture="environment"
                     onChange={(event) => void handlePhotoSelected(event.target.files?.[0] ?? null)}
-                    disabled={uploadingPhoto}
+                    disabled={uploadingPhoto || !serverNotesReady}
                   />
                   {uploadingPhoto ? 'Uploading…' : '+ Photo'}
                 </label>
@@ -468,7 +501,7 @@ export function PitScoutingPage() {
                   type="button"
                   className="center-btn"
                   onClick={() => void handleSave()}
-                  disabled={savingForm}
+                  disabled={savingForm || !serverNotesReady}
                 >
                   {savingForm ? 'Saving…' : 'Save entry'}
                 </button>
@@ -478,5 +511,15 @@ export function PitScoutingPage() {
         </SurfaceCardGroup>
       </div>
     </>
+  );
+}
+
+// Team-only: pit notes are private to a workspace, so nothing loads until
+// the device has joined one.
+export function PitScoutingPage() {
+  return (
+    <WorkspaceGate feature="Pit notes" viewBar={<PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />}>
+      <PitScoutingWorkspacePage />
+    </WorkspaceGate>
   );
 }

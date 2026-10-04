@@ -50,8 +50,13 @@ def _apply_sparse_rating_guard(
         SPARSE_RATING_MIN_RAW,
     )
 
-    lower = SPARSE_RATING_MIN_RAW
-    if use_fallback_model or video_findings_count <= 0:
+    # The guard is for thin evidence, so it keys on matches actually observed
+    # (official breakdowns count). Keying it on video capped every team once
+    # broadcast video stopped being ratings-eligible: at 2026arc the top six all read
+    # 87.702 and the bottom eleven 29.314, 17 of 75 teams on clamped, tied values.
+    sparse = matches_observed < 5 or confidence < 0.35
+    lower = SPARSE_RATING_MIN_RAW if sparse else 0.0
+    if matches_observed <= 0:
         upper = SPARSE_RATING_MAX_RAW_NO_VIDEO
     elif matches_observed < 3:
         upper = SPARSE_RATING_MAX_RAW_LOW_MATCH
@@ -170,9 +175,9 @@ def _ensure_minimum_pros_cons_signals(
         return pros, cons
 
     model_hint = (
-        "External fallback model signal (no analyzed clips yet)."
+        "Based on official results and external ratings."
         if use_fallback_model
-        else "Video-derived baseline signal."
+        else "Includes analyzed match data."
     )
     seen_labels = {
         str(item.get("label") or "").strip().lower()

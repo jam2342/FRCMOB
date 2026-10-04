@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -16,9 +17,12 @@ from app.db.session import get_db
 from app.api.schemas import ScheduleResponse, TeamLiveFormResponse
 from app.services.cache import get_cache
 from app.services.events.first_events_client import FIRSTEventsClient
+from app.services.events.match_times import match_times_from_payload
 from app.services.phase_windows import compute_phase_windows_payload, get_or_compute_match_phase_windows
 from app.services.utils import COMP_LEVEL_ORDER
 from app.tba.client import TBAClient, TBAClientError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -502,6 +506,7 @@ def _match_result_snapshot(match_payload: dict[str, Any]) -> dict[str, Any]:
             winning_score = blue_score
             losing_score = red_score
 
+    times = match_times_from_payload(match_payload)
     return {
         "red_score": red_score,
         "blue_score": blue_score,
@@ -509,6 +514,8 @@ def _match_result_snapshot(match_payload: dict[str, Any]) -> dict[str, Any]:
         "is_completed": _is_match_completed(match_payload),
         "winning_score": winning_score,
         "losing_score": losing_score,
+        "predicted_time": times["predicted_time"],
+        "actual_time": times["actual_time"],
     }
 
 
@@ -574,7 +581,8 @@ def _form_label(results: list[str]) -> str:
 
 def _split_event_key(event_key: str) -> tuple[int, str]:
     normalized = event_key.strip().lower()
-    match = re.fullmatch(r"(\d{4})([a-z0-9]{3,})", normalized)
+    # Event codes can be two characters (2026bc, 2026cc).
+    match = re.fullmatch(r"(\d{4})([a-z0-9]{2,})", normalized)
     if not match:
         raise HTTPException(
             status_code=400,
@@ -752,10 +760,6 @@ def _refresh_event_schedule_from_tba(db: Session, tba: TBAClient, event_key: str
         if not isinstance(match_key, str) or not match_key:
             continue
 
-        scheduled_time = match.get("time")
-        if scheduled_time is None:
-            scheduled_time = match.get("predicted_time")
-
         db.merge(
             models.Match(
                 match_key=match_key,
@@ -763,7 +767,7 @@ def _refresh_event_schedule_from_tba(db: Session, tba: TBAClient, event_key: str
                 comp_level=match.get("comp_level") or "qm",
                 set_number=int(match.get("set_number") or 1),
                 match_number=int(match.get("match_number") or 1),
-                time=int(scheduled_time) if isinstance(scheduled_time, (int, float)) else None,
+                **match_times_from_payload(match),
             )
         )
 
@@ -1329,12 +1333,13 @@ def get_event_schedule(
                     ),
                 )
             if source == "auto" and local_match_count == 0:
-                detail_bits = [
-                    "Unable to refresh schedule from remote sources.",
-                    f"TBA: {tba_error}" if tba_error else "TBA: unavailable",
-                    f"FIRST: {first_error}" if first_error else "FIRST: unavailable",
-                ]
-                raise HTTPException(status_code=502, detail=" ".join(detail_bits))
+                # Nothing published anywhere yet is an empty schedule, not a gateway
+                # failure; pages show "no schedule yet" instead of an error.
+                logger.info(
+                    "schedule.unavailable event=%s tba=%s first=%s",
+                    event_key, (tba_error or "")[:120], (first_error or "")[:120],
+                )
+                source_used = "unavailable"
 
     match_rows = (
         db.query(
@@ -1343,10 +1348,15 @@ def get_event_schedule(
             models.Match.set_number,
             models.Match.match_number,
             models.Match.time,
+            models.Match.predicted_time,
+            models.Match.actual_time,
         )
         .filter(models.Match.event_key == event_key)
         .all()
     )
+    predicted_by_match = {str(row[0]): row[5] for row in match_rows}
+    actual_by_match = {str(row[0]): row[6] for row in match_rows}
+    match_rows = [row[:5] for row in match_rows]
     match_rows.sort(
         key=lambda row: (
             COMP_LEVEL_ORDER.get(row[1], 99),
@@ -1455,6 +1465,8 @@ def get_event_schedule(
                 "set_number": normalized_set_number,
                 "match_number": normalized_match_number,
                 "scheduled_time": scheduled_time,
+                "predicted_time": result_payload.get("predicted_time") or predicted_by_match.get(str(match_key)),
+                "actual_time": result_payload.get("actual_time") or actual_by_match.get(str(match_key)),
                 "has_time": scheduled_time is not None,
                 "red_score": result_payload.get("red_score"),
                 "blue_score": result_payload.get("blue_score"),

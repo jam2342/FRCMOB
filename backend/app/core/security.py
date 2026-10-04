@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 from fastapi import HTTPException, Request
+from starlette.requests import HTTPConnection
 import jwt
 from jwt import InvalidTokenError
 
@@ -41,13 +42,25 @@ _WRITE_PATH_ADMIN_EXEMPT_PREFIXES = (
     "/api/pit-scouting",
     "/push",
     "/api/push",
+    # Creating or joining a team workspace is how a team gets credentials at all.
+    "/workspaces",
+    "/api/workspaces",
     # Offline PWA sync: scouts in the field flush on-device match breakdowns
     # without admin keys. Scoped to the single sync route, not all of /tracks.
     "/tracks/on-device-session",
     "/api/tracks/on-device-session",
 )
+# Computations that take a JSON body but write nothing. The method alone made them
+# look like writes, which locked every non-admin out of Alliance Advisor and Compare.
+# Any write such a handler can still do (e.g. synergy auto-precompute) checks admin itself.
+_READ_ONLY_POST_PATHS = (
+    re.compile(r"^(?:/api)?/synergy/event/[^/]+/theoretical-alliance/?$"),
+)
 ADMIN_SESSION_HEADER = "X-Admin-Session"
 ROOM_ACCESS_HEADER = "X-Room-Access-Token"
+WORKSPACE_ACCESS_HEADER = "X-Workspace-Access"
+# Browsers can't set headers on a WebSocket, so the room socket also reads this.
+WORKSPACE_ACCESS_QUERY_PARAM = "workspace_access"
 ROOM_ROLE_OWNER = "owner"
 ROOM_ROLE_EDITOR = "editor"
 ROOM_ROLE_VIEWER = "viewer"
@@ -263,6 +276,53 @@ def parse_room_access_token(token: str | None) -> dict[str, Any] | None:
         return None
     return payload
 
+
+def issue_workspace_access_token(*, workspace_id: int, member_key: str, ttl_sec: int | None = None) -> dict[str, Any]:
+    # Identifies a member, nothing more: the role and whether the member was removed
+    # are read from the database on every request, so neither can go stale here.
+    now_ts = int(time.time())
+    resolved_ttl = int(ttl_sec or settings.team_workspace_access_ttl_sec or 15552000)
+    resolved_ttl = max(3600, min(resolved_ttl, 400 * 24 * 3600))
+    expires_ts = now_ts + resolved_ttl
+    payload = {
+        "typ": "workspace_access",
+        "wid": int(workspace_id),
+        "mk": str(member_key or "")[:64],
+        "iat": now_ts,
+        "exp": expires_ts,
+    }
+    return {
+        "token": _signed_payload_token(payload),
+        "expires_at_unix": expires_ts,
+        "expires_at": datetime.fromtimestamp(expires_ts, tz=timezone.utc).isoformat(),
+        "ttl_sec": resolved_ttl,
+        "header": WORKSPACE_ACCESS_HEADER,
+    }
+
+def parse_workspace_access_token(token: str | None) -> dict[str, Any] | None:
+    payload = _verify_signed_payload_token(token)
+    if not payload or str(payload.get("typ") or "") != "workspace_access":
+        return None
+    try:
+        payload["wid"] = int(payload.get("wid"))
+    except (TypeError, ValueError):
+        return None
+    if not str(payload.get("mk") or "").strip():
+        return None
+    return payload
+
+def workspace_access_token_from_request(request: HTTPConnection) -> str:
+    # Deliberately not the Authorization bearer: that one carries admin sessions.
+    value = str(request.headers.get(WORKSPACE_ACCESS_HEADER) or "").strip()
+    if value:
+        return value
+    return str(request.query_params.get(WORKSPACE_ACCESS_QUERY_PARAM) or "").strip()
+
+def room_access_payload_from_request(request: Request) -> dict[str, Any] | None:
+    return parse_room_access_token(
+        _header_or_bearer(request.headers, ROOM_ACCESS_HEADER)
+    )
+
 def room_access_allows(
     payload: dict[str, Any] | None,
     *,
@@ -299,6 +359,20 @@ def admin_api_key_authorized(candidate_key: str) -> bool:
         return True
     return False
 
+def request_has_explicit_admin_credential(request: Request) -> bool:
+    # Proof of admin: a valid signed session token, or an API key matching the
+    # configured secret. Deliberately excludes the dev/testing fail-open paths in
+    # request_has_admin_access, so a caller that must not let an unconfigured
+    # environment grant admin can demand the credential itself.
+    if request_has_admin_session(request):
+        return True
+    expected = str(settings.security.admin_api_key or "").strip()
+    if not expected:
+        return False
+    header_name = str(settings.security.admin_api_header or "X-Admin-Key").strip() or "X-Admin-Key"
+    provided = str(request.headers.get(header_name) or "").strip()
+    return bool(provided and _safe_compare_secret(provided, expected))
+
 def request_has_admin_access(request: Request) -> bool:
     if not bool(settings.security.enforce_admin_auth_for_writes):
         return True
@@ -306,16 +380,7 @@ def request_has_admin_access(request: Request) -> bool:
     if not expected:
         # Fail-closed outside dev/testing when admin key is not configured.
         return not bool(settings.is_production_like)
-
-    if request_has_admin_session(request):
-        return True
-
-    header_name = str(settings.security.admin_api_header or "X-Admin-Key").strip() or "X-Admin-Key"
-    provided = str(request.headers.get(header_name) or "").strip()
-    if provided and _safe_compare_secret(provided, expected):
-        return True
-
-    return False
+    return request_has_explicit_admin_credential(request)
 
 def on_device_sync_identity(request: Request) -> tuple[bool, str]:
     # Authorisation + a stable namespace prefix for the on-device session sync.
@@ -323,13 +388,33 @@ def on_device_sync_identity(request: Request) -> tuple[bool, str]:
     # signed room-access token authorises under a per-scout namespace so one scout
     # cannot overwrite another's synced run by guessing its client session id.
     # Returns (authorized, identity_prefix); "n" means unauthenticated.
+    #
+    # A presented room credential is resolved before the admin path because
+    # request_has_admin_access fails open in dev/testing (enforcement disabled, or
+    # no key configured). In that order a *viewer* token, which must never sync, is
+    # otherwise silently upgraded into the shared admin namespace.
+    explicit = str(request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
+    bearer = "" if explicit else _header_or_bearer(request.headers, ROOM_ACCESS_HEADER)
+    payload = parse_room_access_token(explicit or bearer)
+    # Authorization: Bearer is shared with the admin session token, so a bearer
+    # only counts as a room credential when it actually decodes as one. Treating
+    # every bearer as a room attempt would reject admins who authenticate that way.
+    if explicit or (bearer and payload is not None):
+        room_key = (
+            str(payload.get("room_key") or "").strip().lower()
+            if isinstance(payload, dict)
+            else ""
+        )
+        if room_access_allows(payload, room_key=room_key, require_write=True):
+            ident = str(payload.get("scout_profile") or payload.get("rid") or "").strip()[:48]
+            return True, f"r:{room_key}:{ident or 'anon'}"
+        # An insufficient room credential must not fall through to the dev
+        # fail-open, but genuine admin proof still outranks it.
+        if request_has_explicit_admin_credential(request):
+            return True, "a"
+        return False, "n"
     if request_has_admin_access(request):
         return True, "a"
-    token = _header_or_bearer(request.headers, ROOM_ACCESS_HEADER)
-    payload = parse_room_access_token(token)
-    if isinstance(payload, dict):
-        ident = str(payload.get("scout_profile") or payload.get("rid") or "").strip()[:48]
-        return True, f"r:{ident or 'anon'}"
     return False, "n"
 
 def require_write_access(operation: str) -> None:
@@ -367,6 +452,9 @@ def enforce_write_request_access(request: Request) -> None:
         )
 
     if any(request_path.startswith(prefix) for prefix in _WRITE_PATH_ADMIN_EXEMPT_PREFIXES):
+        return
+
+    if method == "POST" and any(pattern.match(request_path) for pattern in _READ_ONLY_POST_PATHS):
         return
 
     if request_has_admin_access(request):

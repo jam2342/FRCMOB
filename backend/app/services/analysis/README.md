@@ -6,8 +6,6 @@ This service is responsible for deep, structured evaluation of a team's match pe
 
 The core idea is that a simple point total doesn't tell the whole story. A team might score a lot but crumble under defensive pressure, or have an outstanding autonomous period but a weak endgame. This service breaks performance down into ten distinct dimensions and scores each one independently.
 
-It also handles live match monitoring, allowing analysis sessions to stream in real time during an event.
-
 ## Files
 
 **`elite_robot.py`**
@@ -26,17 +24,11 @@ The main analysis engine. The `EliteRobotAnalyzer` class accepts a team and even
 
 Each dimension is scored using percentile normalization and clamping, and confidence signals are attached based on how much data is available for that team.
 
-**`hash.py`**
-Generates deterministic hashes for analysis parameter sets. This ensures that the same input always maps to the same cached result, which is how the service avoids recomputing analysis that hasn't changed.
+**`evidence.py`**
+Decides whether a finding's evidence is strong enough to count; ratings and the quality gate call it.
 
-**`live_monitor.py`**
-Manages live-streaming analysis sessions during active matches. It opens and tracks a monitoring session so analysis can be updated in near real-time as a match plays out.
-
-**`pipeline_types.py`**
-Shared dataclasses and type definitions for the analysis pipeline — the `_QualityResult` and related structures that carry per-stage results and quality signals through the pipeline.
-
-**`pipeline_quality.py`**
-Computes pipeline health/quality signals for an analysis run — the checks behind the run-level `model_degraded` flag and the `with_signal / findings` ratio that surface whether the real FRC model ran and the pipeline produced usable findings.
+**`runs.py`**
+Run-kind constants (`official_truth`, `on_device`, and `video` for legacy broadcast rows) and the lookups that pick which run a consumer reads — including `best_on_device_run()`, the highest-quality operator-accepted phone recording of a match.
 
 ## How It Runs
 

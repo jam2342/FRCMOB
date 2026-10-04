@@ -7,18 +7,21 @@ import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
+import { SEASON } from '../config/season';
+import { readMyTeamKey } from '../features/workspace/myTeam';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = 'autopath_event_key';
-const MY_TEAM_STORAGE = 'scouting_manual_my_team_v1';
+// The shared center key, like every other page: a private one meant the event
+// picked everywhere else didn't carry over here.
+const STORAGE_KEY = 'scouting_center_event_key';
 const PATHS_STORAGE = 'autopath_saved_v1';
 
 /* field dimensions from game config (meters) */
-const FIELD_W = 16.541;
-const FIELD_H = 8.0693;
+const FIELD_W = SEASON.fieldLengthM;
+const FIELD_H = SEASON.fieldWidthM;
 
 /* The field's own chrome, resolved at draw time — canvas cannot read var().
    The zone fills and PATH_COLORS below stay literal on purpose: they are
@@ -235,14 +238,7 @@ function smoothForDisplay(keyPoints: Pt[]): Pt[] {
 
 export function AutoPathPage() {
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
-  const [teamInput, setTeamInput] = useState(() => {
-    try {
-      const saved = localStorage.getItem(MY_TEAM_STORAGE);
-      return saved ? JSON.parse(saved) : '';
-    } catch {
-      return '';
-    }
-  });
+  const [teamInput, setTeamInput] = useState(() => readMyTeamKey().replace(/^frc/, ''));
   const [matchInput, setMatchInput] = useState('');
 
   /* canvas & drawing state */
@@ -656,13 +652,17 @@ export function AutoPathPage() {
         <SurfaceCard title="Field View" expandable={false} mobileCollapsible={false}>
           <div className="autopath-toolbar">
             <button
+              type="button"
               className={`autopath-mode-btn ${drawMode === 'view' ? 'active' : ''}`}
+              aria-pressed={drawMode === 'view'}
               onClick={() => setDrawMode('view')}
             >
               View
             </button>
             <button
+              type="button"
               className={`autopath-mode-btn ${drawMode === 'draw' ? 'active' : ''}`}
+              aria-pressed={drawMode === 'draw'}
               onClick={() => setDrawMode('draw')}
             >
               Draw
@@ -718,28 +718,36 @@ export function AutoPathPage() {
                 <div
                   key={p.id}
                   className={`autopath-list-item ${selectedPathIds.has(p.id) ? 'selected' : ''}`}
-                  onClick={() => togglePathSelection(p.id)}
                 >
-                  <span className="autopath-list-swatch" style={{ background: p.color }} />
-                  <div className="autopath-list-info">
-                    <span className="autopath-list-label">{p.label}</span>
-                    <span className="autopath-list-meta">
-                      {teamNumberFromTeamKey(p.teamKey) ?? p.teamKey}
-                      {p.matchKey ? ` - ${p.matchKey}` : ''}
-                      {' - '}
-                      {p.points.length} pts
-                    </span>
-                  </div>
                   <button
+                    type="button"
+                    className="autopath-list-select"
+                    aria-pressed={selectedPathIds.has(p.id)}
+                    onClick={() => togglePathSelection(p.id)}
+                  >
+                    <span className="autopath-list-swatch" style={{ background: p.color }} />
+                    <span className="autopath-list-info">
+                      <span className="autopath-list-label">{p.label}</span>
+                      <span className="autopath-list-meta">
+                        {teamNumberFromTeamKey(p.teamKey) ?? p.teamKey}
+                        {p.matchKey ? ` - ${p.matchKey}` : ''}
+                        {' - '}
+                        {p.points.length} pts
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
                     className="autopath-list-delete"
-                    onClick={(e) => { e.stopPropagation(); deletePath(p.id); }}
+                    onClick={() => deletePath(p.id)}
+                    aria-label={`Delete ${p.label}`}
                     title="Delete path"
                   >
-                    X
+                    ×
                   </button>
                 </div>
               ))}
-              <button className="autopath-clear-btn" onClick={clearAllPaths}>
+              <button type="button" className="autopath-clear-btn" onClick={clearAllPaths}>
                 Clear All Paths
               </button>
             </div>
@@ -750,12 +758,12 @@ export function AutoPathPage() {
         {autoTrackPts.length > 0 && (
           <SurfaceCard
             title="Detected Auto Tracks"
-            subtitle={`${autoTrackPts.length} points from video analysis`}
+            subtitle={`${autoTrackPts.length} point${autoTrackPts.length === 1 ? '' : 's'} from an accepted phone recording`}
             collapsible
           >
             <p className="autopath-track-info">
-              Yellow dots on the field show actual robot positions detected during the autonomous period
-              (first 20 seconds) from video analysis. These help you understand the real path compared
+              Yellow dots show robot positions recorded on a phone during the autonomous period
+              (first 20 seconds). They help you compare the recorded route
               to your drawn paths.
             </p>
           </SurfaceCard>

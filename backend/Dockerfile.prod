@@ -2,10 +2,6 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg tesseract-ocr tesseract-ocr-eng \
-  && rm -rf /var/lib/apt/lists/*
-
 ENV PIP_PREFER_BINARY=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -13,7 +9,13 @@ ENV PIP_PREFER_BINARY=1 \
 
 COPY backend/requirements.txt /tmp/requirements.txt
 
+# torch from the CPU-only index first: the default wheels carry the CUDA runtime,
+# gigabytes this host has no GPU to use. The requirements then resolve against it.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+
 RUN python -m pip install --upgrade pip setuptools wheel \
+  && pip install --default-timeout=1200 --retries=10 --index-url "$TORCH_INDEX_URL" \
+       "$(grep -E '^torch==' /tmp/requirements.txt)" \
   && pip install --default-timeout=1200 --retries=10 -r /tmp/requirements.txt
 
 COPY backend/ /app/

@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from app.core.config import settings
 from app.api.routes_scouting import get_team_breakdown
@@ -6,6 +8,8 @@ from app.db import models
 from app.services.ml.shadow import (
     FEATURE_SCOPE_TEAM_STRENGTH,
     TEAM_STRENGTH_MODEL_KEY,
+    _match_target_map,
+    _prepare_dataset,
     auto_train_shadow_models_for_event_breakdown,
     infer_match_outcome_shadow_from_rows,
     infer_team_strength_shadow_from_rows,
@@ -13,6 +17,70 @@ from app.services.ml.shadow import (
     is_shadow_rollout_active,
 )
 from tests.conftest import DBTestCase
+
+
+class MLShadowDatasetTests(unittest.TestCase):
+    def _snapshot(self, index, split_tag, target):
+        return SimpleNamespace(
+            feature_vector={"value": float(index), "match_time_unix": float(index)},
+            target={"label": float(target)},
+            split_tag=split_tag,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+    def test_prepare_dataset_keeps_holdout_out_of_fit_and_validation(self):
+        snapshots = [self._snapshot(index, "train", index) for index in range(20)]
+        snapshots.extend(self._snapshot(100 + index, "holdout", 100 + index) for index in range(20))
+        dataset = _prepare_dataset(snapshots, feature_order=["value"], target_key="label")
+        labels = dataset.train_y.tolist() + dataset.val_y.tolist()
+        self.assertEqual((dataset.train_count, dataset.val_count), (16, 4))
+        self.assertLess(max(labels), 100.0)
+
+    def test_prepare_dataset_fails_when_only_holdout_rows_remain(self):
+        snapshots = [self._snapshot(index, "holdout", index) for index in range(20)]
+        with self.assertRaisesRegex(RuntimeError, "No training snapshot rows remain"):
+            _prepare_dataset(snapshots, feature_order=["value"], target_key="label")
+
+
+class MLShadowOutcomeTargetTests(DBTestCase):
+    def test_match_targets_use_final_scores_and_exclude_unplayed_and_ties(self):
+        assert self.db is not None
+        self.db.add(models.Event(event_key="2026test", name="Test", year=2026))
+        self.db.add(models.Team(team_key="frc1", team_number=1, nickname="One"))
+        for number, scores in ((1, (100, 110)), (2, (-1, -1)), (3, (90, 90))):
+            match_key = f"2026test_qm{number}"
+            self.db.add(models.Match(
+                match_key=match_key,
+                event_key="2026test",
+                comp_level="qm",
+                set_number=1,
+                match_number=number,
+            ))
+            self.db.flush()
+            run = models.AnalysisRun(
+                match_key=match_key,
+                version="tba_score_breakdown_v2",
+                run_kind="official_truth",
+                status="completed",
+            )
+            self.db.add(run)
+            self.db.flush()
+            self.db.add(models.TeamMatchFinding(
+                analysis_run_id=run.id,
+                match_key=match_key,
+                event_key="2026test",
+                team_key="frc1",
+                alliance="red",
+                source="tba_score_breakdown",
+                summary={"official_score_breakdown": True, "red_score": scores[0], "blue_score": scores[1]},
+            ))
+        self.db.flush()
+
+        targets = _match_target_map(self.db, {"2026test"})
+
+        self.assertEqual(set(targets), {"2026test_qm1"})
+        self.assertEqual(targets["2026test_qm1"]["red_win"], 0.0)
+        self.assertEqual(targets["2026test_qm1"]["red_margin"], -10.0)
 
 class MLShadowRolloutTests(unittest.TestCase):
     def test_rollout_disabled(self):
@@ -187,36 +255,21 @@ class MLShadowInferenceFallbackTests(DBTestCase):
                 time=1700000100,
             )
         )
-        run = models.AnalysisRun(match_key="2026txtest_qm1", version="video_v3_tracks", status="completed")
+        run = models.AnalysisRun(
+            match_key="2026txtest_qm1", version="tba_score_breakdown_v2", run_kind="official_truth", status="completed"
+        )
         self.db.add(run)
         self.db.flush()
-        finding = models.TeamMatchFinding(
-            analysis_run_id=run.id,
-            match_key="2026txtest_qm1",
-            event_key="2026txtest",
-            team_key="frc118",
-            alliance="red",
-            source="video_v3_tracks",
-            fuel_scoring_rate=9.2,
-            cycle_time_sec=18.5,
-            auto_contribution=7.0,
-            climb_success_prob=0.84,
-            defensive_engagement_sec=6.5,
-            reliability_score=0.88,
-            summary={},
-        )
-        self.db.add(finding)
-        self.db.flush()
         self.db.add(
-            models.TeamMatchThroughput(
-                finding_id=finding.id,
+            models.TeamMatchFinding(
                 analysis_run_id=run.id,
                 match_key="2026txtest_qm1",
                 event_key="2026txtest",
                 team_key="frc118",
-                active_bps=1.63,
-                metric_coverage={"coverage_score": 0.82},
-                source="video_v3_tracks",
+                alliance="red",
+                source="tba_score_breakdown",
+                fuel_scoring_rate=97.8,
+                summary={},
             )
         )
         self.db.add(
@@ -293,6 +346,44 @@ class MLShadowInferenceFallbackTests(DBTestCase):
         self.assertEqual(feature_vector.get("avg_analysis_quality_0_1"), 0.78)
         self.assertEqual(feature_vector.get("excluded_match_count"), 1.0)
         self.assertEqual(feature_vector.get("event_year"), 2026.0)
+        # Official fuel per active-hub minute becomes balls per second.
+        self.assertAlmostEqual(float((snapshot.target or {}).get("strength_active_bps") or 0.0), 97.8 / 60.0, places=4)
+
+    def test_snapshots_keep_b_team_keys_as_stored(self):
+        # TBA writes B teams as "frc4788B"; lowercasing it broke the teams foreign key
+        # and rolled back every training run.
+        self.db.add(models.Event(event_key="2026auwarp", name="Warp", year=2026))
+        self.db.add(models.Team(team_key="frc4788B", team_number=4788, nickname="B team"))
+        self.db.add(models.Match(
+            match_key="2026auwarp_qm1", event_key="2026auwarp", comp_level="qm", set_number=1, match_number=1,
+        ))
+        run = models.AnalysisRun(
+            match_key="2026auwarp_qm1", version="tba_score_breakdown_v2", run_kind="official_truth", status="completed"
+        )
+        self.db.add(run)
+        self.db.flush()
+        self.db.add(models.TeamMatchFinding(
+            analysis_run_id=run.id, match_key="2026auwarp_qm1", event_key="2026auwarp", team_key="frc4788B",
+            alliance="red", source="tba_score_breakdown", fuel_scoring_rate=30.0, summary={},
+        ))
+        self.db.add(models.EventTeamRating(
+            event_key="2026auwarp",
+            team_key="frc4788B",
+            rating_0_100=50.0,
+            confidence_0_1=0.5,
+            details_json={"role_classification": {"role_signals": {"scorer_signal": 60.0}}},
+            model_version="rating_v13_forgiving_scale",
+        ))
+        self.db.commit()
+
+        rebuild_feature_snapshots(
+            self.db, event_key="2026auwarp", limit_events=5, replace_existing=True, source_version="ut_bteam"
+        )
+        team_keys = {
+            row.team_key
+            for row in self.db.query(models.MLFeatureSnapshot).filter(models.MLFeatureSnapshot.team_key.isnot(None))
+        }
+        self.assertEqual(team_keys, {"frc4788B"})
 
     def test_team_breakdown_surfaces_ml_projection_status(self):
         original_enabled = settings.ml_shadow_enabled

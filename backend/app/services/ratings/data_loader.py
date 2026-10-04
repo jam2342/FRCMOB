@@ -12,6 +12,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.services.analysis.evidence import evidence_rejection_reason
+from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH, RUN_KIND_VIDEO
 from app.services.season_config import CURRENT_SEASON_YEAR
 from app.services.quality_gate import evaluate_summary_quality_gate, quality_gate_config_payload
 from app.services.ratings.constants import RELEVANT_MATCH_EVENT_TYPES
@@ -92,6 +94,7 @@ def load_event_rating_data(
         db.query(models.EventTeam, models.Team)
         .outerjoin(models.Team, models.Team.team_key == models.EventTeam.team_key)
         .filter(models.EventTeam.event_key == event_key)
+        .order_by(models.EventTeam.team_key.asc())
         .all()
     )
     data.team_keys = [event_team.team_key for event_team, _ in data.team_rows]
@@ -133,15 +136,25 @@ def load_event_rating_data(
     # ── Findings ──────────────────────────────────────────────────────
     data.raw_finding_rows = (
         db.query(models.TeamMatchFinding)
+        .join(
+            models.AnalysisRun,
+            models.AnalysisRun.id == models.TeamMatchFinding.analysis_run_id,
+        )
         .filter(
             models.TeamMatchFinding.event_key == event_key,
             models.TeamMatchFinding.team_key.in_(data.team_keys),
+            models.AnalysisRun.run_kind.in_(
+                (RUN_KIND_VIDEO, RUN_KIND_OFFICIAL_TRUTH)
+            ),
         )
         .all()
     )
     data.gate_config = quality_gate_config_payload()
     for finding in data.raw_finding_rows:
         data.raw_findings_count_by_team[finding.team_key] += 1
+        if evidence_rejection_reason(finding.summary):
+            data.excluded_findings_count_by_team[finding.team_key] += 1
+            continue
         if not data.gate_config["enabled"]:
             data.finding_rows.append(finding)
             continue

@@ -30,6 +30,21 @@ REBUILT_ALLIANCE_SHIFT_COUNT: int = 4
 REBUILT_ENDGAME_WINDOW_SEC: float = 30.0
 REBUILT_HUB_SCORE_GRACE_SEC: float = 3.0
 
+
+class UnsupportedSeasonRulesError(RuntimeError):
+    pass
+
+
+def require_known_season_rules(season_year: int, *, feature: str) -> None:
+    """Fail closed when future games have not received an explicit rules adapter."""
+    year = int(season_year)
+    if year > REBUILT_SEASON_YEAR:
+        raise UnsupportedSeasonRulesError(
+            f"{feature} has no rules adapter for season {year}; "
+            f"latest supported season is {REBUILT_SEASON_YEAR}"
+        )
+
+
 # Resolved once at import; concrete int so it can serve as a default arg value.
 CURRENT_SEASON_YEAR: int = _resolve_current_season_year()
 PREVIOUS_SEASON_YEAR: int = CURRENT_SEASON_YEAR - 1

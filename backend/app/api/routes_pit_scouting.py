@@ -1,7 +1,7 @@
 # API routes for pit scouting.
 #
-# One entry per (event, team) holding the schema-driven pit form answers and
-# scout-taken robot photos. Photos arrive as base64 JSON (not multipart) so
+# One entry per (workspace, event, team) holding the schema-driven pit form
+# answers and scout-taken robot photos. Each team workspace keeps its own notes. Photos arrive as base64 JSON (not multipart) so
 # they ride the same offline mutation queue as every other write.
 
 import base64
@@ -12,13 +12,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import models
 from app.db.session import get_db
+from app.services.workspaces import require_workspace_actor, require_workspace_writer
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +79,10 @@ def _serialize_entry(row: models.PitScoutingEntry) -> dict[str, Any]:
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
 
-def _load_entry(db: Session, event_key: str, team_key: str) -> models.PitScoutingEntry | None:
+def _load_entry(db: Session, workspace_id: int, event_key: str, team_key: str) -> models.PitScoutingEntry | None:
     return db.execute(
         select(models.PitScoutingEntry).where(
+            models.PitScoutingEntry.workspace_id == workspace_id,
             models.PitScoutingEntry.event_key == event_key,
             models.PitScoutingEntry.team_key == team_key,
         )
@@ -113,13 +115,18 @@ class PitPhotoDeleteRequest(BaseModel):
 
 @router.get("")
 def list_pit_entries(
+    request: Request,
     event_key: str = Query(..., max_length=48),
     db: Session = Depends(get_db),
 ):
+    actor = require_workspace_actor(request, db)
     normalized = _normalize_event_key(event_key)
     rows = db.execute(
         select(models.PitScoutingEntry)
-        .where(models.PitScoutingEntry.event_key == normalized)
+        .where(
+            models.PitScoutingEntry.workspace_id == actor.workspace_id,
+            models.PitScoutingEntry.event_key == normalized,
+        )
         .order_by(models.PitScoutingEntry.team_key.asc())
     ).scalars().all()
     return {
@@ -130,23 +137,28 @@ def list_pit_entries(
     }
 
 @router.get("/{event_key}/{team_key}")
-def get_pit_entry(event_key: str, team_key: str, db: Session = Depends(get_db)):
+def get_pit_entry(event_key: str, team_key: str, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_actor(request, db)
     normalized_event = _normalize_event_key(event_key)
     normalized_team = _normalize_team_key(team_key)
-    row = _load_entry(db, normalized_event, normalized_team)
+    row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
         return {"ok": True, "entry": None}
     return {"ok": True, "entry": _serialize_entry(row)}
 
 @router.post("")
-def upsert_pit_entry(payload: PitEntryUpsertRequest, db: Session = Depends(get_db)):
+def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
+    # There may be no pit row yet to lock. Serialize first saves and photo edits
+    # on the owning workspace so concurrent inserts cannot hit the unique index.
     normalized_event = _normalize_event_key(payload.event_key)
     normalized_team = _normalize_team_key(payload.team_key)
-    scout_profile = str(payload.scout_profile or "").strip()[:40] or None
+    scout_profile = str(payload.scout_profile or "").strip()[:40] or actor.member.display_name
 
-    row = _load_entry(db, normalized_event, normalized_team)
+    row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
         row = models.PitScoutingEntry(
+            workspace_id=actor.workspace_id,
             event_key=normalized_event,
             team_key=normalized_team,
             scout_profile=scout_profile,
@@ -163,7 +175,8 @@ def upsert_pit_entry(payload: PitEntryUpsertRequest, db: Session = Depends(get_d
     return {"ok": True, "entry": _serialize_entry(row)}
 
 @router.post("/photo")
-def upload_pit_photo(payload: PitPhotoUploadRequest, db: Session = Depends(get_db)):
+def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
     normalized_event = _normalize_event_key(payload.event_key)
     normalized_team = _normalize_team_key(payload.team_key)
 
@@ -186,12 +199,13 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, db: Session = Depends(get_d
     if extension is None:
         raise HTTPException(status_code=400, detail="Unsupported image format (JPEG/PNG/WebP only)")
 
-    row = _load_entry(db, normalized_event, normalized_team)
+    row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
         row = models.PitScoutingEntry(
+            workspace_id=actor.workspace_id,
             event_key=normalized_event,
             team_key=normalized_team,
-            scout_profile=str(payload.scout_profile or "").strip()[:40] or None,
+            scout_profile=str(payload.scout_profile or "").strip()[:40] or actor.member.display_name,
             payload={},
             photos=[],
         )
@@ -223,10 +237,13 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, db: Session = Depends(get_d
     return {"ok": True, "photo": photo_url, "entry": _serialize_entry(row)}
 
 @router.post("/photo/delete")
-def delete_pit_photo(payload: PitPhotoDeleteRequest, db: Session = Depends(get_db)):
+def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
     normalized_event = _normalize_event_key(payload.event_key)
     normalized_team = _normalize_team_key(payload.team_key)
-    row = _load_entry(db, normalized_event, normalized_team)
+    # Only photos on this workspace's own entry can be deleted, so one team can't
+    # remove files another team uploaded to the same event/team folder.
+    row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
         raise HTTPException(status_code=404, detail="Pit entry not found")
 

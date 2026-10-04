@@ -19,7 +19,7 @@ import {
   FALLBACK_SEASON_YEAR,
   fmtDateShort,
   isTransientAbortLikeError,
-  liveTimerLabel,
+  liveTimerLabel, matchStartTime,
   normalizeMatchKey,
   parseNumber,
   relativeFromTimestamp,
@@ -28,6 +28,8 @@ import {
   buildHomeFilterCounts,
   filterHomeWindowMatches,
   hasResolvedMatchScores,
+  nearestEventDayToken,
+  nearestLoadedMatchDayMs,
   pickMobileHomeAutoEventKey,
   resolveHomeMatchState,
   selectHomeDayMatches,
@@ -53,6 +55,8 @@ import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import { smartSearchEvents } from '../utils/eventSearch';
+import { LiteStreamEmbed } from '../components/LiteStreamEmbed';
+import { type EventDateRange, normalizeDateRange, resolveEventDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken, compactAllianceLabel } from './eventCalendar';
 
 const HOME_EVENT_VIEW_PREFS_STORAGE = 'scouting_home_event_view_prefs_v1';
 const HOME_MOBILE_AUTO_EVENT_GUARD_STORAGE = 'scouting_home_mobile_auto_event_guard_v1';
@@ -92,11 +96,6 @@ type RankingRow = {
   record: string;
 };
 
-type EventDateRange = {
-  startMs: number | null;
-  endMs: number | null;
-};
-
 type HomeEventViewPrefs = {
   activeFilter?: HomeFilter;
   teamsSortMode?: HomeTeamsSortMode;
@@ -108,9 +107,11 @@ type HomeMobileAutoEventGuard = {
 
 const HOME_EVENT_SUGGEST_LIMIT = 120;
 const HOME_EVENT_PRELOAD_LIMIT = 48;
-const HOME_EVENT_INITIAL_PRELOAD_LIMIT = 10;
-const HOME_EVENT_REFRESH_LIMIT = 8;
-const HOME_EVENT_LIVE_REFRESH_LIMIT = 4;
+const HOME_EVENT_INITIAL_PRELOAD_LIMIT = 6;
+// Most events running on one day; a busy Saturday has a few dozen worldwide.
+const HOME_EVENT_DAY_FETCH_LIMIT = 24;
+const HOME_EVENT_REFRESH_LIMIT = 4;
+const HOME_EVENT_LIVE_REFRESH_LIMIT = 3;
 const HOME_SCHEDULE_FETCH_BATCH = 8;
 const HOME_MIN_SUGGESTED_EVENT_TARGET = 24;
 const HOME_TRENDING_TEAM_COUNT_FETCH_LIMIT = 12;
@@ -225,26 +226,11 @@ function stateTextLabel(state: ReturnType<typeof liveTimerLabel>['state']): stri
   return 'Pending';
 }
 
-function compactAllianceLabel(teams: EventScheduleItem['red']): string {
-  if (!Array.isArray(teams) || teams.length === 0) return 'TBD';
-  const labels = teams.map((team) => `#${team.team_number}`);
-  if (labels.length <= 2) return labels.join(' · ');
-  return `${labels.slice(0, 2).join(' · ')} +${labels.length - 2}`;
-}
-
 function homeFilterLabel(filter: HomeFilter): string {
   if (filter === 'all') return 'All';
   if (filter === 'live') return 'Live';
   if (filter === 'upcoming') return 'Upcoming';
   return 'Final';
-}
-
-function parseEventDateValue(value: string | null | undefined): number | null {
-  if (!value || typeof value !== 'string') return null;
-  const token = value.trim().slice(0, 10);
-  if (!token) return null;
-  const ms = Date.parse(`${token}T00:00:00Z`);
-  return Number.isFinite(ms) ? ms : null;
 }
 
 function parseEventDateToken(value: string | null | undefined): string | null {
@@ -269,25 +255,6 @@ function eventRunsOnDateToken(event: EventSearchItem | undefined, targetToken: s
   return targetToken >= low && targetToken <= high;
 }
 
-function parseEventYearValue(value: unknown): number | null {
-  const normalized = typeof value === 'number' ? value : Number(String(value || '').trim());
-  if (!Number.isFinite(normalized)) return null;
-  const year = Math.trunc(normalized);
-  if (year < 1992 || year > 2100) return null;
-  return year;
-}
-
-function yearFromEventKey(eventKey: string): number | null {
-  const match = /^(\d{4})/.exec((eventKey || '').trim().toLowerCase());
-  if (!match) return null;
-  return parseEventYearValue(match[1]);
-}
-
-function monthTokenFromMs(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
 function monthTokensForRange(startMs: number | null, endMs: number | null): string[] {
   const firstMs = startMs ?? endMs;
   const lastMs = endMs ?? startMs;
@@ -302,55 +269,11 @@ function monthTokensForRange(startMs: number | null, endMs: number | null): stri
   return tokens;
 }
 
-function normalizeDateRange(range: EventDateRange): EventDateRange {
-  if (range.startMs && range.endMs && range.endMs < range.startMs) {
-    return { startMs: range.endMs, endMs: range.startMs };
-  }
-  return range;
-}
-
-function resolveEventDateRange(event: EventSearchItem, fallback?: EventDateRange): EventDateRange {
-  const startMs = parseEventDateValue(event.start_date ?? null) ?? fallback?.startMs ?? null;
-  const endMs = parseEventDateValue(event.end_date ?? null) ?? fallback?.endMs ?? startMs;
-  return normalizeDateRange({ startMs, endMs });
-}
-
-function resolveCalendarYear(event: EventSearchItem, fallback?: EventDateRange): number | null {
-  const explicit = parseEventYearValue(event.year);
-  if (explicit !== null) return explicit;
-  const resolved = resolveEventDateRange(event, fallback);
-  const ms = resolved.startMs ?? resolved.endMs;
-  if (ms) return new Date(ms).getUTCFullYear();
-  return yearFromEventKey(event.event_key || '');
-}
-
-function matchesCalendarDisplayYear(
-  event: EventSearchItem,
-  displayYear: number,
-  fallback?: EventDateRange,
-): boolean {
-  const keyYear = yearFromEventKey(event.event_key || '');
-  if (keyYear !== null && keyYear !== displayYear) return false;
-  return resolveCalendarYear(event, fallback) === displayYear;
-}
-
 function formatMonthLabel(token: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(token);
   if (!match) return token;
   const d = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
   return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
-}
-
-function shiftMonthToken(monthToken: string, delta: number): string {
-  const token = (monthToken || '').trim();
-  const match = /^(\d{4})-(\d{2})$/.exec(token);
-  const base = match
-    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1))
-    : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  base.setUTCMonth(base.getUTCMonth() + delta);
-  const year = base.getUTCFullYear();
-  const month = String(base.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
 }
 
 function startOfLocalDay(ms: number): number {
@@ -414,7 +337,10 @@ export function HomePage() {
   const [selectedEventStream, setSelectedEventStream] = useState<EventLiveStreamResponse | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<HomeFilter>('all');
-  const [loadingHome, setLoadingHome] = useState(false);
+  // Starts true: the first paint happens before the load effect runs, and
+  // false here showed "No matches scheduled" for a frame on every open.
+  const [loadingHome, setLoadingHome] = useState(true);
+  const [homeReloadToken, setHomeReloadToken] = useState(0);
   const [loadingSelectedContext, setLoadingSelectedContext] = useState(false);
   const [, setStatusText] = useState('Loading Home feed...');
   const [errorText, setErrorText] = useState('');
@@ -621,14 +547,18 @@ export function HomePage() {
           .filter((event) => eventRunsOnDateToken(event, todayToken))
           .map((event) => normalizeEventKey(event.event_key));
 
-        const preloadKeys = [preferredEventKey, ...todayPriorityKeys, ...normalizedEventKeys]
+        // Only what the page shows: the selected event and today's events. Home
+        // used to pull full schedules for 48 events on every open; other days
+        // are fetched when the user moves to them (see the day effect below).
+        const preloadKeys = [
+          preferredEventKey,
+          ...todayPriorityKeys,
+          ...(todayPriorityKeys.length === 0 ? normalizedEventKeys : []),
+        ]
           .filter((key, idx, array) => Boolean(key) && array.indexOf(key) === idx)
-          .slice(0, HOME_EVENT_PRELOAD_LIMIT);
+          .slice(0, HOME_EVENT_DAY_FETCH_LIMIT);
 
-        const initialPreloadKeys = preloadKeys.slice(
-          0,
-          Math.max(HOME_SCHEDULE_FETCH_BATCH, HOME_EVENT_INITIAL_PRELOAD_LIMIT),
-        );
+        const initialPreloadKeys = preloadKeys.slice(0, HOME_EVENT_INITIAL_PRELOAD_LIMIT);
         const backgroundPreloadKeys = preloadKeys.slice(initialPreloadKeys.length);
 
         async function fetchSchedulesInBatches(
@@ -717,7 +647,7 @@ export function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [homeReloadToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -840,6 +770,46 @@ export function HomePage() {
     return lookup;
   }, [suggestedEvents]);
 
+  // Moving to another day loads just that day's events, once.
+  const dayFetchRequestedRef = useRef<Set<string>>(new Set());
+  const homeMountedRef = useRef(true);
+  useEffect(() => {
+    homeMountedRef.current = true;
+    return () => {
+      homeMountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (suggestedEvents.length === 0) return;
+    const dayToken = localDateTokenFromMs(selectedDayMs);
+    const missing = suggestedEvents
+      .filter((event) => eventRunsOnDateToken(event, dayToken))
+      .map((event) => normalizeEventKey(event.event_key))
+      .filter((key) => key && !scheduleByEvent[key] && !dayFetchRequestedRef.current.has(key))
+      .slice(0, HOME_EVENT_DAY_FETCH_LIMIT);
+    if (missing.length === 0) return;
+    missing.forEach((key) => dayFetchRequestedRef.current.add(key));
+    // Not cancelled when schedules arrive (that re-runs this effect); only on unmount.
+    void (async () => {
+      for (let offset = 0; offset < missing.length; offset += HOME_SCHEDULE_FETCH_BATCH) {
+        const chunk = missing.slice(offset, offset + HOME_SCHEDULE_FETCH_BATCH);
+        const results = await Promise.allSettled(chunk.map((key) => getEventSchedule(key, false)));
+        if (!homeMountedRef.current) return;
+        setScheduleByEvent((previous) => {
+          const next = { ...previous };
+          results.forEach((result, idx) => {
+            // A failed fetch still settles the event, so the day stops reading "loading".
+            next[chunk[idx]] =
+              result.status === 'fulfilled'
+                ? { event_name: result.value.event_name || null, matches: result.value.matches || [] }
+                : previous[chunk[idx]] || { event_name: null, matches: [] };
+          });
+          return next;
+        });
+      }
+    })();
+  }, [scheduleByEvent, selectedDayMs, suggestedEvents]);
+
   const feedEventKeys = useMemo(() => {
     const suggestedKeys = suggestedEvents.map((event) => normalizeEventKey(event.event_key));
     const prioritized = [selectedEventKey, ...suggestedKeys]
@@ -896,8 +866,16 @@ export function HomePage() {
   const refreshSchedules = useCallback(async (reason: SingleFlightPollReason): Promise<boolean> => {
     if (scheduleRefreshKeys.length === 0) return true;
     const shouldBypassLiveCache = reason === 'poll' && hasLiveMatchesInRefreshWindow;
+    // The 5 s live poll only re-reads events that are actually live (plus the
+    // selected one), not every event on the page.
     const refreshTargetKeys = shouldBypassLiveCache
-      ? scheduleRefreshKeys.slice(0, HOME_EVENT_LIVE_REFRESH_LIMIT)
+      ? scheduleRefreshKeys
+          .filter(
+            (eventKey) =>
+              eventKey === selectedEventKey ||
+              (scheduleByEvent[eventKey]?.matches || []).some((match) => resolveHomeMatchState(match, Date.now()) === 'live'),
+          )
+          .slice(0, HOME_EVENT_LIVE_REFRESH_LIMIT)
       : scheduleRefreshKeys;
     if (refreshTargetKeys.length === 0) return true;
     const requestOptions = shouldBypassLiveCache
@@ -920,7 +898,7 @@ export function HomePage() {
     });
     setLastUpdatedAt(Date.now());
     return true;
-  }, [hasLiveMatchesInRefreshWindow, scheduleRefreshKeys]);
+  }, [hasLiveMatchesInRefreshWindow, scheduleByEvent, scheduleRefreshKeys, selectedEventKey]);
 
   useSingleFlightPolling({
     enabled: scheduleRefreshKeys.length > 0,
@@ -1244,6 +1222,39 @@ export function HomePage() {
     () => homeDayHeading(selectedDayMs, nowMs),
     [nowMs, selectedDayMs],
   );
+  // Schedules for the selected day arrive a few seconds after the page. Until they
+  // do, "No matches scheduled" was a false statement, not an empty state.
+  const selectedDaySchedulesPending = useMemo(() => {
+    if (loadingHome) return true;
+    const dayToken = localDateTokenFromMs(selectedDayMs);
+    return suggestedEvents
+      .filter((event) => eventRunsOnDateToken(event, dayToken))
+      .slice(0, HOME_EVENT_DAY_FETCH_LIMIT)
+      .some((event) => !scheduleByEvent[normalizeEventKey(event.event_key)]);
+  }, [loadingHome, scheduleByEvent, selectedDayMs, suggestedEvents]);
+
+  const showTodayEventsCard = loadingHome || liveEvents.length > 0 || Boolean(errorText);
+
+  const nearestEventDay = useMemo((): { ms: number; hasMatches: boolean } | null => {
+    const emptyEventKeys = new Set(
+      Object.entries(scheduleByEvent)
+        .filter(([, schedule]) => (schedule?.matches || []).length === 0)
+        .map(([key]) => key),
+    );
+    const loadedMatchDay = nearestLoadedMatchDayMs(
+      Object.values(scheduleByEvent).flatMap((schedule) => schedule?.matches || []),
+      selectedDayMs,
+    );
+    if (loadedMatchDay !== null) return { ms: loadedMatchDay, hasMatches: true };
+    const token = nearestEventDayToken(
+      mergeEventLists(calendarSeasonEvents, suggestedEvents),
+      localDateTokenFromMs(selectedDayMs),
+      emptyEventKeys,
+    );
+    const tokenMs = token ? fromDateTokenToLocalDayMs(token) : null;
+    return tokenMs !== null ? { ms: tokenMs, hasMatches: false } : null;
+  }, [calendarSeasonEvents, scheduleByEvent, selectedDayMs, suggestedEvents]);
+
   const selectedDayDateLabel = useMemo(
     () => new Date(selectedDayMs).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }),
     [selectedDayMs],
@@ -1325,7 +1336,7 @@ export function HomePage() {
 
   const nextHomeMatchHero = useMemo(() => {
     if (!nextLiveHomeMatch) return null;
-    const timer = liveTimerLabel(nextLiveHomeMatch.match.scheduled_time ?? null, nowMs);
+    const timer = liveTimerLabel(matchStartTime(nextLiveHomeMatch.match), nowMs);
     // 'unknown' means no published start time and 'ended' means it is over.
     // Neither has a countdown, so neither gets the display step — a hero
     // reading "Pending publish" would be a label pretending to be a value.
@@ -1682,8 +1693,8 @@ export function HomePage() {
       return `No ${homeFilterLabel(activeFilter).toLowerCase()} matches in view.`;
     }
     const nextMatch = section.matches[0];
-    const timer = liveTimerLabel(nextMatch.scheduled_time, nowMs);
-    return `${section.matches.length}/${section.total_filtered_matches} matches · ${nextMatch.display_name} ${timer.value}`;
+    const timer = liveTimerLabel(matchStartTime(nextMatch), nowMs);
+    return `${section.matches.length}/${section.total_filtered_matches} match${section.total_filtered_matches === 1 ? '' : 'es'} · ${nextMatch.display_name} ${timer.value}`;
   }
 
   const allEventsCollapsed = isCardCollapsed('all-events');
@@ -1751,7 +1762,10 @@ export function HomePage() {
 
   return (
     <div className="home-fotmob-layout">
-      {!isMobileLayout && (
+      {/* Today's Events shows only while it has something to say. On a day
+          with no events it repeated the feed's own empty state and held a
+          300px column open. */}
+      {!isMobileLayout && showTodayEventsCard && (
       <aside className="home-fotmob-left">
         <section className={`home-fotmob-card ${allEventsCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
@@ -1796,7 +1810,7 @@ export function HomePage() {
                         </span>
                         <span className="home-event-item-tag">
                           {item.status_label}
-                          {item.match_count > 0 ? ` · ${item.match_count} matches` : ''}
+                          {item.match_count > 0 ? ` · ${item.match_count} match${item.match_count === 1 ? '' : 'es'}` : ''}
                         </span>
                       </div>
                     </button>
@@ -2028,7 +2042,7 @@ export function HomePage() {
         {!isMobileLayout ? (
           <section className="home-fotmob-meta-row">
             <span title="Currently selected event">{selectedEventDisplay}</span>
-            <span title="Active filter">{homeFilterLabel(activeFilter)} · {filterCounts[activeFilter]} matches</span>
+            <span title="Active filter">{homeFilterLabel(activeFilter)} · {filterCounts[activeFilter]} match{filterCounts[activeFilter] === 1 ? '' : 'es'}</span>
             <span title="Last data refresh">{relativeFromTimestamp(lastUpdatedAt)}</span>
           </section>
         ) : null}
@@ -2141,9 +2155,32 @@ export function HomePage() {
         ) : null}
 
         {errorText ? (
-          <EmptyState type="offline" title="Sync connection failed" description={errorText} />
+          <EmptyState
+            type="offline"
+            title="Couldn't load matches"
+            description="Check your connection and try again."
+            action={(
+              <button type="button" className="center-btn" onClick={() => setHomeReloadToken((n) => n + 1)}>
+                Try again
+              </button>
+            )}
+          />
+        ) : !hasAnySelectedDayMatches && selectedDaySchedulesPending ? (
+          <EmptyState title="Loading matches" description={`Getting ${selectedDayDateLabel}'s schedules…`} />
         ) : !hasAnySelectedDayMatches ? (
-          <EmptyState title="No matches scheduled" description={`No matches scheduled for ${selectedDayDateLabel} in the loaded event set.`} />
+          <EmptyState
+            title="No matches on this day"
+            description={
+              nearestEventDay !== null
+                ? `Nothing is scheduled for ${selectedDayDateLabel}. The closest ${nearestEventDay.hasMatches ? 'day with matches' : 'event day'} is ${new Date(nearestEventDay.ms).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}.`
+                : `Nothing is scheduled for ${selectedDayDateLabel}.`
+            }
+            action={nearestEventDay !== null ? (
+              <button type="button" className="center-btn" onClick={() => setSelectedDayMs(nearestEventDay.ms)}>
+                Go to {homeDayHeading(nearestEventDay.ms, nowMs)}
+              </button>
+            ) : undefined}
+          />
         ) : null}
         {hasAnySelectedDayMatches && filterCounts[activeFilter] === 0 ? (
           <p className="center-callout muted">
@@ -2195,7 +2232,7 @@ export function HomePage() {
                     ) : (
                       <div id={cardContentId(feedCardKey)} className="home-match-list">
                         {section.matches.map((match) => {
-                          const timer = liveTimerLabel(match.scheduled_time, nowMs);
+                          const timer = liveTimerLabel(matchStartTime(match), nowMs);
                           const winner = match.winner_alliance || null;
                           const hasScores = hasResolvedMatchScores(match);
                           const effectiveState = resolveHomeMatchState(match, nowMs);
@@ -2279,7 +2316,7 @@ export function HomePage() {
                                         <div className="fm-match-header-row">
                                           <div className="home-match-center-col">
                                             <strong>{match.display_name}</strong>
-                                            <small>{fmtDateShort(match.scheduled_time)}</small>
+                                            <small>{fmtDateShort(matchStartTime(match))}</small>
                                           </div>
                                           <div className="fm-match-status-right">
                                             <span className={`home-match-state ${effectiveState}`}>{stateLabel(effectiveState)}</span>
@@ -2310,7 +2347,7 @@ export function HomePage() {
                                     <span className={`home-match-state ${effectiveState}`}>{stateLabel(effectiveState)}</span>
                                     <div className="home-match-center-col">
                                       <strong>{match.display_name}</strong>
-                                      <small>{fmtDateShort(match.scheduled_time)}</small>
+                                      <small>{fmtDateShort(matchStartTime(match))}</small>
                                     </div>
                                     <div className="home-match-alliances">
                                       <div className={`home-alliance-line red-line ${winner === 'red' ? 'winner' : ''}`.trim()}>
@@ -2392,7 +2429,7 @@ export function HomePage() {
 
                     {!isMobileLayout ? (
                       <footer className="home-event-section-foot">
-                        {section.matches.length} of {section.total_filtered_matches} matches shown
+                        {section.matches.length} of {section.total_filtered_matches} match{section.total_filtered_matches === 1 ? '' : 'es'} shown
                       </footer>
                     ) : null}
                   </>
@@ -2474,13 +2511,7 @@ export function HomePage() {
               ) : null}
               {selectedStreamEmbedUrl ? (
                 <div className="home-fotmob-embed-wrap">
-                  <iframe
-                    title={`Live stream for ${selectedEventKey}`}
-                    src={selectedStreamEmbedUrl}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    allowFullScreen
-                  />
+                  <LiteStreamEmbed key={selectedStreamEmbedUrl} title={`Live stream for ${selectedEventKey}`} src={selectedStreamEmbedUrl} />
                 </div>
               ) : null}
             </div>
@@ -2763,7 +2794,7 @@ export function HomePage() {
               <div className="home-calendar-modal-title">
                 <CalendarIcon className="icon-inline" />
                 <h2>{formatMonthLabel(calendarMonth)}</h2>
-                <small>{calendarEventRows.filter((row) => monthTokensForRange(row.startMs, row.endMs).includes(calendarMonth)).length} events</small>
+                <small>{calendarEventRows.filter((row) => monthTokensForRange(row.startMs, row.endMs).includes(calendarMonth)).length} event{calendarEventRows.filter((row) => monthTokensForRange(row.startMs, row.endMs).includes(calendarMonth)).length === 1 ? '' : 's'}</small>
               </div>
               <div className="home-calendar-modal-nav">
                 <button

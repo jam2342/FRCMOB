@@ -1,4 +1,45 @@
 services:
+  # Postgres and Redis live on the VM, next to the app: the managed ones were in
+  # us-east-1, ~58 ms (Postgres) and ~81 ms (Redis) per round trip from Phoenix,
+  # which made every query-heavy page slow. Neither is published outside the
+  # compose network. Neon stays the off-site copy (docker/backup_database.sh).
+  postgres:
+    image: postgres:17
+    container_name: scouting-postgres
+    environment:
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-frcmob}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-frcmob}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD is required}
+    # Sized for the A1 (4 OCPU / 24 GB); the whole database is a few hundred MB at most.
+    command: >-
+      postgres -c shared_buffers=2GB -c effective_cache_size=8GB -c work_mem=16MB
+      -c maintenance_work_mem=256MB -c max_connections=200 -c random_page_cost=1.1
+      -c idle_in_transaction_session_timeout=600000
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    shm_size: 512mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Caches, room presence, the scouting-room bus and scheduler locks. Append-only
+  # and noeviction so locks and automation bookkeeping survive a restart intact.
+  redis:
+    image: redis:7-alpine
+    container_name: scouting-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "2gb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ..
@@ -14,8 +55,19 @@ services:
       ENFORCE_ADMIN_AUTH_FOR_WRITES: ${ENFORCE_ADMIN_AUTH_FOR_WRITES:-true}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?CORS_ALLOW_ORIGINS is required}
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      # Per process; 2 web workers stay well under max_connections=200.
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Loopback only: the public way in is Caddy on 443 (the tls service), which
+    # reaches the backend over the compose network. This keeps `curl localhost:8000`
+    # working over SSH without exposing plain HTTP.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     restart: unless-stopped
     volumes:
       - backend_media:/app/media
@@ -25,24 +77,25 @@ services:
       timeout: 5s
       retries: 10
 
-  worker:
-    build:
-      context: ..
-      dockerfile: worker/Dockerfile.prod
-    container_name: scouting-worker
-    env_file:
-      - ../.env
+  # Off until port 443 is open in the VM's OCI security list: `--profile tls`.
+  tls:
+    image: caddy:2.10-alpine
+    container_name: scouting-tls
+    profiles: ["tls"]
     environment:
-      CLOUD_PROVIDER: ${CLOUD_PROVIDER:-oci}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
-      PYTHONPATH: /app
+      BACKEND_TLS_HOST: ${BACKEND_TLS_HOST:-141-148-171-128.sslip.io}
+    ports:
+      - "443:443"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - backend_media:/app/media
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
 
 volumes:
   backend_media:
+  caddy_data:
+  postgres_data:
+  redis_data:

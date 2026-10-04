@@ -1,20 +1,21 @@
 # API routes for human scouting coverage, quality, and leaderboard insights.
 #
-# Everything here is computed from scouting room entries + the event match
-# schedule — no CV pipeline involvement. Read-only.
+# Everything here is computed from the caller's workspace's scouting room
+# entries + the event match schedule — no CV pipeline involvement. Read-only.
 
 import logging
 import statistics
 from collections import defaultdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.routes_scouting_rooms import _serialize_entry
 from app.db import models
 from app.db.session import get_db
+from app.services.workspaces import require_workspace_actor
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,17 @@ def _match_label(match: models.Match) -> str:
         return f"F{match.match_number}"
     return f"{comp.upper()}{match.set_number}-{match.match_number}"
 
+def _workspace_entries_query(workspace_id: int, event_key: str):
+    # Entries are private to the workspace that owns the room they were saved in.
+    return (
+        select(models.ScoutingRoomEntry)
+        .join(models.ScoutingRoom, models.ScoutingRoom.room_key == models.ScoutingRoomEntry.room_key)
+        .where(
+            models.ScoutingRoom.workspace_id == workspace_id,
+            models.ScoutingRoomEntry.event_key == event_key,
+        )
+    )
+
 def _entry_total_scored(payload: dict[str, Any]) -> float | None:
     form = payload.get("form")
     if not isinstance(form, dict):
@@ -54,15 +66,16 @@ def _entry_total_scored(payload: dict[str, Any]) -> float | None:
 
 @router.get("/entries-export")
 def export_event_entries(
+    request: Request,
     event_key: str = Query(..., max_length=48),
     limit: int = Query(default=5000, ge=1, le=20000),
     db: Session = Depends(get_db),
 ):
-    # All scouting entries for an event across every room, newest first.
+    # All of this workspace's scouting entries for an event, every room, newest first.
+    actor = require_workspace_actor(request, db)
     normalized = str(event_key or "").strip().lower()
     rows = db.execute(
-        select(models.ScoutingRoomEntry)
-        .where(models.ScoutingRoomEntry.event_key == normalized)
+        _workspace_entries_query(actor.workspace_id, normalized)
         .order_by(models.ScoutingRoomEntry.created_at.desc())
         .limit(limit)
     ).scalars().all()
@@ -75,9 +88,11 @@ def export_event_entries(
 
 @router.get("/coverage")
 def get_event_coverage(
+    request: Request,
     event_key: str = Query(..., max_length=48),
     db: Session = Depends(get_db),
 ):
+    actor = require_workspace_actor(request, db)
     normalized = str(event_key or "").strip().lower()
 
     matches = db.execute(
@@ -92,11 +107,7 @@ def get_event_coverage(
     for row in match_team_rows:
         slots_by_match[row.match_key].append(row)
 
-    entries = db.execute(
-        select(models.ScoutingRoomEntry).where(
-            models.ScoutingRoomEntry.event_key == normalized
-        )
-    ).scalars().all()
+    entries = db.execute(_workspace_entries_query(actor.workspace_id, normalized)).scalars().all()
 
     # (match_key, team_key) -> entry rows
     entries_by_slot: dict[tuple[str, str], list[models.ScoutingRoomEntry]] = defaultdict(list)

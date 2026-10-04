@@ -145,9 +145,32 @@ class RatingDepthHelperTests(unittest.TestCase):
             video_findings_count=0,
             use_fallback_model=True,
         )
-        self.assertLessEqual(guarded, 80.0)
+        self.assertLessEqual(guarded, 83.0)
         self.assertTrue(details["applied"])
         self.assertEqual(details["video_findings_count"], 0)
+
+    def test_sparse_rating_guard_leaves_well_observed_teams_alone_without_video(self):
+        # Official breakdowns are real evidence; no video must not flatten a field.
+        for raw in (96.0, 12.0):
+            guarded, details = _apply_sparse_rating_guard(
+                raw_final_rating=raw,
+                confidence=0.86,
+                matches_observed=15,
+                video_findings_count=0,
+                use_fallback_model=True,
+            )
+            self.assertEqual(guarded, raw)
+            self.assertFalse(details["applied"])
+
+    def test_sparse_rating_guard_caps_teams_with_no_matches(self):
+        guarded, _details = _apply_sparse_rating_guard(
+            raw_final_rating=96.0,
+            confidence=0.9,
+            matches_observed=0,
+            video_findings_count=0,
+            use_fallback_model=True,
+        )
+        self.assertLessEqual(guarded, 80.0)
 
 
 @unittest.skipIf(_IMPORT_ERROR is not None, f"optional synergy deps unavailable: {_IMPORT_ERROR}")

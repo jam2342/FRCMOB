@@ -21,16 +21,18 @@ import {
 } from '../components/ui/primitives';
 import styles from './FavoritesPage.module.css';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
+import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
+import { resolveTab } from './tabUtils';
 import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
 import {
   asRecord,
   buildMatchCenterPath,
   CURRENT_SEASON_YEAR,
   fmtDateShort,
-  liveTimerLabel,
+  liveTimerLabel, matchStartTime,
   metric,
   metricUnit,
   normalizeTeamKeyInput,
@@ -107,9 +109,7 @@ function normalizeEventKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function isFavoritesTab(value: string | null): value is FavoritesTab {
-  return value === 'overview' || value === 'events' || value === 'teams';
-}
+const FAVORITES_TABS = ['overview', 'events', 'teams'] as const;
 
 function eventDisplayName(card: FavoriteEventCard): string {
   return card.event_name && card.event_name !== card.event_key ? card.event_name : card.event_key.toUpperCase();
@@ -123,7 +123,7 @@ export function FavoritesPage() {
   const nowMs = usePageClock(pageVisible);
   const liveRefreshSec = useLiveRefreshSetting();
   const tabParam = searchParams.get('tab');
-  const defaultTab: FavoritesTab = isFavoritesTab(tabParam) ? tabParam : 'overview';
+  const defaultTab = resolveTab(tabParam, FAVORITES_TABS, 'overview');
 
   const [activeTab, setActiveTab] = useState<FavoritesTab>(defaultTab);
   const [favoriteEvents, setFavoriteEvents] = useState<string[]>(() => readFavoriteEvents());
@@ -152,19 +152,25 @@ export function FavoritesPage() {
     if (!isMobileLayout) setMobileFinderOpen(false);
   }, [isMobileLayout]);
 
-  // Sync activeTab → searchParams (one-way: activeTab is source of truth).
-  // Reading searchParams happens only on mount via the defaultTab initial state.
+  const urlSync = useExternalSearchSync(searchParams, (params) => {
+    const urlTab = params.get('tab');
+    setActiveTab(resolveTab(urlTab, FAVORITES_TABS, 'overview'));
+  });
+
   useEffect(() => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      if (activeTab === 'overview') {
-        next.delete('tab');
-      } else {
-        next.set('tab', activeTab);
-      }
-      return next.toString() === current.toString() ? current : next;
-    }, { replace: true });
-  }, [activeTab, setSearchParams]);
+    if (!urlSync.shouldWrite()) return;
+    const next = new URLSearchParams(searchParams);
+    if (activeTab === 'overview') {
+      next.delete('tab');
+    } else {
+      next.set('tab', activeTab);
+    }
+    // Returning the current params from a router updater still navigates. Avoid
+    // calling it at all when the URL is unchanged, including during route exits.
+    if (next.toString() === searchParams.toString()) return;
+    urlSync.markWritten(next.toString());
+    setSearchParams(next, { replace: true });
+  }, [activeTab, searchParams, setSearchParams, urlSync]);
 
   useEffect(() => {
     setVisibleEventCardCount(20);
@@ -261,7 +267,7 @@ export function FavoritesPage() {
         let completedCount = 0;
 
         for (const match of scheduleMatches) {
-          const timer = liveTimerLabel(match.scheduled_time, Date.now());
+          const timer = liveTimerLabel(matchStartTime(match), Date.now());
           if (timer.state === 'live') liveMatches.push(match);
           if (timer.state === 'upcoming') upcomingMatches.push(match);
           if (timer.state === 'ended' || match.is_completed) completedCount += 1;
@@ -620,7 +626,7 @@ export function FavoritesPage() {
   const renderEventCards = (
     <div className="favorites-card-grid">
       {orderedEventCards.length === 0 ? (
-        <CardEmpty title="No favorite events yet">Add an event key on the left to start tracking it.</CardEmpty>
+        <CardEmpty title="No favorite events yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
       ) : null}
       {visibleEventCards.map((card) => {
         const nextMatch = card.upcoming_matches[0] || null;
@@ -631,15 +637,15 @@ export function FavoritesPage() {
               <small>{card.event_key}</small>
             </header>
             <div className={styles.chipRow}>
-              <Chip>{card.schedule_count} matches</Chip>
-              <Chip>{card.teams_count} teams</Chip>
+              <Chip>{card.schedule_count} match{card.schedule_count === 1 ? '' : 'es'}</Chip>
+              <Chip>{card.teams_count} team{card.teams_count === 1 ? '' : 's'}</Chip>
               <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
             </div>
 
             {card.live_matches.length > 0 ? (
               <div className="center-stack-gap">
                 {card.live_matches.slice(0, 2).map((match) => {
-                  const timer = liveTimerLabel(match.scheduled_time, nowMs);
+                  const timer = liveTimerLabel(matchStartTime(match), nowMs);
                   return (
                     <button
                       key={`favorite-live-${card.event_key}-${match.match_key}`}
@@ -657,7 +663,7 @@ export function FavoritesPage() {
               </div>
             ) : nextMatch ? (
               <p className={styles.note}>
-                Next match: {nextMatch.display_name || nextMatch.match_key} · {fmtDateShort(nextMatch.scheduled_time)}
+                Next match: {nextMatch.display_name || nextMatch.match_key} · {fmtDateShort(matchStartTime(nextMatch))}
               </p>
             ) : (
               <p className={styles.note}>No schedule rows.</p>
@@ -697,7 +703,7 @@ export function FavoritesPage() {
   const renderTeamCards = (
     <div className="favorites-card-grid">
       {orderedTeamCards.length === 0 ? (
-        <CardEmpty title="No favorite teams yet">Add a team number on the left to start tracking it.</CardEmpty>
+        <CardEmpty title="No favorite teams yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
       ) : null}
       {visibleTeamCards.map((card) => (
         <article key={`favorite-team-card-${card.team_key}`} className="favorites-item-card team">
@@ -734,8 +740,8 @@ export function FavoritesPage() {
             </CardGrid>
 
             <div className={styles.chipRow}>
-              <Chip>{card.matches_analyzed} analyzed</Chip>
-              <Chip>{card.events_count} events</Chip>
+              <Chip>{card.matches_analyzed} scouted</Chip>
+              <Chip>{card.events_count} event{card.events_count === 1 ? '' : 's'}</Chip>
               <Chip>Driver {metric(card.rating_driver_skill_0_100, 1)}</Chip>
               <Chip>{card.tba_record}</Chip>
               <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
@@ -782,8 +788,8 @@ export function FavoritesPage() {
           value={mobileFinderOpen ? 'controls' : 'favorites'}
           onChange={(next) => setMobileFinderOpen(next === 'controls')}
           items={[
-            { value: 'controls', label: 'Favorites Controls' },
-            { value: 'favorites', label: 'Favorites View' },
+            { value: 'controls', label: 'Favorite Manager' },
+            { value: 'favorites', label: 'Favorites' },
           ]}
         />
       ) : null}
@@ -851,7 +857,7 @@ export function FavoritesPage() {
             </div>
 
             <div className={styles.chipRow}>
-              <Chip>{relativeFromTimestamp(lastUpdatedAt)}</Chip>
+              <Chip>Updated {relativeFromTimestamp(lastUpdatedAt)}</Chip>
             </div>
 
             {errorText ? (
@@ -876,7 +882,7 @@ export function FavoritesPage() {
           {liveFavoriteMatches.length > 0 ? (
             <div className="center-list-scroll" role="list" aria-label="Live favorite matches">
               {liveFavoriteMatches.slice(0, 8).map((row) => {
-                const timer = liveTimerLabel(row.match.scheduled_time, nowMs);
+                const timer = liveTimerLabel(matchStartTime(row.match), nowMs);
                 return (
                   <button
                     type="button"
@@ -908,7 +914,7 @@ export function FavoritesPage() {
               ariaLabel="Favorites tabs"
               value={activeTab}
               onChange={setActiveTab}
-              items={(['overview', 'events', 'teams'] as const).map((tab) => ({
+              items={FAVORITES_TABS.map((tab) => ({
                 value: tab,
                 label: titleizeKey(tab),
               }))}
@@ -926,7 +932,7 @@ export function FavoritesPage() {
             {activeTab !== 'teams' ? (
               <SurfaceCard
                 title="Favorite Events"
-                right={<Chip>{loadingEvents ? 'Loading...' : `${orderedEventCards.length} events`}</Chip>}
+                right={<Chip>{loadingEvents ? 'Loading...' : `${orderedEventCards.length} event${orderedEventCards.length === 1 ? '' : 's'}`}</Chip>}
                 compactable
               >
                 {renderEventCards}
@@ -935,7 +941,7 @@ export function FavoritesPage() {
             {activeTab !== 'events' ? (
               <SurfaceCard
                 title="Favorite Teams"
-                right={<Chip>{loadingTeams ? 'Loading...' : `${orderedTeamCards.length} teams`}</Chip>}
+                right={<Chip>{loadingTeams ? 'Loading...' : `${orderedTeamCards.length} team${orderedTeamCards.length === 1 ? '' : 's'}`}</Chip>}
                 compactable
               >
                 {renderTeamCards}

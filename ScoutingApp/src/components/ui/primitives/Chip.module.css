@@ -139,7 +139,16 @@
   }
 
   .remove {
+    position: relative;
     width: 24px;
     height: 24px;
+  }
+
+  /* 24px drawn, 44px to a thumb: removing the wrong team from a comparison
+     on a phone meant re-adding it. */
+  .remove::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
   }
 }

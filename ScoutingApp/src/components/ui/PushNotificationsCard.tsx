@@ -1,3 +1,4 @@
+import { isNativeApp } from '../../platform/runtime';
 import { useCallback, useEffect, useState } from 'react';
 import {
   getPushPublicKey,
@@ -60,6 +61,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 function pushSupported(): boolean {
   return (
+    !isNativeApp() &&
     typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&
     'PushManager' in window &&
@@ -231,12 +233,11 @@ export function PushNotificationsCard() {
     >
       {!supported ? (
         <p className="center-callout muted">
-          This browser does not support push notifications. On iPhone/iPad, install the app to
-          your home screen first (Share → Add to Home Screen).
+          {isNativeApp() ? 'Match alerts are not available in this app build yet.' : 'This browser does not support push notifications. On iPhone/iPad, install the app to your home screen first (Share → Add to Home Screen).'}
         </p>
       ) : serverConfigured === false ? (
         <p className="center-callout muted">
-          Push is not configured on the server (VAPID keys missing) — ask your team admin.
+          Match alerts aren&apos;t switched on for this site yet.
         </p>
       ) : (
         <>

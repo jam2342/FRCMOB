@@ -1,9 +1,11 @@
 from collections import defaultdict
 from datetime import date, datetime, timezone
+import hashlib
 import json
 import logging
 import math
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
@@ -19,12 +21,6 @@ from app.services.ml.shadow import (
     MATCH_OUTCOME_MODEL_KEY,
     infer_match_outcome_shadow_from_rows,
 )
-from app.services.scoring.truth import (
-    _extract_score_breakdown_truth_rows,
-    _parse_2026_alliance_truth as _parse_2026_alliance_truth,
-    _rebuilt_active_hub_duration_sec,
-    _truth_context,
-)
 from app.services.cache import get_cache
 from app.services.ml.synergy import SYNERGY_MODEL_VERSION, precompute_event_synergy
 from app.services.season_config import CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR
@@ -33,8 +29,6 @@ from app.tba.client import TBAClient
 
 router = APIRouter(prefix="/events", tags=["events"])
 logger = logging.getLogger(__name__)
-TBA_SCOREBREAKDOWN_RUN_VERSION = "tba_score_breakdown_v1"
-TBA_SCOREBREAKDOWN_SOURCE = "tba_score_breakdown"
 # Speed-first defaults for local/private operation.
 # Set to >0 only when you intentionally want slower remote enrichment.
 SUGGESTED_EVENTS_REMOTE_TEAM_COUNT_FETCH_LIMIT = 0
@@ -99,130 +93,6 @@ US_STATE_NAME_BY_CODE: dict[str, str] = {
 US_STATE_CODE_BY_NAME = {
     value.lower(): key for key, value in US_STATE_NAME_BY_CODE.items()
 }
-
-def _effective_fuel_rate_prior(
-    *,
-    fuel_scoring_rate: object,
-    cycle_time_sec: object,
-) -> float | None:
-    rate = _as_float(fuel_scoring_rate)
-    cycle_time = _as_float(cycle_time_sec)
-    cycle_implied = (
-        (60.0 / max(1e-6, float(cycle_time)))
-        if cycle_time is not None and cycle_time > 0.0
-        else None
-    )
-    if rate is None and cycle_implied is None:
-        return None
-    if rate is None:
-        return float(cycle_implied)
-    if cycle_implied is None:
-        return max(0.0, float(rate))
-    return max(0.0, float(rate), float(cycle_implied))
-
-def _compute_team_fuel_weight_priors(
-    db: Session,
-    *,
-    event_key: str,
-    season_year: int,
-    team_keys: set[str],
-) -> dict[str, float]:
-    if not team_keys:
-        return {}
-
-    samples_by_team: dict[str, list[float]] = defaultdict(list)
-
-    def _collect_rate_samples(rows: list[tuple[str, float | None, float | None, int | None, int | None]]) -> None:
-        for team_key, fuel_rate, cycle_time, _match_time, _finding_id in rows:
-            key = str(team_key or "")
-            if not key:
-                continue
-            effective = _effective_fuel_rate_prior(
-                fuel_scoring_rate=fuel_rate,
-                cycle_time_sec=cycle_time,
-            )
-            if effective is None or effective <= 0.0:
-                continue
-            samples_by_team[key].append(float(effective))
-
-    event_rows = (
-        db.query(
-            models.TeamMatchFinding.team_key,
-            models.TeamMatchFinding.fuel_scoring_rate,
-            models.TeamMatchFinding.cycle_time_sec,
-            models.Match.time,
-            models.TeamMatchFinding.id,
-        )
-        .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-        .filter(
-            models.TeamMatchFinding.team_key.in_(team_keys),
-            models.TeamMatchFinding.source != TBA_SCOREBREAKDOWN_SOURCE,
-            models.TeamMatchFinding.event_key == event_key,
-        )
-        .order_by(models.Match.time.desc().nullslast(), models.TeamMatchFinding.id.desc())
-        .limit(max(120, len(team_keys) * 10))
-        .all()
-    )
-    _collect_rate_samples(event_rows)
-
-    missing_for_season = [team_key for team_key in team_keys if not samples_by_team.get(team_key)]
-    if missing_for_season:
-        season_rows = (
-            db.query(
-                models.TeamMatchFinding.team_key,
-                models.TeamMatchFinding.fuel_scoring_rate,
-                models.TeamMatchFinding.cycle_time_sec,
-                models.Match.time,
-                models.TeamMatchFinding.id,
-            )
-            .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-            .join(models.Event, models.Event.event_key == models.TeamMatchFinding.event_key)
-            .filter(
-                models.TeamMatchFinding.team_key.in_(missing_for_season),
-                models.TeamMatchFinding.source != TBA_SCOREBREAKDOWN_SOURCE,
-                models.Event.year == season_year,
-            )
-            .order_by(models.Match.time.desc().nullslast(), models.TeamMatchFinding.id.desc())
-            .limit(max(200, len(missing_for_season) * 10))
-            .all()
-        )
-        _collect_rate_samples(season_rows)
-
-    raw_priors: dict[str, float] = {}
-    for team_key, samples in samples_by_team.items():
-        if not samples:
-            continue
-        weighted_sum = 0.0
-        total_weight = 0.0
-        for index, sample in enumerate(samples[:8]):
-            weight = max(0.35, 1.0 - (index * 0.12))
-            weighted_sum += float(sample) * weight
-            total_weight += weight
-        if total_weight > 0.0:
-            raw_priors[team_key] = weighted_sum / total_weight
-
-    missing_for_opr = [team_key for team_key in team_keys if team_key not in raw_priors]
-    if missing_for_opr:
-        stat_rows = (
-            db.query(models.EventTeamStat.team_key, models.EventTeamStat.opr)
-            .filter(
-                models.EventTeamStat.event_key == event_key,
-                models.EventTeamStat.team_key.in_(missing_for_opr),
-            )
-            .all()
-        )
-        for team_key, opr in stat_rows:
-            key = str(team_key or "")
-            numeric = _as_float(opr)
-            if not key or numeric is None or numeric <= 0.0:
-                continue
-            raw_priors[key] = max(0.2, min(20.0, float(numeric) * 0.08))
-
-    return {
-        team_key: round(max(0.8, min(4.5, 1.0 + (float(prior) ** 0.4))), 4)
-        for team_key, prior in raw_priors.items()
-        if prior > 0.0
-    }
 
 def _region_label(state_prov: str | None, country: str | None) -> str:
     normalized_country = (country or "").strip()
@@ -499,347 +369,6 @@ def _backfill_event_profiles_for_year(
             return True
     return changed
 
-def _upsert_event_team_stats_from_tba(
-    db: Session,
-    tba: TBAClient,
-    event_key: str,
-) -> tuple[int, str]:
-    try:
-        payload = tba.event_oprs(event_key)
-    except Exception:
-        return 0, "remote_unavailable"
-
-    if not isinstance(payload, dict):
-        return 0, "invalid_payload"
-
-    oprs = payload.get("oprs") if isinstance(payload.get("oprs"), dict) else {}
-    dprs = payload.get("dprs") if isinstance(payload.get("dprs"), dict) else {}
-    ccwms = payload.get("ccwms") if isinstance(payload.get("ccwms"), dict) else {}
-
-    all_team_keys = set(oprs.keys()) | set(dprs.keys()) | set(ccwms.keys())
-    if not all_team_keys:
-        return 0, "empty"
-
-    upserts = 0
-    for team_key in all_team_keys:
-        if not isinstance(team_key, str) or not team_key:
-            continue
-        db.merge(
-            models.EventTeamStat(
-                event_key=event_key,
-                team_key=team_key,
-                opr=float(oprs[team_key]) if isinstance(oprs.get(team_key), (int, float)) else None,
-                dpr=float(dprs[team_key]) if isinstance(dprs.get(team_key), (int, float)) else None,
-                ccwm=float(ccwms[team_key]) if isinstance(ccwms.get(team_key), (int, float)) else None,
-                source="tba_opr",
-            )
-        )
-        upserts += 1
-
-    db.commit()
-    return upserts, "tba"
-
-def _clear_existing_score_breakdown_rows(
-    db: Session,
-    event_key: str,
-) -> int:
-    stale_run_ids = [
-        int(run_id)
-        for run_id, in (
-            db.query(models.AnalysisRun.id)
-            .join(models.Match, models.Match.match_key == models.AnalysisRun.match_key)
-            .filter(
-                models.Match.event_key == event_key,
-                models.AnalysisRun.version == TBA_SCOREBREAKDOWN_RUN_VERSION,
-            )
-            .all()
-        )
-    ]
-    if not stale_run_ids:
-        return 0
-
-    db.query(models.TeamMatchThroughput).filter(
-        models.TeamMatchThroughput.analysis_run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.MatchEvent).filter(
-        models.MatchEvent.analysis_run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.RobotTrack).filter(
-        models.RobotTrack.analysis_run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.AnalysisQuality).filter(
-        models.AnalysisQuality.run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.TeamMatchFinding).filter(
-        models.TeamMatchFinding.analysis_run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.AnalysisRunContext).filter(
-        models.AnalysisRunContext.run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.AnalysisRun).filter(
-        models.AnalysisRun.id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.flush()
-    return len(stale_run_ids)
-
-def _upsert_score_breakdown_truth(
-    db: Session,
-    *,
-    event_key: str,
-    season_year: int,
-    matches: list[dict],
-) -> dict[str, int]:
-    context = _truth_context()
-    phases = context["phases"]
-    auto_end_sec = float(phases["auto_sec"])
-    teleop_sec = max(1.0, float(phases["teleop_sec"]))
-    if int(season_year) >= 2026:
-        teleop_sec = max(
-            1.0,
-            float(
-                phases.get("teleop_active_hub_sec")
-                or _rebuilt_active_hub_duration_sec(phases, include_post_deactivate_grace=True)
-            ),
-        )
-    total_sec = max(auto_end_sec, float(phases["total_sec"]))
-    endgame_start_sec = max(auto_end_sec, total_sec - float(phases["endgame_sec"]))
-    cleared_runs = _clear_existing_score_breakdown_rows(db, event_key)
-
-    non_tba_findings_by_team_match = {
-        (str(match_key), str(team_key))
-        for match_key, team_key in (
-            db.query(models.TeamMatchFinding.match_key, models.TeamMatchFinding.team_key)
-            .filter(
-                models.TeamMatchFinding.event_key == event_key,
-                models.TeamMatchFinding.source != TBA_SCOREBREAKDOWN_SOURCE,
-            )
-            .all()
-        )
-        if isinstance(match_key, str) and isinstance(team_key, str)
-    }
-
-    inserted_runs = 0
-    inserted_findings = 0
-    inserted_events = 0
-    skipped_due_existing_findings = 0
-    parsed_matches = 0
-    matched_rows = 0
-    all_match_team_keys: set[str] = set()
-    for match in matches:
-        alliances = match.get("alliances")
-        if not isinstance(alliances, dict):
-            continue
-        for alliance in ("red", "blue"):
-            payload = alliances.get(alliance)
-            if not isinstance(payload, dict):
-                continue
-            for team_key in payload.get("team_keys") or []:
-                if isinstance(team_key, str) and team_key:
-                    all_match_team_keys.add(team_key)
-    team_weight_by_key = _compute_team_fuel_weight_priors(
-        db,
-        event_key=event_key,
-        season_year=season_year,
-        team_keys=all_match_team_keys,
-    )
-
-    for match in matches:
-        match_key = match.get("key")
-        if not isinstance(match_key, str) or not match_key:
-            continue
-        truth_rows = _extract_score_breakdown_truth_rows(
-            match=match,
-            season_year=season_year,
-            context=context,
-            team_weight_by_key=team_weight_by_key,
-        )
-        if not truth_rows:
-            continue
-        parsed_matches += 1
-
-        run_row: models.AnalysisRun | None = None
-        for row in truth_rows:
-            team_key = str(row.get("team_key") or "")
-            alliance = str(row.get("alliance") or "")
-            station = str(row.get("station") or "")
-            if not team_key or alliance not in {"red", "blue"}:
-                continue
-            if (match_key, team_key) in non_tba_findings_by_team_match:
-                skipped_due_existing_findings += 1
-                continue
-
-            auto_points = max(0.0, float(_as_float(row.get("auto_points")) or 0.0))
-            teleop_points = max(0.0, float(_as_float(row.get("teleop_points")) or 0.0))
-            teleop_score_count = _as_float(row.get("teleop_score_count"))
-            climb_points = max(0.0, float(_as_float(row.get("climb_points")) or 0.0))
-            climb_success = bool(row.get("climb_success"))
-            if (
-                auto_points <= 0.0
-                and teleop_points <= 0.0
-                and (teleop_score_count is None or teleop_score_count <= 0.0)
-                and climb_points <= 0.0
-                and not climb_success
-            ):
-                continue
-
-            if run_row is None:
-                run_row = models.AnalysisRun(
-                    match_key=match_key,
-                    version=TBA_SCOREBREAKDOWN_RUN_VERSION,
-                    status="completed",
-                )
-                db.add(run_row)
-                db.flush()
-                db.add(
-                    models.AnalysisRunContext(
-                        run_id=run_row.id,
-                        match_key=match_key,
-                        event_key=event_key,
-                        analysis_version=TBA_SCOREBREAKDOWN_RUN_VERSION,
-                        params_hash=TBA_SCOREBREAKDOWN_RUN_VERSION,
-                        calibration_id=None,
-                    )
-                )
-                inserted_runs += 1
-
-            scoring_proxy = (
-                teleop_score_count
-                if teleop_score_count is not None and teleop_score_count > 0.0
-                else teleop_points
-            )
-            fuel_scoring_rate_raw = (
-                (float(scoring_proxy) / teleop_sec) * 60.0
-                if scoring_proxy is not None and float(scoring_proxy) > 0.0
-                else None
-            )
-            fuel_scoring_rate = (
-                max(0.0, float(fuel_scoring_rate_raw))
-                if fuel_scoring_rate_raw is not None
-                else None
-            )
-            cycle_time_sec = (
-                (teleop_sec / max(1e-6, float(scoring_proxy)))
-                if scoring_proxy is not None and float(scoring_proxy) > 0.0
-                else None
-            )
-            climb_success_prob = 1.0 if climb_success else (0.35 if climb_points > 0.0 else 0.0)
-            status_payload = row.get("status") if isinstance(row.get("status"), dict) else {}
-            db.add(
-                models.TeamMatchFinding(
-                    analysis_run_id=run_row.id,
-                    match_key=match_key,
-                    event_key=event_key,
-                    team_key=team_key,
-                    alliance=alliance,
-                    station=station or None,
-                    source=TBA_SCOREBREAKDOWN_SOURCE,
-                    fuel_scoring_rate=round(float(fuel_scoring_rate), 4) if fuel_scoring_rate is not None else None,
-                    cycle_time_sec=round(float(cycle_time_sec), 4) if cycle_time_sec is not None else None,
-                    auto_contribution=round(auto_points, 4),
-                    climb_success_prob=round(climb_success_prob, 4),
-                    defensive_engagement_sec=None,
-                    reliability_score=None,
-                    summary={
-                        "source": TBA_SCOREBREAKDOWN_SOURCE,
-                        "official_score_breakdown": True,
-                        "season_year": season_year,
-                        "status": status_payload,
-                    },
-                )
-            )
-            inserted_findings += 1
-            matched_rows += 1
-
-            if auto_points > 0.0:
-                db.add(
-                    models.MatchEvent(
-                        analysis_run_id=run_row.id,
-                        match_key=match_key,
-                        event_key=event_key,
-                        team_key=team_key,
-                        track_id=None,
-                        frame_index=None,
-                        time_sec=min(total_sec, auto_end_sec),
-                        event_type="auto_points_scored",
-                        confidence=0.99,
-                        field_x=None,
-                        field_y=None,
-                        meta={
-                            "source": TBA_SCOREBREAKDOWN_SOURCE,
-                            "official_points": round(auto_points, 4),
-                            "season_year": season_year,
-                        },
-                    )
-                )
-                inserted_events += 1
-
-            if scoring_proxy is not None and float(scoring_proxy) > 0.0:
-                db.add(
-                    models.MatchEvent(
-                        analysis_run_id=run_row.id,
-                        match_key=match_key,
-                        event_key=event_key,
-                        team_key=team_key,
-                        track_id=None,
-                        frame_index=None,
-                        time_sec=min(total_sec, auto_end_sec + (0.5 * teleop_sec)),
-                        event_type="teleop_fuel_score_success",
-                        confidence=0.98,
-                        field_x=None,
-                        field_y=None,
-                        meta={
-                            "source": TBA_SCOREBREAKDOWN_SOURCE,
-                            "count_estimate": round(float(scoring_proxy), 4),
-                            "official_points": round(teleop_points, 4),
-                            "season_year": season_year,
-                        },
-                    )
-                )
-                inserted_events += 1
-
-            if climb_points > 0.0 or climb_success:
-                db.add(
-                    models.MatchEvent(
-                        analysis_run_id=run_row.id,
-                        match_key=match_key,
-                        event_key=event_key,
-                        team_key=team_key,
-                        track_id=None,
-                        frame_index=None,
-                        time_sec=min(total_sec, endgame_start_sec + 5.0),
-                        event_type="climb_success" if climb_success else "climb_attempt",
-                        confidence=0.98,
-                        field_x=None,
-                        field_y=None,
-                        meta={
-                            "source": TBA_SCOREBREAKDOWN_SOURCE,
-                            "official_points": round(climb_points, 4),
-                            "status": status_payload,
-                            "season_year": season_year,
-                        },
-                    )
-                )
-                inserted_events += 1
-
-    if inserted_runs > 0:
-        logger.info(
-            "events.ingest.score_breakdown_truth event=%s runs=%s findings=%s events=%s skipped_existing=%s",
-            event_key,
-            inserted_runs,
-            inserted_findings,
-            inserted_events,
-            skipped_due_existing_findings,
-        )
-    return {
-        "cleared_runs": int(cleared_runs),
-        "parsed_matches": int(parsed_matches),
-        "matched_rows": int(matched_rows),
-        "inserted_runs": int(inserted_runs),
-        "inserted_findings": int(inserted_findings),
-        "inserted_events": int(inserted_events),
-        "skipped_due_existing_findings": int(skipped_due_existing_findings),
-    }
-
 def _get_tba_client_or_503() -> TBAClient:
     if not settings.tba_auth_key.strip():
         raise HTTPException(status_code=503, detail="TBA auth key is not configured.")
@@ -886,33 +415,70 @@ def _normalize_remote_event(event: dict, default_year: int) -> dict | None:
         "team_count_hint": team_count_hint,
     }
 
+# Runs on nearly every page load (the suggested-events picker). It used to
+# db.merge() each of ~1,000 TBA events, two primary-key SELECTs apiece across the
+# Phoenix-to-Virginia link: ~80 s per call, holding a pool connection throughout,
+# which starved every other request. Now: two bulk reads, writes only for new or
+# changed rows, and nothing at all if this process wrote the same data recently.
+_REMOTE_EVENT_SYNC_TTL_SEC = 900.0
+_remote_event_synced_at: dict[str, float] = {}
+
+
 def _upsert_remote_event_snapshots(db: Session, event_rows: list[dict]) -> None:
-    if not event_rows:
-        return
-    for event in event_rows:
+    wanted: dict[str, dict] = {}
+    for event in event_rows or []:
         event_key = str(event.get("event_key") or "").strip()
         if not event_key:
             continue
         event_year = event.get("year")
-        db.merge(
-            models.Event(
-                event_key=event_key,
-                name=str(event.get("name") or event_key),
-                year=int(event_year) if isinstance(event_year, int) else 0,
+        wanted[event_key] = {
+            "name": str(event.get("name") or event_key),
+            "year": int(event_year) if isinstance(event_year, int) else 0,
+            "city": event.get("city"),
+            "state_prov": event.get("state_prov"),
+            "country": event.get("country"),
+        }
+    if not wanted:
+        return
+    fingerprint = hashlib.sha1(json.dumps(sorted(wanted.items()), default=str).encode("utf-8")).hexdigest()
+    now = time.monotonic()
+    if now - _remote_event_synced_at.get(fingerprint, -_REMOTE_EVENT_SYNC_TTL_SEC) < _REMOTE_EVENT_SYNC_TTL_SEC:
+        return
+
+    keys = sorted(wanted)
+    events = {row.event_key: row for row in db.query(models.Event).filter(models.Event.event_key.in_(keys))}
+    profiles = {
+        row.event_key: row for row in db.query(models.EventProfile).filter(models.EventProfile.event_key.in_(keys))
+    }
+    for event_key, fields in wanted.items():
+        event = events.get(event_key)
+        if event is None:
+            db.add(models.Event(event_key=event_key, name=fields["name"], year=fields["year"]))
+        else:
+            if event.name != fields["name"]:
+                event.name = fields["name"]
+            if event.year != fields["year"]:
+                event.year = fields["year"]
+        profile = profiles.get(event_key)
+        if profile is None:
+            db.add(
+                models.EventProfile(
+                    event_key=event_key,
+                    city=fields["city"],
+                    state_prov=fields["state_prov"],
+                    country=fields["country"],
+                )
             )
-        )
-        db.merge(
-            models.EventProfile(
-                event_key=event_key,
-                city=event.get("city"),
-                state_prov=event.get("state_prov"),
-                country=event.get("country"),
-            )
-        )
+        else:
+            for column in ("city", "state_prov", "country"):
+                if getattr(profile, column) != fields[column]:
+                    setattr(profile, column, fields[column])
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
+        return
+    _remote_event_synced_at[fingerprint] = now
 
 def _event_team_counts(db: Session, event_keys: set[str] | None = None) -> dict[str, int]:
     query = (
@@ -1632,6 +1198,8 @@ def get_event_schedule_with_synergy(
                 "set_number": match.set_number,
                 "match_number": match.match_number,
                 "scheduled_time": match.time,
+                "predicted_time": match.predicted_time,
+                "actual_time": match.actual_time,
                 "red": {
                     "teams": red_teams,
                     "synergy": red_projection,

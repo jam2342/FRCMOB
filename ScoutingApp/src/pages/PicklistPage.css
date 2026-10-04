@@ -177,6 +177,14 @@
   min-height: 32px;
 }
 
+@media (pointer: coarse) {
+  .picklist-tier,
+  .picklist-mini-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .picklist-detail {
   flex-basis: 100%;
   display: flex;

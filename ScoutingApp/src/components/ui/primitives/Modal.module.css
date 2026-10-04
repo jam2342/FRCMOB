@@ -64,6 +64,7 @@
 }
 
 .title {
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: var(--type-heading-lg-size);
   font-weight: var(--type-heading-lg-weight);

@@ -1,0 +1,47 @@
+name: Native Android
+on:
+  pull_request:
+    paths:
+      - 'ScoutingApp/**'
+      - '.github/workflows/native-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ScoutingApp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ScoutingApp/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: 'ScoutingApp/android/**/*.gradle*'
+      - run: npm ci
+      - name: Prepare Android SDK
+        run: |
+          for task_sdk_manager in "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager; do
+            if [ -x "$task_sdk_manager" ]; then
+              "$task_sdk_manager" 'platforms;android-36' 'build-tools;36.0.0'
+              exit 0
+            fi
+          done
+          echo 'Android SDK command-line tools are missing.' >&2
+          exit 1
+      # Model files are deliberately excluded from public git. Compile the native
+      # code against a minimal local shell; full detector packaging is checked locally.
+      - run: |
+          mkdir -p dist-native
+          printf '%s' '<!doctype html><html><body>Native compilation fixture</body></html>' > dist-native/index.html
+          npx cap sync android
+      - run: node scripts/native-android-build.mjs

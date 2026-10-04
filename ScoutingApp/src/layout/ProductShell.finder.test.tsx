@@ -19,9 +19,7 @@ vi.mock('../hooks/usePwaInstall', () => ({
   }),
 }));
 
-vi.mock('../hooks/usePrefetchRoutes', () => ({
-  usePrefetchRoutes: () => undefined,
-}));
+
 
 vi.mock('./useShellSettingsState', () => ({
   useShellSettingsState: () => ({
@@ -56,11 +54,11 @@ vi.mock('../components/tutorial/TabTutorialOverlay', () => ({
 }));
 
 vi.mock('../tutorial/tutorialBlueprints', () => ({
-  getTutorialBlueprint: () => ({ checklist: [] }),
+  getTutorialBlueprint: () => ({ walkthrough: [], scope: 'home', title: 'Home' }),
 }));
 
 vi.mock('../tutorial/tutorialState', () => ({
-  countCompletedChecklistItems: () => 0,
+  countSeenTutorials: () => 0,
   hasSeenTutorial: () => true,
   markTutorialSeen: vi.fn(),
   SCOUTING_TUTORIAL_PROGRESS_EVENT: 'tutorial-progress',

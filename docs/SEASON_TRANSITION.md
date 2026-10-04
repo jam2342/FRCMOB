@@ -16,8 +16,7 @@ season-keyed modules listed below, not scattered in app code.
 
 ### `backend/app/game_config/season_template.json`
 Single source for the field, zones, phases, scoring, and shift schedule. Update:
-- `season_year` → new year.
-- `game_name` / `SEASON_NAME`.
+- `season_year`, `season_key`, `season_name` → the new game.
 - `field.length_m` / `field.width_m` — **only if the field perimeter changes** (it
   was constant 2024–2026). Everything downstream (heatmaps in `routes_tracks.py`,
   `shift_play.py`) now reads these from config, so changing them here is enough.
@@ -35,10 +34,19 @@ Validation lives in `backend/app/game_config/schema.py`. If the new game needs a
 new config shape, add the model + validator there. Reload is `lru_cache`d via
 `load_game_config()` — tests call `reload_game_config()`.
 
+### `ScoutingApp/src/config/season.ts`
+The frontend's only copy of season facts: year, fallback year, game name, and
+match/auto/endgame length. The scouting timer, Match Center progress bar, and
+event-search year defaults all read it. It is a static snapshot (scouting runs
+offline), and `season.test.ts` reads `season_template.json` and fails the build
+if the two disagree — so bump both together. (Before this existed the timer
+assumed a 150 s match while REBUILT is 160 s.)
+
 ### `ScoutingApp/src/config/gameFields.ts`
-Frontend mirror of the game's scouting form fields.
-- `SEASON_NAME`, the per-field labels, sections, and tap `step` increments
-  (REBUILT scored fuel in bursts of 3 → `step: 3`).
+Frontend mirror of the game's scouting form fields: per-field labels, sections,
+and tap `step` increments (REBUILT scored fuel in bursts of 3 → `step: 3`).
+The form state types (`scoutingPage.types.ts`) still name REBUILT fields
+(bump/trench/climb), so a game with different actions needs those types too.
 
 ---
 
@@ -55,11 +63,15 @@ entry; do not touch the 2026 entry.**
   `mapper_version`, so a new season must get a new version string or old drafts
   collide).
 
-### `backend/app/services/season_config.py`  ⚠️ needs a refactor pattern
+### `backend/app/services/season_config.py`
 Currently flat `REBUILT_*` constants (`REBUILT_TRANSITION_SHIFT_SEC`,
 `REBUILT_ALLIANCE_SHIFT_SEC`, `REBUILT_ALLIANCE_SHIFT_COUNT`,
 `REBUILT_ENDGAME_WINDOW_SEC`, `REBUILT_HUB_SCORE_GRACE_SEC`) plus
 `shift_active_alliance()` / `rebuilt_active_hub_duration_sec()`.
+
+`require_known_season_rules()` is now the central fail-closed guard: future
+seasons are rejected until their rules are deliberately implemented. Keep the
+guard in every season-specific scoring, truth, ratings, and phase entrypoint.
 
 If 2027 keeps an alternating-shift structure, prefer pulling these from
 `game_config.shift_schedule` (the `shift_play.py` engine already does) rather than
@@ -73,8 +85,8 @@ unused — leave them for historical 2026 reprocessing, don't delete.
 ### `backend/app/services/scoring/breakdown.py` + `truth.py`
 Parses TBA score breakdowns into per-team truth. This is **heavily REBUILT-specific**
 (`_extract_rebuilt_auto_fuel_count`, `_rebuilt_hub_activity_windows_by_alliance`,
-`_infer_rebuilt_shift1_active_alliance`, …) and the season is gated with
-`>= 2026` (e.g. `breakdown.py`, `routes_events.py:595`, `ratings/game_context.py:50`).
+`_infer_rebuilt_shift1_active_alliance`, …). The old broad `>= 2026` gates have
+been replaced with exact-2026 dispatch plus `require_known_season_rules()`.
 
 **The trap:** `>= 2026` means a 2027 event will *silently run REBUILT scoring math*
 against a 2027 TBA breakdown whose JSON keys are different. It won't crash — it
@@ -82,8 +94,8 @@ will produce wrong/empty numbers that look plausible. TBA changes the score
 breakdown schema every year.
 
 **What to do for 2027:**
-1. Change the gates from `>= 2026` to an explicit per-season dispatch (e.g.
-   `if year == 2026: rebuilt_...` / `elif year == 2027: <new>` / else raise).
+1. Extend the existing explicit per-season dispatch (`2026 → REBUILT`, `2027 →
+   new adapter`, otherwise raise).
 2. Write the 2027 breakdown parser against the real 2027 TBA payload — verify
    against actual JSON, not mocked happy paths (see CLAUDE.md: Events/knockouts
    gotcha).
@@ -135,13 +147,17 @@ grep -rn --include="*.py" -E "\b2026\b" backend/app | grep -vE "test|txhou|demo|
 - [ ] `season_template.json`: year, name, field, zones, phases, scoring,
       shift_schedule (or `null`)
 - [ ] `schema.py`: new config shape if needed
-- [ ] `gameFields.ts`: frontend form fields + `SEASON_NAME`
+- [ ] `season.ts`: year, name, match timing (`npm test` fails until it matches)
+- [ ] `gameFields.ts` + `scoutingPage.types.ts`: frontend form fields
 - [ ] `auto_scout/specs.py`: add `2027` to all `*_BY_SEASON` dicts +
       `mapper_version_for_season`
-- [ ] `scoring/breakdown.py` + `truth.py`: **new TBA parser**, switch `>= 2026`
-      gates to explicit per-season dispatch (verify vs real TBA JSON)
+- [ ] `scoring/breakdown.py` + `truth.py`: **new TBA parser**, then add an
+      explicit 2027 dispatch branch (verify vs real TBA JSON)
 - [ ] `ratings/constants.py` + `game_context.py`: new penalty/context values
 - [ ] year-pair fallbacks `(2026, 2025)` → `(2027, 2026)`
 - [ ] grep for stray `\b2026\b` literals in `backend/app`
 - [ ] retrain detector + lock a new holdout (`docs/TRAINING.md`)
+- [ ] production `.env` on the VM: `AUTOMATION_REGIONAL_HALFDAY_SEASON=2026` pins the
+      scheduler's regional automation to REBUILT on purpose; bump it only after the
+      2027 rules above land (`0` = current UTC year), then recreate the containers
 - [ ] run `pytest` + `npm test`; verify a real event end-to-end before prod

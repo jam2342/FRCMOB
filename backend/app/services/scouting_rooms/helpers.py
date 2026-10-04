@@ -205,6 +205,22 @@ def effective_fuel_scoring_rate(finding: models.TeamMatchFinding) -> float | Non
         return round(float(cycle_implied_rate), 3)
     return round(float(rate), 3)
 
+
+def _finding_metric_value(finding: models.TeamMatchFinding, metric_key: str) -> float | None:
+    value = getattr(finding, metric_key, None)
+    if metric_key not in {"cycle_time_sec", "auto_contribution"}:
+        return value
+    if not (
+        str(finding.source or "").startswith("tba_score_breakdown")
+        and str(finding.event_key or "").startswith("2026")
+    ):
+        return value
+    if metric_key == "cycle_time_sec":
+        return None  # Official fuel totals cannot identify a batch cycle.
+    summary = finding.summary if isinstance(finding.summary, dict) else {}
+    status = summary.get("status") if isinstance(summary.get("status"), dict) else {}
+    return value if status.get("auto_allocation") in {"event_auto_fuel_copr", "no_hub_fuel"} else None
+
 def weighted_recent_mean(
     findings: list[models.TeamMatchFinding],
     value_getter: Callable[[models.TeamMatchFinding], float | None],
@@ -231,8 +247,8 @@ def compute_averages(
     recent_findings = findings[:RECENT_STATS_MATCH_WINDOW]
     fuel_avg_raw = weighted_recent_mean(recent_findings, effective_fuel_scoring_rate)
     fuel_avg = round(float(fuel_avg_raw), 3) if isinstance(fuel_avg_raw, (int, float)) else None
-    cycle_avg = weighted_recent_mean(recent_findings, lambda f: f.cycle_time_sec)
-    auto_avg = weighted_recent_mean(recent_findings, lambda f: f.auto_contribution)
+    cycle_avg = weighted_recent_mean(recent_findings, lambda f: _finding_metric_value(f, "cycle_time_sec"))
+    auto_avg = weighted_recent_mean(recent_findings, lambda f: _finding_metric_value(f, "auto_contribution"))
     defense_avg = weighted_recent_mean(recent_findings, lambda f: f.defensive_engagement_sec)
     reliability_avg = weighted_recent_mean(recent_findings, lambda f: f.reliability_score)
 
@@ -283,7 +299,7 @@ def metric_coverage_payload(
             if metric_key == "fuel_scoring_rate":
                 value = effective_fuel_scoring_rate(finding)
             else:
-                value = getattr(finding, metric_key, None)
+                value = _finding_metric_value(finding, metric_key)
             if metric_key == "climb_success_prob":
                 fallback_value = fallback.get(finding.match_key)
                 if isinstance(fallback_value, (int, float)) and (value is None or fallback_value > float(value)):
@@ -593,8 +609,8 @@ def serialize_finding(finding: models.TeamMatchFinding, match_time: int | None) 
         "station": finding.station,
         "source": finding.source,
         "fuel_scoring_rate": effective_fuel_scoring_rate(finding),
-        "cycle_time_sec": finding.cycle_time_sec,
-        "auto_contribution": finding.auto_contribution,
+        "cycle_time_sec": _finding_metric_value(finding, "cycle_time_sec"),
+        "auto_contribution": _finding_metric_value(finding, "auto_contribution"),
         "climb_success_prob": finding.climb_success_prob,
         "defensive_engagement_sec": finding.defensive_engagement_sec,
         "reliability_score": finding.reliability_score,

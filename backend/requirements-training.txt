@@ -1,0 +1,7 @@
+# Detector training and evaluation (scripts/train_frc_yolo.py, eval_detector.py,
+# verify_holdout.py, export_on_device_model.py, dataset tools). Not part of the
+# server image: install on the training machine on top of requirements.txt.
+ultralytics>=8.2.0,<9.0.0
+lap>=0.5.12
+# Label review and audit tools (scripts/audit_labels.py).
+pillow>=10

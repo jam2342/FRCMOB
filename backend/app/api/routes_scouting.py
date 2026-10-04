@@ -14,6 +14,7 @@ from app.core.security import require_admin_access, require_write_access, saniti
 from app.db import models
 from app.db.session import get_db
 from app.api.schemas import RatingsResponse, TeamsHistoryResponse
+from app.services.analysis.runs import RUN_KIND_VIDEO
 from app.services.scouting_rooms.helpers import (
     RECENT_STATS_MATCH_WINDOW,
     apply_quality_gate_to_finding_rows as _apply_quality_gate_to_finding_rows,
@@ -512,15 +513,17 @@ def _build_event_match_truth_rows(db: Session, event_key: str) -> dict[str, Any]
         team_key = str(row.team_key or "").strip().lower()
         if not team_key:
             continue
-        official_points = _rating_float(meta.get("official_points"))
-        if official_points is None:
+        scored_points = _rating_float(meta.get("official_points"))
+        if scored_points is None:
+            scored_points = _rating_float(meta.get("estimated_points"))
+        if scored_points is None:
             if row.event_type == "climb_success":
-                official_points = 1.0
+                scored_points = 1.0
             else:
                 continue
-        if official_points <= 0.0:
+        if scored_points <= 0.0:
             continue
-        points_by_team_match[(row.match_key, team_key)] += float(official_points)
+        points_by_team_match[(row.match_key, team_key)] += float(scored_points)
 
     for match_key, alliance_payload in teams_by_match_alliance.items():
         red_team_keys = sorted(alliance_payload.get("red", []))
@@ -1718,6 +1721,7 @@ def get_team_breakdown(
         .join(models.Event, models.Event.event_key == models.TeamMatchFinding.event_key)
         .join(models.AnalysisRun, models.AnalysisRun.id == models.TeamMatchFinding.analysis_run_id)
         .filter(models.TeamMatchFinding.team_key == team_key)
+        .filter(models.AnalysisRun.run_kind == RUN_KIND_VIDEO)
         .filter(models.Event.year == season_scope["season_year"])
     )
     if event_key:
@@ -2003,27 +2007,34 @@ def get_event_team_histories(
             climb_events_by_team_match[(event_row.team_key, event_row.match_key)].append(event_row)
 
     capped_history = max(RECENT_STATS_MATCH_WINDOW, min(history_limit, 30))
+    fetch_limit = max(capped_history, min(capped_history * 3, 180))
+    # One query for the whole roster: this ran one per team (40-75 per call, ~3 s
+    # on the Events page).
+    rows_by_team: dict[str, list[tuple[models.TeamMatchFinding, int | None]]] = defaultdict(list)
+    if team_keys:
+        history_query = (
+            db.query(models.TeamMatchFinding, models.Match.time)
+            .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
+            .join(models.Event, models.Event.event_key == models.TeamMatchFinding.event_key)
+            .filter(models.TeamMatchFinding.team_key.in_(team_keys))
+            .filter(models.Event.year == event_season_year)
+        )
+        if exclude_current_event:
+            history_query = history_query.filter(models.TeamMatchFinding.event_key != normalized_event_key)
+        for finding, match_time in history_query.order_by(
+            models.TeamMatchFinding.team_key.asc(),
+            models.Match.time.desc().nullslast(),
+            models.TeamMatchFinding.id.desc(),
+        ):
+            bucket = rows_by_team[finding.team_key]
+            if len(bucket) < fetch_limit:
+                bucket.append((finding, match_time))
     teams_payload = []
 
     for event_team, team, team_profile in team_rows:
         state_prov = team_profile.state_prov if team_profile else None
         country = team_profile.country if team_profile else None
-        history_query = (
-            db.query(models.TeamMatchFinding, models.Match.time)
-            .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-            .join(models.Event, models.Event.event_key == models.TeamMatchFinding.event_key)
-            .filter(models.TeamMatchFinding.team_key == event_team.team_key)
-            .filter(models.Event.year == event_season_year)
-        )
-        if exclude_current_event:
-            history_query = history_query.filter(models.TeamMatchFinding.event_key != normalized_event_key)
-
-        raw_history_rows = (
-            history_query
-            .order_by(models.Match.time.desc().nullslast(), models.TeamMatchFinding.id.desc())
-            .limit(max(capped_history, min(capped_history * 3, 180)))
-            .all()
-        )
+        raw_history_rows = rows_by_team.get(event_team.team_key, [])
         history_rows, history_quality_gate = _apply_quality_gate_to_finding_rows(raw_history_rows)
         history_rows = _dedupe_finding_rows_by_match(history_rows)
         history_rows_for_metrics, history_analysis_coverage = _rows_for_metric_coverage(

@@ -2,31 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.auto_scout.common import _safe_float, _clamp, _round
 from app.services.auto_scout.ml import (
     build_auto_scout_field_feature_vector,
     present_auto_scout_field_prediction,
 )
 from app.services.auto_scout.predictors.init import PredictorContext, PredictorResult, register
 from app.services.ml.shadow import infer_auto_scout_field_shadow_from_rows
-
-
-def _safe_float(value: object) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return max(low, min(high, value))
-
-
-def _round(value: float | None, digits: int = 3) -> float | None:
-    if value is None:
-        return None
-    return round(float(value), digits)
 
 
 # Per-field ML confidence gates. Matched to the thresholds the predictors register with.

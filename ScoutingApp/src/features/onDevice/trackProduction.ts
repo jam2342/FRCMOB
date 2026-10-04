@@ -4,6 +4,7 @@
 // (no ort/canvas), so it unit-tests cleanly; the same shape syncs to the server worker.
 
 import { type Mat3, projectPoint } from './homography';
+import { type BumperColour } from './bumperColour';
 import { classifyZone } from './fieldZones';
 
 export type TrackPoint = {
@@ -15,7 +16,13 @@ export type TrackPoint = {
 };
 
 export type Bbox = [number, number, number, number]; // x1,y1,x2,y2 image px
-export type Detection = { trackId: number; bbox: Bbox; confidence?: number };
+export type Detection = {
+  trackId: number;
+  bbox: Bbox;
+  confidence?: number;
+  colour?: BumperColour;
+  thumb?: Blob; // photo of the robot, for the identify step
+};
 export type Frame = { timeSec: number; homography: Mat3 | null; detections: Detection[] };
 
 export type ProduceOptions = {

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import sanitize_external_error
 from app.db import models
+from app.services.events.match_times import match_times_from_payload
 from app.services.ml.shadow import auto_train_shadow_models_for_event_breakdown
 from app.services.ratings.model import recompute_event_ratings
 from app.services.scoring.truth import (
@@ -22,16 +23,30 @@ from app.services.scoring.truth import (
     _rebuilt_active_hub_duration_sec,
     _truth_context,
 )
+from app.services.scoring.official_team_stats import COPR_METRICS_BY_SEASON
 from app.services.ml.synergy import SYNERGY_MODEL_VERSION, precompute_event_synergy
 from app.services.utils import _as_float
+from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH
+from app.services.season_config import REBUILT_SEASON_YEAR, require_known_season_rules
 from app.tba.client import TBAClient
 
 logger = logging.getLogger(__name__)
 
-TBA_SCOREBREAKDOWN_RUN_VERSION = "tba_score_breakdown_v1"
+TBA_SCOREBREAKDOWN_RUN_VERSION = "tba_score_breakdown_v2"
 TBA_SCOREBREAKDOWN_SOURCE = "tba_score_breakdown"
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+def extract_2026_auto_fuel_coprs(payload: object) -> dict[str, float]:
+    metric = COPR_METRICS_BY_SEASON[REBUILT_SEASON_YEAR]["auto_fuel_per_match"]
+    values = payload.get(metric) if isinstance(payload, dict) else None
+    if not isinstance(values, dict):
+        return {}
+    return {
+        str(team_key): float(parsed)
+        for team_key, value in values.items()
+        if isinstance(team_key, str) and (parsed := _as_float(value)) is not None
+    }
 
 def _effective_fuel_rate_prior(
     *,
@@ -172,7 +187,8 @@ def clear_existing_score_breakdown_rows(
             .join(models.Match, models.Match.match_key == models.AnalysisRun.match_key)
             .filter(
                 models.Match.event_key == event_key,
-                models.AnalysisRun.version == TBA_SCOREBREAKDOWN_RUN_VERSION,
+                models.AnalysisRun.version.in_(("tba_score_breakdown_v1", TBA_SCOREBREAKDOWN_RUN_VERSION)),
+                models.AnalysisRun.run_kind == RUN_KIND_OFFICIAL_TRUTH,
             )
             .all()
         )
@@ -210,13 +226,18 @@ def upsert_score_breakdown_truth(
     event_key: str,
     season_year: int,
     matches: list[dict],
+    auto_fuel_copr_by_team: dict[str, float] | None = None,
 ) -> dict[str, int]:
     # Parse TBA score breakdowns into finding rows.
+    require_known_season_rules(
+        season_year,
+        feature="event score-breakdown ingestion",
+    )
     context = _truth_context()
     phases = context["phases"]
     auto_end_sec = float(phases["auto_sec"])
     teleop_sec = max(1.0, float(phases["teleop_sec"]))
-    if int(season_year) >= 2026:
+    if int(season_year) == REBUILT_SEASON_YEAR:
         teleop_sec = max(
             1.0,
             float(
@@ -270,11 +291,17 @@ def upsert_score_breakdown_truth(
         match_key = match.get("key")
         if not isinstance(match_key, str) or not match_key:
             continue
+        alliances = match.get("alliances") if isinstance(match.get("alliances"), dict) else {}
+        red_payload = alliances.get("red") if isinstance(alliances.get("red"), dict) else {}
+        blue_payload = alliances.get("blue") if isinstance(alliances.get("blue"), dict) else {}
+        red_score = red_payload.get("score")
+        blue_score = blue_payload.get("score")
         truth_rows = _extract_score_breakdown_truth_rows(
             match=match,
             season_year=season_year,
             context=context,
             team_weight_by_key=team_weight_by_key,
+            auto_fuel_copr_by_team=auto_fuel_copr_by_team,
         )
         if not truth_rows:
             continue
@@ -291,24 +318,18 @@ def upsert_score_breakdown_truth(
                 skipped_due_existing_findings += 1
                 continue
 
-            auto_points = max(0.0, float(_as_float(row.get("auto_points")) or 0.0))
+            auto_points_raw = _as_float(row.get("auto_points"))
+            auto_points = max(0.0, float(auto_points_raw)) if auto_points_raw is not None else None
             teleop_points = max(0.0, float(_as_float(row.get("teleop_points")) or 0.0))
             teleop_score_count = _as_float(row.get("teleop_score_count"))
             climb_points = max(0.0, float(_as_float(row.get("climb_points")) or 0.0))
             climb_success = bool(row.get("climb_success"))
-            if (
-                auto_points <= 0.0
-                and teleop_points <= 0.0
-                and (teleop_score_count is None or teleop_score_count <= 0.0)
-                and climb_points <= 0.0
-                and not climb_success
-            ):
-                continue
 
             if run_row is None:
                 run_row = models.AnalysisRun(
                     match_key=match_key,
                     version=TBA_SCOREBREAKDOWN_RUN_VERSION,
+                    run_kind=RUN_KIND_OFFICIAL_TRUTH,
                     status="completed",
                 )
                 db.add(run_row)
@@ -340,11 +361,6 @@ def upsert_score_breakdown_truth(
                 if fuel_scoring_rate_raw is not None
                 else None
             )
-            cycle_time_sec = (
-                (teleop_sec / max(1e-6, float(scoring_proxy)))
-                if scoring_proxy is not None and float(scoring_proxy) > 0.0
-                else None
-            )
             climb_success_prob = 1.0 if climb_success else (0.35 if climb_points > 0.0 else 0.0)
             status_payload = row.get("status") if isinstance(row.get("status"), dict) else {}
             db.add(
@@ -357,23 +373,26 @@ def upsert_score_breakdown_truth(
                     station=station or None,
                     source=TBA_SCOREBREAKDOWN_SOURCE,
                     fuel_scoring_rate=round(float(fuel_scoring_rate), 4) if fuel_scoring_rate is not None else None,
-                    cycle_time_sec=round(float(cycle_time_sec), 4) if cycle_time_sec is not None else None,
-                    auto_contribution=round(auto_points, 4),
+                    cycle_time_sec=None,
+                    auto_contribution=round(auto_points, 4) if auto_points is not None else None,
                     climb_success_prob=round(climb_success_prob, 4),
                     defensive_engagement_sec=None,
                     reliability_score=None,
                     summary={
                         "source": TBA_SCOREBREAKDOWN_SOURCE,
                         "official_score_breakdown": True,
+                        "red_score": red_score if isinstance(red_score, int) else None,
+                        "blue_score": blue_score if isinstance(blue_score, int) else None,
                         "season_year": season_year,
                         "status": status_payload,
+                        "cycle_time_source": "unknown_from_alliance_breakdown",
                     },
                 )
             )
             inserted_findings += 1
             matched_rows += 1
 
-            if auto_points > 0.0:
+            if auto_points is not None and auto_points > 0.0:
                 db.add(
                     models.MatchEvent(
                         analysis_run_id=run_row.id,
@@ -384,12 +403,17 @@ def upsert_score_breakdown_truth(
                         frame_index=None,
                         time_sec=min(total_sec, auto_end_sec),
                         event_type="auto_points_scored",
-                        confidence=0.99,
+                        confidence=0.65 if status_payload.get("auto_allocation") == "event_auto_fuel_copr" else 0.99,
                         field_x=None,
                         field_y=None,
                         meta={
                             "source": TBA_SCOREBREAKDOWN_SOURCE,
-                            "official_points": round(auto_points, 4),
+                            (
+                                "official_points"
+                                if status_payload.get("auto_allocation") == "no_hub_fuel"
+                                else "estimated_points"
+                            ): round(auto_points, 4),
+                            "allocation": status_payload.get("auto_allocation"),
                             "season_year": season_year,
                         },
                     )
@@ -522,6 +546,15 @@ def ingest_event(
     teams = tba.event_teams(event_key)
     matches = tba.event_matches(event_key)
 
+    # Fetch once before opening a database transaction: TBA can take seconds.
+    auto_fuel_copr_by_team: dict[str, float] | None = None
+    if int(event.get("year") or 0) == REBUILT_SEASON_YEAR:
+        try:
+            coprs = tba.event_coprs(event_key)
+            auto_fuel_copr_by_team = extract_2026_auto_fuel_coprs(coprs)
+        except Exception:
+            logger.warning("event_ingest.auto_copr_unavailable event=%s", event_key, exc_info=True)
+
     db.merge(models.Event(event_key=event["key"], name=event["name"], year=event["year"]))
     db.merge(
         models.EventProfile(
@@ -585,7 +618,7 @@ def ingest_event(
                 comp_level=match["comp_level"],
                 set_number=match["set_number"],
                 match_number=match["match_number"],
-                time=match.get("time"),
+                **match_times_from_payload(match),
             )
         )
     db.flush()
@@ -688,6 +721,7 @@ def ingest_event(
         event_key=event_key,
         season_year=int(event.get("year") or 0),
         matches=[match for match in matches if isinstance(match, dict)],
+        auto_fuel_copr_by_team=auto_fuel_copr_by_team,
     )
 
     stats_upserted, stats_source = upsert_event_team_stats_from_tba(db, tba, event_key)
@@ -769,7 +803,7 @@ def ingest_event(
                     event_key=event_key,
                     limit_events=int(getattr(settings, "ml_shadow_auto_train_limit_events", 40) or 40),
                     source_version=None,
-                    activate=bool(getattr(settings, "ml_shadow_auto_train_activate", True)),
+                    activate=bool(getattr(settings, "ml_shadow_auto_train_activate", False)),
                     replace_predictions=True,
                 )
             except Exception as exc:

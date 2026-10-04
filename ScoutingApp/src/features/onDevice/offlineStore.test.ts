@@ -29,14 +29,48 @@ const session = (id: string, synced = false): StoredSession => ({
   matchKey: `2026test_qm${id}`,
   createdAt: Date.now(),
   synced,
-  payload: { points: 1 },
+  payload: {
+    pointsByTeam: {},
+    schemaVersion: 'on_device_session_v2',
+    modelVersion: 'test-model',
+    calibrationVersion: 'manual_corners_v1',
+    calibrationRmseM: 0,
+    calibrationVerified: true,
+    captureSource: 'video',
+    poseSource: 'static',
+    poseFallbackRatio: 0,
+    identityConfidence: 1,
+    identitySource: 'manual',
+    timingSource: 'video_offset',
+    captureToMatchOffsetSec: -8,
+    shift1ActiveAlliance: 'red',
+    shift1Source: 'manual_scout_selection',
+    executionProvider: 'wasm',
+    sampledFrameCount: 3,
+    inferenceMedianMs: 100,
+    inferenceP90Ms: 120,
+    thermalDriftPct: 2,
+  },
 });
 
 describe('offline store', () => {
-  it('round-trips a calibration', async () => {
-    await saveCalibration(db, { id: 'current', homography: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], createdAt: 1 });
+  it('round-trips calibration frame dimensions and pixels', async () => {
+    await saveCalibration(db, {
+      id: 'current',
+      homography: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+      createdAt: 1,
+      calibrationVersion: 'manual_corners_v1',
+      rmseM: 0,
+      verified: true,
+      imageWidth: 2,
+      imageHeight: 1,
+      referenceGray: new Float32Array([10, 20]),
+    });
     const got = await getCalibration(db, 'current');
     expect(got?.homography[0][0]).toBe(1);
+    expect(got?.verified).toBe(true);
+    expect(got?.imageWidth).toBe(2);
+    expect(Array.from(got?.referenceGray ?? [])).toEqual([10, 20]);
     expect(await getCalibration(db, 'missing')).toBeUndefined();
   });
 

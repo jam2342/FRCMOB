@@ -1,22 +1,8 @@
 from __future__ import annotations
 
+from app.services.auto_scout.common import _safe_float, _round
 from app.services.auto_scout.predictors.init import PredictorContext, PredictorResult, register
 from app.services.auto_scout.specs import AUTO_SCOUT_FIELD_PRIORS_BY_SEASON
-
-
-def _safe_float(value: object) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _round(value: float | None, digits: int = 3) -> float | None:
-    if value is None:
-        return None
-    return round(float(value), digits)
 
 
 def _analysis_run_id(context: PredictorContext) -> int:

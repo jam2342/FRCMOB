@@ -114,6 +114,7 @@ from app.services.ml.shadow import (
     is_shadow_rollout_active,
 )
 
+from app.services.ratings.base_score import base_rating_score
 from app.services.ratings.data_loader import load_event_rating_data
 from app.services.ratings.feature_extraction import extract_team_features
 from app.services.ratings.scoring import compute_percentile_scores
@@ -166,21 +167,17 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
         ml_rows: list[dict[str, Any]] = []
         for team_key in data.team_keys:
             confidence_seed = float(scores.confidence_by_team.get(team_key) or 0.0)
-            base_components_seed = [
-                (0.21, scores.results_anchor_pct[team_key]),
-                (0.29, scores.performance_by_team[team_key]),
-                (0.16, scores.driver_skill_pct[team_key]),
-                (0.11, scores.robot_level_by_team[team_key]),
-                (0.09, scores.manual_points_pct[team_key]),
-                (0.05, scores.rp_contribution_pct[team_key]),
-                (BASE_AUTO_WEIGHT, scores.auto_pct[team_key]),
-                (
-                    float(scores.anti_defense_base_weight_by_team.get(team_key, BASE_ANTIDEFENSE_WEIGHT)),
-                    scores.anti_defense_pct[team_key],
-                ),
-            ]
-            total_seed_weight = max(1e-6, sum(weight for weight, _ in base_components_seed))
-            base_seed = sum(weight * value for weight, value in base_components_seed) / total_seed_weight
+            base_seed = base_rating_score(
+                results_anchor=scores.results_anchor_pct[team_key],
+                performance=scores.performance_by_team[team_key],
+                driver_skill=scores.driver_skill_pct[team_key],
+                robot_level=scores.robot_level_by_team[team_key],
+                manual_points=scores.manual_points_pct[team_key],
+                rp_contribution=scores.rp_contribution_pct[team_key],
+                auto_contribution=scores.auto_pct[team_key],
+                anti_defense=scores.anti_defense_pct[team_key],
+                anti_defense_weight=float(scores.anti_defense_base_weight_by_team.get(team_key, BASE_ANTIDEFENSE_WEIGHT)),
+            )
             raw_seed_rating = _clamp(50.0 + (confidence_seed * (base_seed - 50.0)), 0.0, 100.0)
             ml_rows.append(
                 {
@@ -625,18 +622,17 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
             else:
                 rating_algorithm_mode = f"{rating_algorithm_mode}+ml_shadow_team_strength_v1"
 
-        base_components = [
-            (0.21, results_anchor),
-            (0.29, performance_score),
-            (0.16, driver_skill),
-            (0.11, robot_level),
-            (0.09, manual_points_impact),
-            (0.05, rp_contribution_score),
-            (BASE_AUTO_WEIGHT, auto_contribution_score),
-            (anti_defense_base_weight_applied, anti_defense_score),
-        ]
-        total_base_weight = max(1e-6, sum(weight for weight, _ in base_components))
-        base_rating = sum(weight * value for weight, value in base_components) / total_base_weight
+        base_rating = base_rating_score(
+            results_anchor=results_anchor,
+            performance=performance_score,
+            driver_skill=driver_skill,
+            robot_level=robot_level,
+            manual_points=manual_points_impact,
+            rp_contribution=rp_contribution_score,
+            auto_contribution=auto_contribution_score,
+            anti_defense=anti_defense_score,
+            anti_defense_weight=anti_defense_base_weight_applied,
+        )
         penalty_deduction = _clamp(
             (
                 ((penalty_points_per_match / MAJOR_FOUL_POINTS) * 4.0)

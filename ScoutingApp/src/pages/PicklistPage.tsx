@@ -1,3 +1,5 @@
+import { exportPrintableReport } from '../platform/exportFile';
+import { isNativeApp } from '../platform/runtime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createPicklist,
@@ -7,7 +9,6 @@ import {
   listPicklists,
   listPitEntries,
   resolveMediaUrl,
-  updatePicklist,
 } from '../api';
 import type { Picklist, PicklistSlot, PicklistSlotTier } from '../api';
 import { EventPicker } from '../components/EventPicker';
@@ -16,9 +17,15 @@ import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { usePageVisibility } from '../hooks/usePageVisibility';
+import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
 import { hapticTap } from '../utils/haptics';
 import { asRecord, metric, parseNumber } from './centerUtils';
 import './PicklistPage.css';
+import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
+import { useWorkspace } from '../features/workspace/useWorkspace';
+import { usePicklistEditor } from '../features/picklists/usePicklistEditor';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & helpers                                                */
@@ -26,7 +33,6 @@ import './PicklistPage.css';
 
 const STORAGE_KEY = 'scouting_center_event_key';
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
-const SAVE_DEBOUNCE_MS = 900;
 const LIVE_POLL_MS = 4000;
 
 type TeamInfo = {
@@ -64,29 +70,27 @@ const NEXT_TIER: Record<PicklistSlotTier, PicklistSlotTier> = {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function PicklistPage() {
+function PicklistWorkspacePage() {
   const isMobile = useMobileLayout();
-  const { eventKey, eventInput, setEventInput, commitInput, selectEvent } =
+  const pageVisible = usePageVisibility();
+  const { online } = useOnlineStatus();
+  const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } =
     useEventKeyParam(STORAGE_KEY);
 
   const [teamPool, setTeamPool] = useState<TeamInfo[]>([]);
   const [picklists, setPicklists] = useState<Picklist[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [doc, setDoc] = useState<Picklist | null>(null);
+  const workspace = useWorkspace()!;
+  const editor = usePicklistEditor(workspace.workspace.id);
+  const { doc, saving, select: selectDoc, edit: editDoc } = editor;
   const [pitPhotoByTeam, setPitPhotoByTeam] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [errorText, setErrorText] = useState('');
-  const [statusText, setStatusText] = useState('');
-  const [saving, setSaving] = useState(false);
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
-  // Pending local edits not yet acknowledged by the server.
-  const dirtyRef = useRef(false);
-  const docRef = useRef<Picklist | null>(null);
-  docRef.current = doc;
-  const saveTimerRef = useRef<number | null>(null);
-
+  const loadSequence = useRef(0);
   const teamInfoByKey = useMemo(() => {
     const map = new Map<string, TeamInfo>();
     for (const team of teamPool) map.set(team.team_key, team);
@@ -95,7 +99,7 @@ export function PicklistPage() {
 
   /* ---- Data loading ---------------------------------------------- */
 
-  const fetchTeams = useCallback(async (key: string) => {
+  const fetchTeams = useCallback(async (key: string, sequence: number) => {
     try {
       const payload = await getEventTeamsIntel(key, {
         include_tba: true,
@@ -117,13 +121,13 @@ export function PicklistPage() {
         })
         .filter((row) => row.team_key.length > 0)
         .sort((a, b) => (b.rating_0_100 ?? 0) - (a.rating_0_100 ?? 0));
-      setTeamPool(teams);
+      if (loadSequence.current === sequence) setTeamPool(teams);
     } catch {
-      setTeamPool([]);
+      if (loadSequence.current === sequence) setTeamPool([]);
     }
   }, []);
 
-  const fetchPitPhotos = useCallback(async (key: string) => {
+  const fetchPitPhotos = useCallback(async (key: string, sequence: number) => {
     try {
       const result = await listPitEntries(key);
       const map = new Map<string, string>();
@@ -132,17 +136,18 @@ export function PicklistPage() {
           map.set(entry.team_key.toLowerCase(), entry.photos[0]);
         }
       }
-      setPitPhotoByTeam(map);
+      if (loadSequence.current === sequence) setPitPhotoByTeam(map);
     } catch {
-      setPitPhotoByTeam(new Map());
+      if (loadSequence.current === sequence) setPitPhotoByTeam(new Map());
     }
   }, []);
 
-  const fetchPicklists = useCallback(async (key: string) => {
+  const fetchPicklists = useCallback(async (key: string, sequence: number) => {
     setLoading(true);
     setErrorText('');
     try {
       const result = await listPicklists(key);
+      if (loadSequence.current !== sequence) return;
       const lists = result.picklists ?? [];
       setPicklists(lists);
       if (lists.length > 0) {
@@ -151,118 +156,71 @@ export function PicklistPage() {
         );
       } else {
         setActiveId(null);
-        setDoc(null);
+        selectDoc(null);
       }
     } catch (err) {
-      setErrorText((err as Error).message || 'Failed to load picklists.');
+      if (loadSequence.current === sequence) setErrorText((err as Error).message || 'Failed to load picklists.');
     } finally {
-      setLoading(false);
+      if (loadSequence.current === sequence) setLoading(false);
     }
-  }, []);
+  }, [selectDoc]);
 
   useEffect(() => {
-    if (!eventKey) return;
-    void fetchPicklists(eventKey);
-    void fetchTeams(eventKey);
-    void fetchPitPhotos(eventKey);
-  }, [eventKey, fetchPicklists, fetchTeams, fetchPitPhotos]);
+    const sequence = ++loadSequence.current;
+    setActiveId(null);
+    selectDoc(null);
+    setTeamPool([]);
+    setPitPhotoByTeam(new Map());
+    setExpandedTeam(null);
+    if (eventKey) {
+      void fetchPicklists(eventKey, sequence);
+      void fetchTeams(eventKey, sequence);
+      void fetchPitPhotos(eventKey, sequence);
+    }
+    return () => { loadSequence.current = sequence + 1; };
+  }, [eventKey, fetchTrigger, fetchPicklists, fetchTeams, fetchPitPhotos, selectDoc]);
 
   useEffect(() => {
     if (activeId == null) return;
     const fromList = picklists.find((p) => p.id === activeId);
-    if (fromList) {
-      setDoc(fromList);
-      dirtyRef.current = false;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId]);
-
-  /* ---- Saving with optimistic concurrency ------------------------ */
-
-  const pushSave = useCallback(async () => {
-    const current = docRef.current;
-    if (!current || !dirtyRef.current) return;
-    setSaving(true);
-    try {
-      const result = await updatePicklist(current.id, {
-        version: current.version,
-        slots: current.slots,
-        title: current.title,
-        live_mode: current.live_mode,
-      });
-      if (result.conflict) {
-        // Someone else saved first: adopt their version, surface it clearly.
-        setDoc(result.picklist);
-        dirtyRef.current = false;
-        setStatusText('Picklist was updated by someone else — showing the latest version.');
-      } else {
-        dirtyRef.current = false;
-        setDoc((prev) =>
-          prev && prev.id === result.picklist.id
-            ? { ...prev, version: result.picklist.version }
-            : prev,
-        );
-        setStatusText('');
-      }
-      setErrorText('');
-    } catch (err) {
-      setErrorText((err as Error).message || 'Failed to save picklist.');
-    } finally {
-      setSaving(false);
-    }
-  }, []);
-
-  const scheduleSave = useCallback(() => {
-    dirtyRef.current = true;
-    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void pushSave();
-    }, SAVE_DEBOUNCE_MS);
-  }, [pushSave]);
-
-  useEffect(
-    () => () => {
-      if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
-    },
-    [],
-  );
+    if (fromList) selectDoc(fromList);
+  }, [activeId, picklists, selectDoc]);
 
   /* ---- Live mode polling ------------------------------------------ */
 
-  useEffect(() => {
-    if (!doc?.live_mode || doc.id == null) return;
-    const interval = window.setInterval(async () => {
-      if (dirtyRef.current) return; // don't clobber pending edits
-      try {
-        const result = await getPicklist(doc.id);
-        setDoc((prev) => {
-          if (!prev || prev.id !== result.picklist.id) return prev;
-          if (dirtyRef.current) return prev;
-          return result.picklist.version > prev.version ? result.picklist : prev;
-        });
-      } catch {
-        // Transient polling failure — next tick retries.
+  const pollLivePicklist = useCallback(async (): Promise<boolean> => {
+    if (!doc?.live_mode || editor.pending) return true;
+    const sequence = loadSequence.current;
+    try {
+      const result = await getPicklist(doc.id);
+      if (loadSequence.current === sequence && result.picklist.version > doc.version) {
+        setPicklists((prev) => prev.map((p) => p.id === result.picklist.id ? result.picklist : p));
       }
-    }, LIVE_POLL_MS);
-    return () => window.clearInterval(interval);
-  }, [doc?.live_mode, doc?.id]);
+      return true;
+    } catch { return false; }
+  }, [doc, editor.pending]);
+
+  useSingleFlightPolling({
+    enabled: Boolean(doc?.live_mode && doc.id != null),
+    visible: pageVisible && online,
+    intervalMs: LIVE_POLL_MS,
+    run: pollLivePicklist,
+    backoffMultiplier: 2,
+    minBackoffMs: LIVE_POLL_MS,
+    maxBackoffMs: 60000,
+  });
 
   /* ---- Mutations --------------------------------------------------- */
 
   const mutateSlots = useCallback(
     (updater: (slots: PicklistSlot[]) => PicklistSlot[]) => {
-      setDoc((prev) => {
-        if (!prev) return prev;
-        return { ...prev, slots: updater(prev.slots.slice()) };
-      });
-      scheduleSave();
-    },
-    [scheduleSave],
+      editDoc((prev) => ({ ...prev, slots: updater(prev.slots.slice()) }));
+    }, [editDoc],
   );
 
   async function handleCreate(seedFromRatings: boolean) {
     if (!eventKey) return;
+    const sequence = loadSequence.current;
     setLoading(true);
     setErrorText('');
     try {
@@ -278,29 +236,34 @@ export function PicklistPage() {
         created_by: readScoutProfile() || undefined,
         slots,
       });
+      if (loadSequence.current !== sequence) return;
       setPicklists((prev) => [result.picklist, ...prev]);
       setActiveId(result.picklist.id);
-      setDoc(result.picklist);
-      dirtyRef.current = false;
+      selectDoc(result.picklist);
     } catch (err) {
-      setErrorText((err as Error).message || 'Failed to create picklist.');
+      if (loadSequence.current === sequence) setErrorText((err as Error).message || 'Failed to create picklist.');
     } finally {
-      setLoading(false);
+      if (loadSequence.current === sequence) setLoading(false);
     }
   }
 
   async function handleDelete() {
-    if (!doc) return;
+    if (!doc || saving || deleting) return;
     if (!window.confirm(`Delete "${doc.title}"? This cannot be undone.`)) return;
+    const sequence = loadSequence.current;
+    editor.pause();
+    setDeleting(true);
     try {
       await deletePicklist(doc.id);
+      editor.remove(doc.id);
+      if (loadSequence.current !== sequence) return;
       setPicklists((prev) => prev.filter((p) => p.id !== doc.id));
       setActiveId(null);
-      setDoc(null);
-      if (eventKey) void fetchPicklists(eventKey);
+      selectDoc(null);
+      if (eventKey) void fetchPicklists(eventKey, sequence);
     } catch (err) {
-      setErrorText((err as Error).message || 'Failed to delete picklist.');
-    }
+      if (loadSequence.current === sequence) setErrorText((err as Error).message || 'Failed to delete picklist.');
+    } finally { setDeleting(false); }
   }
 
   function moveSlot(index: number, delta: number) {
@@ -386,8 +349,7 @@ export function PicklistPage() {
   }
 
   function toggleLiveMode() {
-    setDoc((prev) => (prev ? { ...prev, live_mode: !prev.live_mode } : prev));
-    scheduleSave();
+    editDoc((prev) => ({ ...prev, live_mode: !prev.live_mode }));
   }
 
   /* ---- Derived ----------------------------------------------------- */
@@ -423,7 +385,19 @@ export function PicklistPage() {
             />
 
             {errorText ? <p className="center-callout warning">{errorText}</p> : null}
-            {statusText ? <p className="center-callout muted">{statusText}</p> : null}
+            {editor.notice ? (
+              <div className="center-callout" role="status">
+                <p>{editor.notice}</p>
+                {editor.conflict ? (
+                  <>
+                    <button className="center-btn" type="button" onClick={editor.retry} disabled={saving || deleting}>Save my changes</button>
+                    <button className="center-btn ghost" type="button" onClick={() => {
+                      if (window.confirm('Discard your local edits and show the shared version?')) editor.discard();
+                    }} disabled={saving || deleting}>Use shared version</button>
+                  </>
+                ) : <button className="center-btn" type="button" onClick={editor.retry} disabled={saving || deleting}>Retry saving</button>}
+              </div>
+            ) : null}
 
             {eventKey ? (
               <div className="picklist-toolbar">
@@ -433,6 +407,7 @@ export function PicklistPage() {
                     value={activeId ?? ''}
                     onChange={(event) => setActiveId(Number(event.target.value))}
                     aria-label="Select picklist"
+                    disabled={deleting}
                   >
                     {picklists.map((list) => (
                       <option key={list.id} value={list.id}>
@@ -445,7 +420,7 @@ export function PicklistPage() {
                   type="button"
                   className="center-btn"
                   onClick={() => void handleCreate(true)}
-                  disabled={loading || teamPool.length === 0}
+                  disabled={loading || deleting || teamPool.length === 0}
                   title="Create a picklist pre-ranked by team ratings"
                 >
                   New from ratings
@@ -454,21 +429,22 @@ export function PicklistPage() {
                   type="button"
                   className="center-btn ghost"
                   onClick={() => void handleCreate(false)}
-                  disabled={loading}
+                  disabled={loading || deleting}
                 >
                   New empty
                 </button>
                 {doc ? (
                   <>
-                    <button type="button" className="center-btn ghost" onClick={addMissingTeams}>
+                    <button type="button" className="center-btn ghost" disabled={deleting} onClick={addMissingTeams}>
                       Add missing teams
                     </button>
-                    <button type="button" className="center-btn ghost" onClick={() => window.print()}>
-                      Print / PDF
+                    <button type="button" className="center-btn ghost" onClick={() => void exportPrintableReport('picklist.html').catch(() => window.alert('The report could not be exported. Please try again.'))}>
+                      {isNativeApp() ? 'Save report' : 'Print / PDF'}
                     </button>
                     <button
                       type="button"
                       className="center-btn ghost danger"
+                      disabled={saving || deleting}
                       onClick={() => void handleDelete()}
                     >
                       Delete
@@ -485,7 +461,7 @@ export function PicklistPage() {
               subtitle={
                 doc.live_mode
                   ? `LIVE — ${pickedCount} picked, ${availableCount} still available. Tap a team as it gets picked or declines.`
-                  : `${slots.length} teams ranked. Drag or use arrows to reorder.`
+                  : `${slots.length} team${slots.length === 1 ? '' : 's'} ranked. Drag or use arrows to reorder.`
               }
               right={
                 <span className="picklist-header-right">
@@ -493,6 +469,7 @@ export function PicklistPage() {
                   <button
                     type="button"
                     className={`center-btn ${doc.live_mode ? 'danger' : ''}`}
+                    disabled={deleting}
                     onClick={toggleLiveMode}
                   >
                     {doc.live_mode ? 'End live mode' : 'Start alliance selection'}
@@ -507,7 +484,7 @@ export function PicklistPage() {
                   Empty picklist. Use “Add missing teams” to pull in every team at this event.
                 </p>
               ) : (
-                <ol className="picklist-rows">
+                <ol className="picklist-rows" inert={deleting ? true : undefined}>
                   {slots.map((slot, index) => {
                     const info = teamInfoByKey.get(slot.team_key);
                     const crossed = slot.status === 'picked' || slot.status === 'declined';
@@ -687,5 +664,15 @@ export function PicklistPage() {
       </div>
       {isMobile ? <div className="picklist-mobile-spacer" aria-hidden="true" /> : null}
     </>
+  );
+}
+
+// Team-only: picklists are private to a workspace, so nothing loads until
+// the device has joined one.
+export function PicklistPage() {
+  return (
+    <WorkspaceGate feature="Picklists" viewBar={<PageViewBar items={COMPARE_VIEWS} />}>
+      <PicklistWorkspacePage />
+    </WorkspaceGate>
   );
 }

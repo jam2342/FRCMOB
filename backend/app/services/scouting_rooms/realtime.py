@@ -219,6 +219,45 @@ class ScoutingRoomRealtimeHub:
         await self._set_presence(meta)
         return await self.presence_snapshot(normalized_room)
 
+    async def clear_http_presence(self, room_key: str, scout_profile: str) -> list[dict[str, Any]]:
+        # A scout's HTTP presence (from opening the room) is never a competing
+        # connection for their own socket. It lives in Redis under whichever worker
+        # served the request, so clear it there too, not only this worker's copy.
+        normalized_room = str(room_key or "").strip().lower()
+        profile_lookup = str(scout_profile or "").strip().lower()
+        if not normalized_room or not profile_lookup:
+            return []
+        async with self._lock:
+            local = self._pop_http_presence_unlocked(
+                room_key=normalized_room,
+                scout_profile=scout_profile,
+                client_id=None,
+            )
+        for meta in local:
+            await self._delete_presence(meta)
+        redis_conn = await self._ensure_redis()
+        if redis_conn is not None:
+            try:
+                keys = await asyncio.wait_for(
+                    self._scan_presence_keys(redis_conn, self._presence_key(normalized_room, "http-*")),
+                    timeout=_REDIS_IO_TIMEOUT_SEC,
+                )
+                if keys:
+                    values = await asyncio.wait_for(redis_conn.mget(keys), timeout=_REDIS_IO_TIMEOUT_SEC)
+                    stale = []
+                    for key, raw in zip(keys, values):
+                        try:
+                            owner = str(json.loads(raw).get("scout_profile") or "").strip().lower() if raw else ""
+                        except (TypeError, ValueError, AttributeError):
+                            continue
+                        if owner == profile_lookup:
+                            stale.append(key)
+                    if stale:
+                        await asyncio.wait_for(redis_conn.delete(*stale), timeout=_REDIS_IO_TIMEOUT_SEC)
+            except Exception as exc:
+                logger.warning("Failed to clear HTTP presence for room %s: %s", normalized_room, exc)
+        return await self.presence_snapshot(normalized_room)
+
     async def presence_snapshot(self, room_key: str) -> list[dict[str, Any]]:
         redis_presence, redis_available = await self._presence_snapshot_from_redis(room_key)
         async with self._lock:
@@ -229,68 +268,6 @@ class ScoutingRoomRealtimeHub:
                 return redis_presence
             return local_presence
         return local_presence
-
-    async def profile_has_client_presence(
-        self,
-        room_key: str,
-        *,
-        scout_profile: str,
-        client_id: str | None,
-    ) -> bool:
-        # Return True when room/profile presence is already tied to the same client id.
-        normalized_room = str(room_key or "").strip().lower()
-        normalized_profile = str(scout_profile or "").strip().lower()
-        normalized_client_id = str(client_id or "").strip().lower()
-        if not normalized_room or not normalized_profile or not normalized_client_id:
-            return False
-
-        async with self._lock:
-            self._cleanup_stale_http_presence_unlocked()
-            for meta in self._connection_meta.values():
-                if str(meta.room_key or "").strip().lower() != normalized_room:
-                    continue
-                if str(meta.scout_profile or "").strip().lower() != normalized_profile:
-                    continue
-                if str(meta.client_id or "").strip().lower() == normalized_client_id:
-                    return True
-            for meta in self._http_presence.values():
-                if str(meta.room_key or "").strip().lower() != normalized_room:
-                    continue
-                if str(meta.scout_profile or "").strip().lower() != normalized_profile:
-                    continue
-                if str(meta.client_id or "").strip().lower() == normalized_client_id:
-                    return True
-
-        redis_conn = await self._ensure_redis()
-        if redis_conn is None:
-            return False
-        pattern = f"{self._presence_prefix}{normalized_room}:*"
-        try:
-            keys = [key async for key in redis_conn.scan_iter(match=pattern, count=200)]
-            if not keys:
-                return False
-            raw_values = await redis_conn.mget(keys)
-            for raw in raw_values:
-                if not raw:
-                    continue
-                try:
-                    payload = json.loads(raw)
-                except (TypeError, json.JSONDecodeError):
-                    continue
-                if not isinstance(payload, dict):
-                    continue
-                payload_profile = str(payload.get("scout_profile") or "").strip().lower()
-                payload_client_id = str(payload.get("client_id") or "").strip().lower()
-                if payload_profile == normalized_profile and payload_client_id == normalized_client_id:
-                    return True
-        except Exception as exc:
-            logger.warning(
-                "Failed to verify room client presence for room %s scout %s: %s",
-                normalized_room,
-                normalized_profile,
-                exc,
-            )
-        return False
 
     async def broadcast(self, room_key: str, payload: dict[str, Any]) -> None:
         async with self._lock:
@@ -539,10 +516,10 @@ class ScoutingRoomRealtimeHub:
         }
         try:
             await asyncio.wait_for(
-                redis_conn.setex(
+                redis_conn.set(
                     self._presence_key(meta.room_key, meta.connection_id),
-                    self._presence_ttl_sec,
                     json.dumps(payload, default=str),
+                    ex=self._presence_ttl_sec,
                 ),
                 timeout=_REDIS_IO_TIMEOUT_SEC,
             )

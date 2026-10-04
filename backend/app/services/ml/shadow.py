@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db import models
+from app.services.utils import BACKEND_ROOT
 from app.services.auto_scout.ml import (
     AUTO_SCOUT_FIELD_FEATURE_ORDER,
     AUTO_SCOUT_FIELD_MODEL_PREFIX,
@@ -38,6 +39,8 @@ from app.services.ml.synergy_ml import (
     rebuild_synergy_pair_feature_snapshots,
 )
 from app.services.ml.model_eval import (
+    r2_score,
+    expected_calibration_error,
     binary_log_loss,
     brier_score,
     mean_absolute_error,
@@ -259,9 +262,12 @@ def build_team_strength_shadow_input_from_rating_row(
 
 
 def _artifact_dir() -> Path:
+    # Relative to the backend root, so production writes into the persistent media
+    # volume (/app/media). This used to resolve under the app package (/app/app),
+    # the container's own layer, and every redeploy deleted the trained models.
     path = Path(str(getattr(settings, "ml_shadow_model_dir", "media/models/shadow") or "media/models/shadow"))
     if not path.is_absolute():
-        path = (Path(__file__).resolve().parents[2] / path).resolve()
+        path = (BACKEND_ROOT / path).resolve()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -269,7 +275,7 @@ def _artifact_dir() -> Path:
 def _resolve_artifact_path(raw_path: object) -> Path:
     artifact_path = Path(str(raw_path or "")).expanduser()
     if not artifact_path.is_absolute():
-        artifact_path = (Path(__file__).resolve().parents[2] / artifact_path).resolve()
+        artifact_path = (BACKEND_ROOT / artifact_path).resolve()
     else:
         artifact_path = artifact_path.resolve()
 
@@ -339,34 +345,37 @@ def _event_keys_for_snapshot_rebuild(
 
 
 def _team_target_map(db: Session, event_keys: set[str]) -> dict[tuple[str, str], dict[str, float]]:
+    # Target: a team's official fuel rate over active-hub time, in balls per second.
+    # (It used to be broadcast-video throughput, which never produced enough rows.)
     if not event_keys:
         return {}
     rows = (
         db.query(
-            models.TeamMatchThroughput.event_key,
-            models.TeamMatchThroughput.team_key,
-            func.avg(models.TeamMatchThroughput.active_bps),
-            func.count(models.TeamMatchThroughput.finding_id),
+            models.TeamMatchFinding.event_key,
+            models.TeamMatchFinding.team_key,
+            func.avg(models.TeamMatchFinding.fuel_scoring_rate),
+            func.count(models.TeamMatchFinding.id),
         )
         .filter(
-            models.TeamMatchThroughput.event_key.in_(sorted(event_keys)),
-            models.TeamMatchThroughput.active_bps.isnot(None),
+            models.TeamMatchFinding.event_key.in_(sorted(event_keys)),
+            models.TeamMatchFinding.source.in_(("tba_score_breakdown", "tba_score_breakdown_backfill")),
+            models.TeamMatchFinding.fuel_scoring_rate.isnot(None),
         )
         .group_by(
-            models.TeamMatchThroughput.event_key,
-            models.TeamMatchThroughput.team_key,
+            models.TeamMatchFinding.event_key,
+            models.TeamMatchFinding.team_key,
         )
         .all()
     )
     target_map: dict[tuple[str, str], dict[str, float]] = {}
-    for raw_event_key, raw_team_key, avg_active_bps, sample_count in rows:
+    for raw_event_key, raw_team_key, avg_rate_per_min, sample_count in rows:
         event_value = str(raw_event_key or "").strip().lower()
         team_value = str(raw_team_key or "").strip().lower()
-        avg_value = _safe_float(avg_active_bps)
+        avg_value = _safe_float(avg_rate_per_min)
         if not event_value or not team_value or avg_value is None:
             continue
         target_map[(event_value, team_value)] = {
-            "strength_active_bps": float(avg_value),
+            "strength_active_bps": float(avg_value) / 60.0,
             "samples": float(int(sample_count or 0)),
         }
     return target_map
@@ -377,47 +386,42 @@ def _match_target_map(db: Session, event_keys: set[str]) -> dict[str, dict[str, 
         return {}
     rows = (
         db.query(
-            models.TeamMatchThroughput.match_key,
+            models.TeamMatchFinding.match_key,
             models.TeamMatchFinding.alliance,
-            func.sum(models.TeamMatchThroughput.active_bps),
-            func.count(models.TeamMatchThroughput.finding_id),
+            models.TeamMatchFinding.summary,
         )
-        .join(models.TeamMatchFinding, models.TeamMatchFinding.id == models.TeamMatchThroughput.finding_id)
         .filter(
-            models.TeamMatchThroughput.event_key.in_(sorted(event_keys)),
-            models.TeamMatchThroughput.active_bps.isnot(None),
-        )
-        .group_by(
-            models.TeamMatchThroughput.match_key,
-            models.TeamMatchFinding.alliance,
+            models.TeamMatchFinding.event_key.in_(sorted(event_keys)),
+            models.TeamMatchFinding.source.in_(("tba_score_breakdown", "tba_score_breakdown_backfill")),
         )
         .all()
     )
 
-    aggregate: dict[str, dict[str, float]] = {}
-    for raw_match_key, raw_alliance, sum_active_bps, sample_count in rows:
+    result: dict[str, dict[str, float]] = {}
+    for raw_match_key, raw_alliance, raw_summary in rows:
         match_key = str(raw_match_key or "").strip().lower()
         alliance = str(raw_alliance or "").strip().lower()
-        total = _safe_float(sum_active_bps)
-        if not match_key or alliance not in {"red", "blue"} or total is None:
+        summary = raw_summary if isinstance(raw_summary, dict) else {}
+        red_score = _safe_float(summary.get("red_score"))
+        blue_score = _safe_float(summary.get("blue_score"))
+        if (
+            not match_key
+            or alliance not in {"red", "blue"}
+            or red_score is None
+            or blue_score is None
+            or red_score < 0.0
+            or blue_score < 0.0
+            or abs(red_score - blue_score) < 1e-9
+        ):
             continue
-        payload = aggregate.setdefault(match_key, {})
-        payload[f"{alliance}_total"] = float(total)
-        payload[f"{alliance}_samples"] = float(int(sample_count or 0))
-
-    result: dict[str, dict[str, float]] = {}
-    for match_key, payload in aggregate.items():
-        if "red_total" not in payload or "blue_total" not in payload:
+        if match_key in result:
             continue
-        margin = float(payload["red_total"]) - float(payload["blue_total"])
-        if abs(margin) < 1e-9:
-            continue
+        margin = float(red_score) - float(blue_score)
         result[match_key] = {
-            "red_total": float(payload["red_total"]),
-            "blue_total": float(payload["blue_total"]),
+            "red_score": float(red_score),
+            "blue_score": float(blue_score),
             "red_margin": margin,
             "red_win": 1.0 if margin > 0.0 else 0.0,
-            "sample_count": float(payload.get("red_samples", 0.0) + payload.get("blue_samples", 0.0)),
         }
     return result
 
@@ -442,16 +446,31 @@ def _event_year_map(db: Session, event_keys: set[str]) -> dict[str, int]:
     return result
 
 
-def _latest_year(year_map: dict[str, int]) -> int | None:
-    if not year_map:
-        return None
-    return max(year_map.values())
+# Share of events, newest last, kept out of fitting for evaluation.
+HOLDOUT_EVENT_FRACTION = 0.2
+HOLDOUT_MIN_EVENTS = 5
 
 
-def _split_tag_for_year(year: int | None, latest_year: int | None) -> str:
-    if latest_year is None or year is None:
-        return "train"
-    return "holdout" if int(year) >= int(latest_year) else "train"
+def holdout_event_keys(db: Session, event_keys: set[str]) -> set[str]:
+    # The newest events (by their last match) are the holdout, so a model is always
+    # judged on events after the ones it learned from. A whole-year holdout left
+    # nothing to fit once training was limited to the current season.
+    if len(event_keys) < HOLDOUT_MIN_EVENTS:
+        return set()
+    rows = (
+        db.query(models.Match.event_key, func.max(models.Match.time))
+        .filter(models.Match.event_key.in_(sorted(event_keys)))
+        .group_by(models.Match.event_key)
+        .all()
+    )
+    last_match = {str(event_key): int(latest or 0) for event_key, latest in rows}
+    ordered = sorted(event_keys, key=lambda key: (last_match.get(key, 0), key))
+    count = max(1, round(len(ordered) * HOLDOUT_EVENT_FRACTION))
+    return set(ordered[-count:])
+
+
+def split_tag_for_event(event_key: str, holdout_keys: set[str]) -> str:
+    return "holdout" if event_key in holdout_keys else "train"
 
 
 def _synergy_projection_map(db: Session, event_keys: set[str]) -> dict[tuple[str, str], dict[str, float]]:
@@ -496,7 +515,7 @@ def _rebuild_team_strength_feature_snapshots(
         return {"rows_written": 0, "skipped_missing_target": 0}
 
     target_by_team = _team_target_map(db, event_keys)
-    latest_year = _latest_year(year_map)
+    holdout_keys = holdout_event_keys(db, event_keys)
 
     rating_rows = (
         db.query(models.EventTeamRating)
@@ -508,10 +527,11 @@ def _rebuild_team_strength_feature_snapshots(
     skipped_missing_target = 0
     for rating in rating_rows:
         event_key = str(rating.event_key or "").strip().lower()
-        team_key = str(rating.team_key or "").strip().lower()
+        # Keep the stored key for the foreign key: TBA writes B teams as "frc4788B".
+        team_key = str(rating.team_key or "").strip()
         if not event_key or not team_key:
             continue
-        target_payload = target_by_team.get((event_key, team_key))
+        target_payload = target_by_team.get((event_key, team_key.lower()))
         if target_payload is None:
             skipped_missing_target += 1
             continue
@@ -520,7 +540,7 @@ def _rebuild_team_strength_feature_snapshots(
             build_team_strength_shadow_input_from_rating_row(rating)
         )
 
-        split_tag = _split_tag_for_year(year_map.get(event_key), latest_year)
+        split_tag = split_tag_for_event(event_key, holdout_keys)
         snapshot_key = f"{FEATURE_SCOPE_TEAM_STRENGTH}:{event_key}:{team_key}:{source_version}"
         db.merge(
             models.MLFeatureSnapshot(
@@ -553,7 +573,7 @@ def _rebuild_match_outcome_feature_snapshots(
     if not event_keys:
         return {"rows_written": 0, "skipped_missing_target": 0, "skipped_missing_alliance_data": 0}
 
-    latest_year = _latest_year(year_map)
+    holdout_keys = holdout_event_keys(db, event_keys)
     match_target_map = _match_target_map(db, event_keys)
     synergy_map = _synergy_projection_map(db, event_keys)
 
@@ -641,7 +661,7 @@ def _rebuild_match_outcome_feature_snapshots(
 
         event_key = str(payload.get("event_key") or "").strip().lower()
         match_time = int(payload.get("match_time") or 0)
-        split_tag = _split_tag_for_year(year_map.get(event_key), latest_year)
+        split_tag = split_tag_for_event(event_key, holdout_keys)
 
         feature_vector = {
             "red_rating_mean": red_rating_mean,
@@ -790,6 +810,8 @@ def _prepare_dataset(
 
     rows: list[dict[str, Any]] = []
     for snapshot in snapshots:
+        if str(snapshot.split_tag or "train").strip().lower() == "holdout":
+            continue
         feature_vector = snapshot.feature_vector if isinstance(snapshot.feature_vector, dict) else {}
         target = snapshot.target if isinstance(snapshot.target, dict) else {}
         target_value = _safe_float(target.get(target_key))
@@ -812,8 +834,10 @@ def _prepare_dataset(
             }
         )
 
+    if not rows:
+        raise RuntimeError("No training snapshot rows remain after excluding holdout rows.")
     if len(rows) < 20:
-        raise RuntimeError(f"Not enough labeled snapshot rows (got {len(rows)}).")
+        raise RuntimeError(f"Not enough labeled training snapshot rows after excluding holdout rows (got {len(rows)}).")
 
     train_rows, val_rows = time_split(rows, timestamp_fn=lambda item: item["timestamp"], train_ratio=train_ratio)
     if not train_rows or not val_rows:
@@ -967,24 +991,13 @@ def _train_regression_model(
         "val_mae": mean_absolute_error(val_actual, val_pred),
         "train_rmse": root_mean_squared_error(train_actual, train_pred),
         "val_rmse": root_mean_squared_error(val_actual, val_pred),
-        "val_r2": _r2_score(val_actual, val_pred),
-        "train_r2": _r2_score(train_actual, train_pred),
+        "val_r2": r2_score(val_actual, val_pred),
+        "train_r2": r2_score(train_actual, train_pred),
         "val_spearman": spearman_rank_correlation(val_actual, val_pred),
         "best_epoch": best_epoch,
         "final_lr": float(optimizer.param_groups[0]["lr"]),
     }
     return model, metrics
-
-
-def _r2_score(actual: list[float], predicted: list[float]) -> float | None:
-    if not actual or len(actual) != len(predicted) or len(actual) < 2:
-        return None
-    mean_actual = sum(actual) / float(len(actual))
-    ss_res = sum((y - yhat) ** 2 for y, yhat in zip(actual, predicted))
-    ss_tot = sum((y - mean_actual) ** 2 for y in actual)
-    if ss_tot < 1e-12:
-        return None
-    return 1.0 - (ss_res / ss_tot)
 
 
 def _classification_accuracy(y_true: list[float], y_prob: list[float]) -> float | None:
@@ -995,28 +1008,6 @@ def _classification_accuracy(y_true: list[float], y_prob: list[float]) -> float 
         if (float(prob) >= 0.5) == (float(target) >= 0.5)
     )
     return float(hits) / float(len(y_true))
-
-
-def _expected_calibration_error(
-    y_true: list[float],
-    y_prob: list[float],
-    n_bins: int = 10,
-) -> float | None:
-    if not y_true or len(y_true) != len(y_prob):
-        return None
-    bins: list[list[tuple[float, float]]] = [[] for _ in range(n_bins)]
-    for target, prob in zip(y_true, y_prob):
-        idx = min(int(float(prob) * n_bins), n_bins - 1)
-        bins[idx].append((float(target), float(prob)))
-    total = float(len(y_true))
-    ece = 0.0
-    for bucket in bins:
-        if not bucket:
-            continue
-        avg_conf = sum(p for _, p in bucket) / float(len(bucket))
-        avg_acc = sum(1.0 if t >= 0.5 else 0.0 for t, _ in bucket) / float(len(bucket))
-        ece += (float(len(bucket)) / total) * abs(avg_acc - avg_conf)
-    return ece
 
 
 def _train_classification_model(
@@ -1085,7 +1076,7 @@ def _train_classification_model(
         "val_brier": brier_score(val_actual, val_probs),
         "train_accuracy": _classification_accuracy(train_actual, train_probs),
         "val_accuracy": _classification_accuracy(val_actual, val_probs),
-        "val_ece": _expected_calibration_error(val_actual, val_probs),
+        "val_ece": expected_calibration_error(val_actual, val_probs),
         "best_epoch": best_epoch,
         "final_lr": float(optimizer.param_groups[0]["lr"]),
     }
@@ -1212,7 +1203,7 @@ def train_team_strength_shadow_model(
     *,
     model_version: str | None = None,
     source_version: str | None = None,
-    activate: bool = True,
+    activate: bool = False,
     train_ratio: float = 0.8,
     epochs: int = 300,
     learning_rate: float = 0.003,
@@ -1295,7 +1286,7 @@ def train_match_outcome_shadow_model(
     *,
     model_version: str | None = None,
     source_version: str | None = None,
-    activate: bool = True,
+    activate: bool = False,
     train_ratio: float = 0.8,
     epochs: int = 320,
     learning_rate: float = 0.003,
@@ -1388,7 +1379,7 @@ def train_auto_scout_field_shadow_model(
     field_name: str,
     model_version: str | None = None,
     source_version: str | None = None,
-    activate: bool = True,
+    activate: bool = False,
     train_ratio: float = 0.8,
     epochs: int = 260,
     learning_rate: float = 0.003,
@@ -1499,7 +1490,7 @@ def train_synergy_pair_shadow_model(
     *,
     model_version: str | None = None,
     source_version: str | None = None,
-    activate: bool = True,
+    activate: bool = False,
     train_ratio: float = 0.8,
     epochs: int = 280,
     learning_rate: float = 0.003,
@@ -1672,7 +1663,7 @@ def train_role_signal_shadow_model(
     signal_name: str,
     model_version: str | None = None,
     source_version: str | None = None,
-    activate: bool = True,
+    activate: bool = False,
     train_ratio: float = 0.8,
     epochs: int = 240,
     learning_rate: float = 0.003,
@@ -1826,11 +1817,12 @@ def _load_model_registry_row(
 ) -> models.MLModelRegistry | None:
     preferred_version = str(model_version or "").strip() or _preferred_model_version_from_settings(model_key)
     query = db.query(models.MLModelRegistry).filter(models.MLModelRegistry.model_key == model_key)
+    # A caller naming a version is an explicit candidate evaluation. Ordinary
+    # inference (including an env-pinned version) must only use released models.
+    if not str(model_version or "").strip():
+        query = query.filter(models.MLModelRegistry.is_active.is_(True))
     if preferred_version:
         return query.filter(models.MLModelRegistry.model_version == preferred_version).one_or_none()
-    active = query.filter(models.MLModelRegistry.is_active.is_(True)).order_by(models.MLModelRegistry.trained_at.desc()).first()
-    if active is not None:
-        return active
     return query.order_by(models.MLModelRegistry.trained_at.desc()).first()
 
 
@@ -2433,7 +2425,7 @@ def auto_train_shadow_models_for_event_breakdown(
     event_key: str,
     limit_events: int = 30,
     source_version: str | None = None,
-    activate: bool = True,
+    activate: bool = False,
     replace_predictions: bool = True,
 ) -> dict[str, Any]:
     normalized_event_key = str(event_key or "").strip().lower()
@@ -2541,6 +2533,8 @@ def auto_train_shadow_models_for_event_breakdown(
             db,
             event_key=normalized_event_key,
             model_key="all",
+            team_strength_model_version=train_results[TEAM_STRENGTH_MODEL_KEY].get("model_version"),
+            match_outcome_model_version=train_results[MATCH_OUTCOME_MODEL_KEY].get("model_version"),
             replace_existing=replace_predictions,
         )
     except Exception as exc:

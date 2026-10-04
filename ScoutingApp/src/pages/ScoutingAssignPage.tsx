@@ -22,6 +22,8 @@ import { useMobileLayout } from '../hooks/useMobileLayout';
 import { Chip } from '../components/ui/primitives';
 import styles from './ScoutingAssignPage.module.css';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
+import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
+import { getWorkspaceSession } from '../features/workspace/workspaceSession';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -111,9 +113,14 @@ function normalizeSecondaryLeaderProfiles(raw: unknown): string[] {
   return Array.from(byLookup.values()).sort((a, b) => a.localeCompare(b));
 }
 
+// The planner's scouts and assignments belong to the team that made them.
+function workspaceKey(base: string): string {
+  return `${base}:w${getWorkspaceSession()?.workspace.id ?? 0}`;
+}
+
 function loadScouts(): string[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_SCOUTS);
+    const raw = localStorage.getItem(workspaceKey(STORAGE_KEY_SCOUTS));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -121,12 +128,12 @@ function loadScouts(): string[] {
 }
 
 function saveScouts(scouts: string[]) {
-  localStorage.setItem(STORAGE_KEY_SCOUTS, JSON.stringify(scouts));
+  localStorage.setItem(workspaceKey(STORAGE_KEY_SCOUTS), JSON.stringify(scouts));
 }
 
 function loadAssignments(): AssignmentMap {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_ASSIGNMENTS);
+    const raw = localStorage.getItem(workspaceKey(STORAGE_KEY_ASSIGNMENTS));
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -134,7 +141,7 @@ function loadAssignments(): AssignmentMap {
 }
 
 function saveAssignments(map: AssignmentMap) {
-  localStorage.setItem(STORAGE_KEY_ASSIGNMENTS, JSON.stringify(map));
+  localStorage.setItem(workspaceKey(STORAGE_KEY_ASSIGNMENTS), JSON.stringify(map));
 }
 
 function roomSyncErrorMessage(message: string, action: string): string {
@@ -149,7 +156,7 @@ function roomSyncErrorMessage(message: string, action: string): string {
     || lookup.includes('timed out')
     || lookup.includes('without reason')
   ) {
-    return `${action} timed out before the server replied. Check the API/backend and retry.`;
+    return `${action} timed out on a slow connection. Try again in a moment.`;
   }
   return detail;
 }
@@ -241,7 +248,7 @@ function ScoutSelect({
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function ScoutingAssignPage() {
+function ScoutingAssignWorkspacePage() {
   const isMobile = useMobileLayout();
 
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY_EVENT);
@@ -255,7 +262,10 @@ export function ScoutingAssignPage() {
   const [assignments, setAssignments] = useState<AssignmentMap>(() => loadAssignments());
   const [showCompleted, setShowCompleted] = useState(false);
   const [myAssignmentsOnly, setMyAssignmentsOnly] = useState(false);
-  const [scoutProfile] = useState<string>(() => normalizeScoutProfile(localStorage.getItem(STORAGE_KEY_SCOUT_PROFILE) || ''));
+  // Rooms know a scout by their workspace name, so that is who "my assignments" means.
+  const [scoutProfile] = useState<string>(() =>
+    normalizeScoutProfile(getWorkspaceSession()?.me.display_name || localStorage.getItem(STORAGE_KEY_SCOUT_PROFILE) || ''),
+  );
   const [activeRoomKey] = useState<string>(() => String(sessionStorage.getItem(STORAGE_KEY_ACTIVE_ROOM) || '').trim().toLowerCase());
   const [roomClientId] = useState<string>(() => getOrCreateScoutingRoomClientId());
   const [roomMemberProfiles, setRoomMemberProfiles] = useState<string[]>([]);
@@ -794,7 +804,7 @@ export function ScoutingAssignPage() {
 
           {eventName && schedule ? (
             <p className="center-event-status">
-              <strong>{eventName}</strong> — {matches.length} matches
+              <strong>{eventName}</strong> — {matches.length} match{matches.length === 1 ? '' : 'es'}
             </p>
           ) : null}
 
@@ -960,7 +970,7 @@ export function ScoutingAssignPage() {
         {visibleMatches.length > 0 && scouts.length > 0 ? (
           <SurfaceCard
             title="Match Assignments"
-            subtitle={`${visibleMatches.length} matches. ${!canEditAssignments ? 'Read-only view.' : isMobile ? 'Tap to assign scouts.' : 'Click a cell to assign a scout.'}`}
+            subtitle={`${visibleMatches.length} match${visibleMatches.length === 1 ? '' : 'es'}. ${!canEditAssignments ? 'Read-only view.' : isMobile ? 'Tap to assign scouts.' : 'Click a cell to assign a scout.'}`}
           >
             {/* One list in the DOM, not two. These were split with
                 .desktop-only / .mobile-only, which is CSS — so an 80-match
@@ -1119,5 +1129,15 @@ function MobileAssignmentCard({
         {match.blue.map(renderTeamRow)}
       </div>
     </div>
+  );
+}
+
+// Team-only: scouting assignments are private to a workspace, so nothing loads until
+// the device has joined one.
+export function ScoutingAssignPage() {
+  return (
+    <WorkspaceGate feature="Scouting assignments" viewBar={<PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />}>
+      <ScoutingAssignWorkspacePage />
+    </WorkspaceGate>
   );
 }

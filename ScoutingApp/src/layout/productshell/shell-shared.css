@@ -1254,6 +1254,46 @@
   padding-left: 78px;
 }
 
+/* The desktop Home side column is under 300px wide at common laptop sizes.
+   Four columns there squeezed the alliance lines to zero width and their
+   scores painted over the result, so narrow cards give the alliances their
+   own row. Below 1120px every card is already single-column. */
+@media (min-width: 1121px) {
+  .product-shell .home-match-list {
+    container: home-match-list / inline-size;
+  }
+
+  @container home-match-list (max-width: 640px) {
+    .product-shell .home-match-main {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        "state center timer"
+        "alliances alliances alliances";
+      row-gap: 8px;
+    }
+
+    .product-shell .home-match-main > .home-match-state {
+      grid-area: state;
+    }
+
+    .product-shell .home-match-main > .home-match-center-col {
+      grid-area: center;
+    }
+
+    .product-shell .home-match-main > .home-match-alliances {
+      grid-area: alliances;
+    }
+
+    .product-shell .home-match-main > .home-match-timer-col {
+      grid-area: timer;
+    }
+
+    .product-shell .home-match-team-pills {
+      padding-left: 0;
+    }
+  }
+}
+
 .product-shell .home-team-pill {
   border-color: var(--ui-border-strong);
   background: var(--ui-surface-muted);
@@ -1297,6 +1337,30 @@
 .product-shell .scout-timer-shell {
   border-color: var(--ui-border);
   background: var(--ui-surface-soft);
+}
+
+/* The rule above sits in a later layer than the team chip's own alliance
+   and active styles, so it erased them: the robot being scouted looked
+   exactly like the other five. Alliance shows as a stripe; the selected
+   chip gets the alliance border and tint. */
+.product-shell .scout-team-chip.red {
+  box-shadow: inset 3px 0 0 var(--color-alliance-red);
+}
+
+.product-shell .scout-team-chip.blue {
+  box-shadow: inset 3px 0 0 var(--color-alliance-blue);
+}
+
+.product-shell .scout-team-chip.red.active {
+  border-color: var(--color-alliance-red);
+  background: var(--color-alliance-red-soft);
+  box-shadow: inset 3px 0 0 var(--color-alliance-red), 0 0 0 1px var(--color-alliance-red);
+}
+
+.product-shell .scout-team-chip.blue.active {
+  border-color: var(--color-alliance-blue);
+  background: var(--color-alliance-blue-soft);
+  box-shadow: inset 3px 0 0 var(--color-alliance-blue), 0 0 0 1px var(--color-alliance-blue);
 }
 
 .product-shell .compare-layout-grid > .center-sidebar,
@@ -1457,11 +1521,11 @@
 }
 
 .product-shell.theme-light .home-match-alliances span.red {
-  color: var(--color-danger);
+  color: var(--color-alliance-red-text);
 }
 
 .product-shell.theme-light .home-match-alliances span.blue {
-  color: #5b89bb;
+  color: var(--color-alliance-blue-text);
 }
 
 .product-shell.theme-light .home-match-alliances .alliance-score {

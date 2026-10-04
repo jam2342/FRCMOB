@@ -1,3 +1,5 @@
+import { isNativeApp } from '../platform/runtime';
+import { SecureStorage } from '../platform/secureStorage';
 /**
  * Offline mutation queue.
  *
@@ -12,9 +14,10 @@
  * volume of data, survives localStorage eviction).  localStorage is the
  * fallback when IndexedDB is unavailable (some private-browsing modes).
  * Legacy localStorage queues are migrated into IndexedDB on first load.
- * Nothing is ever dropped silently — any forced drop dispatches an
- * `offlinequeue:dropped` event so the UI can warn the user.
+ * Rejected writes remain stored for recovery. Storage failures dispatch an
+ * `offlinequeue:dropped` event and reject the save so the form stays open.
  */
+import { recordConfirmedSync, recordSyncIssue } from '../features/offline/syncReceipt';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -35,11 +38,13 @@ export interface QueuedMutation {
   attempts: number;
   /** Human-readable label for the UI (e.g. "Save scouting entry"). */
   label?: string;
+  /** Retained for recovery; blocked writes are never automatically replayed. */
+  failure?: { reason: 'server-rejected' | 'conflict'; status: number };
 }
 
 export interface DroppedMutationInfo {
-  /** Why the item left the queue without a successful replay. */
-  reason: 'storage-failure' | 'server-rejected';
+  /** Why the item could not be saved or delivered. */
+  reason: 'storage-failure' | 'server-rejected' | 'conflict';
   count: number;
   labels: string[];
 }
@@ -50,6 +55,7 @@ const LEGACY_STORAGE_KEY = 'frcmob_offline_queue_v1';
 const IDB_NAME = 'frcmob_offline_queue';
 const IDB_VERSION = 1;
 const IDB_STORE = 'mutations';
+const REPLAY_TIMEOUT_MS = 12_000;
 
 // ── Module state ───────────────────────────────────────────────
 
@@ -65,6 +71,7 @@ function emitChange(count: number): void {
 }
 
 function emitDropped(info: DroppedMutationInfo): void {
+  recordSyncIssue(info);
   window.dispatchEvent(new CustomEvent('offlinequeue:dropped', { detail: info }));
 }
 
@@ -96,23 +103,46 @@ function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
+type ProtectedMutation = { id: string; secureVersion: 1; ciphertext: string };
+
 async function idbReadAll(): Promise<QueuedMutation[]> {
   const db = await openDb();
   try {
     const tx = db.transaction(IDB_STORE, 'readonly');
     const rows = await idbRequest(tx.objectStore(IDB_STORE).getAll());
-    const items = (Array.isArray(rows) ? rows : []) as QueuedMutation[];
+    const items: QueuedMutation[] = [];
+    for (const row of (Array.isArray(rows) ? rows : []) as (QueuedMutation | ProtectedMutation)[]) {
+      if ('secureVersion' in row) {
+        if (!isNativeApp()) throw new Error('Protected changes require the native app.');
+        const value = JSON.parse((await SecureStorage.decrypt({ value: row.ciphertext })).value) as QueuedMutation;
+        if (value.id !== row.id) throw new Error('Protected change identity mismatch.');
+        items.push(value);
+      } else items.push(row);
+    }
     return items.sort((a, b) => (a.queuedAt < b.queuedAt ? -1 : 1));
   } finally {
     db.close();
   }
 }
 
+function transactionDone(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error ?? new Error('Offline storage transaction aborted'));
+    tx.onerror = () => reject(tx.error ?? new Error('Offline storage transaction failed'));
+  });
+}
+
 async function idbPut(item: QueuedMutation): Promise<void> {
+  const stored = isNativeApp()
+    ? { id: item.id, secureVersion: 1, ciphertext: (await SecureStorage.encrypt({ value: JSON.stringify(item) })).value }
+    : item;
   const db = await openDb();
   try {
     const tx = db.transaction(IDB_STORE, 'readwrite');
-    await idbRequest(tx.objectStore(IDB_STORE).put(item));
+    const done = transactionDone(tx);
+    tx.objectStore(IDB_STORE).put(stored);
+    await done;
   } finally {
     db.close();
   }
@@ -124,17 +154,9 @@ async function idbDelete(ids: string[]): Promise<void> {
   try {
     const tx = db.transaction(IDB_STORE, 'readwrite');
     const store = tx.objectStore(IDB_STORE);
-    await Promise.all(ids.map((id) => idbRequest(store.delete(id))));
-  } finally {
-    db.close();
-  }
-}
-
-async function idbCount(): Promise<number> {
-  const db = await openDb();
-  try {
-    const tx = db.transaction(IDB_STORE, 'readonly');
-    return await idbRequest(tx.objectStore(IDB_STORE).count());
+    const done = transactionDone(tx);
+    for (const id of ids) store.delete(id);
+    await done;
   } finally {
     db.close();
   }
@@ -154,27 +176,8 @@ function lsRead(): QueuedMutation[] {
 }
 
 function lsWrite(queue: QueuedMutation[]): void {
-  try {
-    window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(queue));
-  } catch {
-    // Quota exceeded. Shrink, but tell the user exactly what was lost —
-    // silently discarding scouting data is the worst possible failure here.
-    const keep = queue.slice(-20);
-    const dropped = queue.slice(0, Math.max(0, queue.length - 20));
-    try {
-      window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(keep));
-    } catch {
-      // Nothing fits at all.
-      dropped.push(...keep);
-    }
-    if (dropped.length > 0) {
-      emitDropped({
-        reason: 'storage-failure',
-        count: dropped.length,
-        labels: dropped.map((d) => d.label ?? `${d.method} ${d.url}`),
-      });
-    }
-  }
+  // Never sacrifice older scouting work to make a new save fit.
+  window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(queue));
 }
 
 function lsClear(): void {
@@ -194,6 +197,16 @@ function lsClear(): void {
 function ensureInit(): Promise<void> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
+    if (isNativeApp()) {
+      const existing = await idbReadAll();
+      const rows = new Map(existing.map(item => [item.id, item]));
+      // Interrupted migration may leave duplicate legacy entries. IDB is newer.
+      for (const item of lsRead()) if (!rows.has(item.id)) rows.set(item.id, item);
+      for (const item of rows.values()) await idbPut(item);
+      lsClear();
+      emitChange([...rows.values()].filter(item => !item.failure).length);
+      return;
+    }
     try {
       const legacy = lsRead();
       if (legacy.length > 0) {
@@ -202,58 +215,64 @@ function ensureInit(): Promise<void> {
         }
         lsClear();
       }
-      emitChange(await idbCount());
+      emitChange((await idbReadAll()).filter((item) => !item.failure).length);
     } catch {
       idbUnavailable = true;
-      emitChange(lsRead().length);
+      emitChange(lsRead().filter((item) => !item.failure).length);
     }
-  })();
+  })().catch(error => { initPromise = null; throw error; });
   return initPromise;
 }
 
 async function readQueue(): Promise<QueuedMutation[]> {
   await ensureInit();
   if (idbUnavailable) return lsRead();
-  try {
-    return await idbReadAll();
-  } catch {
-    idbUnavailable = true;
-    return lsRead();
-  }
+  return idbReadAll();
 }
 
 // ── Public API ─────────────────────────────────────────────────
 
 /** Enqueue a failed mutation for later replay. */
-export function enqueue(mutation: Omit<QueuedMutation, 'id' | 'queuedAt' | 'attempts'>): void {
+export async function enqueue(mutation: Omit<QueuedMutation, 'id' | 'queuedAt' | 'attempts' | 'failure'>): Promise<void> {
   const item: QueuedMutation = {
     ...mutation,
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     queuedAt: new Date().toISOString(),
     attempts: 0,
   };
-  // Optimistically bump the visible count right away.
-  emitChange(knownCount + 1);
-  void ensureInit().then(async () => {
-    if (idbUnavailable) {
-      const queue = lsRead();
-      queue.push(item);
-      lsWrite(queue);
-      emitChange(lsRead().length);
-      return;
-    }
-    try {
-      await idbPut(item);
-      emitChange(await idbCount());
-    } catch {
-      // IndexedDB write failed mid-session — fall back to localStorage.
-      idbUnavailable = true;
-      const queue = lsRead();
-      queue.push(item);
-      lsWrite(queue);
-      emitChange(lsRead().length);
-    }
-  });
+  await ensureInit();
+  try {
+    await saveQueuedItem(item);
+  } catch {
+    emitDropped({ reason: 'storage-failure', count: 1, labels: [item.label ?? `${item.method} ${item.url}`] });
+    throw new Error('This change could not be saved on this phone. Keep your form open and try again.');
+  }
+  emitChange((await readQueue()).filter((item) => !item.failure).length);
+}
+
+async function saveQueuedItem(item: QueuedMutation): Promise<void> {
+  if (!idbUnavailable) return idbPut(item);
+  const queue = lsRead();
+  const index = queue.findIndex((row) => row.id === item.id);
+  if (index < 0) queue.push(item);
+  else queue[index] = item;
+  lsWrite(queue);
+}
+
+async function removeQueuedItem(id: string): Promise<void> {
+  if (!idbUnavailable) return idbDelete([id]);
+  lsWrite(lsRead().filter((item) => item.id !== id));
+}
+
+/** Original edits remain on this device when the server refuses them. */
+export async function listFailedMutations(): Promise<QueuedMutation[]> {
+  return (await readQueue()).filter((item) => item.failure);
+}
+
+/** Recovery files contain scouting data, never stored authorization headers. */
+export async function recoveryChanges(): Promise<unknown[]> {
+  return (await listFailedMutations()).map(({ id, queuedAt, method, body, label, failure }) =>
+    ({ id, queuedAt, method, body, label, failure }));
 }
 
 /**
@@ -261,7 +280,7 @@ export function enqueue(mutation: Omit<QueuedMutation, 'id' | 'queuedAt' | 'atte
  * kept fresh via `offlinequeue:change` events).
  */
 export function size(): number {
-  void ensureInit();
+  void ensureInit().catch(() => {});
   return knownCount;
 }
 
@@ -269,63 +288,72 @@ export function size(): number {
  * Replay all queued mutations sequentially.
  * Returns the number of successfully replayed items.
  */
-export async function flush(): Promise<number> {
+async function isConflictBody(res: Response): Promise<boolean> {
+  // Read the complete acknowledgement while the replay timeout is still active.
+  // A connection failure during the body must keep the original edit for retry.
+  const text = await res.clone().text();
+  if (!text) return false;
+  let body: { ok?: unknown; conflict?: unknown } | null;
+  try { body = JSON.parse(text); }
+  catch (error) {
+    if (res.headers.get('content-type')?.includes('application/json')) throw error;
+    return false;
+  }
+  return Boolean(body && body.ok === false && body.conflict === true);
+}
+
+let flushInFlight: Promise<number> | null = null;
+
+// Single-flight: the online event, the retry timer and a tab coming back can
+// all ask at once, and two overlapping flushes would send the same write twice.
+export function flush(): Promise<number> {
+  if (flushInFlight) return flushInFlight;
+  flushInFlight = flushQueue().finally(() => {
+    flushInFlight = null;
+  });
+  return flushInFlight;
+}
+
+async function flushQueue(): Promise<number> {
   const queue = await readQueue();
   if (queue.length === 0) return 0;
 
   let successCount = 0;
-  const doneIds: string[] = [];
-  const rejected: QueuedMutation[] = [];
-  const remaining: QueuedMutation[] = [];
-
   for (const item of queue) {
+    if (item.failure) continue;
+    let res: Response;
+    let conflict: boolean;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REPLAY_TIMEOUT_MS);
     try {
-      const res = await fetch(item.url, {
+      res = await fetch(item.url, {
         method: item.method,
         headers: item.headers,
         body: item.body ?? undefined,
+        signal: controller.signal,
       });
-      if (res.ok || res.status === 409 /* already exists / idempotent */) {
-        successCount += 1;
-        doneIds.push(item.id);
-      } else if (res.status >= 500) {
-        // Server error — keep for retry.
-        remaining.push({ ...item, attempts: item.attempts + 1 });
-      } else {
-        // 4xx — the server will never accept this (bad request, auth
-        // expired). Remove it, but tell the user what was discarded.
-        doneIds.push(item.id);
-        rejected.push(item);
-      }
+      conflict = res.status === 409 || (res.ok && await isConflictBody(res));
     } catch {
-      // Still offline — keep in queue.
-      remaining.push({ ...item, attempts: item.attempts + 1 });
+      await saveQueuedItem({ ...item, attempts: item.attempts + 1 });
+      continue;
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (res.ok && !conflict) {
+      // Delete only this confirmed item, so concurrent saves cannot be overwritten.
+      await removeQueuedItem(item.id);
+      successCount++;
+    } else if (res.status >= 500 || res.status === 408 || res.status === 429) {
+      await saveQueuedItem({ ...item, attempts: item.attempts + 1 });
+    } else {
+      const reason = conflict ? 'conflict' : 'server-rejected';
+      await saveQueuedItem({ ...item, attempts: item.attempts + 1, failure: { reason, status: res.status } });
+      emitDropped({ reason, count: 1, labels: [item.label ?? `${item.method} ${item.url}`] });
     }
   }
 
-  if (idbUnavailable) {
-    lsWrite(remaining);
-  } else {
-    try {
-      await idbDelete(doneIds);
-      for (const item of remaining) {
-        await idbPut(item);
-      }
-    } catch {
-      idbUnavailable = true;
-      lsWrite(remaining);
-    }
-  }
-
-  if (rejected.length > 0) {
-    emitDropped({
-      reason: 'server-rejected',
-      count: rejected.length,
-      labels: rejected.map((d) => d.label ?? `${d.method} ${d.url}`),
-    });
-  }
-
-  emitChange(remaining.length);
+  emitChange((await readQueue()).filter((item) => !item.failure).length);
+  if (successCount > 0) recordConfirmedSync();
   return successCount;
 }
 
@@ -337,11 +365,21 @@ let _autoFlushBound = false;
 export function startAutoFlush(): void {
   if (_autoFlushBound) return;
   _autoFlushBound = true;
-  void ensureInit();
+  void ensureInit().catch(() => {});
   window.addEventListener('online', () => {
     // Small delay to let the network stabilise.
     setTimeout(() => {
       flush().catch(() => {});
     }, 1500);
   });
+  // Venue wifi usually fails while the browser still says "online", so no
+  // online event ever fires; retry on a timer and when the app comes back.
+  window.setInterval(() => {
+    if (navigator.onLine) flush().catch(() => {});
+  }, 30_000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && navigator.onLine) flush().catch(() => {});
+  });
 }
+
+export const bootstrapNativeQueue = () => isNativeApp() ? ensureInit() : Promise.resolve();

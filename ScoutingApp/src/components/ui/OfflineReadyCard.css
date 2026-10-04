@@ -1,0 +1,63 @@
+/* "Ready for no signal" card */
+
+.offline-ready__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.offline-ready__list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--type-body-size);
+}
+
+.offline-ready__item {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.offline-ready__ok {
+  color: var(--color-success);
+}
+
+.offline-ready__todo {
+  color: var(--color-text-muted);
+}
+
+.offline-ready__progress,
+.offline-ready__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+}
+
+.offline-ready__progress {
+  margin-top: var(--space-2);
+}
+
+.offline-ready__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.offline-ready__note {
+  margin-top: var(--space-2);
+}
+
+.offline-ready__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+}

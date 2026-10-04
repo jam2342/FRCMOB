@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FRCMOB</string>
+    <string name="title_activity_main">FRCMOB</string>
+    <string name="package_name">app.frcmob.scouting</string>
+    <string name="custom_url_scheme">app.frcmob.scouting</string>
+</resources>

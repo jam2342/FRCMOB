@@ -16,13 +16,10 @@ from app.services.auto_scout.backfill import backfill_missing_auto_scout_drafts
 from app.services.auto_scout.training import export_auto_scout_training_snapshots
 from app.services.climb.official_backfill import run_official_climb_backfill
 from app.services.climb.integrity import safe_run_climb_integrity_audit
-from app.services.freshness_recovery import recover_stale_events
 from app.services.intel.snapshots import refresh_hot_intel_snapshots
-from app.services.analysis.live_monitor import run_regional_live_auto_manager_tick
 from app.services.push.match_alerts import run_match_alert_tick
 from app.services.push.sender import push_configured
 from app.services.scouting_rooms.maintenance import cleanup_inactive_scouting_rooms
-from app.services.media.storage_cleanup import cleanup_old_media
 
 logger = logging.getLogger(__name__)
 
@@ -325,17 +322,6 @@ def start_scheduler() -> None:
         registration_failures.append(f"remove_all_jobs: {exc}")
         logger.error("Failed to clear existing scheduler jobs: %s", exc)
 
-    if settings.storage_cleanup_enabled and settings.storage_cleanup_post_analysis:
-        _register_job(
-            job_fn=_scheduled_cleanup_old_media,
-            trigger="interval",
-            job_id="cleanup_old_media",
-            job_name="Cleanup old media (>N days)",
-            success_log=f"Scheduled cleanup job added (threshold: {settings.storage_cleanup_age_days_auto} days)",
-            hours=24,
-            misfire_grace_time=3600,
-        )
-
     if settings.scouting_rooms_cleanup_enabled:
         interval_minutes = max(15, int(settings.scouting_rooms_cleanup_interval_minutes))
         _register_job(
@@ -375,18 +361,6 @@ def start_scheduler() -> None:
             misfire_grace_time=300,
         )
 
-    if settings.freshness_recovery_enabled:
-        interval_minutes = max(5, int(settings.freshness_recovery_interval_minutes))
-        _register_job(
-            job_fn=_scheduled_freshness_recovery,
-            trigger="interval",
-            job_id="freshness_recovery",
-            job_name="Recover stale/missing analysis coverage",
-            success_log=f"Scheduled freshness recovery job added (interval: {interval_minutes} min)",
-            minutes=interval_minutes,
-            misfire_grace_time=300,
-        )
-
     if settings.climb_integrity_audit_enabled:
         interval_minutes = max(30, int(settings.climb_integrity_audit_interval_minutes))
         _register_job(
@@ -421,31 +395,6 @@ def start_scheduler() -> None:
             success_log=f"Scheduled regional post-event automation job added (interval: {interval_hours} hours)",
             hours=interval_hours,
             misfire_grace_time=max(300, interval_hours * 60 * 60),
-        )
-
-    if settings.live_analysis_enabled and settings.live_analysis_regional_auto_enabled:
-        interval_sec = max(30, int(settings.live_analysis_regional_auto_interval_sec))
-        _register_job(
-            job_fn=_scheduled_live_regional_auto_manager,
-            trigger="interval",
-            job_id="live_regional_auto_manager",
-            job_name="Auto-manage regional live stream monitors",
-            success_log=f"Scheduled regional live auto-manager job added (interval: {interval_sec} sec)",
-            seconds=interval_sec,
-            misfire_grace_time=max(30, interval_sec),
-            next_run_time=datetime.now(timezone.utc),
-        )
-
-    if settings.analysis_low_quality_reprocess_enabled:
-        interval_minutes = max(15, int(settings.analysis_low_quality_reprocess_interval_minutes))
-        _register_job(
-            job_fn=_scheduled_low_quality_reprocess,
-            trigger="interval",
-            job_id="low_quality_reprocess",
-            job_name="Reprocess low-quality matches with denser sampling",
-            success_log=f"Scheduled low-quality reprocess job added (interval: {interval_minutes} min)",
-            minutes=interval_minutes,
-            misfire_grace_time=max(120, interval_minutes * 60),
         )
 
     if settings.ops_smoke_check_enabled:
@@ -516,23 +465,6 @@ def stop_scheduler() -> None:
         finally:
             _scheduler = None
 
-def _scheduled_cleanup_old_media() -> None:
-    with _scheduled_job("cleanup_old_media", lock_ttl_sec=4 * 60 * 60) as details:
-        if details is None:
-            return
-        logger.info("Starting scheduled cleanup of media older than %s days", settings.storage_cleanup_age_days_auto)
-        result = cleanup_old_media(older_than_days=settings.storage_cleanup_age_days_auto, aggressive=True)
-        if result.get("ok"):
-            logger.info("Scheduled cleanup completed: freed %s GB, deleted %s files",
-                        result.get("total_deleted_gb", 0), result.get("total_deleted_files", 0))
-        else:
-            logger.warning("Scheduled cleanup encountered issues: %s", result.get("reason", "unknown"))
-        details.update(
-            deleted_files=int(result.get("total_deleted_files") or 0),
-            deleted_gb=float(result.get("total_deleted_gb") or 0.0),
-            reason=result.get("reason"),
-        )
-
 def _scheduled_cleanup_inactive_scouting_rooms() -> None:
     interval_minutes = max(15, int(settings.scouting_rooms_cleanup_interval_minutes))
     with _scheduled_job("cleanup_inactive_scouting_rooms", lock_ttl_sec=max(120, interval_minutes * 120)) as details:
@@ -593,48 +525,6 @@ def _scheduled_refresh_intel_snapshots() -> None:
             runtime_sec=result.get("runtime_sec"),
             timed_out=bool(result.get("timed_out")),
             error_count=len(result.get("errors") or []),
-        )
-
-def _scheduled_freshness_recovery() -> None:
-    interval_minutes = max(5, int(settings.freshness_recovery_interval_minutes))
-    with _scheduled_job("freshness_recovery", lock_ttl_sec=max(180, interval_minutes * 120), use_db=True) as details:
-        if details is None:
-            return
-        db = details["_db"]
-        logger.info("Starting scheduled freshness recovery")
-        result = recover_stale_events(
-            db,
-            stale_hours_threshold=int(settings.freshness_sla_stale_hours),
-            max_events=int(settings.freshness_recovery_max_events_per_run),
-            max_target_teams_per_event=int(settings.freshness_recovery_max_target_teams_per_event),
-            force_analysis=bool(settings.freshness_recovery_force_analysis),
-            require_video=bool(settings.freshness_recovery_require_video),
-            require_calibration=bool(settings.freshness_recovery_require_calibration),
-            run_post_compute=bool(settings.freshness_recovery_run_post_compute),
-        )
-        totals = result.get("totals") if isinstance(result, dict) else {}
-        logger.info(
-            "Freshness recovery completed events=%s targeted_teams=%s scheduled=%s skipped=%s blocked=%s",
-            result.get("processed_event_count") if isinstance(result, dict) else None,
-            totals.get("targeted_teams") if isinstance(totals, dict) else None,
-            totals.get("scheduled_matches") if isinstance(totals, dict) else None,
-            totals.get("skipped_matches") if isinstance(totals, dict) else None,
-            totals.get("blocked_matches") if isinstance(totals, dict) else None,
-        )
-        try:
-            snapshot_refresh = refresh_hot_intel_snapshots()
-            logger.info(
-                "Freshness recovery intel refresh events=%s team_snapshots=%s backfilled_fields=%s errors=%s",
-                snapshot_refresh.get("processed_events"), snapshot_refresh.get("team_snapshots_written"),
-                snapshot_refresh.get("missing_fields_backfilled"), len(snapshot_refresh.get("errors") or []),
-            )
-        except (RuntimeError, ValueError, TypeError, OSError) as snapshot_exc:
-            logger.error("Freshness recovery intel refresh failed: %s", snapshot_exc, exc_info=True)
-        details.update(
-            processed_event_count=int(result.get("processed_event_count") or 0) if isinstance(result, dict) else 0,
-            targeted_teams=int(totals.get("targeted_teams") or 0) if isinstance(totals, dict) else 0,
-            scheduled_matches=int(totals.get("scheduled_matches") or 0) if isinstance(totals, dict) else 0,
-            blocked_matches=int(totals.get("blocked_matches") or 0) if isinstance(totals, dict) else 0,
         )
 
 def _scheduled_climb_integrity_audit() -> None:
@@ -708,15 +598,11 @@ def _scheduled_regional_post_event_breakdowns() -> None:
         season = _current_regional_automation_season()
         result = run_regional_automation_tick(
             season=season, db=db, force_tick=False,
-            min_interval_minutes=interval_hours * 60, force_analysis=False,
+            min_interval_minutes=interval_hours * 60,
             include_out_of_region_events_for_in_region_teams=bool(settings.automation_regional_halfday_include_out_of_region_events),
             include_ended_today=bool(settings.automation_regional_halfday_include_ended_today),
-            all_matches_in_region_events=bool(settings.automation_regional_halfday_all_matches_in_region_events),
             max_events=int(settings.automation_regional_max_events),
             max_teams=int(settings.automation_regional_max_teams),
-            clone_event_calibration=bool(settings.automation_regional_clone_event_calibration),
-            require_video=bool(settings.automation_regional_require_video),
-            require_calibration=bool(settings.automation_regional_require_calibration),
             run_post_compute=bool(settings.automation_regional_run_post_compute),
             synergy_model_version=SYNERGY_MODEL_VERSION,
             quality_threshold=QUALITY_THRESHOLD_DEFAULT,
@@ -734,38 +620,6 @@ def _scheduled_regional_post_event_breakdowns() -> None:
             processed_event_count=inner.get("processed_event_count"),
             completed_event_count=inner.get("completed_event_count"),
         )
-
-def _scheduled_live_regional_auto_manager() -> None:
-    interval_sec = max(30, int(settings.live_analysis_regional_auto_interval_sec))
-    with _scheduled_job("live_regional_auto_manager", lock_ttl_sec=max(120, interval_sec * 6)) as details:
-        if details is None:
-            return
-        result = run_regional_live_auto_manager_tick(force=False)
-        logger.info(
-            "Regional live auto-manager status=%s discovered=%s started=%s updated=%s kept=%s stopped=%s errors=%s",
-            result.get("status") if isinstance(result, dict) else None,
-            len(result.get("discovered_active_events") or []) if isinstance(result, dict) else None,
-            len(result.get("started_events") or []) if isinstance(result, dict) else None,
-            len(result.get("updated_events") or []) if isinstance(result, dict) else None,
-            len(result.get("kept_events") or []) if isinstance(result, dict) else None,
-            len(result.get("stopped_events") or []) if isinstance(result, dict) else None,
-            len(result.get("errored_events") or []) if isinstance(result, dict) else None,
-        )
-        details.update(
-            status=result.get("status") if isinstance(result, dict) else None,
-            discovered_count=len(result.get("discovered_active_events") or []) if isinstance(result, dict) else None,
-            started_count=len(result.get("started_events") or []) if isinstance(result, dict) else None,
-            errored_count=len(result.get("errored_events") or []) if isinstance(result, dict) else None,
-        )
-
-def _scheduled_low_quality_reprocess() -> None:
-    interval_minutes = max(15, int(settings.analysis_low_quality_reprocess_interval_minutes))
-    with _scheduled_job("low_quality_reprocess", lock_ttl_sec=max(300, interval_minutes * 120), use_db=True) as details:
-        if details is None:
-            return
-        from app.services.low_quality_reprocess import reprocess_low_quality_matches
-        result = reprocess_low_quality_matches(details["_db"])
-        details.update(result if isinstance(result, dict) else {})
 
 def _scheduled_ops_smoke_check() -> None:
     interval_minutes = max(5, int(settings.ops_smoke_check_interval_minutes))

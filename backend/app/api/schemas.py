@@ -32,6 +32,8 @@ class ScheduleMatch(BaseModel):
     set_number: int
     match_number: int
     scheduled_time: int | None = None
+    predicted_time: int | None = None
+    actual_time: int | None = None
     has_time: bool
     red_score: int | None = None
     blue_score: int | None = None
@@ -211,6 +213,8 @@ class SynergyMatch(BaseModel):
     set_number: int
     match_number: int
     scheduled_time: int | None = None
+    predicted_time: int | None = None
+    actual_time: int | None = None
     red: SynergyAlliance
     blue: SynergyAlliance
     prediction: MatchOutcomePrediction = Field(default_factory=MatchOutcomePrediction)

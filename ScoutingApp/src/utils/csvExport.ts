@@ -1,6 +1,8 @@
+import { exportTextFile } from '../platform/exportFile';
+
 /**
  * Client-side CSV export utility.
- * Generates a CSV string and triggers a browser download.
+ * Generates a CSV string and downloads it on the web or shares it in the app.
  */
 
 /** Escape a cell value for RFC 4180 compliant CSV. */
@@ -33,16 +35,6 @@ function buildCsv(headers: string[], rows: unknown[][]): string {
  * @param headers - Column header labels.
  * @param rows - Data rows (each row is an array of cell values).
  */
-export function downloadCsv(filename: string, headers: string[], rows: unknown[][]): void {
-  const csv = buildCsv(headers, rows);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+export async function downloadCsv(filename: string, headers: string[], rows: unknown[][]): Promise<boolean> {
+  return exportTextFile(filename, buildCsv(headers, rows), 'text/csv;charset=utf-8');
 }

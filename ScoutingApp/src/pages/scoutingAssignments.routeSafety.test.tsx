@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { ScoutingAssignPage } from './ScoutingAssignPage';
+import { signInTestWorkspace } from '../test/workspace';
 
 vi.mock('../api', () => ({
   createOrJoinScoutingRoom: vi.fn(async () => ({
@@ -82,6 +83,7 @@ vi.mock('../api', () => ({
 
 describe('Scouting assignments route safety', () => {
   it('renders assignments page in standard router context without crashing', async () => {
+    signInTestWorkspace();
     render(
       <MemoryRouter initialEntries={['/scouting/assignments?event=2026week0']}>
         <Routes>

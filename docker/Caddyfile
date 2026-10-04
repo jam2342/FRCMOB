@@ -1,0 +1,7 @@
+# TLS in front of the API on the OCI VM. Caddy obtains and renews the Let's Encrypt
+# certificate itself over TLS-ALPN on 443, so port 80 never has to be open. The
+# default host is an sslip.io name, which resolves to the IP spelled inside it, so
+# no domain is needed; moving to a real domain is a BACKEND_TLS_HOST change.
+{$BACKEND_TLS_HOST} {
+	reverse_proxy backend:8000
+}

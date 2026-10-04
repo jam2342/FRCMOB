@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.auto_scout.common import _safe_float, _round, _clamp, _match_total_sec
 from app.services.auto_scout.predictors.init import PredictorContext, PredictorResult, register
 from app.services.game_config import load_game_config
 from app.services.ratings.constants import PENALTY_EVENT_POINT_WEIGHTS
@@ -13,32 +14,6 @@ TELEOP_SCORE_SUCCESS_EVENT_TYPES = {"teleop_fuel_score_success"}
 CLIMB_SUCCESS_EVENT_TYPES = {"climb_success"}
 CLIMB_ATTEMPT_EVENT_TYPES = {"climb_attempt"}
 PENALTY_EVENT_TYPES = {str(key) for key in PENALTY_EVENT_POINT_WEIGHTS.keys()}
-
-
-def _safe_float(value: object) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _round(value: float | None, digits: int = 3) -> float | None:
-    if value is None:
-        return None
-    return round(float(value), digits)
-
-
-def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return max(low, min(high, value))
-
-
-def _match_total_sec() -> float:
-    try:
-        return float(load_game_config().phases.total_sec)
-    except Exception:
-        return 160.0
 
 
 def _match_auto_sec() -> float:

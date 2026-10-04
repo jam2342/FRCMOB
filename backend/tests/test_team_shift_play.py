@@ -8,22 +8,45 @@ from tests.conftest import DBTestCase
 
 
 class TeamShiftPlaySummaryTests(DBTestCase):
-    def _seed_attacker(self):
+    def _seed_attacker(self, status: str = "accepted"):
         db = self.db
         db.add(models.Event(event_key="2026txhou", name="Houston", year=2026))
         db.add(models.Team(team_key="frc118", team_number=118, nickname="Robonauts"))
         db.add(models.Match(match_key="2026txhou_qm1", event_key="2026txhou", comp_level="qm", set_number=1, match_number=1, time=1700000000))
         db.add(models.MatchTeam(match_key="2026txhou_qm1", team_key="frc118", event_key="2026txhou", alliance="red", station="r1"))
-        run = models.AnalysisRun(match_key="2026txhou_qm1", version="video_v3_tracks", status="completed", created_at=datetime.now(timezone.utc))
+        run = models.AnalysisRun(
+            match_key="2026txhou_qm1",
+            version="on_device_pwa_v1",
+            run_kind="on_device",
+            status="completed",
+            created_at=datetime.now(timezone.utc),
+        )
         db.add(run)
         db.flush()
+        db.add(models.AnalysisRunContext(
+            run_id=run.id,
+            match_key="2026txhou_qm1",
+            event_key="2026txhou",
+            analysis_version="on_device_pwa_v1",
+            params_hash="team-shift-test",
+        ))
+        db.add(models.OnDeviceSession(
+            analysis_run_id=run.id,
+            match_key="2026txhou_qm1",
+            event_key="2026txhou",
+            principal_hash="principal",
+            client_session_id_hash="client",
+            shift1_active_alliance="red",
+            quality_score=0.9,
+            status=status,
+        ))
 
         def add(t, zone, x, spd):
             db.add(models.RobotTrack(
                 analysis_run_id=run.id, match_key="2026txhou_qm1", event_key="2026txhou", team_key="frc118",
                 track_id=1, frame_index=int(t * 2), time_sec=t, bbox_x1=0.0, bbox_y1=0.0, bbox_x2=1.0, bbox_y2=1.0,
                 centroid_x=0.0, centroid_y=0.0, field_x=x, field_y=4.0, zone_key=zone, speed_mps=spd,
-                confidence=0.95, source="video_v3_tracks",
+                confidence=None, source="on_device_pwa_v1",
             ))
 
         # Attacker: in own scoring zone during attack-eligible windows.
@@ -34,6 +57,11 @@ class TeamShiftPlaySummaryTests(DBTestCase):
                 t += 2
         db.commit()
         return run
+
+    def test_unreviewed_recording_is_not_summarised(self):
+        self._seed_attacker(status="provisional")
+        res = summarize_team_shift_play(self.db, team_key="frc118", event_key="2026txhou")
+        self.assertFalse(res["available"])
 
     def test_summary_available_for_attacker(self):
         self._seed_attacker()

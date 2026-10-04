@@ -41,11 +41,11 @@ def _load_statbotics_epa_by_team(
 
     # Most call sites are synchronous; asyncio.run avoids deprecated event-loop access.
     if running_loop is None or not running_loop.is_running():
-        return asyncio.run(_load_statbotics_epa_by_team_async(team_rows))
+        return statbotics_client.run_sync(_load_statbotics_epa_by_team_async(team_rows))
 
     # When called from within an active loop, execute in a worker thread with its own loop.
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(lambda: asyncio.run(_load_statbotics_epa_by_team_async(team_rows)))
+        future = executor.submit(lambda: statbotics_client.run_sync(_load_statbotics_epa_by_team_async(team_rows)))
         return future.result()
 
 async def _load_statbotics_epa_by_team_async(
@@ -56,29 +56,28 @@ async def _load_statbotics_epa_by_team_async(
     if not STATBOTICS_EPA_ENABLED:
         return epa_context_by_team
 
-    for event_team, team in team_rows:
+    # Bounded concurrency: one team at a time made a 60-team recompute wait on 60
+    # sequential round trips.
+    semaphore = asyncio.Semaphore(8)
+
+    async def _one(event_team: models.EventTeam, team: models.Team | None) -> tuple[str, dict[str, Any]]:
         team_key = event_team.team_key
         team_number = int(team.team_number) if team and isinstance(team.team_number, int) else None
         if not team_number or team_number <= 0:
-            epa_context_by_team[team_key] = {
-                "available": False,
-                "source": "missing_team_number",
-                "raw_value": None,
-            }
-            continue
+            return team_key, {"available": False, "source": "missing_team_number", "raw_value": None}
         try:
-            team_payload = await statbotics_client.get_team(team_number)
+            async with semaphore:
+                team_payload = await statbotics_client.get_team(team_number)
             raw_value = _extract_statbotics_epa_value(team_payload)
-            epa_context_by_team[team_key] = {
-                "available": raw_value is not None,
-                "source": "statbotics_team",
-                "raw_value": raw_value,
-            }
+            return team_key, {"available": raw_value is not None, "source": "statbotics_team", "raw_value": raw_value}
         except Exception as exc:
-            epa_context_by_team[team_key] = {
+            return team_key, {
                 "available": False,
                 "source": "statbotics_error",
                 "raw_value": None,
                 "detail": sanitize_external_error(exc, default="statbotics_request_failed"),
             }
+
+    for team_key, context in await asyncio.gather(*(_one(event_team, team) for event_team, team in team_rows)):
+        epa_context_by_team[team_key] = context
     return epa_context_by_team

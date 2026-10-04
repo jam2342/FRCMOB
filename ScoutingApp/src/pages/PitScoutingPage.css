@@ -79,6 +79,14 @@
   line-height: 1;
 }
 
+@media (pointer: coarse) {
+  .pit-photo-delete::before {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+}
+
 .pit-photo-add {
   display: flex;
   align-items: center;

@@ -9,8 +9,11 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.services.auto_scout.common import _safe_float, _clamp, _round, _match_total_sec, _approx_track_coverage
 from app.db import models
+from app.services.analysis.runs import best_on_device_run
 from app.services.auto_scout.predictors import PREDICTORS, PredictorContext
+from app.services.auto_scout.shift_play import ON_DEVICE_ANALYSIS_VERSION as ANALYSIS_VERSION
 from app.services.auto_scout.specs import (
     AUTO_SCOUT_DERIVED_INSIGHT_FIELDS_BY_SEASON,
     AUTO_SCOUT_FIELD_PRIORS_BY_SEASON,
@@ -20,15 +23,7 @@ from app.services.auto_scout.specs import (
     mapper_version_for_season,
     season_support_payload,
 )
-from app.services.events.pipeline import (
-    ANALYSIS_VERSION,
-    _enqueue_analysis_job,
-    _latest_matching_run,
-    _resolve_event_perimeter_type,
-    get_queue,
-)
 from app.services.game_config import load_game_config
-from app.services.jobs import build_analysis_params_hash
 
 
 READY_STATUSES = {"ready", "low_confidence"}
@@ -45,25 +40,6 @@ def _normalize_key(raw: object) -> str:
 
 def _normalize_profile(raw: object) -> str:
     return " ".join(str(raw or "").strip().split())[:120]
-
-
-def _safe_float(value: object) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return max(low, min(high, value))
-
-
-def _round(value: float | None, digits: int = 3) -> float | None:
-    if value is None:
-        return None
-    return round(float(value), digits)
 
 
 def _supported_form_fields(season_year: int) -> tuple[str, ...]:
@@ -211,18 +187,17 @@ def _latest_completed_run_for_match(
     db: Session,
     *,
     match_key: str,
+    team_key: str,
 ) -> tuple[models.AnalysisRun, models.AnalysisRunContext | None] | None:
-    row = (
-        db.query(models.AnalysisRun, models.AnalysisRunContext)
-        .outerjoin(models.AnalysisRunContext, models.AnalysisRunContext.run_id == models.AnalysisRun.id)
-        .filter(
-            models.AnalysisRun.match_key == match_key,
-            models.AnalysisRun.status == "completed",
-        )
-        .order_by(models.AnalysisRun.created_at.desc(), models.AnalysisRun.id.desc())
-        .first()
+    # Drafts come from operator-accepted phone recordings. Prefer one that tracked
+    # this robot; any accepted recording of the match still lets us say "not resolved".
+    row = best_on_device_run(db, match_key=match_key, team_key=team_key) or best_on_device_run(
+        db, match_key=match_key
     )
-    return row
+    if row is None:
+        return None
+    run, _session = row
+    return run, db.get(models.AnalysisRunContext, run.id)
 
 
 def _latest_non_superseded_draft(
@@ -273,29 +248,11 @@ def _supersede_other_drafts(
         row.updated_at = now
 
 
-def _match_total_sec() -> float:
-    try:
-        return float(load_game_config().phases.total_sec)
-    except Exception:
-        return 160.0
-
-
 def _match_auto_sec() -> float:
     try:
         return float(load_game_config().phases.auto_sec)
     except Exception:
         return 20.0
-
-
-def _approx_track_coverage(tracks: list[models.RobotTrack]) -> tuple[float, float]:
-    if not tracks:
-        return 0.0, 0.0
-    total_sec = max(_match_total_sec(), 1.0)
-    min_time = min(float(track.time_sec) for track in tracks)
-    max_time = max(float(track.time_sec) for track in tracks)
-    tracked_sec = max(0.0, max_time - min_time)
-    coverage = _clamp(tracked_sec / total_sec, 0.0, 1.0)
-    return coverage, tracked_sec
 
 
 def _zone_dwell_breakdown(tracks: list[models.RobotTrack]) -> dict[str, float]:
@@ -473,7 +430,10 @@ def _build_ready_payload(
         throughput=throughput,
         quality=quality,
     )
+    video_contract = (finding.summary or {}).get("video_evidence") if finding else None
     for field_name in supported_form_fields:
+        if isinstance(video_contract, dict) and field_name not in video_contract.get("supported_form_fields", []):
+            continue
         predictor = PREDICTORS.get(field_name)
         if predictor is None:
             continue
@@ -489,6 +449,9 @@ def _build_ready_payload(
         )
         if field_provenance[field_name] == "auto" and prediction.value is not None:
             draft_payload["form_patch"][field_name] = prediction.value
+
+    if isinstance(video_contract, dict):
+        supported_derived_fields = ()
 
     disabled_period, disabled_evidence, disabled_confidence = _estimate_disabled_period(tracks, coverage=coverage)
     if "disabled_period" in supported_derived_fields:
@@ -614,50 +577,6 @@ def _build_ready_payload(
         coverage_summary,
         missing_reasons,
     )
-
-
-def _queue_analysis_if_possible(db: Session, *, match: models.Match) -> tuple[bool, str | None]:
-    calibration = (
-        db.query(models.FieldCalibration)
-        .filter(models.FieldCalibration.match_key == match.match_key)
-        .one_or_none()
-    )
-    if calibration is None:
-        return False, "no_calibration"
-    video = (
-        db.query(models.MatchVideo)
-        .filter(models.MatchVideo.match_key == match.match_key)
-        .order_by(models.MatchVideo.id.asc())
-        .first()
-    )
-    if video is None or not str(video.url or "").strip():
-        return False, "no_video"
-
-    perimeter_type, _ = _resolve_event_perimeter_type(db, match.event_key)
-    params_hash = build_analysis_params_hash(
-        analysis_version=ANALYSIS_VERSION,
-        calibration_id=calibration.id,
-        perimeter_type=perimeter_type,
-    )
-    existing = _latest_matching_run(
-        db,
-        match_key=match.match_key,
-        analysis_version=ANALYSIS_VERSION,
-        params_hash=params_hash,
-        calibration_id=calibration.id,
-    )
-    if existing is not None:
-        run, _ = existing
-        return (str(run.status or "").lower() in {"queued", "running", "completed"}), None
-
-    job, _, _ = _enqueue_analysis_job(
-        get_queue(),
-        match_key=match.match_key,
-        analysis_version=ANALYSIS_VERSION,
-        params_hash=params_hash,
-        calibration_id=calibration.id,
-    )
-    return (job is not None), None
 
 
 def _pending_or_failed_draft(
@@ -1231,7 +1150,9 @@ def generate_auto_scout_draft(
         team_key=normalized_team_key,
     )
 
-    latest_current_run = _latest_completed_run_for_match(db, match_key=normalized_match_key)
+    latest_current_run = _latest_completed_run_for_match(
+        db, match_key=normalized_match_key, team_key=normalized_team_key
+    )
     current_run = None
     current_context = None
     if latest_current_run is not None:
@@ -1262,16 +1183,9 @@ def generate_auto_scout_draft(
     run_stale = current_run is not None and current_analysis_version != ANALYSIS_VERSION
 
     if current_run is None or run_stale:
-        queued, queue_missing_reason = _queue_analysis_if_possible(db, match=match)
-        missing_reasons: list[str] = []
-        status = "generating"
-        if run_stale:
-            missing_reasons.append("analysis_stale")
-        if queue_missing_reason:
-            missing_reasons.append(queue_missing_reason)
-            status = "failed"
-        elif queued:
-            missing_reasons.append("analysis_pending")
+        # Nothing to draft from until a scout's phone recording of this match is accepted.
+        missing_reasons: list[str] = ["analysis_stale" if run_stale else "no_on_device_recording"]
+        status = "failed"
         placeholder = _pending_or_failed_draft(
             db,
             event_key=normalized_event_key,
@@ -1293,10 +1207,7 @@ def generate_auto_scout_draft(
         row.field_confidence = {}
         row.field_provenance = {field: "needs_review" for field in AUTO_SCOUT_FORM_FIELDS}
         row.field_evidence_refs = {}
-        row.coverage_summary = {
-            "calibration_ok": queue_missing_reason != "no_calibration",
-            "queued_analysis": queued,
-        }
+        row.coverage_summary = {"on_device_recording": current_run is not None}
         row.missing_reasons = missing_reasons
         row.updated_at = _utc_now()
         row.mapper_version = mapper_version

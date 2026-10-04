@@ -13,13 +13,13 @@ from app.core.config import settings
 from app.db import models
 from app.services.ratings.anti_defense import _anti_defense_stage_multiplier
 from app.services.ratings.constants import (
-    PENALTY_EVENT_POINT_WEIGHTS,
     PENALTY_IMPACT_NET_POINTS,
     RECENT_MATCH_WINDOW,
     RECENT_PRIORITY_WINDOW,
     MINOR_FOUL_POINTS,
 )
 from app.services.ratings.data_loader import EventRatingData
+from app.services.ratings.event_features import summarize_scoring_events
 from app.services.ratings.helpers import (
     _dedupe_findings_by_match,
     _event_meta_number,
@@ -49,6 +49,28 @@ class FeatureExtractionResult:
         self.resolved_findings_by_team: dict[str, list[models.TeamMatchFinding]] = {}
         self.resolved_finding_by_team_match: dict[str, dict[str, models.TeamMatchFinding]] = defaultdict(dict)
 
+
+def _legacy_2026_official_allocation(finding: models.TeamMatchFinding) -> bool:
+    if str(finding.source or "") not in {"tba_score_breakdown", "tba_score_breakdown_backfill"}:
+        return False
+    summary = finding.summary if isinstance(finding.summary, dict) else {}
+    if _as_float(summary.get("season_year")) != 2026 and not str(finding.event_key or "").startswith("2026"):
+        return False
+    status = summary.get("status") if isinstance(summary.get("status"), dict) else {}
+    return status.get("auto_allocation") not in {"event_auto_fuel_copr", "no_hub_fuel"}
+
+
+def _usable_batch_cycle_time(finding: models.TeamMatchFinding) -> bool:
+    # Older official imports stored seconds per scored fuel in this field.
+    return (
+        finding.cycle_time_sec is not None
+        and finding.cycle_time_sec > 0
+        and not (
+            str(finding.source or "") in {"tba_score_breakdown", "tba_score_breakdown_backfill"}
+            and str(finding.event_key or "").startswith("2026")
+        )
+    )
+
 def extract_team_features(
     data: EventRatingData,
     manual_context: dict[str, Any],
@@ -66,8 +88,6 @@ def extract_team_features(
     rp_thresholds = manual_context["rp_thresholds"]
     auto_fuel_points = float(scoring_points.get("auto_fuel_score", 1.0))
     teleop_fuel_points = float(scoring_points.get("teleop_fuel_score", 1.0))
-    auto_l1_points = float(scoring_points.get("auto_level1_climb", 15.0))
-    low_climb_points = float(scoring_points.get("low_climb", 10.0))
     mid_climb_points = float(scoring_points.get("mid_climb", 20.0))
     high_climb_points = float(scoring_points.get("high_climb", 30.0))
     energized_threshold = max(1.0, float(rp_thresholds.get("energized", 100.0)))
@@ -183,11 +203,14 @@ def extract_team_features(
         auto_values_by_match: dict[str, list[float]] = defaultdict(list)
         defense_values_by_match: dict[str, list[float]] = defaultdict(list)
         for finding in recent_findings:
+            usable_cycle = _usable_batch_cycle_time(finding)
             fuel_rate_value = (
                 float(finding.fuel_scoring_rate)
                 if finding.fuel_scoring_rate is not None and finding.fuel_scoring_rate >= 0
                 else None
             )
+            # Legacy official cycle values are seconds per fuel. Their reciprocal
+            # remains a valid fuel-rate recovery, but not a batch-cycle signal.
             if finding.cycle_time_sec is not None and finding.cycle_time_sec > 0:
                 cycle_implied_rate = 60.0 / max(1e-6, float(finding.cycle_time_sec))
                 if fuel_rate_value is None:
@@ -199,13 +222,17 @@ def extract_team_features(
                     fuel_rate_value = cycle_implied_rate
             if fuel_rate_value is not None and fuel_rate_value >= 0.0:
                 bps_values_from_finding_by_match[finding.match_key].append(fuel_rate_value / 60.0)
-            if finding.cycle_time_sec is not None and finding.cycle_time_sec > 0:
+            if usable_cycle:
                 cycle_values_by_match[finding.match_key].append(float(finding.cycle_time_sec))
             if finding.climb_success_prob is not None:
                 climb_values_by_match[finding.match_key].append(float(finding.climb_success_prob))
             if finding.reliability_score is not None:
                 reliability_values_by_match[finding.match_key].append(float(finding.reliability_score))
-            if finding.auto_contribution is not None and finding.auto_contribution >= 0:
+            if (
+                finding.auto_contribution is not None
+                and finding.auto_contribution >= 0
+                and not _legacy_2026_official_allocation(finding)
+            ):
                 auto_values_by_match[finding.match_key].append(float(finding.auto_contribution))
             if finding.defensive_engagement_sec is not None and finding.defensive_engagement_sec >= 0:
                 defense_values_by_match[finding.match_key].append(float(finding.defensive_engagement_sec))
@@ -399,18 +426,26 @@ def extract_team_features(
             if auto_values:
                 auto_pairs.append((float(median(auto_values)), weight))
             elif grouped_events:
-                official_auto_points = [
-                    _event_meta_number(event, "official_points") or _event_meta_number(event, "points")
+                auto_points_from_events = [
+                    _event_meta_number(event, "estimated_points")
+                    or _event_meta_number(event, "official_points")
+                    or _event_meta_number(event, "points")
                     for event in grouped_events
                     if event.event_type == "auto_points_scored"
+                    and not (
+                        isinstance(event.meta, dict)
+                        and event.meta.get("source") == "tba_score_breakdown"
+                        and event.meta.get("season_year") == 2026
+                        and event.meta.get("allocation") not in {"event_auto_fuel_copr", "no_hub_fuel"}
+                    )
                 ]
-                official_auto_points = [
+                auto_points_from_events = [
                     float(value)
-                    for value in official_auto_points
+                    for value in auto_points_from_events
                     if value is not None and value >= 0.0
                 ]
-                if official_auto_points:
-                    auto_pairs.append((float(median(official_auto_points)), weight))
+                if auto_points_from_events:
+                    auto_pairs.append((float(median(auto_points_from_events)), weight))
 
             defense_values = defense_values_by_match.get(match_key) or []
             if defense_values:
@@ -608,87 +643,11 @@ def extract_team_features(
         reliability_trend_delta = _trend_delta_ratio([value for value, _ in reliability_pairs])
         cycle_trend_delta = _trend_delta_ratio(cycle_series)
 
-        # Match-by-match scoring projections.
-        match_climb_points: list[tuple[float, float]] = []
-        match_teleop_score_counts: list[tuple[float, float]] = []
-        major_like_penalty_events = 0.0
-        explicit_penalty_points = 0.0
-        protected_zone_hits = 0.0
-        disabled_events = 0.0
-        explicit_penalty_points_by_match: list[float] = []
-        weighted_observed_matches = 0.0
-
-        for index, match_key in enumerate(ordered_match_keys):
-            grouped_events = team_match_events.get(match_key, [])
-            if not grouped_events and match_key not in throughput_bps_by_match and match_key not in bps_values_from_finding_by_match:
-                continue
-            weight = float(match_weight_by_key.get(match_key, _recent_weight_for_index(index)))
-            weighted_observed_matches += weight
-            match_climb_point = 0.0
-            match_success_count = 0.0
-            match_explicit_penalty_points = 0.0
-            match_major_like_penalty_events = 0.0
-            match_protected_zone_hits = 0.0
-            match_disabled_events = 0.0
-            for event in grouped_events:
-                event_type = str(event.event_type or "").strip().lower()
-                event_count_estimate = _event_meta_number(event, "count_estimate")
-                event_count = max(0.0, event_count_estimate) if event_count_estimate is not None else 1.0
-                event_penalty_points = PENALTY_EVENT_POINT_WEIGHTS.get(event_type, 0.0)
-                match_explicit_penalty_points += event_penalty_points * event_count
-                if event_type == "robot_disabled":
-                    match_disabled_events += 1.0
-                if event_type == "protected_zone_interference":
-                    match_protected_zone_hits += event_count
-                elif event_type == "zone_dwell":
-                    meta = event.meta or {}
-                    zone_key = str(meta.get("zone_key") or "").lower()
-                    if "protected" in zone_key:
-                        match_protected_zone_hits += 0.5
-                if event_type == "teleop_fuel_score_success":
-                    meta = event.meta or {}
-                    count_estimate = meta.get("count_estimate") if isinstance(meta, dict) else None
-                    if isinstance(count_estimate, (int, float)):
-                        match_success_count += max(0.0, float(count_estimate))
-                    else:
-                        match_success_count += 1.0
-                if event_type in {"major_foul", "foul_major", "tech_foul", "robot_rule_violation", "safety_violation"}:
-                    match_major_like_penalty_events += event_count
-                if event_type == "climb_success":
-                    meta = event.meta or {}
-                    official_points = _event_meta_number(event, "official_points")
-                    if official_points is not None and official_points >= 0.0:
-                        inferred_points = float(official_points)
-                    else:
-                        dwell = meta.get("tower_dwell_sec") if isinstance(meta, dict) else None
-                        dwell_sec = float(dwell) if isinstance(dwell, (int, float)) else 0.0
-                        inferred_points = low_climb_points
-                        if dwell_sec >= 16.0:
-                            inferred_points = high_climb_points
-                        elif dwell_sec >= 10.0:
-                            inferred_points = mid_climb_points
-                        if float(event.time_sec) <= (phase_auto_sec + 1.5):
-                            inferred_points = max(inferred_points, auto_l1_points)
-                    match_climb_point = max(match_climb_point, inferred_points)
-                elif event_type == "climb_attempt":
-                    official_points = _event_meta_number(event, "official_points")
-                    if official_points is not None and official_points > 0.0:
-                        match_climb_point = max(match_climb_point, float(official_points))
-                    else:
-                        match_climb_point = max(match_climb_point, low_climb_points * 0.2)
-            explicit_penalty_points += match_explicit_penalty_points * weight
-            major_like_penalty_events += match_major_like_penalty_events * weight
-            protected_zone_hits += match_protected_zone_hits * weight
-            disabled_events += match_disabled_events * weight
-            explicit_penalty_points_by_match.append(match_explicit_penalty_points)
-            match_climb_points.append((match_climb_point, weight))
-            match_teleop_score_counts.append((match_success_count, weight))
-
-        matches_observed = max(1.0, weighted_observed_matches)
-        explicit_penalty_points_per_match = explicit_penalty_points / matches_observed
-        major_like_penalty_events_per_match = major_like_penalty_events / matches_observed
-        protected_zone_hits_per_match = protected_zone_hits / matches_observed
-        disabled_events_per_match = disabled_events / matches_observed
+        scoring_events = summarize_scoring_events(
+            ordered_match_keys, team_match_events,
+            set(throughput_bps_by_match) | set(bps_values_from_finding_by_match),
+            match_weight_by_key, scoring_points, phase_auto_sec,
+        )
 
         defensive_pressure = (
             max(0.0, ((defense_median or 0.0) - 60.0) / 45.0)
@@ -697,25 +656,25 @@ def extract_team_features(
         )
         reliability_proxy = max(0.0, (0.55 - (uptime_raw or 0.0)) * 2.0)
         inferred_penalty_points = MINOR_FOUL_POINTS * (
-            (0.6 * protected_zone_hits_per_match)
-            + (0.3 * disabled_events_per_match)
+            (0.6 * scoring_events.protected_zone_hits_per_match)
+            + (0.3 * scoring_events.disabled_events_per_match)
             + (0.35 * defensive_pressure)
             + (0.25 * reliability_proxy)
         )
 
-        blended_penalty_points = explicit_penalty_points_per_match + (
-            (0.35 * inferred_penalty_points) if explicit_penalty_points_per_match > 0 else inferred_penalty_points
+        blended_penalty_points = scoring_events.explicit_penalty_points_per_match + (
+            (0.35 * inferred_penalty_points) if scoring_events.explicit_penalty_points_per_match > 0 else inferred_penalty_points
         )
         penalty_points_per_match = blended_penalty_points
-        severe_penalty_rate = major_like_penalty_events_per_match
-        penalty_trend_delta = _trend_delta_ratio(explicit_penalty_points_by_match)
+        severe_penalty_rate = scoring_events.major_like_penalty_events_per_match
+        penalty_trend_delta = scoring_events.penalty_trend_delta
 
         auto_points_est = (
             (auto_raw * max(0.5, auto_fuel_points))
             if auto_raw is not None
             else None
         )
-        teleop_score_count_est = _weighted_median(match_teleop_score_counts) if match_teleop_score_counts else None
+        teleop_score_count_est = _weighted_median(scoring_events.match_teleop_score_counts) if scoring_events.match_teleop_score_counts else None
         teleop_points_est: float | None
         if teleop_score_count_est is not None:
             teleop_points_est = teleop_score_count_est * teleop_fuel_points
@@ -724,13 +683,13 @@ def extract_team_features(
         else:
             teleop_points_est = None
         climb_points_est: float | None
-        if match_climb_points:
-            climb_points_est = _weighted_mean(match_climb_points)
+        if scoring_events.match_climb_points:
+            climb_points_est = _weighted_mean(scoring_events.match_climb_points)
         elif climb_success_raw is not None:
             climb_points_est = float(climb_success_raw) * ((0.45 * mid_climb_points) + (0.55 * high_climb_points))
         else:
             climb_points_est = None
-        peak_climb_points = max((points for points, _ in match_climb_points), default=0.0)
+        peak_climb_points = max((points for points, _ in scoring_events.match_climb_points), default=0.0)
         peak_climb_level_signal = (
             _clamp(float(peak_climb_points) / max(1e-6, float(high_climb_points)), 0.0, 1.0)
             if peak_climb_points > 0.0
@@ -831,9 +790,9 @@ def extract_team_features(
             "throughput_coverage": avg_throughput_coverage,
             "severe_penalty_rate": severe_penalty_rate,
             "penalty_points_per_match": penalty_points_per_match,
-            "explicit_penalty_points_per_match": explicit_penalty_points_per_match,
+            "explicit_penalty_points_per_match": scoring_events.explicit_penalty_points_per_match,
             "inferred_penalty_points_per_match": inferred_penalty_points,
-            "protected_zone_pressure": protected_zone_hits_per_match,
+            "protected_zone_pressure": scoring_events.protected_zone_hits_per_match,
             "recent_matches_used": float(len(ordered_match_keys)),
             "statbotics_norm_epa": _as_float((data.epa_context_by_team.get(team_key) or {}).get("raw_value")),
             "event_strength_bps": event_strength_bps,

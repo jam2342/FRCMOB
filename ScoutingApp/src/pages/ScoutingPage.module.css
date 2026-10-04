@@ -77,3 +77,10 @@
   flex: 1 1 220px;
   min-width: 0;
 }
+
+/* Why Save is disabled, right next to it. */
+.saveHint {
+  align-self: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

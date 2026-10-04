@@ -1,3 +1,4 @@
+import { downloadCsv } from '../utils/csvExport';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -17,7 +18,6 @@ import type {
   EventRankingsResponse,
   EventScheduleItem,
   EventSearchItem,
-  EventTeamLiveFormEntry,
   EventTeamLiveFormResponse,
   EventTeamsHistoryResponse,
 } from '../api';
@@ -28,6 +28,7 @@ import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { Table } from '../components/ui/primitives';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
+import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { usePageClock } from '../hooks/usePageClock';
@@ -40,7 +41,7 @@ import {
   CURRENT_SEASON_YEAR,
   FALLBACK_SEASON_YEAR,
   fmtDateShort,
-  liveTimerLabel,
+  liveTimerLabel, matchStartTime,
   metric,
   parseNumber,
   relativeFromTimestamp,
@@ -71,6 +72,12 @@ import {
   regionLabel,
 } from '../utils/regionFilters';
 import { cancelIdleWork, scheduleIdleWork } from '../utils/idle';
+import { resolveEventDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken, compactAllianceLabel } from './eventCalendar';
+import { inferMatchCompleted, matchHasScores } from './matchStatus';
+import { TeamFormStrip } from '../components/TeamFormStrip';
+import { resolveTab } from './tabUtils';
+import { PageViewBar } from '../components/PageViewBar';
+import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 
 const EVENT_TABS = ['overview', 'schedule', 'breakdown', 'rankings', 'teams'] as const;
 type EventTab = (typeof EVENT_TABS)[number];
@@ -96,8 +103,9 @@ const ALLIANCE_AUTO_REFRESH_MS = 30000;
 const EVENT_TEAMS_INITIAL_VISIBLE_COUNT = 24;
 const EVENT_TEAMS_AUTO_CHUNK_SIZE = 24;
 const EVENT_TEAMS_AUTO_VISIBLE_TARGET = 72;
-const EVENT_TEAMS_HISTORY_FAST_LIMIT = 2;
-const EVENT_TEAMS_HISTORY_FULL_LIMIT = 6;
+// One request: the server reads at least its 20-match window whatever limit is
+// asked, so the old "fast 2, then full 6" pair ran the same ~3 s query twice.
+const EVENT_TEAMS_HISTORY_LIMIT = 6;
 
 type RankingRow = {
   team_key: string;
@@ -107,11 +115,6 @@ type RankingRow = {
   matches_played: number | null;
   record: string;
   sort_orders: number[];
-};
-
-type EventDateRange = {
-  startMs: number | null;
-  endMs: number | null;
 };
 
 type AllianceSlot = {
@@ -158,10 +161,6 @@ type ParsedEventAward = {
 function defaultBreakdownStage(hasQualifying: boolean, hasKnockout: boolean): BreakdownStage {
   if (!hasQualifying && hasKnockout) return 'knockout';
   return 'qualifying';
-}
-
-function isEventTab(value: string | null): value is EventTab {
-  return value === 'overview' || value === 'schedule' || value === 'breakdown' || value === 'rankings' || value === 'teams';
 }
 
 function normalizeCompLevel(compLevel: string | null | undefined): string {
@@ -238,29 +237,6 @@ function knockoutCompLabel(compLevel: string): string {
   return titleizeKey(normalized || 'knockout');
 }
 
-function matchHasScores(match: EventScheduleItem): boolean {
-  return (
-    typeof match.red_score === 'number' &&
-    typeof match.blue_score === 'number' &&
-    Number.isFinite(match.red_score) &&
-    Number.isFinite(match.blue_score) &&
-    match.red_score >= 0 &&
-    match.blue_score >= 0
-  );
-}
-
-function inferMatchCompleted(match: EventScheduleItem, nowMs: number): boolean {
-  const timer = liveTimerLabel(match.scheduled_time, nowMs);
-  const hasScores = matchHasScores(match);
-  return (
-    Boolean(match.is_completed) ||
-    match.winner_alliance === 'red' ||
-    match.winner_alliance === 'blue' ||
-    match.winner_alliance === 'tie' ||
-    (hasScores && timer.state === 'ended')
-  );
-}
-
 function inferWinnerAlliance(match: EventScheduleItem, nowMs: number): 'red' | 'blue' | 'tie' | null {
   if (match.winner_alliance === 'red' || match.winner_alliance === 'blue' || match.winner_alliance === 'tie') {
     return match.winner_alliance;
@@ -269,13 +245,6 @@ function inferWinnerAlliance(match: EventScheduleItem, nowMs: number): 'red' | '
   if ((match.red_score || 0) > (match.blue_score || 0)) return 'red';
   if ((match.blue_score || 0) > (match.red_score || 0)) return 'blue';
   return 'tie';
-}
-
-function compactAllianceLabel(teams: EventScheduleItem['red']): string {
-  if (!Array.isArray(teams) || teams.length === 0) return 'TBD';
-  const labels = teams.map((team) => `#${team.team_number}`);
-  if (labels.length <= 2) return labels.join(' · ');
-  return `${labels.slice(0, 2).join(' · ')} +${labels.length - 2}`;
 }
 
 function compactStateLabel(state: ReturnType<typeof liveTimerLabel>['state']): string {
@@ -294,7 +263,7 @@ function summarizeMatchSet(matches: EventScheduleItem[], nowMs: number): MatchSu
   const margins: number[] = [];
 
   for (const match of matches) {
-    const timer = liveTimerLabel(match.scheduled_time, nowMs);
+    const timer = liveTimerLabel(matchStartTime(match), nowMs);
     const isCompleted = inferMatchCompleted(match, nowMs);
     if (isCompleted) {
       completed += 1;
@@ -491,33 +460,6 @@ function eventTypeTags(event: EventSearchItem): string[] {
   return tags;
 }
 
-function parseEventDateValue(value: string | null | undefined): number | null {
-  if (!value || typeof value !== 'string') return null;
-  const token = value.trim().slice(0, 10);
-  if (!token) return null;
-  const ms = Date.parse(`${token}T00:00:00Z`);
-  return Number.isFinite(ms) ? ms : null;
-}
-
-function parseEventYearValue(value: unknown): number | null {
-  const normalized = typeof value === 'number' ? value : Number(String(value || '').trim());
-  if (!Number.isFinite(normalized)) return null;
-  const year = Math.trunc(normalized);
-  if (year < 1992 || year > 2100) return null;
-  return year;
-}
-
-function yearFromEventKey(eventKey: string): number | null {
-  const match = /^(\d{4})/.exec((eventKey || '').trim().toLowerCase());
-  if (!match) return null;
-  return parseEventYearValue(match[1]);
-}
-
-function monthTokenFromMs(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
 function monthTokensForRange(startMs: number | null, endMs: number | null): string[] {
   const firstMs = startMs ?? endMs;
   const lastMs = endMs ?? startMs;
@@ -530,38 +472,6 @@ function monthTokensForRange(startMs: number | null, endMs: number | null): stri
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
   return tokens;
-}
-
-function normalizeDateRange(range: EventDateRange): EventDateRange {
-  if (range.startMs && range.endMs && range.endMs < range.startMs) {
-    return { startMs: range.endMs, endMs: range.startMs };
-  }
-  return range;
-}
-
-function resolveEventDateRange(event: EventSearchItem, fallback?: EventDateRange): EventDateRange {
-  const startMs = parseEventDateValue(event.start_date ?? null) ?? fallback?.startMs ?? null;
-  const endMs = parseEventDateValue(event.end_date ?? null) ?? fallback?.endMs ?? startMs;
-  return normalizeDateRange({ startMs, endMs });
-}
-
-function resolveCalendarYear(event: EventSearchItem, fallback?: EventDateRange): number | null {
-  const explicit = parseEventYearValue(event.year);
-  if (explicit !== null) return explicit;
-  const resolved = resolveEventDateRange(event, fallback);
-  const ms = resolved.startMs ?? resolved.endMs;
-  if (ms) return new Date(ms).getUTCFullYear();
-  return yearFromEventKey(event.event_key || '');
-}
-
-function matchesCalendarDisplayYear(
-  event: EventSearchItem,
-  displayYear: number,
-  fallback?: EventDateRange,
-): boolean {
-  const keyYear = yearFromEventKey(event.event_key || '');
-  if (keyYear !== null && keyYear !== displayYear) return false;
-  return resolveCalendarYear(event, fallback) === displayYear;
 }
 
 const ALLIANCE_SLOTS: AllianceSlot[] = [
@@ -588,40 +498,6 @@ const ALLIANCE_SLOTS: AllianceSlot[] = [
   { key: 'backup', label: 'Backup', aliases: ['Backup', 'alternate', 'Alternate', 'backupTeam', 'backup_team'] },
 ];
 
-function shiftMonthToken(monthToken: string, delta: number): string {
-  const token = (monthToken || '').trim();
-  const match = /^(\d{4})-(\d{2})$/.exec(token);
-  const base = match
-    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1))
-    : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  base.setUTCMonth(base.getUTCMonth() + delta);
-  const year = base.getUTCFullYear();
-  const month = String(base.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
-function teamFormStrip(entry: EventTeamLiveFormEntry | null) {
-  const form = entry?.recent_form || [];
-  if (form.length === 0) {
-    return <span className="center-form-empty">No recent form</span>;
-  }
-  return (
-    <span className="center-form-strip" aria-label="Last five matches">
-      {form.map((result, idx) => (
-        <span
-          key={`${entry?.team_key || 'team'}-form-${idx}`}
-          className={`center-form-pill ${
-            result === 'W' ? 'win' : result === 'L' ? 'loss' : 'tie'
-          }`.trim()}
-          title={`Result ${result}`}
-        >
-          {result}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 export function EventsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -636,7 +512,7 @@ export function EventsPage() {
   const defaultQuery = (searchParams.get('q') || '').trim();
   const defaultRegion = normalizeRegionFilter(searchParams.get('region'));
   const tabParam = searchParams.get('tab');
-  const defaultTab: EventTab = isEventTab(tabParam) ? tabParam : 'overview';
+  const defaultTab = resolveTab(tabParam, EVENT_TABS, 'overview');
   const lastHandledUrlQueryRef = useRef(defaultQuery.toLowerCase());
   const suppressNextLiveSearchRef = useRef(false);
   const searchRequestSeqRef = useRef(0);
@@ -724,7 +600,6 @@ export function EventsPage() {
   }, []);
   const breakdownEventRef = useRef<string | null>(defaultEventKey || null);
   const lastEventContextRef = useRef('');
-  const eventTeamsDeepRefreshSeqRef = useRef(0);
   const autoAdjustedCalendarMonthRef = useRef(false);
 
   useEffect(() => {
@@ -893,7 +768,7 @@ export function EventsPage() {
       eventSchedule.some(
         (match) =>
           !inferMatchCompleted(match, nowMs) &&
-          liveTimerLabel(match.scheduled_time, nowMs).state === 'live',
+          liveTimerLabel(matchStartTime(match), nowMs).state === 'live',
       ),
     [eventSchedule, nowMs],
   );
@@ -939,10 +814,13 @@ export function EventsPage() {
       );
       const rankingsPromise = shouldRefreshStatic ? getEventRankings(selectedEventKey) : Promise.resolve(null);
       const teamsPromise = shouldRefreshStatic
-        ? getEventTeamsHistory(selectedEventKey, EVENT_TEAMS_HISTORY_FAST_LIMIT, false)
+        ? getEventTeamsHistory(selectedEventKey, EVENT_TEAMS_HISTORY_LIMIT, false)
         : Promise.resolve(null);
       const awardsPromise = shouldRefreshStatic ? getEventAwards(selectedEventKey) : Promise.resolve(null);
 
+      // Attach rejection handlers immediately: any parallel request can fail
+      // before the schedule finishes (especially on a dropped connection).
+      const secondaryResults = Promise.allSettled([formPromise, rankingsPromise, teamsPromise, awardsPromise]);
       const errors: string[] = [];
       let scheduleCount = 0;
       let teamCount = 0;
@@ -961,12 +839,7 @@ export function EventsPage() {
         errors.push(`Schedule: ${scheduleResult.reason instanceof Error ? scheduleResult.reason.message : 'failed'}`);
       }
 
-      const [formResult, rankingsResult, teamsResult, awardsResult] = await Promise.allSettled([
-        formPromise,
-        rankingsPromise,
-        teamsPromise,
-        awardsPromise,
-      ]);
+      const [formResult, rankingsResult, teamsResult, awardsResult] = await secondaryResults;
 
       if (formResult.status === 'fulfilled') {
         setEventLiveForm(formResult.value);
@@ -989,27 +862,6 @@ export function EventsPage() {
             typeof teamsResult.value.teams_count === 'number'
               ? teamsResult.value.teams_count
               : (teamsResult.value.teams || []).length;
-          if (EVENT_TEAMS_HISTORY_FULL_LIMIT > EVENT_TEAMS_HISTORY_FAST_LIMIT) {
-            const teamsContextKey = selectedEventKey;
-            const deepRefreshSeq = ++eventTeamsDeepRefreshSeqRef.current;
-            void getEventTeamsHistory(teamsContextKey, EVENT_TEAMS_HISTORY_FULL_LIMIT, false)
-              .then((fullPayload) => {
-                if (lastEventContextRef.current !== teamsContextKey) return;
-                if (eventTeamsDeepRefreshSeqRef.current !== deepRefreshSeq) return;
-                setEventTeams(fullPayload);
-              })
-              .catch((error) => {
-                if (lastEventContextRef.current !== teamsContextKey) return;
-                if (eventTeamsDeepRefreshSeqRef.current !== deepRefreshSeq) return;
-                const detail = error instanceof Error ? error.message : 'failed';
-                setEventError((current) => {
-                  const message = `Teams deep refresh: ${detail}`;
-                  if (!current) return message;
-                  if (current.includes(message)) return current;
-                  return `${current} | ${message}`;
-                });
-              });
-          }
         } else if (teamsResult.status === 'rejected') {
           if (contextChanged) setEventTeams(null);
           errors.push(`Teams: ${teamsResult.reason instanceof Error ? teamsResult.reason.message : 'failed'}`);
@@ -1035,10 +887,10 @@ export function EventsPage() {
       setLastUpdatedAt(Date.now());
       setStatusText(
         errors.length > 0
-          ? `Partial data for ${selectedEventKey}.`
+          ? 'Some data is missing'
           : shouldAutoOpenTeams
-            ? `No schedule yet for ${selectedEventKey}. Showing teams.`
-            : `${selectedEventKey} loaded.`,
+            ? 'No schedule yet. Showing teams.'
+            : 'Up to date',
       );
       return errors.length === 0;
     } finally {
@@ -1155,7 +1007,7 @@ export function EventsPage() {
   }, [effectiveEventTeams]);
 
   const liveMatchCount = useMemo(() => {
-    return eventSchedule.filter((match) => liveTimerLabel(match.scheduled_time, nowMs).state === 'live').length;
+    return eventSchedule.filter((match) => liveTimerLabel(matchStartTime(match), nowMs).state === 'live').length;
   }, [eventSchedule, nowMs]);
 
   const hasClientAdminKey = clientAdminKeyAvailable();
@@ -1202,8 +1054,8 @@ export function EventsPage() {
     const rows = [...qualificationMatches];
     if (qualBreakdownSortMode === 'status') {
       rows.sort((a, b) => {
-        const aTimer = liveTimerLabel(a.scheduled_time, nowMs);
-        const bTimer = liveTimerLabel(b.scheduled_time, nowMs);
+        const aTimer = liveTimerLabel(matchStartTime(a), nowMs);
+        const bTimer = liveTimerLabel(matchStartTime(b), nowMs);
         const aCompleted = inferMatchCompleted(a, nowMs);
         const bCompleted = inferMatchCompleted(b, nowMs);
         const score = (completed: boolean, state: string) => {
@@ -1381,17 +1233,27 @@ export function EventsPage() {
     }
   }, [selectedEventKey]);
 
-  useEffect(() => {
-    void refreshAllianceSelections();
-  }, [refreshAllianceSelections, lastUpdatedAt]);
+  const pollAllianceSelections = useCallback(async (reason: SingleFlightPollReason) => {
+    const success = await refreshAllianceSelections({
+      quiet: reason === 'poll' || reason === 'resume',
+    });
+    if (reason === 'manual') {
+      setAllianceActionStatus(success ? 'Alliance selections refreshed.' : 'Alliance refresh failed.');
+    }
+    return success;
+  }, [refreshAllianceSelections]);
 
-  useEffect(() => {
-    if (!selectedEventKey || !pageVisible) return;
-    const timer = window.setInterval(() => {
-      void refreshAllianceSelections({ quiet: true });
-    }, ALLIANCE_AUTO_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [pageVisible, refreshAllianceSelections, selectedEventKey]);
+  const {
+    requestInFlight: allianceRequestInFlight,
+    triggerNow: triggerAllianceRefresh,
+  } = useSingleFlightPolling({
+    enabled: Boolean(selectedEventKey) && activeTab === 'breakdown',
+    visible: pageVisible,
+    intervalMs: ALLIANCE_AUTO_REFRESH_MS,
+    run: pollAllianceSelections,
+    minBackoffMs: ALLIANCE_AUTO_REFRESH_MS,
+    maxBackoffMs: 120000,
+  });
 
   const allianceSelectionRows = useMemo(() => {
     return eventAlliances
@@ -1473,41 +1335,15 @@ export function EventsPage() {
 
   function exportAllianceSelectionsCsv() {
     if (allianceSelectionRows.length === 0) return;
-    const header = 'alliance_number,alliance_name,slot,team_number,team_name';
-    const lines = allianceSelectionRows.flatMap((alliance) => (
+    const headers = ['alliance_number', 'alliance_name', 'slot', 'team_number', 'team_name'];
+    const rows = allianceSelectionRows.flatMap((alliance) => (
       alliance.teams.length > 0
-        ? alliance.teams.map((team) =>
-            [
-              alliance.number,
-              JSON.stringify(alliance.name),
-              JSON.stringify(team.slot),
-              team.teamNumber,
-              JSON.stringify(team.name || ''),
-            ].join(','),
-          )
-        : [[
-            alliance.number,
-            JSON.stringify(alliance.name),
-            JSON.stringify('N/A'),
-            '',
-            JSON.stringify(''),
-          ].join(',')]
+        ? alliance.teams.map((team) => [alliance.number, alliance.name, team.slot, team.teamNumber, team.name || ''])
+        : [[alliance.number, alliance.name, 'N/A', '', '']]
     ));
-    const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${selectedEventKey || 'event'}-alliances.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-    setAllianceActionStatus('Alliance CSV exported.');
-  }
-
-  async function refreshAllianceSelectionsManually() {
-    const success = await refreshAllianceSelections();
-    setAllianceActionStatus(success ? 'Alliance selections refreshed.' : 'Alliance refresh failed.');
+    void downloadCsv(`${selectedEventKey || 'event'}-alliances.csv`, headers, rows)
+      .then(exported => setAllianceActionStatus(exported ? 'Alliance CSV export ready.' : 'Export cancelled.'))
+      .catch(() => setAllianceActionStatus('The alliance file could not be exported. Please try again.'));
   }
 
   const eventAlliancesUpdatedLabel = useMemo(() => {
@@ -1908,7 +1744,18 @@ export function EventsPage() {
     return () => window.clearTimeout(timer);
   }, [committedQuery, eventQuery, runEventSearch]);
 
+  // Opening another event from inside Events (a recent-event chip, global
+  // search) changes only the query string. Without this the writer below put
+  // the previous event straight back and the tap did nothing.
+  const urlSync = useExternalSearchSync(searchParams, (params) => {
+    const urlEventKey = (params.get('event') || '').trim().toLowerCase();
+    const urlTab = params.get('tab');
+    if (urlEventKey && urlEventKey !== selectedEventKey) openEvent(urlEventKey);
+    setActiveTab(resolveTab(urlTab, EVENT_TABS, 'overview'));
+  });
+
   useEffect(() => {
+    if (!urlSync.shouldWrite()) return;
     const next = new URLSearchParams();
     if (selectedEventKey) next.set('event', selectedEventKey);
     if (committedQuery.trim()) next.set('q', committedQuery.trim());
@@ -1916,13 +1763,14 @@ export function EventsPage() {
     next.set('tab', activeTab);
 
     if (next.toString() !== searchParams.toString()) {
+      urlSync.markWritten(next.toString());
       setSearchParams(next, { replace: true });
     }
 
     if (selectedEventKey) {
       writeCenterContext({ eventKey: selectedEventKey, sourcePath: '/events' });
     }
-  }, [activeTab, committedQuery, regionFilter, searchParams, selectedEventKey, setSearchParams]);
+  }, [activeTab, committedQuery, regionFilter, searchParams, selectedEventKey, setSearchParams, urlSync]);
 
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1948,7 +1796,7 @@ export function EventsPage() {
     try {
       const payload = await ingestEvent(selectedEventKey);
       setStatusText(
-        `Synced ${payload.event_key}: ${payload.teams} teams, ${payload.matches} matches, ${payload.match_team_links} links.`,
+        `Synced ${payload.event_key}: ${payload.teams} team${payload.teams === 1 ? '' : 's'}, ${payload.matches} match${payload.matches === 1 ? '' : 'es'}.`,
       );
       setSelectedEventKey(payload.event_key.toLowerCase());
     } catch (error) {
@@ -2043,7 +1891,7 @@ export function EventsPage() {
         {isExpanded ? (
           <ul className="center-simple-list event-knockout-series-matches">
             {series.matches.map((match) => {
-              const timer = liveTimerLabel(match.scheduled_time, nowMs);
+              const timer = liveTimerLabel(matchStartTime(match), nowMs);
               const isCompleted = inferMatchCompleted(match, nowMs);
               const winner = inferWinnerAlliance(match, nowMs);
               const hasScores = matchHasScores(match);
@@ -2070,6 +1918,8 @@ export function EventsPage() {
   const mobileSidebarOpen = isMobileLayout && mobilePanel !== 'center';
 
   return (
+    <>
+    <PageViewBar items={EVENTS_VIEWS} />
     <div className="events-page">
     <div
       className={`center-layout mobile-finder-layout events-center-layout scouting-layout-grid ${mobileSidebarOpen ? 'mobile-finder-open' : ''} ${isMobileLayout && mobilePanel === 'calendar' ? 'mobile-calendar-open' : ''}`.trim()}
@@ -2179,7 +2029,7 @@ export function EventsPage() {
         ) : null}
 
         {!isMobileLayout || mobilePanel === 'calendar' ? (
-        <SurfaceCard title={calendarMonthLabel} subtitle={`${visibleCalendarEvents.length} events`} className="events-calendar-card">
+        <SurfaceCard title={calendarMonthLabel} subtitle={`${visibleCalendarEvents.length} event${visibleCalendarEvents.length === 1 ? '' : 's'}`} className="events-calendar-card">
           {isMobileLayout ? (
             <>
               <div className="events-cal-nav">
@@ -2226,7 +2076,7 @@ export function EventsPage() {
                 })}
               </div>
               {dateTbaCalendarEvents.length > 0 ? (
-                <p className="events-cal-tba">Date TBA: {dateTbaCalendarEvents.length} events</p>
+                <p className="events-cal-tba">Date TBA: {dateTbaCalendarEvents.length} event{dateTbaCalendarEvents.length === 1 ? '' : 's'}</p>
               ) : null}
             </>
           ) : (
@@ -2265,13 +2115,17 @@ export function EventsPage() {
                   <span className="fm-event-key">{selectedEventKey}</span>
                 </div>
                 <div className="fm-event-header-actions">
-                  <button
-                    className="fm-event-sync-btn"
-                    onClick={() => void handleSyncEvent()}
-                    disabled={!selectedEventKey || syncingEvent || !canSyncEvent}
-                  >
-                    {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync</>}
-                  </button>
+                  {/* Sync re-ingests from TBA and needs admin rights; for
+                      everyone else it was a button that was always disabled. */}
+                  {canSyncEvent ? (
+                    <button
+                      className="fm-event-sync-btn"
+                      onClick={() => void handleSyncEvent()}
+                      disabled={!selectedEventKey || syncingEvent}
+                    >
+                      {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync</>}
+                    </button>
+                  ) : null}
                   <ActionOverflowMenu
                     className="compact"
                     label="More"
@@ -2321,13 +2175,15 @@ export function EventsPage() {
           subtitle={selectedEventKey ? selectedEventKey : 'Select an event from Finder'}
           right={
             <div className="center-actions-row primary-actions">
-              <button
-                className="center-btn"
-                onClick={() => void handleSyncEvent()}
-                disabled={!selectedEventKey || syncingEvent || !canSyncEvent}
-              >
-                {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync Event</>}
-              </button>
+              {canSyncEvent ? (
+                <button
+                  className="center-btn"
+                  onClick={() => void handleSyncEvent()}
+                  disabled={!selectedEventKey || syncingEvent}
+                >
+                  {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync Event</>}
+                </button>
+              ) : null}
               <Link className="center-btn ghost" to="/home">
                 Home
               </Link>
@@ -2336,8 +2192,8 @@ export function EventsPage() {
         >
           <div className="center-status-row">
             <span className="center-chip"><TagIcon className="icon-inline icon-muted" /> {statusText}</span>
-            <span className="center-chip"><ClockIcon className="icon-inline icon-muted" /> {relativeFromTimestamp(lastUpdatedAt)}</span>
-            <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {eventSchedule.length} matches · {effectiveTeamCount} teams</span>
+            <span className="center-chip"><ClockIcon className="icon-inline icon-muted" /> Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
+            <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {eventSchedule.length} match{eventSchedule.length === 1 ? '' : 'es'} · {effectiveTeamCount} team{effectiveTeamCount === 1 ? '' : 's'}</span>
             <span className="center-chip">{liveMatchCount > 0 ? <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> : null} {liveMatchCount} live</span>
             <span className="center-chip"><RefreshIcon className="icon-inline icon-muted" /> {effectiveEventPollSec}s refresh</span>
             <span className="center-chip"><GlobeIcon className="icon-inline icon-muted" /> {regionLabel(regionFilter)}</span>
@@ -2459,11 +2315,11 @@ export function EventsPage() {
 
                 <div className="fm-top-card">
                   <div className="fm-top-card-header">
-                    <h4>Top By Coverage</h4>
-                    <p>Most analyzed teams</p>
+                    <h4>Most Match Data</h4>
+                    <p>Teams with the most matches on record</p>
                   </div>
                   {topAnalyzedTeams.length === 0 ? (
-                    <EmptyState compact title="No coverage yet" description="No analyzed team history yet." />
+                    <EmptyState compact title="No coverage yet" description="No match data for this event yet." />
                   ) : (
                     <ul className="fm-top-list">
                       {topAnalyzedTeams.map((team, idx) => (
@@ -2472,7 +2328,7 @@ export function EventsPage() {
                           <button type="button" className="fm-top-team-btn" onClick={() => openTeamCenter(team.team_key)}>
                             #{team.team_number} {team.nickname || team.team_key}
                           </button>
-                          <span className="fm-top-value">{team.history_count} matches</span>
+                          <span className="fm-top-value">{team.history_count} match{team.history_count === 1 ? '' : 'es'}</span>
                         </li>
                       ))}
                     </ul>
@@ -2482,10 +2338,10 @@ export function EventsPage() {
                 <div className="fm-top-card">
                   <div className="fm-top-card-header">
                     <h4>Top Fuel Rate</h4>
-                    <p>Best fuel scoring pace</p>
+                    <p>Teleop fuel per active-hub minute</p>
                   </div>
                   {topFuelTeams.length === 0 ? (
-                    <EmptyState compact title="No fuel metrics yet" description="Fuel-rate metrics still sparse." />
+                    <EmptyState compact title="No fuel metrics yet" description="Fuel rates show up once matches are played." />
                   ) : (
                     <ul className="fm-top-list">
                       {topFuelTeams.map((team, idx) => (
@@ -2494,7 +2350,7 @@ export function EventsPage() {
                           <button type="button" className="fm-top-team-btn" onClick={() => openTeamCenter(team.team_key)}>
                             #{team.team_number} {team.nickname || team.team_key}
                           </button>
-                          <span className="fm-top-value">{metric(team.averages?.fuel_scoring_rate ?? null, 2)}/min</span>
+                          <span className="fm-top-value">{metric(team.averages?.fuel_scoring_rate ?? null, 1)}/active min</span>
                         </li>
                       ))}
                     </ul>
@@ -2532,9 +2388,9 @@ export function EventsPage() {
               </div>
             </SurfaceCard>
 
-            <SurfaceCard title="Top By Coverage" compactable>
+            <SurfaceCard title="Most Match Data" compactable>
               {topAnalyzedTeams.length === 0 ? (
-                <EmptyState compact title="No coverage yet" description="No analyzed team history yet." />
+                <EmptyState compact title="No coverage yet" description="No match data for this event yet." />
               ) : (
                 <ul className="center-simple-list">
                   {topAnalyzedTeams.map((team) => (
@@ -2542,7 +2398,7 @@ export function EventsPage() {
                       <button type="button" className="center-inline-link" onClick={() => openTeamCenter(team.team_key)}>
                         #{team.team_number} {team.nickname || team.team_key}
                       </button>
-                      <span>{team.history_count} analyzed matches</span>
+                      <span>{team.history_count} match{team.history_count === 1 ? '' : 'es'}</span>
                     </li>
                   ))}
                 </ul>
@@ -2551,7 +2407,7 @@ export function EventsPage() {
 
             <SurfaceCard title="Top Fuel Rate" compactable>
               {topFuelTeams.length === 0 ? (
-                <EmptyState compact title="No fuel metrics yet" description="Fuel-rate metrics still sparse." />
+                <EmptyState compact title="No fuel metrics yet" description="Fuel rates show up once matches are played." />
               ) : (
                 <ul className="center-simple-list">
                   {topFuelTeams.map((team) => (
@@ -2559,7 +2415,7 @@ export function EventsPage() {
                       <button type="button" className="center-inline-link" onClick={() => openTeamCenter(team.team_key)}>
                         #{team.team_number} {team.nickname || team.team_key}
                       </button>
-                      <span>{metric(team.averages?.fuel_scoring_rate ?? null, 2)} fuel/min</span>
+                      <span>{metric(team.averages?.fuel_scoring_rate ?? null, 1)} fuel/active min</span>
                     </li>
                   ))}
                 </ul>
@@ -2583,7 +2439,7 @@ export function EventsPage() {
             ) : null}
             <div className="center-list-stack">
               {visibleScheduleRows.map((match) => {
-                const timer = liveTimerLabel(match.scheduled_time, nowMs);
+                const timer = liveTimerLabel(matchStartTime(match), nowMs);
                 const winner = match.winner_alliance || null;
                 const hasScores = matchHasScores(match);
                 const isCompleted =
@@ -2633,7 +2489,7 @@ export function EventsPage() {
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
-                              {teamFormStrip(entry)}
+                              <TeamFormStrip entry={entry} />
                             </span>
                           </button>
                         );
@@ -2660,7 +2516,7 @@ export function EventsPage() {
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
-                              {teamFormStrip(entry)}
+                              <TeamFormStrip entry={entry} />
                             </span>
                           </button>
                         );
@@ -2713,7 +2569,7 @@ export function EventsPage() {
                               <div className="fm-match-header-row">
                                 <div className="home-match-center-col">
                                   <strong>{match.display_name}</strong>
-                                  <small>{fmtDateShort(match.scheduled_time)}</small>
+                                  <small>{fmtDateShort(matchStartTime(match))}</small>
                                 </div>
                                 <div className="fm-match-status-right">
                                   <span className={`home-match-state ${effectiveState}`}>
@@ -2775,7 +2631,7 @@ export function EventsPage() {
                             {winnerText ? (
                               <small className="center-match-winner-chip">{winnerText}</small>
                             ) : null}
-                            <small>{fmtDateShort(match.scheduled_time)}</small>
+                            <small>{fmtDateShort(matchStartTime(match))}</small>
                           </div>
                         </header>
 
@@ -2889,14 +2745,14 @@ export function EventsPage() {
                           key: 'scheduled_time',
                           label: 'Time',
                           sortable: true,
-                          render: (match) => fmtDateShort(match.scheduled_time),
+                          render: (match) => fmtDateShort(matchStartTime(match)),
                         },
                         {
                           key: 'status',
                           label: 'Status',
                           align: 'center',
                           render: (match) => {
-                            const timer = liveTimerLabel(match.scheduled_time, nowMs);
+                            const timer = liveTimerLabel(matchStartTime(match), nowMs);
                             const isCompleted = inferMatchCompleted(match, nowMs);
                             return (
                               <span className={`center-status-pill ${isCompleted ? 'ended' : timer.state}`}>
@@ -3063,9 +2919,9 @@ export function EventsPage() {
                       type="button"
                       className="center-btn ghost"
                       onClick={() => {
-                        void refreshAllianceSelectionsManually();
+                        triggerAllianceRefresh('manual');
                       }}
-                      disabled={loadingEventAlliances}
+                      disabled={loadingEventAlliances || allianceRequestInFlight}
                     >
                       <RefreshIcon className="icon-inline" /> Refresh
                     </button>
@@ -3306,14 +3162,14 @@ export function EventsPage() {
                     {
                       key: 'form',
                       label: 'Form',
-                      render: (team) => teamFormStrip(liveStatusByTeam[team.team_key.toLowerCase()] || null),
+                      render: (team) => <TeamFormStrip entry={liveStatusByTeam[team.team_key.toLowerCase()] || null} />,
                     },
-                    { key: 'history_count', label: 'Analyzed', numeric: true, sortable: true },
+                    { key: 'history_count', label: 'Matches', numeric: true, sortable: true },
                     {
                       key: 'fuel',
-                      label: 'Fuel',
+                      label: 'Fuel/active min',
                       numeric: true,
-                      render: (team) => metric(team.averages?.fuel_scoring_rate ?? null, 2),
+                      render: (team) => metric(team.averages?.fuel_scoring_rate ?? null, 1),
                     },
                     {
                       key: 'cycle',
@@ -3373,7 +3229,7 @@ export function EventsPage() {
             <div className="home-calendar-modal-title">
               <CalendarIcon className="icon-inline" />
               <h2>{calendarMonthLabel}</h2>
-              <small>{visibleCalendarEvents.length} events</small>
+              <small>{visibleCalendarEvents.length} event{visibleCalendarEvents.length === 1 ? '' : 's'}</small>
             </div>
             <div className="home-calendar-modal-nav">
               <button
@@ -3466,5 +3322,6 @@ export function EventsPage() {
       </div>
     ) : null}
     </div>
+    </>
   );
 }

@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.core.security import sanitize_external_error
 from app.db import models
 from app.services.utils import _as_float
+from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH
+from app.services.season_config import REBUILT_SEASON_YEAR, require_known_season_rules
 from app.tba.client import TBAClient
 
 BACKFILL_RUN_VERSION = "tba_scorebreakdown_climb_backfill_v1"
@@ -49,6 +51,7 @@ def _upsert_backfill_run(db: Session, *, event_key: str, match_key: str) -> mode
         .filter(
             models.AnalysisRun.match_key == match_key,
             models.AnalysisRun.version == BACKFILL_RUN_VERSION,
+            models.AnalysisRun.run_kind == RUN_KIND_OFFICIAL_TRUTH,
         )
         .order_by(models.AnalysisRun.id.desc())
         .first()
@@ -56,7 +59,12 @@ def _upsert_backfill_run(db: Session, *, event_key: str, match_key: str) -> mode
     if run is not None:
         return run
 
-    run = models.AnalysisRun(match_key=match_key, version=BACKFILL_RUN_VERSION, status="completed")
+    run = models.AnalysisRun(
+        match_key=match_key,
+        version=BACKFILL_RUN_VERSION,
+        run_kind=RUN_KIND_OFFICIAL_TRUTH,
+        status="completed",
+    )
     db.add(run)
     db.flush()
     db.add(
@@ -89,6 +97,10 @@ def backfill_official_climb_for_event(
         return {"ok": False, "event_key": normalized_event_key, "error": "missing_event_key"}
 
     season_year = _normalize_event_year(normalized_event_key, datetime.now(timezone.utc).year)
+    require_known_season_rules(
+        season_year,
+        feature="official climb backfill",
+    )
     matches = tba.event_matches(normalized_event_key)
     if not isinstance(matches, list):
         return {"ok": False, "event_key": normalized_event_key, "error": "invalid_matches_payload"}
@@ -96,7 +108,7 @@ def backfill_official_climb_for_event(
     context = _truth_context()
     phases = context.get("phases") if isinstance(context.get("phases"), dict) else {}
     teleop_sec = max(1.0, float(_as_float(phases.get("teleop_sec")) or 120.0))
-    if season_year >= 2026:
+    if season_year == REBUILT_SEASON_YEAR:
         teleop_sec = max(
             1.0,
             float(
@@ -136,7 +148,7 @@ def backfill_official_climb_for_event(
                 "team_key": team_key,
                 "alliance": str(row.get("alliance") or "").strip().lower() or None,
                 "station": str(row.get("station") or "").strip().lower() or None,
-                "auto_points": max(0.0, float(_as_float(row.get("auto_points")) or 0.0)),
+                "auto_points": _as_float(row.get("auto_points")),
                 "teleop_points": max(0.0, float(_as_float(row.get("teleop_points")) or 0.0)),
                 "teleop_score_count": _as_float(row.get("teleop_score_count")),
                 "climb_points": climb_points,
@@ -213,11 +225,6 @@ def backfill_official_climb_for_event(
             if isinstance(scoring_proxy, (int, float)) and float(scoring_proxy) > 0.0
             else None
         )
-        cycle_time_sec = (
-            (teleop_sec / max(1e-6, float(scoring_proxy)))
-            if isinstance(scoring_proxy, (int, float)) and float(scoring_proxy) > 0.0
-            else None
-        )
         db.add(
             models.TeamMatchFinding(
                 analysis_run_id=run.id,
@@ -230,8 +237,9 @@ def backfill_official_climb_for_event(
                 fuel_scoring_rate=round(float(fuel_scoring_rate), 4)
                 if isinstance(fuel_scoring_rate, (int, float))
                 else None,
-                cycle_time_sec=round(float(cycle_time_sec), 4) if isinstance(cycle_time_sec, (int, float)) else None,
-                auto_contribution=round(float(official["auto_points"]), 4),
+                cycle_time_sec=None,
+                auto_contribution=round(float(official["auto_points"]), 4)
+                if official["auto_points"] is not None else None,
                 climb_success_prob=round(float(climb_prob), 4),
                 defensive_engagement_sec=None,
                 reliability_score=None,

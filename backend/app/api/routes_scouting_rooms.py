@@ -4,12 +4,14 @@ import asyncio
 from contextlib import suppress
 from datetime import datetime, timezone
 import logging
+import math
 import re
 import secrets
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.exc import DatabaseError, IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
@@ -29,6 +31,13 @@ from app.db.session import SessionLocal, get_db
 from app.services.scouting_rooms.bus import scouting_room_bus
 from app.services.scouting_rooms.realtime import scouting_room_hub
 from app.services.utils import _clamp, pg_sqlstate_code as _pg_sqlstate_shared
+from app.services.workspaces import (
+    WORKSPACE_REVOKED_DETAIL,
+    WorkspaceActor,
+    active_members,
+    lock_workspace_row,
+    require_workspace_actor,
+)
 
 router = APIRouter(prefix="/scouting/rooms", tags=["scouting-rooms"])
 logger = logging.getLogger(__name__)
@@ -36,6 +45,9 @@ logger = logging.getLogger(__name__)
 _ROOM_KEY_RE = re.compile(r"[^a-z0-9_-]+")
 _ROOM_BUS_CONTROL_DISCONNECT_PROFILE = "room_control_disconnect_profile"
 _ROOM_REALTIME_TIMEOUT_SEC = 1.5
+# A silent socket still gets its membership re-checked this often, so removal
+# holds even if the cross-worker disconnect message is lost.
+_ROOM_MEMBERSHIP_RECHECK_SEC = 30.0
 
 def _pg_sqlstate(exc: Exception) -> str | None:
     return _pg_sqlstate_shared(exc)
@@ -196,6 +208,11 @@ def _parse_iso_datetime(value: Any) -> datetime | None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
+def _member_scout_profile(actor: WorkspaceActor) -> str:
+    # A room identity is the member's workspace name, never one the client types:
+    # otherwise any teammate could claim the room owner's name and get owner rights.
+    return _normalize_scout_profile(actor.member.display_name)
+
 def _require_scout_profile(raw: str | None, *, context: str) -> str:
     profile = _normalize_scout_profile(raw)
     if not profile:
@@ -261,6 +278,16 @@ async def _safe_presence_snapshot(room_key: str, *, context: str) -> list[dict[s
         )
         return []
 
+async def _safe_clear_http_presence(room_key: str, scout_profile: str) -> list[dict[str, Any]]:
+    try:
+        return await asyncio.wait_for(
+            scouting_room_hub.clear_http_presence(room_key, scout_profile),
+            timeout=_ROOM_REALTIME_TIMEOUT_SEC,
+        )
+    except Exception as exc:
+        logger.warning("Failed to clear HTTP presence for %s during websocket connect: %s", room_key, exc)
+        return await _safe_presence_snapshot(room_key, context="websocket connect")
+
 async def _safe_touch_http_presence(
     room_key: str,
     *,
@@ -287,32 +314,6 @@ async def _safe_touch_http_presence(
             exc,
         )
         return list(fallback_presence or [])
-
-async def _safe_profile_has_client_presence(
-    room_key: str,
-    *,
-    scout_profile: str,
-    client_id: str,
-    context: str,
-) -> bool:
-    try:
-        return await asyncio.wait_for(
-            scouting_room_hub.profile_has_client_presence(
-                room_key,
-                scout_profile=scout_profile,
-                client_id=client_id,
-            ),
-            timeout=_ROOM_REALTIME_TIMEOUT_SEC,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Failed to verify scouting room client presence for %s (%s) during %s: %s",
-            room_key,
-            scout_profile,
-            context,
-            exc,
-        )
-        return False
 
 async def _broadcast_presence_message(
     room_key: str, presence: list[dict[str, Any]] | None = None
@@ -466,25 +467,6 @@ def _presence_connections_for_profile(
             except Exception:
                 return 1
     return 0
-
-def _room_profile_claim_conflicts(
-    *,
-    room_key: str,
-    scout_profile: str,
-    presence: list[dict[str, Any]],
-    existing_room_access_payload: dict[str, Any] | None,
-) -> bool:
-    active_connections = _presence_connections_for_profile(presence, scout_profile)
-    if active_connections <= 0:
-        return False
-    if room_access_allows(
-        existing_room_access_payload,
-        room_key=room_key,
-        scout_profile=scout_profile,
-        require_write=True,
-    ):
-        return False
-    return True
 
 def _serialize_entry(row: models.ScoutingRoomEntry) -> dict[str, Any]:
     payload = row.payload if isinstance(row.payload, dict) else {}
@@ -1085,7 +1067,7 @@ def _clear_room_assignment(
             ) from exc
         raise
 
-def _load_room_or_404(db: Session, room_key: str) -> models.ScoutingRoom:
+def _load_room_or_404(db: Session, room_key: str, workspace_id: int) -> models.ScoutingRoom:
     try:
         room = db.get(models.ScoutingRoom, room_key)
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
@@ -1099,7 +1081,8 @@ def _load_room_or_404(db: Session, room_key: str) -> models.ScoutingRoom:
                 ),
             ) from exc
         raise
-    if room is None:
+    # Rooms belong to one team workspace; to everyone else they don't exist.
+    if room is None or room.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail=f"Scouting room {room_key} not found")
     return room
 
@@ -1124,6 +1107,8 @@ def _upsert_room(
     event_key: str | None,
     title: str | None,
     created_by: str,
+    workspace_id: int,
+    can_claim_owner: bool = False,
 ) -> models.ScoutingRoom:
     try:
         normalized_created_by = _normalize_scout_profile(created_by)
@@ -1132,9 +1117,12 @@ def _upsert_room(
 
         room = db.get(models.ScoutingRoom, room_key)
         now = datetime.now(timezone.utc)
+        if room is not None and room.workspace_id != workspace_id:
+            raise HTTPException(status_code=409, detail="That room code is already taken. Pick another.")
         if room is None:
             room = models.ScoutingRoom(
                 room_key=room_key,
+                workspace_id=workspace_id,
                 event_key=event_key,
                 title=(title or "").strip()[:80] or None,
                 created_by=normalized_created_by,
@@ -1157,7 +1145,8 @@ def _upsert_room(
             if normalized_title and room.title != normalized_title:
                 room.title = normalized_title
                 changed = True
-        if normalized_created_by and not _normalize_scout_profile(room.created_by):
+        # An ownerless room (its owner left) is only claimed by a workspace leader.
+        if can_claim_owner and normalized_created_by and not _normalize_scout_profile(room.created_by):
             room.created_by = normalized_created_by
             changed = True
         if changed:
@@ -1186,6 +1175,7 @@ def _sync_room_metadata_for_join(
     title: str | None,
     scout_profile: str,
     commit: bool = True,
+    can_claim_owner: bool = False,
 ) -> models.ScoutingRoom:
     normalized_event_key = _normalize_event_key(event_key)
     if normalized_event_key and db.get(models.Event, normalized_event_key) is None:
@@ -1201,7 +1191,8 @@ def _sync_room_metadata_for_join(
     if normalized_title and room.title != normalized_title:
         room.title = normalized_title
         changed = True
-    if normalized_scout_profile and not _normalize_scout_profile(room.created_by):
+    # An ownerless room (its owner left) is only claimed by a workspace leader.
+    if can_claim_owner and normalized_scout_profile and not _normalize_scout_profile(room.created_by):
         room.created_by = normalized_scout_profile
         changed = True
 
@@ -1220,7 +1211,11 @@ def _resolve_room_role(
     scout_profile: str,
     *,
     secondary_leader_profiles: list[str] | None = None,
+    workspace_leader: bool = False,
 ) -> str:
+    # Workspace leaders run every room their team opens.
+    if workspace_leader:
+        return ROOM_ROLE_OWNER
     profile = _normalize_scout_profile(scout_profile)
     if not profile:
         return ROOM_ROLE_EDITOR
@@ -1240,25 +1235,27 @@ def _resolve_room_role_with_presence(
     *,
     presence: list[dict[str, Any]] | None = None,
     secondary_leader_profiles: list[str] | None = None,
+    workspace_leader: bool = False,
 ) -> str:
     resolved = _resolve_room_role(
         room,
         scout_profile,
         secondary_leader_profiles=secondary_leader_profiles,
+        workspace_leader=workspace_leader,
     )
-    if resolved == ROOM_ROLE_OWNER:
-        return ROOM_ROLE_OWNER
-    normalized_profile = _normalize_scout_profile(scout_profile)
-    if not normalized_profile:
-        return ROOM_ROLE_EDITOR
-    leader_profile, leader_source = _resolve_room_leader(
-        room,
-        presence or [],
-        secondary_leader_profiles=secondary_leader_profiles,
-    )
-    if leader_source == "presence_fallback" and _scout_profiles_match(leader_profile, normalized_profile):
-        return ROOM_ROLE_OWNER
-    return ROOM_ROLE_EDITOR
+    # Being present in an ownerless room grants nothing: every room belongs to a
+    # workspace whose leaders own it, and "first one in leads" let any teammate
+    # take over a room whose owner had left or been removed.
+    del presence
+    return resolved
+
+def _current_actor(db: Session, actor: WorkspaceActor) -> WorkspaceActor:
+    # Room actions can await presence calls after the actor was loaded; re-read the
+    # member so a removal or demotion in between takes effect before rights are used.
+    db.refresh(actor.member)
+    if actor.member.removed_at is not None:
+        raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
+    return actor
 
 async def _resolve_room_action_actor_role(
     room: models.ScoutingRoom,
@@ -1266,31 +1263,16 @@ async def _resolve_room_action_actor_role(
     *,
     secondary_leader_profiles: list[str] | None = None,
     fallback_context: str = "room action",
+    workspace_leader: bool = False,
 ) -> str:
-    # Resolve actor role for write actions without requiring fragile presence calls.
-    #
-    # In standard rooms, ownership is explicit (creator or secondary leaders) and we avoid
-    # realtime presence dependencies. Presence fallback is only used for legacy rooms that
-    # still have no persisted owner metadata.
-    direct_role = _resolve_room_role(
+    # Ownership is explicit: the room's creator, its secondary leaders, or a
+    # workspace leader. Presence never grants rights (see _resolve_room_role_with_presence).
+    del fallback_context
+    return _resolve_room_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leader_profiles,
-    )
-    if direct_role == ROOM_ROLE_OWNER:
-        return ROOM_ROLE_OWNER
-
-    has_persisted_owner = bool(_normalize_scout_profile(room.created_by))
-    has_secondary_leaders = bool(secondary_leader_profiles)
-    if has_persisted_owner or has_secondary_leaders:
-        return direct_role
-
-    presence = await _safe_presence_snapshot(room.room_key, context=fallback_context)
-    return _resolve_room_role_with_presence(
-        room,
-        actor_profile,
-        presence=presence,
-        secondary_leader_profiles=secondary_leader_profiles,
+        workspace_leader=workspace_leader,
     )
 
 def _entry_metric(payload: dict[str, Any], *path: str) -> float | None:
@@ -1316,7 +1298,10 @@ def _entry_overall_scout_rating(payload: dict[str, Any]) -> float | None:
 
     manual_score = _clamp_0_100(manual if manual is not None else 50.0)
     driver_score = _clamp_0_100(driver if driver is not None else 50.0)
-    point_score = _clamp_0_100(((total_points if total_points is not None else 0.0) / 45.0) * 100.0)
+    # Same scale as the app (config/season.ts SCOUT_POINTS_SCALE.total): a typical
+    # 2026 robot scores ~37, a p90 robot ~125. Dividing by 45 (an earlier game) put
+    # nearly every REBUILT robot at 100.
+    point_score = 100.0 / (1.0 + math.exp(-((total_points if total_points is not None else 0.0) - 37.0) / 30.0))
     endgame_score = _clamp_0_100(((endgame_points if endgame_points is not None else 0.0) / 30.0) * 100.0)
     discipline_score = _clamp_0_100(discipline if discipline is not None else 50.0)
 
@@ -1414,6 +1399,102 @@ def _generate_room_key(db: Session) -> str:
             ) from exc
         raise
 
+async def disconnect_member_from_workspace_rooms(db: Session, workspace_id: int, scout_profile: str) -> None:
+    # Called when a member is removed or leaves: close their sockets in every room
+    # of the workspace, on this worker and (through the bus) on the others.
+    profile = _normalize_scout_profile(scout_profile)
+    if not profile:
+        return
+    room_keys = db.execute(
+        select(models.ScoutingRoom.room_key).where(models.ScoutingRoom.workspace_id == workspace_id)
+    ).scalars().all()
+    for room_key in room_keys:
+        with suppress(Exception):
+            _removed, presence = await scouting_room_hub.disconnect_scout_profile(
+                room_key, profile, close_code=4401, reason="Removed from the team workspace."
+            )
+            await scouting_room_bus.publish(
+                room_key,
+                {
+                    "type": _ROOM_BUS_CONTROL_DISCONNECT_PROFILE,
+                    "room_key": room_key,
+                    "scout_profile": profile,
+                    "reason": "Removed from the team workspace.",
+                    "close_code": 4401,
+                },
+            )
+            await _broadcast_presence_message(room_key, presence)
+
+def release_scout_room_roles(db: Session, workspace_id: int, scout_name: str) -> None:
+    # Room ownership and leadership are held by name. When a member leaves or is
+    # removed, drop them, or whoever takes the name next would inherit them.
+    # Their entries and assignments stay as the record of what they did.
+    norm = _normalize_scout_profile_lookup(scout_name)
+    if not norm:
+        return
+    rooms = db.execute(
+        select(models.ScoutingRoom).where(models.ScoutingRoom.workspace_id == workspace_id)
+    ).scalars().all()
+    room_keys = [room.room_key for room in rooms]
+    if not room_keys:
+        return
+    for room in rooms:
+        if _normalize_scout_profile_lookup(room.created_by) == norm:
+            room.created_by = None
+    db.query(models.ScoutingRoomLeader).filter(
+        models.ScoutingRoomLeader.room_key.in_(room_keys),
+        models.ScoutingRoomLeader.scout_profile_norm == norm,
+    ).delete(synchronize_session=False)
+
+def rename_scout_in_workspace_rooms(db: Session, workspace_id: int, old_name: str, new_name: str) -> None:
+    old_norm = _normalize_scout_profile_lookup(old_name)
+    new_profile = _normalize_scout_profile(new_name)
+    if not old_norm or not new_profile or old_norm == new_profile.lower():
+        return
+    rooms = db.execute(
+        select(models.ScoutingRoom).where(models.ScoutingRoom.workspace_id == workspace_id)
+    ).scalars().all()
+    room_keys = [room.room_key for room in rooms]
+    if not room_keys:
+        return
+    for room in rooms:
+        if _normalize_scout_profile_lookup(room.created_by) == old_norm:
+            room.created_by = new_profile
+    new_norm = new_profile.lower()
+    already_leading = set(
+        db.execute(
+            select(models.ScoutingRoomLeader.room_key).where(
+                models.ScoutingRoomLeader.room_key.in_(room_keys),
+                models.ScoutingRoomLeader.scout_profile_norm == new_norm,
+            )
+        ).scalars()
+    )
+    for leader in db.execute(
+        select(models.ScoutingRoomLeader).where(
+            models.ScoutingRoomLeader.room_key.in_(room_keys),
+            models.ScoutingRoomLeader.scout_profile_norm == old_norm,
+        )
+    ).scalars():
+        # One leader row per name per room: merge instead of colliding.
+        if leader.room_key in already_leading:
+            db.delete(leader)
+        else:
+            leader.scout_profile, leader.scout_profile_norm = new_profile, new_norm
+    for assignment in db.execute(
+        select(models.ScoutingRoomAssignment).where(models.ScoutingRoomAssignment.room_key.in_(room_keys))
+    ).scalars():
+        if assignment.assigned_scout_profile_norm == old_norm:
+            assignment.assigned_scout_profile = new_profile
+            assignment.assigned_scout_profile_norm = new_profile.lower()
+        if assignment.assigned_by_scout_profile_norm == old_norm:
+            assignment.assigned_by_scout_profile = new_profile
+            assignment.assigned_by_scout_profile_norm = new_profile.lower()
+    for entry in db.execute(
+        select(models.ScoutingRoomEntry).where(models.ScoutingRoomEntry.room_key.in_(room_keys))
+    ).scalars():
+        if _normalize_scout_profile_lookup(entry.scout_profile) == old_norm:
+            entry.scout_profile = new_profile
+
 def _websocket_write_access_allowed(websocket: WebSocket) -> tuple[bool, str | None]:
     if settings.public_readonly_mode:
         return False, "Scouting rooms are disabled in public mode."
@@ -1466,13 +1547,11 @@ async def create_or_join_room(
     db: Session = Depends(get_db),
 ):
     require_write_access("Scouting room create/join")
+    actor = require_workspace_actor(http_request, db)
 
     room_key = ""
     event_key = _normalize_event_key(request.event_key)
-    scout_profile = _require_scout_profile(
-        request.scout_profile,
-        context="joining a scouting room",
-    )
+    scout_profile = _member_scout_profile(actor)
     requested_room_key = _normalize_room_key(request.room_key)
     normalized_client_id = str(request.client_id or "").strip()[:80] or None
     create_if_missing = bool(request.create_if_missing)
@@ -1486,6 +1565,8 @@ async def create_or_join_room(
                 event_key=event_key,
                 title=request.title,
                 created_by=scout_profile,
+                workspace_id=actor.workspace_id,
+                can_claim_owner=actor.is_leader,
             )
         elif create_if_missing:
             room_key = requested_room_key
@@ -1495,10 +1576,12 @@ async def create_or_join_room(
                 event_key=event_key,
                 title=request.title,
                 created_by=scout_profile,
+                workspace_id=actor.workspace_id,
+                can_claim_owner=actor.is_leader,
             )
         else:
             room_key = requested_room_key
-            room = _load_room_or_404(db, room_key)
+            room = _load_room_or_404(db, room_key, actor.workspace_id)
             room = _sync_room_metadata_for_join(
                 db,
                 room=room,
@@ -1506,9 +1589,10 @@ async def create_or_join_room(
                 title=request.title,
                 scout_profile=scout_profile,
                 commit=True,
+                can_claim_owner=actor.is_leader,
             )
         _touch_room_activity(db, room, commit=True)
-        room = _load_room_or_404(db, room_key)
+        room = _load_room_or_404(db, room_key, actor.workspace_id)
         presence = await _safe_presence_snapshot(room_key, context="create or join room")
         secondary_leaders = _load_room_secondary_leader_profiles(db, room_key)
     except HTTPException:
@@ -1524,31 +1608,8 @@ async def create_or_join_room(
                 exc,
             ),
         ) from exc
-    existing_room_access_payload = parse_room_access_token(
-        str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
-    )
-    profile_claim_conflicts = _room_profile_claim_conflicts(
-        room_key=room.room_key,
-        scout_profile=scout_profile,
-        presence=presence,
-        existing_room_access_payload=existing_room_access_payload,
-    )
-    if profile_claim_conflicts and normalized_client_id:
-        if await _safe_profile_has_client_presence(
-            room.room_key,
-            scout_profile=scout_profile,
-            client_id=normalized_client_id,
-            context="create or join room",
-        ):
-            profile_claim_conflicts = False
-    if profile_claim_conflicts:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Scout profile '{scout_profile}' is already active in room {room.room_key}. "
-                "Use a unique scout name."
-            ),
-        )
+    # The room name is the authenticated member's workspace name, so a presence
+    # under it is this member (another device or a recent visit), never a rival.
     presence = await _safe_touch_http_presence(
         room.room_key,
         scout_profile=scout_profile,
@@ -1561,6 +1622,7 @@ async def create_or_join_room(
         scout_profile,
         presence=presence,
         secondary_leader_profiles=secondary_leaders,
+        workspace_leader=actor.is_leader,
     )
     room_access = issue_room_access_token(
         room_key=room.room_key,
@@ -1611,11 +1673,12 @@ async def get_room_state(
     presence_heartbeat: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
 
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
     presence = await _safe_presence_snapshot(normalized, context="get room state")
     try:
         secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
@@ -1628,7 +1691,8 @@ async def get_room_state(
         secondary_leaders = []
     room_role = None
     access_payload = None
-    normalized_profile = _normalize_scout_profile(scout_profile)
+    # Asking with any name means "issue my access"; it is always the member's own.
+    normalized_profile = _member_scout_profile(actor) if _normalize_scout_profile(scout_profile) else ""
     normalized_client_id = str(client_id or "").strip()[:80] or None
     existing_room_access_payload = parse_room_access_token(
         str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
@@ -1651,34 +1715,12 @@ async def get_room_state(
                     context="get room state",
                     fallback_presence=presence,
                 )
-            profile_claim_conflicts = _room_profile_claim_conflicts(
-                room_key=room.room_key,
-                scout_profile=normalized_profile,
-                presence=presence,
-                existing_room_access_payload=existing_room_access_payload,
-            )
-            if profile_claim_conflicts and normalized_client_id:
-                if await _safe_profile_has_client_presence(
-                    room.room_key,
-                    scout_profile=normalized_profile,
-                    client_id=normalized_client_id,
-                    context="get room state",
-                ):
-                    profile_claim_conflicts = False
-            if profile_claim_conflicts:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"Scout profile '{normalized_profile}' is already active in room {room.room_key}. "
-                        "Use a unique scout name."
-                    ),
-                )
             try:
                 _touch_room_activity(db, room, commit=True)
-                room = _load_room_or_404(db, normalized)
+                room = _load_room_or_404(db, normalized, actor.workspace_id)
             except (ProgrammingError, OperationalError, DatabaseError, IntegrityError):
                 # Issuing a room access token should not fail solely because activity-touch writes are unavailable.
-                room = _load_room_or_404(db, normalized)
+                room = _load_room_or_404(db, normalized, actor.workspace_id)
             try:
                 secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
             except (ProgrammingError, OperationalError, DatabaseError, IntegrityError):
@@ -1688,6 +1730,7 @@ async def get_room_state(
                 normalized_profile,
                 presence=presence,
                 secondary_leader_profiles=secondary_leaders,
+                workspace_leader=actor.is_leader,
             )
             room_access = issue_room_access_token(
                 room_key=room.room_key,
@@ -1719,6 +1762,7 @@ async def get_room_state(
                     normalized_profile,
                     presence=presence,
                     secondary_leader_profiles=secondary_leaders,
+                    workspace_leader=actor.is_leader,
                 )
             except Exception:
                 room_role = None
@@ -1767,14 +1811,16 @@ async def get_room_state(
 @router.get("/{room_key}/entries")
 def get_room_entries(
     room_key: str,
+    http_request: Request,
     history_limit: int = Query(default=200, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
 
-    _load_room_or_404(db, normalized)
+    _load_room_or_404(db, normalized, actor.workspace_id)
     rows = _load_room_entries(db, normalized, limit=history_limit)
     return {
         "ok": True,
@@ -1793,11 +1839,12 @@ async def get_room_assignments(
     presence_heartbeat: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
 
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
     presence = await _safe_presence_snapshot(normalized, context="get room assignments")
     normalized_profile = _normalize_scout_profile(for_scout_profile)
     normalized_client_id = str(client_id or "").strip()[:80] or None
@@ -1837,6 +1884,7 @@ async def get_room_assignments(
             normalized_profile,
             presence=presence,
             secondary_leader_profiles=secondary_leaders,
+            workspace_leader=actor.is_leader,
         )
     return {
         "ok": True,
@@ -1861,14 +1909,15 @@ async def upsert_room_assignment(
 ):
     require_write_access("Scouting room assignment update")
 
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
 
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _normalize_scout_profile((room_access_payload or {}).get("scout_profile"))
+    actor_profile = _member_scout_profile(actor)
     if not room_access_allows(
         room_access_payload,
         room_key=normalized,
@@ -1882,11 +1931,13 @@ async def upsert_room_assignment(
     if not actor_profile:
         raise HTTPException(status_code=403, detail="Assignment update requires a bound scout profile.")
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
+    actor = _current_actor(db, actor)
     actor_role = await _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
         fallback_context="assignment update role check",
+        workspace_leader=actor.is_leader,
     )
     if actor_role != ROOM_ROLE_OWNER:
         raise HTTPException(
@@ -1959,14 +2010,15 @@ async def replace_room_assignments(
 ):
     require_write_access("Scouting room assignment replace")
 
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
 
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _normalize_scout_profile((room_access_payload or {}).get("scout_profile"))
+    actor_profile = _member_scout_profile(actor)
     if not room_access_allows(
         room_access_payload,
         room_key=normalized,
@@ -1980,11 +2032,13 @@ async def replace_room_assignments(
     if not actor_profile:
         raise HTTPException(status_code=403, detail="Assignment replace requires a bound scout profile.")
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
+    actor = _current_actor(db, actor)
     actor_role = await _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
         fallback_context="assignment replace role check",
+        workspace_leader=actor.is_leader,
     )
     if actor_role != ROOM_ROLE_OWNER:
         raise HTTPException(
@@ -2074,14 +2128,15 @@ async def add_room_secondary_leader(
 ):
     require_write_access("Scouting room leader promote")
 
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
 
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _normalize_scout_profile((room_access_payload or {}).get("scout_profile"))
+    actor_profile = _member_scout_profile(actor)
     if not room_access_allows(
         room_access_payload,
         room_key=normalized,
@@ -2096,11 +2151,13 @@ async def add_room_secondary_leader(
         raise HTTPException(status_code=403, detail="Leader promote requires a bound scout profile.")
 
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
+    actor = _current_actor(db, actor)
     actor_role = await _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
         fallback_context="leader promote role check",
+        workspace_leader=actor.is_leader,
     )
     if actor_role != ROOM_ROLE_OWNER:
         raise HTTPException(status_code=403, detail="Only room leaders can promote secondary leaders.")
@@ -2110,6 +2167,13 @@ async def add_room_secondary_leader(
         raise HTTPException(status_code=400, detail="Target scout_profile is required.")
     if _scout_profiles_match(target_profile, room.created_by):
         raise HTTPException(status_code=400, detail="Room creator is already a room leader.")
+    # Only a current teammate: a name nobody holds yet would hand room rights to
+    # whoever joins under it later. Checked under the workspace lock (held until
+    # the leader row commits) so a concurrent removal or rename can't slip between.
+    lock_workspace_row(db, actor.workspace_id)
+    actor = _current_actor(db, actor)
+    if not any(_scout_profiles_match(target_profile, m.display_name) for m in active_members(db, actor.workspace_id)):
+        raise HTTPException(status_code=404, detail="Only a current member of this team can be a room leader.")
 
     _row, created = _upsert_room_secondary_leader(
         db,
@@ -2150,14 +2214,15 @@ async def remove_room_secondary_leader(
 ):
     require_write_access("Scouting room leader demote")
 
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
 
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _normalize_scout_profile((room_access_payload or {}).get("scout_profile"))
+    actor_profile = _member_scout_profile(actor)
     if not room_access_allows(
         room_access_payload,
         room_key=normalized,
@@ -2172,11 +2237,13 @@ async def remove_room_secondary_leader(
         raise HTTPException(status_code=403, detail="Leader demote requires a bound scout profile.")
 
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
+    actor = _current_actor(db, actor)
     actor_role = await _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
         fallback_context="leader demote role check",
+        workspace_leader=actor.is_leader,
     )
     if actor_role != ROOM_ROLE_OWNER:
         raise HTTPException(status_code=403, detail="Only room leaders can remove secondary leaders.")
@@ -2226,14 +2293,15 @@ async def kick_room_member(
 ):
     require_write_access("Scouting room kick member")
 
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized)
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
 
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _normalize_scout_profile((room_access_payload or {}).get("scout_profile"))
+    actor_profile = _member_scout_profile(actor)
     if not room_access_allows(
         room_access_payload,
         room_key=normalized,
@@ -2247,11 +2315,13 @@ async def kick_room_member(
     if not actor_profile:
         raise HTTPException(status_code=403, detail="Kick member requires a bound scout profile.")
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
+    actor = _current_actor(db, actor)
     actor_role = await _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
         fallback_context="kick member role check",
+        workspace_leader=actor.is_leader,
     )
     if actor_role != ROOM_ROLE_OWNER:
         raise HTTPException(
@@ -2339,15 +2409,13 @@ async def save_room_entry(
 ):
     require_write_access("Scouting room entry save")
 
+    actor = require_workspace_actor(http_request, db)
     normalized = _normalize_room_key(room_key)
     if not normalized:
         raise HTTPException(status_code=400, detail="Invalid room key")
 
-    room = _load_room_or_404(db, normalized)
-    scout_profile = _require_scout_profile(
-        request.scout_profile,
-        context="saving a scouting room entry",
-    )
+    room = _load_room_or_404(db, normalized, actor.workspace_id)
+    scout_profile = _member_scout_profile(actor)
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
     if not room_access_allows(
@@ -2428,7 +2496,10 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
 
     db = SessionLocal()
     try:
-        room = _load_room_or_404(db, normalized)
+        actor = require_workspace_actor(websocket, db)
+        if not _scout_profiles_match(scout_profile, _member_scout_profile(actor)):
+            raise HTTPException(status_code=403, detail="Connect with your workspace name.")
+        room = _load_room_or_404(db, normalized, actor.workspace_id)
         room = _sync_room_metadata_for_join(
             db,
             room=room,
@@ -2436,10 +2507,11 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
             title=title,
             scout_profile=scout_profile,
             commit=True,
+            can_claim_owner=actor.is_leader,
         )
         _touch_room_activity(db, room, commit=True)
-        room = _load_room_or_404(db, normalized)
-        presence_before = await _safe_presence_snapshot(normalized, context="websocket connect")
+        room = _load_room_or_404(db, normalized, actor.workspace_id)
+        presence_before = await _safe_clear_http_presence(normalized, scout_profile)
         if _presence_connections_for_profile(presence_before, scout_profile) > 0:
             removed_connections, presence_after_replace = await scouting_room_hub.disconnect_scout_profile(
                 normalized,
@@ -2473,6 +2545,7 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
             scout_profile,
             presence=presence,
             secondary_leader_profiles=secondary_leaders,
+            workspace_leader=actor.is_leader,
         )
 
         await websocket.send_json(
@@ -2492,7 +2565,17 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
         await _broadcast_presence_message(normalized, presence)
 
         while True:
-            payload = await websocket.receive_json()
+            try:
+                payload = await asyncio.wait_for(websocket.receive_json(), timeout=_ROOM_MEMBERSHIP_RECHECK_SEC)
+            except asyncio.TimeoutError:
+                payload = None
+            # On every message and every quiet interval: a removed member's socket
+            # closes even if it only listens.
+            db.refresh(actor.member)
+            if actor.member.removed_at is not None:
+                raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
+            if payload is None:
+                continue
             if not isinstance(payload, dict):
                 await websocket.send_json({"type": "error", "detail": "Invalid websocket payload"})
                 continue
@@ -2527,13 +2610,14 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                     normalized,
                     context="websocket snapshot request",
                 )
-                room = _load_room_or_404(db, normalized)
+                room = _load_room_or_404(db, normalized, actor.workspace_id)
                 secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
                 room_role = _resolve_room_role_with_presence(
                     room,
                     scout_profile,
                     presence=snapshot_presence,
                     secondary_leader_profiles=secondary_leaders,
+                    workspace_leader=actor.is_leader,
                 )
                 await websocket.send_json(
                     {
@@ -2571,7 +2655,7 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                         continue
                 row, created = _persist_room_entry(
                     db,
-                    room=_load_room_or_404(db, normalized),
+                    room=_load_room_or_404(db, normalized, actor.workspace_id),
                     entry_payload=entry,
                     scout_profile=scout_profile,
                     client_entry_id=(str(payload.get("client_entry_id") or "").strip() or None),
@@ -2603,7 +2687,7 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
         pass
     except HTTPException as exc:  # pragma: no cover - websocket close path
         with suppress(Exception):
-            close_code = 4404 if int(getattr(exc, "status_code", 0) or 0) == 404 else 4400
+            close_code = {401: 4401, 403: 4403, 404: 4404}.get(int(getattr(exc, "status_code", 0) or 0), 4400)
             reason = str(getattr(exc, "detail", "") or "Room websocket error")
             await websocket.close(code=close_code, reason=reason[:120])
     except Exception as exc:  # pragma: no cover - defensive websocket close path

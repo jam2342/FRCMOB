@@ -1,8 +1,11 @@
-import { Suspense, lazy, type ReactNode } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { isNativeApp } from './platform/runtime';
+import { Suspense, lazy, useEffect, type ReactNode } from 'react';
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { PageSpinner } from './components/ui/PageSpinner';
 import { ProductShell } from './layout/ProductShell';
+import { prefetchRoutesWhenIdle } from './routePrefetch';
+import { recorderDocumentRedirect } from './features/onDevice/recorderDocument';
 
 const HomePage = lazy(() => import('./pages/HomePage').then((mod) => ({ default: mod.HomePage })));
 const EventsPage = lazy(() => import('./pages/EventsPage').then((mod) => ({ default: mod.EventsPage })));
@@ -35,6 +38,7 @@ const DataVizPage = lazy(() =>
 const AutoPathPage = lazy(() =>
   import('./pages/AutoPathPage').then((mod) => ({ default: mod.AutoPathPage })),
 );
+const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then((mod) => ({ default: mod.MyTeamPage })));
 const PicklistPage = lazy(() =>
   import('./pages/PicklistPage').then((mod) => ({ default: mod.PicklistPage })),
 );
@@ -51,12 +55,13 @@ const OnDeviceRunPage = lazy(() =>
   import('./pages/OnDeviceRunPage').then((mod) => ({ default: mod.OnDeviceRunPage })),
 );
 
-// The primitives gallery. Lazy like every other page, so it costs nothing
-// unless visited — and it is the route guards 3 and 4 sweep to check that
-// every primitive holds contrast and does not overflow on a phone.
-const PrimitivesPage = lazy(() =>
-  import('./pages/PrimitivesPage').then((mod) => ({ default: mod.PrimitivesPage })),
-);
+// The primitives gallery — the route guards 3 and 4 sweep to check that every
+// primitive holds contrast and does not overflow on a phone. Guards run
+// against the dev server, so production builds leave it out entirely: it was
+// a demo page anyone could open at /#/primitives.
+const PrimitivesPage = import.meta.env.DEV
+  ? lazy(() => import('./pages/PrimitivesPage').then((mod) => ({ default: mod.PrimitivesPage })))
+  : null;
 
 const PrivacyPolicyPage = lazy(() =>
   import('./pages/PrivacyPolicyPage').then((mod) => ({ default: mod.PrivacyPolicyPage })),
@@ -73,48 +78,73 @@ function withPageSuspense(content: ReactNode, label?: string) {
   );
 }
 
+// Hops between index.html and the isolated recorder document (record.html) when the
+// route crosses between the recorder and the rest of the app.
+// Decided during render, not after: the route below would otherwise start loading the
+// recorder on the wrong document, and the redirect cancels those loads mid-flight (the
+// error boundary then reports "Unable to preload CSS" on the page being left).
+function RecorderDocumentGuard({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const target = recorderDocumentRedirect(window.location.pathname, location.pathname, location.search, {
+    supported: !isNativeApp() && typeof window.crossOriginIsolated === 'boolean',
+    active: window.crossOriginIsolated === true,
+  });
+  useEffect(() => {
+    if (target) window.location.replace(target);
+  }, [target]);
+  return target ? null : children;
+}
+
 export default function RootApp() {
+  useEffect(() => {
+    prefetchRoutesWhenIdle();
+  }, []);
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/event-center" element={<Navigate to="/home" replace />} />
-        <Route path="/workspace" element={<Navigate to="/home" replace />} />
-        <Route element={<ProductShell />}>
-          <Route path="/home" element={withPageSuspense(<HomePage />, 'Home')} />
-          <Route path="/events" element={withPageSuspense(<EventsPage />, 'Events')} />
-          <Route path="/events/export" element={withPageSuspense(<ExportPage />, 'Export')} />
-          <Route path="/events/dashboard" element={withPageSuspense(<DataVizPage />, 'Data Dashboard')} />
-          <Route path="/teams" element={<Navigate to="/team-center" replace />} />
-          <Route path="/teams-insights" element={<Navigate to="/team-center" replace />} />
-          <Route path="/scouting" element={withPageSuspense(<ScoutingPage />, 'Scouting')} />
-          <Route path="/scouting/assignments" element={withPageSuspense(<ScoutingAssignPage />, 'Scouting Assignments')} />
-          <Route path="/scouting/auto-paths" element={withPageSuspense(<AutoPathPage />, 'Auto Paths')} />
-          <Route path="/scouting/pit" element={withPageSuspense(<PitScoutingPage />, 'Pit Scouting')} />
-          <Route path="/scouting/coverage" element={withPageSuspense(<ScoutingCoveragePage />, 'Coverage')} />
-          <Route path="/scouting/calibrate" element={withPageSuspense(<FieldCalibrationPage />, 'Field Calibration')} />
-          <Route path="/scouting/record" element={withPageSuspense(<OnDeviceRunPage />, 'On-Device Breakdown')} />
-          <Route path="/match-center" element={withPageSuspense(<MatchCenterPage />, 'Match Center')} />
-          <Route path="/match-center/predictions" element={withPageSuspense(<MatchPredictionPage />, 'Predictions')} />
-          <Route path="/match-center/strategy" element={withPageSuspense(<StrategyBriefingPage />, 'Strategy')} />
-          <Route path="/team-center" element={withPageSuspense(<TeamCenterPage />, 'Team Center')} />
-          <Route path="/compare" element={withPageSuspense(<ComparePage />, 'Compare')} />
-          <Route path="/compare/alliance-advisor" element={withPageSuspense(<AllianceAdvisorPage />, 'Alliance Advisor')} />
-          <Route path="/compare/picklist" element={withPageSuspense(<PicklistPage />, 'Picklist')} />
-          {/* Legacy standalone routes → redirect to new sub-paths */}
-          <Route path="/alliance-advisor" element={<Navigate to="/compare/alliance-advisor" replace />} />
-          <Route path="/predictions" element={<Navigate to="/match-center/predictions" replace />} />
-          <Route path="/export" element={<Navigate to="/events/export" replace />} />
-          <Route path="/scouting-assignments" element={<Navigate to="/scouting/assignments" replace />} />
-          <Route path="/favorites" element={withPageSuspense(<FavoritesPage />, 'Favorites')} />
-          <Route path="/settings" element={withPageSuspense(<SettingsPage />, 'Settings')} />
-          <Route path="/primitives" element={withPageSuspense(<PrimitivesPage />, 'Primitives')} />
-          <Route path="/privacy" element={withPageSuspense(<PrivacyPolicyPage />, 'Privacy Policy')} />
-          <Route path="/terms" element={withPageSuspense(<TermsOfServicePage />, 'Terms of Service')} />
-          <Route path="/privacy-policy" element={<Navigate to="/privacy" replace />} />
-          <Route path="/terms-of-service" element={<Navigate to="/terms" replace />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/home" replace />} />
-      </Routes>
+      <RecorderDocumentGuard>
+        <Routes>
+          <Route path="/event-center" element={<Navigate to="/home" replace />} />
+          <Route path="/workspace" element={<Navigate to="/home" replace />} />
+          <Route element={<ProductShell />}>
+            <Route path="/home" element={withPageSuspense(<HomePage />, 'Home')} />
+            <Route path="/events" element={withPageSuspense(<EventsPage />, 'Events')} />
+            <Route path="/events/export" element={withPageSuspense(<ExportPage />, 'Export')} />
+            <Route path="/events/dashboard" element={withPageSuspense(<DataVizPage />, 'Data Dashboard')} />
+            <Route path="/teams" element={<Navigate to="/team-center" replace />} />
+            <Route path="/teams-insights" element={<Navigate to="/team-center" replace />} />
+            <Route path="/my-team" element={withPageSuspense(<MyTeamPage />, 'My Team')} />
+            <Route path="/scouting" element={withPageSuspense(<ScoutingPage />, 'Scouting')} />
+            <Route path="/scouting/assignments" element={withPageSuspense(<ScoutingAssignPage />, 'Scouting Assignments')} />
+            <Route path="/scouting/auto-paths" element={withPageSuspense(<AutoPathPage />, 'Auto Paths')} />
+            <Route path="/scouting/pit" element={withPageSuspense(<PitScoutingPage />, 'Pit Scouting')} />
+            <Route path="/scouting/coverage" element={withPageSuspense(<ScoutingCoveragePage />, 'Coverage')} />
+            <Route path="/scouting/calibrate" element={withPageSuspense(<FieldCalibrationPage />, 'Field Calibration')} />
+            <Route path="/scouting/record" element={withPageSuspense(<OnDeviceRunPage />, 'On-Device Breakdown')} />
+            <Route path="/match-center" element={withPageSuspense(<MatchCenterPage />, 'Match Center')} />
+            <Route path="/match-center/predictions" element={withPageSuspense(<MatchPredictionPage />, 'Predictions')} />
+            <Route path="/match-center/strategy" element={withPageSuspense(<StrategyBriefingPage />, 'Strategy')} />
+            <Route path="/team-center" element={withPageSuspense(<TeamCenterPage />, 'Team Center')} />
+            <Route path="/compare" element={withPageSuspense(<ComparePage />, 'Compare')} />
+            <Route path="/compare/alliance-advisor" element={withPageSuspense(<AllianceAdvisorPage />, 'Alliance Advisor')} />
+            <Route path="/compare/picklist" element={withPageSuspense(<PicklistPage />, 'Picklist')} />
+            {/* Legacy standalone routes → redirect to new sub-paths */}
+            <Route path="/alliance-advisor" element={<Navigate to="/compare/alliance-advisor" replace />} />
+            <Route path="/predictions" element={<Navigate to="/match-center/predictions" replace />} />
+            <Route path="/export" element={<Navigate to="/events/export" replace />} />
+            <Route path="/scouting-assignments" element={<Navigate to="/scouting/assignments" replace />} />
+            <Route path="/favorites" element={withPageSuspense(<FavoritesPage />, 'Favorites')} />
+            <Route path="/settings" element={withPageSuspense(<SettingsPage />, 'Settings')} />
+            {PrimitivesPage ? (
+              <Route path="/primitives" element={withPageSuspense(<PrimitivesPage />, 'Primitives')} />
+            ) : null}
+            <Route path="/privacy" element={withPageSuspense(<PrivacyPolicyPage />, 'Privacy Policy')} />
+            <Route path="/terms" element={withPageSuspense(<TermsOfServicePage />, 'Terms of Service')} />
+            <Route path="/privacy-policy" element={<Navigate to="/privacy" replace />} />
+            <Route path="/terms-of-service" element={<Navigate to="/terms" replace />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/home" replace />} />
+        </Routes>
+      </RecorderDocumentGuard>
     </HashRouter>
   );
 }

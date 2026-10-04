@@ -1875,7 +1875,9 @@
 /* ── rankings table ──────────────────────────── */
 
 .dviz-nick {
-  color: rgba(255, 255, 255, 0.4);
+  /* Was white/black at 40%: 3.7:1 and 2.85:1. The muted token passes in
+     both themes, so the light-theme override below isn't needed. */
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-2xs);
   margin-left: 6px;
@@ -2028,9 +2030,6 @@
   color: rgba(0, 0, 0, 0.75);
 }
 
-.product-shell.theme-light .dviz-nick {
-  color: rgba(0, 0, 0, 0.4);
-}
 
 .product-shell.theme-light .dviz-rating-pill {
   background: color-mix(in srgb, var(--color-info) 10%, transparent);
@@ -2060,7 +2059,7 @@
 
 .autopath-mode-btn {
   padding: 6px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-muted);
@@ -2071,14 +2070,24 @@
 }
 
 .autopath-mode-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--control-bg-hover);
   color: var(--color-text);
 }
 
 .autopath-mode-btn.active {
-  background: rgba(16, 185, 129, 0.15);
+  background: var(--color-accent-soft);
   color: var(--color-success-text);
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: var(--color-accent);
+}
+
+.autopath-mode-btn:focus-visible,
+.autopath-toggle-label input:focus-visible,
+.autopath-label-input:focus-visible,
+.autopath-list-select:focus-visible,
+.autopath-list-delete:focus-visible,
+.autopath-clear-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .autopath-toggle-label {
@@ -2097,7 +2106,7 @@
 
 .autopath-loading {
   font-size: var(--font-size-legacy-11);
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--color-text-dim);
   font-style: italic;
 }
 
@@ -2111,17 +2120,17 @@
 
 .autopath-label-input {
   padding: 5px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--control-bg);
+  color: var(--color-text);
   font-size: var(--font-size-2xs);
   width: 140px;
 }
 
 .autopath-draw-hint {
   font-size: var(--font-size-legacy-11);
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--color-text-dim);
   font-style: italic;
 }
 
@@ -2150,17 +2159,16 @@
 .autopath-list-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
+  gap: var(--space-2);
+  background: var(--color-surface-soft);
   border-radius: 8px;
-  cursor: pointer;
   transition: background 0.12s;
   border: 1px solid transparent;
 }
 
-.autopath-list-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+.autopath-list-item:hover,
+.autopath-list-item:focus-within {
+  background: var(--control-bg-hover);
 }
 
 .autopath-list-item.selected {
@@ -2175,6 +2183,20 @@
   flex-shrink: 0;
 }
 
+.autopath-list-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .autopath-list-info {
   display: flex;
   flex-direction: column;
@@ -2185,12 +2207,12 @@
 .autopath-list-label {
   font-size: var(--font-size-sm);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text);
 }
 
 .autopath-list-meta {
   font-size: var(--font-size-legacy-11);
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-muted);
 }
 
 .autopath-list-delete {
@@ -2229,57 +2251,11 @@
 
 .autopath-track-info {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--color-text-muted);
   line-height: 1.5;
   padding: 4px 0;
-}
-
-/* light theme overrides for auto path */
-.product-shell.theme-light .autopath-mode-btn {
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.product-shell.theme-light .autopath-mode-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.product-shell.theme-light .autopath-mode-btn.active {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--color-accent-text);
-  border-color: rgba(16, 185, 129, 0.25);
-}
-
-.product-shell.theme-light .autopath-label-input {
-  border-color: rgba(0, 0, 0, 0.1);
-  background: rgba(0, 0, 0, 0.03);
-  color: rgba(0, 0, 0, 0.8);
-}
-
-.product-shell.theme-light .autopath-draw-hint {
-  color: rgba(0, 0, 0, 0.35);
 }
 
 .product-shell.theme-light .autopath-canvas-container {
   background: var(--color-surface-muted);
 }
-
-.product-shell.theme-light .autopath-list-item {
-  background: rgba(0, 0, 0, 0.025);
-}
-
-.product-shell.theme-light .autopath-list-item:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.product-shell.theme-light .autopath-list-label {
-  color: rgba(0, 0, 0, 0.75);
-}
-
-.product-shell.theme-light .autopath-list-meta {
-  color: rgba(0, 0, 0, 0.4);
-}
-
-.product-shell.theme-light .autopath-track-info {
-  color: rgba(0, 0, 0, 0.5);
-}
-

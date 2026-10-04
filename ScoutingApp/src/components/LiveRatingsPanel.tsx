@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveRatings } from '../hooks/useLiveRatings';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { RatingSparkline } from './ui/RatingSparkline';
 import { RatingTrendBadge } from './ui/RatingTrendBadge';
 import './LiveRatingsPanel.css';
@@ -7,7 +8,12 @@ import './LiveRatingsPanel.css';
 type LiveRatingsPanelProps = {
   eventKey: string | null | undefined;
   enabled?: boolean;
+  // False once the event has no matches left: no live dot, no fast polling.
+  live?: boolean;
   maxRows?: number;
+  // Rows shown before "Show all". Fifty rows is several phone screens of
+  // scrolling past to reach whatever sits below the board.
+  collapsedRows?: number;
   title?: string;
 };
 
@@ -26,11 +32,14 @@ function formatAgo(fetchedAtMs: number | null, nowMs: number): string {
 export function LiveRatingsPanel({
   eventKey,
   enabled = true,
+  live = true,
   maxRows = 50,
+  collapsedRows = 10,
   title = 'Live ratings',
 }: LiveRatingsPanelProps) {
+  const { online } = useOnlineStatus();
   const { ratings, lastFetchedAtMs, loading, error, recentChanges, refreshNow } =
-    useLiveRatings(eventKey, { enabled });
+    useLiveRatings(eventKey, { enabled, live });
 
   // Tick a clock so "updated Ns ago" stays current between polls.
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -56,6 +65,8 @@ export function LiveRatingsPanel({
   );
 
   const rows = useMemo(() => ratings.slice(0, maxRows), [ratings, maxRows]);
+  const [showAll, setShowAll] = useState(false);
+  const visibleRows = showAll ? rows : rows.slice(0, collapsedRows);
 
   if (!eventKey) return null;
 
@@ -63,18 +74,18 @@ export function LiveRatingsPanel({
     <section className="live-ratings-panel" aria-live="polite">
       <header className="live-ratings-panel__header">
         <div className="live-ratings-panel__title">
-          <span className="live-ratings-panel__dot" aria-hidden="true" />
+          {live ? <span className="live-ratings-panel__dot" aria-hidden="true" /> : null}
           <h3>{title}</h3>
         </div>
         <div className="live-ratings-panel__meta">
           <span className="live-ratings-panel__ago">
-            Updated {formatAgo(lastFetchedAtMs, nowMs)}
+            {online ? `Updated ${formatAgo(lastFetchedAtMs, nowMs)}` : 'Saved copy'}
           </span>
           <button
             type="button"
             className="live-ratings-panel__refresh"
             onClick={refreshNow}
-            disabled={loading}
+            disabled={loading || !online}
           >
             Refresh
           </button>
@@ -88,9 +99,12 @@ export function LiveRatingsPanel({
       {rows.length === 0 && loading ? (
         <p className="live-ratings-panel__empty">Loading live ratings…</p>
       ) : null}
+      {rows.length === 0 && !loading && !error ? (
+        <p className="live-ratings-panel__empty">No ratings for this event yet. They appear once matches are played.</p>
+      ) : null}
 
       <ol className="live-ratings-panel__list">
-        {rows.map((row, index) => {
+        {visibleRows.map((row, index) => {
           const change = recentChanges.get(row.team_key);
           const flashing = flashTeams.has(row.team_key);
           const flashDir =
@@ -118,6 +132,16 @@ export function LiveRatingsPanel({
           );
         })}
       </ol>
+      {rows.length > collapsedRows ? (
+        <button
+          type="button"
+          className="live-ratings-panel__more"
+          onClick={() => setShowAll((current) => !current)}
+          aria-expanded={showAll}
+        >
+          {showAll ? `Show top ${collapsedRows}` : `Show all ${rows.length}`}
+        </button>
+      ) : null}
     </section>
   );
 }

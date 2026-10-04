@@ -68,6 +68,8 @@ class ShiftScheduleConfigTests(unittest.TestCase):
         by_key = {window.key: window for window in schedule.windows}
         self.assertEqual(by_key["auto"].active, "both")
         self.assertEqual(by_key["endgame"].active, "both")
+        self.assertEqual(by_key["shift_1"].active, "shift_1")
+        self.assertEqual(by_key["shift_2"].active, "opposite_shift_1")
         # role zones must reference real zone keys.
         zone_keys = {zone.key for zone in cfg.zones}
         self.assertIn(schedule.role_zones.defense.red, zone_keys)

@@ -1,40 +1,42 @@
-const CONFIGURED_API_URL = String(
-  import.meta.env.VITE_API_URL || import.meta.env.NEXT_PUBLIC_API_URL || "",
-).trim();
-const CONFIGURED_WS_URL = String(
-  import.meta.env.VITE_WS_URL || import.meta.env.NEXT_PUBLIC_WS_URL || "",
-).trim();
-
-function resolveApiBaseUrl(): string {
-  const fallback = import.meta.env.PROD ? "/api" : "http://localhost:8000";
-  let base = CONFIGURED_API_URL || fallback;
-
-  // Prevent mixed-content failures when frontend is served over HTTPS.
-  // In that case, force same-origin API proxy path.
-  if (typeof window !== "undefined") {
-    if (window.location.protocol === "https:" && /^http:\/\//i.test(base)) {
-      base = "/api";
-    }
-  }
-
-  return base.replace(/\/+$/, "");
-}
+import { isNativeApp } from './platform/runtime';
+import { resolveApiBaseUrl, resolveWebSocketBaseUrl } from './platform/runtime';
 
 const API = resolveApiBaseUrl();
-
-function resolveWebSocketBaseUrl(): string {
-  const base = CONFIGURED_WS_URL || API;
-  return String(base || "").trim().replace(/\/+$/, "");
-}
-
-const WS_API = resolveWebSocketBaseUrl();
+const WS_API = resolveWebSocketBaseUrl(API);
 const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 12000);
 import { enqueue as enqueueOffline } from "./utils/offlineQueue";
+import { getStoredResponse, putStoredResponse } from "./utils/apiResponseStore";
+
+// The write didn't reach the server but is safely queued and will replay.
+// Callers that report sync results use this to say "will sync" instead of
+// showing a queued save as a failure.
+export class QueuedForSyncError extends Error {
+  readonly queued = true;
+}
 import type { AutoScoutDraftRecord } from "./pages/scoutingPage.types";
+import { SEASON } from './config/season';
+import {
+  WORKSPACE_ACCESS_HEADER,
+  WORKSPACE_ACCESS_QUERY_PARAM,
+  clearWorkspaceSession,
+  getWorkspaceSession,
+  getWorkspaceToken,
+  rememberIssuedJoinCode,
+  setWorkspaceSession,
+  type WorkspaceMe,
+  type WorkspaceSummary,
+} from './features/workspace/workspaceSession';
 const DEFAULT_GET_CACHE_TTL_MS = Number(import.meta.env.VITE_API_CACHE_TTL_MS || 8000);
 const DEFAULT_GET_STALE_WHILE_REVALIDATE_MS = Number(import.meta.env.VITE_API_STALE_WHILE_REVALIDATE_MS || 45000);
-const PERSIST_GET_CACHE_TTL_MS = Number(import.meta.env.VITE_API_PERSIST_CACHE_TTL_MS || 21600000);
-const PERSIST_GET_CACHE_MAX_ENTRIES = Number(import.meta.env.VITE_API_PERSIST_CACHE_MAX_ENTRIES || 120);
+// How long saved responses stay usable offline (labelled as saved data, never as fresh).
+// Four days: an event runs three, often with no signal, and data loaded the evening
+// before still has to be there on Saturday afternoon. It was 6 h.
+const PERSIST_GET_CACHE_TTL_MS = Number(import.meta.env.VITE_API_PERSIST_CACHE_TTL_MS || 345600000);
+// On a weak signal ("connected" but barely), wait this long for the network before
+// showing the saved copy instead; the request keeps going and updates it in the background.
+const WEAK_SIGNAL_FALLBACK_MS = 4000;
+// Room for an event's worth of team pages (75+) next to its schedules and ratings.
+const PERSIST_GET_CACHE_MAX_ENTRIES = Number(import.meta.env.VITE_API_PERSIST_CACHE_MAX_ENTRIES || 300);
 const PERSIST_GET_CACHE_MAX_BODY_BYTES = Number(import.meta.env.VITE_API_PERSIST_CACHE_MAX_BODY_BYTES || 450000);
 const TEAM_INTEL_CACHE_TTL_MS = Number(import.meta.env.VITE_API_TEAM_INTEL_CACHE_TTL_MS || 25000);
 const EVENT_INTEL_CACHE_TTL_MS = Number(import.meta.env.VITE_API_EVENT_INTEL_CACHE_TTL_MS || 20000);
@@ -78,7 +80,9 @@ function writeStorageString(key: string, value: string): void {
   }
 }
 
+const nativeSessionValues = new Map<string, string>();
 function readSessionString(key: string): string {
+  if (isNativeApp()) return nativeSessionValues.get(key) ?? "";
   if (typeof window === "undefined") return "";
   try {
     return String(window.sessionStorage.getItem(key) || "").trim();
@@ -88,6 +92,11 @@ function readSessionString(key: string): string {
 }
 
 function writeSessionString(key: string, value: string): void {
+  if (isNativeApp()) {
+    if (value) nativeSessionValues.set(key, value);
+    else nativeSessionValues.delete(key);
+    return;
+  }
   if (typeof window === "undefined") return;
   try {
     if (value) window.sessionStorage.setItem(key, value);
@@ -228,7 +237,10 @@ type CachedResponse = {
 
 type PersistentCachedResponse = {
   storedAtMs: number;
+  // Fresh until expiresAtMs (the endpoint's own TTL). Kept until retainUntilMs
+  // only as a last resort when there is no network (offlineStaleFallback).
   expiresAtMs: number;
+  retainUntilMs?: number;
   status: number;
   statusText: string;
   headers: Array<[string, string]>;
@@ -260,6 +272,24 @@ type MetricCoverageInfo = {
   total_matches: number;
   coverage_0_1: number;
   missing_reason: string | null;
+  estimated_from_model?: boolean;
+  estimate_source?: string;
+  official_record?: boolean;
+  official_matches?: number;
+  official_climbs?: number;
+};
+
+// Per-robot numbers from official results, for teams nobody has scouted or
+// filmed: fuel and auto are TBA's component OPRs, climb is the team's record.
+export type OfficialTeamStats = {
+  available: boolean;
+  matches: number;
+  copr_matches: number;
+  fuel_per_match: number | null;
+  fuel_per_active_minute: number | null;
+  auto_points_per_match: number | null;
+  events: Array<{ event_key: string; matches: number; copr: boolean }>;
+  climb: { matches: number; climbs: number; rate: number | null } | null;
 };
 
 type ClimbSourceSummary = {
@@ -475,6 +505,7 @@ export type TeamBreakdownResponse = {
     level_capability?: ClimbLevelCapability;
   };
   metric_coverage?: Record<string, MetricCoverageInfo>;
+  official_stats?: OfficialTeamStats | null;
   active_perimeter_type?: "welded" | "andymark" | null;
   perimeter_types?: Array<"welded" | "andymark">;
   perimeter_sources?: string[];
@@ -606,6 +637,9 @@ export type EventScheduleItem = {
   set_number: number;
   match_number: number;
   scheduled_time: number | null;
+  // TBA's predicted start (tracks the field running late) and actual start.
+  predicted_time?: number | null;
+  actual_time?: number | null;
   has_time: boolean;
   red_score?: number | null;
   blue_score?: number | null;
@@ -711,7 +745,7 @@ type ScheduleSynergyAlliance = {
   computed_at?: string | null;
 };
 
-type MatchPredictionPayload = {
+export type MatchPredictionPayload = {
   available: boolean;
   source_label: string;
   model_key: string;
@@ -778,43 +812,7 @@ export type MatchPhasesResponse = {
   };
 };
 
-// ── Robot tracking / heatmap types ───────────────────���──────────────
-
-export type TrackRow = {
-  id: number;
-  track_id: number;
-  team_key: string | null;
-  frame_index: number;
-  time_sec: number;
-  bbox: [number, number, number, number]; // [x1, y1, x2, y2]
-  centroid: [number, number];
-  field_x: number | null;
-  field_y: number | null;
-  zone_key: string | null;
-  speed_mps: number | null;
-  confidence: number | null;
-};
-
-export type MatchTracksResponse = {
-  ok: boolean;
-  match_key: string;
-  event_key: string;
-  video_url: string | null;
-  local_video_url: string | null;
-  field_length_m: number;
-  field_width_m: number;
-  calibration: {
-    image_width: number;
-    image_height: number;
-    homography: number[][];
-    image_points: { x: number; y: number }[];
-    field_points: { x: number; y: number }[];
-    frame_time_sec: number | null;
-  } | null;
-  team_keys: string[];
-  total_rows: number;
-  tracks: TrackRow[];
-};
+// ── Heatmap types ────────────────────────────────────────────────
 
 export type TeamHeatmapResponse = {
   ok: boolean;
@@ -1111,23 +1109,6 @@ export type OpsDashboardResponse = {
     value?: number;
     threshold?: number;
   }>;
-  queue: {
-    ok: boolean;
-    counts?: {
-      queued: number;
-      started: number;
-      deferred: number;
-      scheduled: number;
-      failed: number;
-      pending_total: number;
-    };
-    caps?: {
-      max_pending_jobs: number;
-      max_schedule_per_call: number;
-    };
-    pressure_0_1?: number;
-    detail?: string;
-  };
   automation: {
     ok: boolean;
     season: number;
@@ -1140,8 +1121,6 @@ export type OpsDashboardResponse = {
   };
   media_usage: {
     total_gb?: number;
-    videos_gb?: number;
-    analysis_frames_gb?: number;
     disk_free_gb?: number;
   };
   climb_integrity: {
@@ -1185,7 +1164,7 @@ export type OpsDashboardResponse = {
 async function readError(response: Response): Promise<string> {
   const fallback = `Request failed with status ${response.status}`;
   if (response.bodyUsed) return fallback;
-  let bodyText = "";
+  let bodyText: string;
   try {
     // Read from a clone to avoid consuming the original response stream.
     bodyText = await response.clone().text();
@@ -1230,7 +1209,10 @@ function shouldBypassCache(url: string, init?: ApiFetchInit): boolean {
 }
 
 function cacheKeyFor(url: string, init?: ApiFetchInit): string {
-  return `${normalizeMethod(init?.method)}:${url}`;
+  // Keyed by workspace too: picklists and pit notes share URLs across teams, so
+  // a URL-only key would show one team's cached data after switching to another.
+  const workspaceId = getWorkspaceSession()?.workspace.id ?? 0;
+  return `${normalizeMethod(init?.method)}:w${workspaceId}:${url}`;
 }
 
 function _cacheValueInt(value: number | undefined, fallback: number): number {
@@ -1262,6 +1244,31 @@ function _cacheRequestOptions(
 type TimeoutState = {
   didTimeout: boolean;
 };
+
+// Writes a replay can't duplicate: room entries carry client_entry_id, pit
+// entries are upserts, and picklist updates carry a version (a stale replay gets
+// a conflict back, never a second copy).
+const REPLAY_SAFE_WRITES: Array<[string, RegExp]> = [
+  ["POST", /\/scouting\/rooms\/[^/?]+\/entries(?:\?|$)/],
+  ["POST", /\/pit-scouting(?:\?|$)/],
+  ["PUT", /\/picklists\/\d+(?:\?|$)/],
+];
+
+export function isReplaySafeWrite(method: string, url: string): boolean {
+  let path = url;
+  try {
+    path = new URL(url, "http://local").pathname;
+  } catch {
+    // keep the raw string
+  }
+  return REPLAY_SAFE_WRITES.some(([m, pattern]) => m === method && pattern.test(path));
+}
+
+function isConnectionFailure(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /timed out|failed to fetch|networkerror|load failed|network connection/i.test(message);
+}
 
 function timeoutErrorMessage(timeoutMs: number): string {
   const seconds = Math.max(1, Math.round(timeoutMs / 1000));
@@ -1366,8 +1373,13 @@ function localStorageAvailable(): boolean {
   }
 }
 
+let lastPersistentPruneAtMs = 0;
+
 function prunePersistentCache(maxEntries: number) {
   if (!localStorageAvailable() || maxEntries <= 0) return;
+  // A full scan parses every cached body; once a minute is plenty.
+  if (Date.now() - lastPersistentPruneAtMs < 60_000) return;
+  lastPersistentPruneAtMs = Date.now();
   const rows: Array<{ key: string; storedAtMs: number; expiresAtMs: number }> = [];
   try {
     for (let idx = 0; idx < window.localStorage.length; idx += 1) {
@@ -1378,7 +1390,7 @@ function prunePersistentCache(maxEntries: number) {
       try {
         const parsed = JSON.parse(raw) as Partial<PersistentCachedResponse>;
         const storedAtMs = Number(parsed.storedAtMs || 0);
-        const expiresAtMs = Number(parsed.expiresAtMs || 0);
+        const expiresAtMs = Number(parsed.retainUntilMs || parsed.expiresAtMs || 0);
         if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
           window.localStorage.removeItem(key);
           continue;
@@ -1444,7 +1456,8 @@ function readPersistentGetCache(
       staleWhileRevalidateMs > 0 &&
       nowMs <= expiresAtMs + staleWhileRevalidateMs;
     if (!withinFreshWindow && !withinStaleWindow) {
-      window.localStorage.removeItem(storageKey);
+      const retainUntilMs = Number(parsed.retainUntilMs || 0);
+      if (!Number.isFinite(retainUntilMs) || retainUntilMs <= nowMs) window.localStorage.removeItem(storageKey);
       return null;
     }
     const status = Number(parsed.status || 200);
@@ -1513,10 +1526,15 @@ function readCacheAnyAge(requestKey: string): CacheLookupResult | null {
   return { state: "stale", response: best.response, ageSec };
 }
 
-// Builds an offline-stale Response from the age-agnostic cache and signals the
-// UI (via a window event) that the user is now looking at last-session data.
-function offlineStaleFallback(requestKey: string): Response | null {
-  const hit = readCacheAnyAge(requestKey);
+// Builds an offline-stale Response from the age-agnostic caches (memory, localStorage,
+// and the large-response store) and signals the UI (via a window event) that the user
+// is now looking at saved data.
+async function offlineStaleFallback(requestKey: string): Promise<Response | null> {
+  let hit = readCacheAnyAge(requestKey);
+  const stored = await getStoredResponse(requestKey);
+  if (stored && (!hit || stored.storedAtMs > Date.now() - hit.ageSec * 1000)) {
+    hit = { state: "stale", response: stored.response, ageSec: Math.max(0, Math.floor((Date.now() - stored.storedAtMs) / 1000)) };
+  }
   if (!hit) return null;
   const headers = new Headers(hit.response.headers);
   headers.set("X-From-Cache", "offline-stale");
@@ -1534,25 +1552,74 @@ function offlineStaleFallback(requestKey: string): Response | null {
   });
 }
 
-async function writePersistentGetCache(requestKey: string, response: Response, ttlMs: number): Promise<void> {
-  if (!localStorageAvailable()) return;
-  if (ttlMs <= 0) return;
+async function writePersistentGetCache(requestKey: string, response: Response, freshTtlMs: number): Promise<boolean> {
+  if (freshTtlMs <= 0) return false;
   try {
     const bodyText = await response.text();
-    if (bodyText.length > PERSIST_GET_CACHE_MAX_BODY_BYTES) return;
+    const nowMs = Date.now();
+    const retainUntilMs = nowMs + Math.max(freshTtlMs, Math.floor(PERSIST_GET_CACHE_TTL_MS));
+    if (isNativeApp() || bodyText.length > PERSIST_GET_CACHE_MAX_BODY_BYTES) {
+      // Native responses use IndexedDB; web large responses use Cache Storage.
+      const saved = await putStoredResponse(requestKey, bodyText, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        retainUntilMs,
+      });
+      if (saved && isNativeApp()) window.localStorage.removeItem(persistentCacheKey(requestKey));
+      return saved;
+    }
+    // Fresh only for the endpoint's TTL, so a reload never serves a live schedule
+    // from hours ago as current; the long retention is for offline use only.
     const payload: PersistentCachedResponse = {
-      storedAtMs: Date.now(),
-      expiresAtMs: Date.now() + ttlMs,
+      storedAtMs: nowMs,
+      expiresAtMs: nowMs + freshTtlMs,
+      retainUntilMs,
       status: response.status,
       statusText: response.statusText,
       headers: Array.from(response.headers.entries()),
       bodyText,
     };
-    window.localStorage.setItem(persistentCacheKey(requestKey), JSON.stringify(payload));
+    try {
+      window.localStorage.setItem(persistentCacheKey(requestKey), JSON.stringify(payload));
+    } catch {
+      // localStorage full (~5 MB per site): keep it in Cache Storage instead
+      return await putStoredResponse(requestKey, bodyText, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        retainUntilMs,
+      });
+    }
     prunePersistentCache(Math.max(20, Math.floor(PERSIST_GET_CACHE_MAX_ENTRIES)));
+    return window.localStorage.getItem(persistentCacheKey(requestKey)) !== null;
   } catch {
-    // ignore cache write failures (quota, unavailable, serialization)
+    // ignore cache write failures (unavailable, serialization)
+    return false;
   }
+}
+
+type OfflineAuditCall = { key: string; url: string; saved: boolean };
+let offlineCacheAudit: { calls: OfflineAuditCall[]; accepts: (url: string) => boolean } | null = null;
+
+// Preparing an event bypasses short-lived memory caches and waits for each disk write.
+// The caller can report exactly which requests were stored, including team pages.
+export function beginOfflineCacheAudit(accepts: (url: string) => boolean = () => true): { calls: OfflineAuditCall[]; stop: () => void } {
+  if (offlineCacheAudit) throw new Error('An offline download is already running');
+  const audit = { calls: [] as OfflineAuditCall[], accepts };
+  offlineCacheAudit = audit;
+  return { calls: audit.calls, stop: () => { if (offlineCacheAudit === audit) offlineCacheAudit = null; } };
+}
+
+export async function hasSavedApiResponse(requestKey: string): Promise<boolean> {
+  try {
+    const raw = window.localStorage.getItem(persistentCacheKey(requestKey));
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<PersistentCachedResponse>;
+      if (Number(saved.retainUntilMs) > Date.now()) return true;
+    }
+  } catch { /* use Cache Storage */ }
+  return Boolean(await getStoredResponse(requestKey));
 }
 
 async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
@@ -1566,8 +1633,11 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
   const staleWhileRevalidateMs = bypassCache
     ? 0
     : _cacheValueInt(init?.staleWhileRevalidateMs, DEFAULT_GET_STALE_WHILE_REVALIDATE_MS);
-  const shouldUseCache = method === "GET" && cacheTtlMs > 0;
   const requestKey = cacheKeyFor(url, init);
+  const auditCall: OfflineAuditCall | null = method === "GET" && offlineCacheAudit?.accepts(url)
+    ? { key: requestKey, url, saved: false } : null;
+  if (auditCall) offlineCacheAudit!.calls.push(auditCall);
+  const shouldUseCache = method === "GET" && cacheTtlMs > 0 && !auditCall;
   const now = Date.now();
   const timeoutMs = Math.max(2000, Math.floor(init?.timeoutMs ?? REQUEST_TIMEOUT_MS));
   let staleCandidate: CacheLookupResult | null = null;
@@ -1622,7 +1692,7 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     typeof navigator !== "undefined" &&
     !navigator.onLine
   ) {
-    const offlineStale = offlineStaleFallback(requestKey);
+    const offlineStale = await offlineStaleFallback(requestKey);
     if (offlineStale) {
       if (ENABLE_REQUEST_LOGS) {
         console.debug(`[api] ${method} ${url} -> offline-stale cache hit (no network)`);
@@ -1636,6 +1706,10 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
   const adminSessionToken = effectiveAdminSessionToken();
   if (adminSessionToken && !headers.has(ADMIN_SESSION_HEADER)) {
     headers.set(ADMIN_SESSION_HEADER, adminSessionToken);
+  }
+  const workspaceToken = getWorkspaceToken();
+  if (workspaceToken && !headers.has(WORKSPACE_ACCESS_HEADER)) {
+    headers.set(WORKSPACE_ACCESS_HEADER, workspaceToken);
   }
   const start = performance.now();
   const run = async (forBackground = false) => {
@@ -1657,34 +1731,79 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
       const cacheStatus = shouldUseCache ? "cacheable" : "direct";
       console.debug(`[api] ${method} ${url} -> ${response.status} (${tookMs}ms, ${cacheStatus})`);
     }
-    if (shouldUseCache && response.ok) {
+    // 401 only ever means "workspace access is gone" (admin checks answer 403).
+    // Clear it only if it is still the token this request carried.
+    const sentWorkspaceToken = headers.get(WORKSPACE_ACCESS_HEADER);
+    if (response.status === 401 && sentWorkspaceToken && sentWorkspaceToken === getWorkspaceToken()) {
+      clearWorkspaceSession("revoked");
+    }
+    if (auditCall && response.ok) {
+      auditCall.saved = await writePersistentGetCache(requestKey, response.clone(), Math.max(1, cacheTtlMs));
+    } else if (shouldUseCache && response.ok) {
       responseCache.set(requestKey, {
         storedAtMs: Date.now(),
         response: response.clone(),
         expiresAtMs: Date.now() + cacheTtlMs,
       });
-      const persistentTtlMs = Math.max(cacheTtlMs, Math.max(0, Math.floor(PERSIST_GET_CACHE_TTL_MS)));
-      void writePersistentGetCache(requestKey, response.clone(), persistentTtlMs);
+      void writePersistentGetCache(requestKey, response.clone(), cacheTtlMs);
+    } else if (method === "GET" && response.ok && !url.includes("refresh=true")) {
+      // Live reads skip the cache on purpose, but at an event with no signal the last
+      // copy beats an error. Saved as never-fresh (1 ms), so it only serves offline.
+      void writePersistentGetCache(requestKey, response.clone(), 1);
     }
     return response;
   };
+
+  if (!shouldUseCache && method === "GET") {
+    // Uncached (live) reads still fall back to the last saved copy: offline, on a weak
+    // signal after WEAK_SIGNAL_FALLBACK_MS, or when the request fails.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const saved = await offlineStaleFallback(requestKey);
+      if (saved) return saved;
+    }
+    const live = run();
+    const slow = await Promise.race([
+      live.then(() => false, () => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), WEAK_SIGNAL_FALLBACK_MS)),
+    ]);
+    if (slow) {
+      const saved = await offlineStaleFallback(requestKey);
+      if (saved) {
+        live.catch(() => undefined);
+        return saved;
+      }
+    }
+    try {
+      return await live;
+    } catch (err) {
+      const saved = await offlineStaleFallback(requestKey);
+      if (saved) return saved;
+      throw err;
+    }
+  }
 
   if (!shouldUseCache) {
     try {
       return await run();
     } catch (err) {
-      // If offline and this is a mutation, queue it for later replay.
-      if (method !== "GET" && !navigator.onLine) {
+      // Queue a mutation for replay when offline, or when the connection
+      // dropped on a write that is safe to send twice.
+      const offline = !navigator.onLine;
+      if (method !== "GET" && isReplaySafeWrite(method, url) && (offline || isConnectionFailure(err))) {
         const headerEntries: Record<string, string> = {};
         headers.forEach((v, k) => { headerEntries[k] = v; });
-        enqueueOffline({
+        await enqueueOffline({
           url,
           method,
           body: typeof init?.body === "string" ? init.body : null,
           headers: headerEntries,
           label: `${method} ${new URL(url, window.location.origin).pathname}`,
         });
-        throw new Error("You are offline. The request has been queued and will be sent when you reconnect.");
+        throw new QueuedForSyncError(
+          offline
+            ? "You are offline. The request has been queued and will be sent when you reconnect."
+            : "The connection dropped. This was queued and will be sent automatically.",
+        );
       }
       throw err;
     }
@@ -1709,13 +1828,32 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     inflightGetRequests.delete(requestKey);
   });
   inflightGetRequests.set(requestKey, promise);
+  // Weak signal: if the network is slow and a saved copy exists, show that rather than
+  // a spinner; the request carries on and refreshes the cache when it lands.
+  const slow = await Promise.race([
+    promise.then(
+      () => false,
+      () => false,
+    ),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), WEAK_SIGNAL_FALLBACK_MS)),
+  ]);
+  if (slow) {
+    const saved = await offlineStaleFallback(requestKey);
+    if (saved) {
+      promise.catch(() => undefined);
+      if (ENABLE_REQUEST_LOGS) {
+        console.debug(`[api] ${method} ${url} -> saved copy (network slower than ${WEAK_SIGNAL_FALLBACK_MS}ms)`);
+      }
+      return saved;
+    }
+  }
   try {
     const response = await promise;
     return response.clone();
   } catch (err) {
     // Network fetch failed (offline / DNS / connection refused): fall back to
     // the last data we ever saw, regardless of age, as a last resort.
-    const offlineStale = offlineStaleFallback(requestKey);
+    const offlineStale = await offlineStaleFallback(requestKey);
     if (offlineStale) {
       if (ENABLE_REQUEST_LOGS) {
         console.debug(`[api] ${method} ${url} -> offline-stale cache hit (fetch failed)`);
@@ -1957,8 +2095,8 @@ async function loadSuggestedEventsSearchFallback(
 }
 
 export async function getSuggestedEvents(
-  preferredYear = 2026,
-  fallbackYear = 2025,
+  preferredYear: number = SEASON.year,
+  fallbackYear: number = SEASON.fallbackYear,
   limit = 25,
   options?: {
     preferLiveNow?: boolean;
@@ -2023,8 +2161,8 @@ export async function searchTeams(query: string, limit = 25): Promise<TeamSearch
     limit: String(limit),
     include_global: "false",
     include_event_registrations: "false",
-    preferred_year: "2026",
-    fallback_year: "2025",
+    preferred_year: String(SEASON.year),
+    fallback_year: String(SEASON.fallbackYear),
   });
   const res = await apiFetch(
     `${API}/teams/search?${params.toString()}`,
@@ -2042,8 +2180,8 @@ export async function getTeamRobotImage(
   eventKey?: string,
 ): Promise<TeamRobotImageResponse> {
   const params = new URLSearchParams({
-    preferred_year: "2026",
-    fallback_year: "2025",
+    preferred_year: String(SEASON.year),
+    fallback_year: String(SEASON.fallbackYear),
     v: TEAM_MEDIA_CACHE_VERSION,
   });
   if (eventKey) params.set("event_key", eventKey);
@@ -2063,8 +2201,8 @@ export async function getTeamLogo(
   eventKey?: string,
 ): Promise<TeamLogoResponse> {
   const params = new URLSearchParams({
-    preferred_year: "2026",
-    fallback_year: "2025",
+    preferred_year: String(SEASON.year),
+    fallback_year: String(SEASON.fallbackYear),
     v: TEAM_MEDIA_CACHE_VERSION,
   });
   if (eventKey) params.set("event_key", eventKey);
@@ -2940,39 +3078,7 @@ export async function rejectAutoScoutDraft(
   return (await res.json()) as AutoScoutDraftResponse;
 }
 
-// ── Robot tracking / heatmap fetchers ───────────────────────────────
-
-export async function getMatchTracks(
-  matchKey: string,
-  options?: {
-    team_key?: string;
-    min_time?: number;
-    max_time?: number;
-    min_confidence?: number;
-    limit?: number;
-  },
-): Promise<MatchTracksResponse> {
-  const params = new URLSearchParams();
-  if (options?.team_key) params.set("team_key", options.team_key);
-  if (options?.min_time != null) params.set("min_time", String(options.min_time));
-  if (options?.max_time != null) params.set("max_time", String(options.max_time));
-  if (options?.min_confidence != null) params.set("min_confidence", String(options.min_confidence));
-  if (options?.limit != null) params.set("limit", String(options.limit));
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await apiFetch(
-    `${API}/tracks/match/${matchKey}${suffix}`,
-    _cacheRequestOptions(undefined, {
-      cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
-      staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
-    }),
-  );
-  if (!res.ok) throw new Error(await readError(res));
-  const payload = (await res.json()) as MatchTracksResponse;
-  return {
-    ...payload,
-    local_video_url: payload.local_video_url ? absoluteApiUrl(payload.local_video_url) : null,
-  };
-}
+// ── Heatmap and shift-play fetchers ──────────────────────────────
 
 export async function getTeamHeatmap(
   teamKey: string,
@@ -2982,7 +3088,8 @@ export async function getTeamHeatmap(
     grid_cols?: number;
     grid_rows?: number;
     sigma?: number;
-    min_confidence?: number;
+    // Operators only: also count phone recordings nobody has reviewed yet.
+    include_unreviewed?: boolean;
   },
 ): Promise<TeamHeatmapResponse> {
   const params = new URLSearchParams({ event_key: eventKey });
@@ -2990,7 +3097,7 @@ export async function getTeamHeatmap(
   if (options?.grid_cols != null) params.set("grid_cols", String(options.grid_cols));
   if (options?.grid_rows != null) params.set("grid_rows", String(options.grid_rows));
   if (options?.sigma != null) params.set("sigma", String(options.sigma));
-  if (options?.min_confidence != null) params.set("min_confidence", String(options.min_confidence));
+  if (options?.include_unreviewed) params.set("include_unreviewed", "true");
   const res = await apiFetch(
     `${API}/tracks/heatmap/${teamKey}?${params.toString()}`,
     _cacheRequestOptions(undefined, {
@@ -3045,35 +3152,55 @@ export type OnDeviceSessionSyncResponse = {
   match_key: string;
   event_key: string;
   run_id: number;
+  on_device_session_id: number;
   session_key: string;
   reused_run: boolean;
+  status: "provisional" | "accepted" | "rejected";
+  quality_score: number;
+  quality: Record<string, unknown> & { eligible_for_review?: boolean };
+  shift1_active_alliance: "red" | "blue" | null;
+  shift1_source: string | null;
   team_count: number;
   points_persisted: number;
   points_by_team: Record<string, number>;
   skipped_unknown_teams: string[];
   shift_play: Record<string, OnDeviceRobotShiftPlay> | null;
+  shift_play_missing_reason: string | null;
 };
 
 // Flush a finished on-device match breakdown to the server (POST
 // /tracks/on-device-session). The StoredSession camelCase keys match the
 // endpoint's request aliases, so a stored session posts verbatim. apiFetch
 // auto-attaches the admin/room headers the endpoint's auth gate expects.
+export class OnDeviceSyncError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'OnDeviceSyncError';
+  }
+}
+
 export async function syncOnDeviceSession(session: {
   id: string;
   eventKey?: string;
   matchKey?: string;
   createdAt?: number;
+  workspaceId?: number | null;
   payload: unknown;
-}): Promise<OnDeviceSessionSyncResponse> {
+}, workspaceToken?: string): Promise<OnDeviceSessionSyncResponse> {
   const res = await apiFetch(`${API}/tracks/on-device-session`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(workspaceToken ? { [WORKSPACE_ACCESS_HEADER]: workspaceToken } : {}),
+    },
     body: JSON.stringify(session),
     bypassCache: true,
     cacheTtlMs: 0,
     timeoutMs: 30000,
   });
-  if (!res.ok) throw new Error(await readError(res));
+  if (!res.ok) throw new OnDeviceSyncError(res.status, await readError(res));
   return (await res.json()) as OnDeviceSessionSyncResponse;
 }
 
@@ -3086,7 +3213,6 @@ export function scoutingRoomWebSocketUrl(
     client_id?: string;
     history_limit?: number;
     room_access_token?: string;
-    admin_session_token?: string;
   },
 ): string {
   const normalizedRoom = roomKey.trim().toLowerCase();
@@ -3113,11 +3239,160 @@ export function scoutingRoomWebSocketUrl(
   if (options?.room_access_token) {
     base.searchParams.set("room_access", String(options.room_access_token || "").trim());
   }
-  const adminSessionToken = String(options?.admin_session_token || "").trim() || effectiveAdminSessionToken();
-  if (adminSessionToken) {
-    base.searchParams.set("admin_session", adminSessionToken);
+  // No admin token here: the socket never reads one, and URLs end up in proxy logs.
+  // Browsers can't put headers on a WebSocket, so workspace access rides the URL.
+  const workspaceToken = getWorkspaceToken();
+  if (workspaceToken) {
+    base.searchParams.set(WORKSPACE_ACCESS_QUERY_PARAM, workspaceToken);
   }
   return base.toString();
+}
+
+// ── Team workspaces ────────────────────────────────────────────
+
+export interface WorkspaceMemberRecord extends WorkspaceMe {
+  joined_at: string | null;
+  last_seen_at: string | null;
+}
+
+export interface WorkspaceDetails extends WorkspaceSummary {
+  join_code_rotated_at: string | null;
+  created_at: string | null;
+}
+
+export interface WorkspaceStateResponse {
+  ok: boolean;
+  workspace: WorkspaceDetails;
+  me: WorkspaceMemberRecord;
+  members: WorkspaceMemberRecord[];
+  // Only present right after a code is issued: the server keeps just its hash.
+  join_code?: string;
+  access?: { token: string; expires_at_unix: number };
+}
+
+function summarizeWorkspace(workspace: WorkspaceDetails): WorkspaceSummary {
+  return { id: workspace.id, name: workspace.name, frc_team_number: workspace.frc_team_number ?? null };
+}
+
+function summarizeMe(me: WorkspaceMemberRecord): WorkspaceMe {
+  return { id: me.id, display_name: me.display_name, role: me.role };
+}
+
+const WORKSPACE_JSON = { "Content-Type": "application/json" };
+const WORKSPACE_FETCH = { bypassCache: true, cacheTtlMs: 0 } as const;
+
+// Every workspace route answers with the workspace, the caller and its members;
+// create/join also carry a token. Keep the stored session in step either way.
+async function applyWorkspaceResponse(res: Response): Promise<WorkspaceStateResponse> {
+  if (!res.ok) throw new Error(await readError(res));
+  const payload = (await res.json()) as WorkspaceStateResponse;
+  if (payload.join_code && payload.workspace) {
+    rememberIssuedJoinCode(payload.workspace.id, payload.join_code);
+  }
+  if (payload.access?.token) {
+    await setWorkspaceSession({
+      token: payload.access.token,
+      expiresAt: payload.access.expires_at_unix,
+      workspace: summarizeWorkspace(payload.workspace),
+      me: summarizeMe(payload.me),
+    });
+  } else if (payload.workspace && payload.me) {
+    const current = getWorkspaceSession();
+    if (current && current.workspace.id === payload.workspace.id) {
+      await setWorkspaceSession({ ...current, workspace: summarizeWorkspace(payload.workspace), me: summarizeMe(payload.me) });
+    }
+  }
+  return payload;
+}
+
+export async function createWorkspace(payload: {
+  name: string;
+  frc_team_number?: number | null;
+  display_name: string;
+}): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces`, {
+    method: "POST",
+    headers: WORKSPACE_JSON,
+    body: JSON.stringify(payload),
+    ...WORKSPACE_FETCH,
+  });
+  return applyWorkspaceResponse(res);
+}
+
+export async function joinWorkspace(payload: { join_code: string; display_name: string }): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/join`, {
+    method: "POST",
+    headers: WORKSPACE_JSON,
+    body: JSON.stringify(payload),
+    ...WORKSPACE_FETCH,
+  });
+  return applyWorkspaceResponse(res);
+}
+
+export async function getMyWorkspace(): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/me`, { method: "GET", ...WORKSPACE_FETCH });
+  return applyWorkspaceResponse(res);
+}
+
+export async function updateMyWorkspace(payload: {
+  name?: string;
+  frc_team_number?: number | null;
+  clear_team_number?: boolean;
+}): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/me`, {
+    method: "PATCH",
+    headers: WORKSPACE_JSON,
+    body: JSON.stringify(payload),
+    ...WORKSPACE_FETCH,
+  });
+  return applyWorkspaceResponse(res);
+}
+
+export async function renameMeInWorkspace(displayName: string): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/me/profile`, {
+    method: "PATCH",
+    headers: WORKSPACE_JSON,
+    body: JSON.stringify({ display_name: displayName }),
+    ...WORKSPACE_FETCH,
+  });
+  return applyWorkspaceResponse(res);
+}
+
+export async function rotateWorkspaceJoinCode(): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/me/join-code`, { method: "POST", ...WORKSPACE_FETCH });
+  return applyWorkspaceResponse(res);
+}
+
+export async function removeWorkspaceMember(memberId: number, rotateJoinCode = true): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/me/members/${memberId}/remove`, {
+    method: "POST",
+    headers: WORKSPACE_JSON,
+    body: JSON.stringify({ rotate_join_code: rotateJoinCode }),
+    ...WORKSPACE_FETCH,
+  });
+  return applyWorkspaceResponse(res);
+}
+
+export async function setWorkspaceMemberRole(memberId: number, role: "leader" | "member"): Promise<WorkspaceStateResponse> {
+  const res = await apiFetch(`${API}/workspaces/me/members/${memberId}/role`, {
+    method: "POST",
+    headers: WORKSPACE_JSON,
+    body: JSON.stringify({ role }),
+    ...WORKSPACE_FETCH,
+  });
+  return applyWorkspaceResponse(res);
+}
+
+export async function leaveWorkspace(confirmLastMember = false): Promise<void> {
+  const res = await apiFetch(`${API}/workspaces/me/leave`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm_last_member: confirmLastMember }),
+    bypassCache: true,
+    cacheTtlMs: 0,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  clearWorkspaceSession("left");
 }
 
 // ── Media helpers ──────────────────────────────────────────────
@@ -3446,4 +3721,17 @@ export async function sendPushTest(endpoint: string): Promise<{ ok: boolean }> {
   });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as { ok: boolean };
+}
+
+// Native admin/room access is tab-scoped memory, not WebView sessionStorage.
+export function bootstrapNativeEphemeralAccess(): void {
+  if (!isNativeApp()) return;
+  for (const key of Object.keys(window.sessionStorage)) {
+    if (key === ADMIN_SESSION_TOKEN_STORAGE || key === ADMIN_SESSION_EXPIRES_AT_STORAGE
+      || key.startsWith(ROOM_ACCESS_TOKEN_STORAGE_PREFIX) || key.startsWith(ROOM_ACCESS_EXPIRES_AT_STORAGE_PREFIX)) {
+      const value = window.sessionStorage.getItem(key);
+      if (value) nativeSessionValues.set(key, value);
+      window.sessionStorage.removeItem(key);
+    }
+  }
 }

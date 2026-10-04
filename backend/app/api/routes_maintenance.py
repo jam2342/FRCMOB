@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 import redis
-from rq import Queue
-from rq.registry import DeferredJobRegistry, FailedJobRegistry, ScheduledJobRegistry, StartedJobRegistry
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -30,15 +29,8 @@ from app.services.climb.official_backfill import (
     climb_signal_coverage,
     run_official_climb_backfill,
 )
-from app.services.freshness_recovery import (
-    build_event_team_freshness_rows,
-    load_last_result as load_freshness_recovery_last_result,
-    recover_event_freshness,
-    recover_stale_events,
-)
 from app.services.calibration.fuel_rate import get_fuel_phase_calibration
 from app.services.intel.snapshots import refresh_hot_intel_snapshots
-from app.services.media.retention import media_usage_snapshot, run_media_retention
 from app.services.auto_scout.ml import (
     AUTO_SCOUT_FIELD_MODEL_PREFIX,
     auto_scout_field_model_key,
@@ -57,8 +49,8 @@ from app.services.ml.shadow import (
 )
 from app.services.scheduler import get_scheduler_runtime_metrics
 from app.services.clients import statbotics as statbotics_client
-from app.services.ml.synergy import QUALITY_THRESHOLD_DEFAULT, SYNERGY_MODEL_VERSION
 from app.services.utils import (
+    MEDIA_ROOT,
     automation_redis_key as _automation_redis_key,
     decode_redis_float as _decode_redis_float,
 )
@@ -99,22 +91,35 @@ def create_admin_session(request: AdminSessionCreateRequest):
     }
 
 
+def _to_gb(value: int) -> float:
+    return round(float(value) / float(1024**3), 3)
+
+
+def media_usage_snapshot() -> dict[str, Any]:
+    # Media now holds pit photos and model files only.
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    total_bytes = 0
+    for path in MEDIA_ROOT.rglob("*"):
+        try:
+            if path.is_file() and not path.is_symlink():
+                total_bytes += path.stat().st_size
+        except OSError:
+            continue
+    disk = shutil.disk_usage(str(MEDIA_ROOT))
+    return {
+        "media_root": str(MEDIA_ROOT),
+        "total_bytes": total_bytes,
+        "total_gb": _to_gb(total_bytes),
+        "disk_total_gb": _to_gb(int(disk.total)),
+        "disk_used_gb": _to_gb(int(disk.used)),
+        "disk_free_gb": _to_gb(int(disk.free)),
+    }
+
+
 @router.get("/media/usage")
 def get_media_usage(request: Request):
     require_admin_access(request, "Media usage")
     return {"ok": True, "usage": media_usage_snapshot()}
-
-
-@router.post("/media/cleanup")
-def cleanup_media(
-    request: Request,
-    force: bool = Query(default=True),
-    reason: str = Query(default="manual"),
-):
-    require_admin_access(request, "Media cleanup")
-    require_write_access("Media cleanup")
-    result = run_media_retention(force=force, reason=reason)
-    return {"ok": True, "cleanup": result}
 
 
 @router.post("/intel/snapshots/refresh")
@@ -125,95 +130,8 @@ def refresh_intel_snapshots(request: Request):
     return {"ok": True, "result": result}
 
 
-def _safe_age_hours(now_utc: datetime, unix_ts: int | None) -> float | None:
-    if not isinstance(unix_ts, int) or unix_ts <= 0:
-        return None
-    age = max(0.0, now_utc.timestamp() - float(unix_ts))
-    return round(age / 3600.0, 3)
-
-
 def _ops_alerts_from_metrics(metrics: dict[str, Any]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
-
-    runs = metrics.get("analysis_runs") if isinstance(metrics.get("analysis_runs"), dict) else {}
-    run_counts = runs.get("status_counts") if isinstance(runs.get("status_counts"), dict) else {}
-    total_runs = int(runs.get("total") or 0)
-    failed_runs = int(run_counts.get("failed") or 0)
-    failed_ratio = (failed_runs / total_runs) if total_runs > 0 else 0.0
-    if total_runs >= 10 and failed_ratio >= 0.15:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "analysis_failure_ratio_high",
-                "message": "Analysis failure ratio is above threshold.",
-                "value": round(failed_ratio, 4),
-                "threshold": 0.15,
-            }
-        )
-
-    backend_block = metrics.get("tracking_backend") if isinstance(metrics.get("tracking_backend"), dict) else {}
-    backend_counts = backend_block.get("counts") if isinstance(backend_block.get("counts"), dict) else {}
-    total_findings = int(backend_block.get("total_findings") or 0)
-    yolo_findings = int(backend_counts.get("yolo_bytetrack") or 0)
-    yolo_ratio = (yolo_findings / total_findings) if total_findings > 0 else 0.0
-    if total_findings >= 25 and yolo_ratio < 0.20:
-        alerts.append(
-            {
-                "level": "info",
-                "code": "yolo_coverage_low",
-                "message": "YOLO+ByteTrack coverage is low; pipeline is relying on motion fallback.",
-                "value": round(yolo_ratio, 4),
-                "threshold": 0.20,
-            }
-        )
-
-    freshness = metrics.get("freshness") if isinstance(metrics.get("freshness"), dict) else {}
-    stale_event_count = int(freshness.get("stale_event_count") or 0)
-    if stale_event_count > 0:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "stale_analysis_data",
-                "message": "One or more events have stale analysis data.",
-                "value": stale_event_count,
-            }
-        )
-
-    automation = metrics.get("automation") if isinstance(metrics.get("automation"), dict) else {}
-    last_result = automation.get("last_result") if isinstance(automation.get("last_result"), dict) else {}
-    blocked_reason_counts = (
-        last_result.get("blocked_reason_counts")
-        if isinstance(last_result.get("blocked_reason_counts"), dict)
-        else {}
-    )
-    blocked_totals = last_result.get("totals") if isinstance(last_result.get("totals"), dict) else {}
-    missing_calibration_blocked = int(blocked_reason_counts.get("missing_calibration") or 0)
-    blocked_matches = int(blocked_totals.get("blocked_matches") or 0)
-    scheduled_matches = int(blocked_totals.get("scheduled_matches") or 0)
-    missing_threshold = max(1, int(settings.ops_alert_automation_missing_calibration_threshold))
-    blocked_ratio_threshold = max(0.05, min(0.95, float(settings.ops_alert_automation_blocked_ratio_threshold)))
-    blocked_ratio = (blocked_matches / max(1, blocked_matches + scheduled_matches))
-
-    if missing_calibration_blocked >= missing_threshold:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "automation_missing_calibration_spike",
-                "message": "Regional automation is blocking many matches on calibration.",
-                "value": missing_calibration_blocked,
-                "threshold": missing_threshold,
-            }
-        )
-    if blocked_matches >= 10 and blocked_ratio >= blocked_ratio_threshold:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "automation_blocked_ratio_high",
-                "message": "Regional automation blocked ratio is high for the last tick.",
-                "value": round(blocked_ratio, 4),
-                "threshold": round(blocked_ratio_threshold, 4),
-            }
-        )
 
     scheduler_block = metrics.get("scheduler") if isinstance(metrics.get("scheduler"), dict) else {}
     scheduler_jobs = scheduler_block.get("jobs") if isinstance(scheduler_block.get("jobs"), dict) else {}
@@ -254,16 +172,6 @@ def _ops_alerts_from_metrics(metrics: dict[str, Any]) -> list[dict[str, Any]]:
                 "threshold": ops_smoke_details.get("regional_automation_stale_threshold_hours"),
             }
         )
-    if bool(ops_smoke_details.get("queue_stuck")):
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "analysis_queue_stuck",
-                "message": "Analysis queue appears stuck (pending jobs not changing).",
-                "value": ops_smoke_details.get("queue_stuck_minutes"),
-                "threshold": ops_smoke_details.get("queue_stuck_threshold_minutes"),
-            }
-        )
     lock_streak_checks = int(ops_smoke_details.get("automation_lock_streak_checks") or 0)
     lock_streak_threshold = int(ops_smoke_details.get("automation_lock_streak_threshold") or 0)
     if lock_streak_threshold > 0 and lock_streak_checks >= lock_streak_threshold:
@@ -276,38 +184,6 @@ def _ops_alerts_from_metrics(metrics: dict[str, Any]) -> list[dict[str, Any]]:
                 "threshold": lock_streak_threshold,
             }
         )
-    youtube_health = (
-        ops_smoke_details.get("youtube_extraction_health")
-        if isinstance(ops_smoke_details.get("youtube_extraction_health"), dict)
-        else {}
-    )
-    fallback_ratio = float(youtube_health.get("stream_fallback_ratio_0_1") or 0.0)
-    fallback_ratio_threshold = float(ops_smoke_details.get("youtube_stream_fallback_ratio_threshold_0_1") or 0.0)
-    fallback_source_rows = int(youtube_health.get("source_video_rows") or 0)
-    if fallback_source_rows >= 20 and fallback_ratio >= fallback_ratio_threshold > 0.0:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "youtube_stream_fallback_ratio_high",
-                "message": "YouTube stream fallback ratio is above SLO target.",
-                "value": round(fallback_ratio, 4),
-                "threshold": round(fallback_ratio_threshold, 4),
-            }
-        )
-    hard_failure_ratio = float(youtube_health.get("hard_extraction_failure_ratio_0_1") or 0.0)
-    hard_failure_ratio_threshold = float(ops_smoke_details.get("youtube_hard_failure_ratio_threshold_0_1") or 0.0)
-    youtube_sample_runs = int(youtube_health.get("sample_runs") or 0)
-    if youtube_sample_runs >= 20 and hard_failure_ratio >= hard_failure_ratio_threshold > 0.0:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "youtube_hard_extraction_failure_ratio_high",
-                "message": "YouTube hard extraction failure ratio is above SLO target.",
-                "value": round(hard_failure_ratio, 4),
-                "threshold": round(hard_failure_ratio_threshold, 4),
-            }
-        )
-
     statbotics_runtime = (
         metrics.get("statbotics_runtime")
         if isinstance(metrics.get("statbotics_runtime"), dict)
@@ -329,48 +205,6 @@ def _ops_alerts_from_metrics(metrics: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _get_redis_conn() -> "redis.Redis":
     return redis.from_url(settings.redis_url, socket_connect_timeout=5, socket_timeout=5)
-
-
-def _queue_snapshot() -> dict[str, Any]:
-    try:
-        redis_conn = _get_redis_conn()
-        queue = Queue("default", connection=redis_conn)
-        started = StartedJobRegistry(queue=queue)
-        deferred = DeferredJobRegistry(queue=queue)
-        scheduled = ScheduledJobRegistry(queue=queue)
-        failed = FailedJobRegistry(queue=queue)
-
-        queued_ids = list(queue.job_ids)
-        started_ids = started.get_job_ids()
-        deferred_ids = deferred.get_job_ids()
-        scheduled_ids = scheduled.get_job_ids()
-        failed_ids = failed.get_job_ids()
-
-        pending = len(queued_ids) + len(started_ids) + len(deferred_ids) + len(scheduled_ids)
-        pending_cap = max(10, int(settings.analysis_queue_max_pending_jobs))
-        pressure = min(1.0, float(pending) / float(pending_cap))
-        return {
-            "ok": True,
-            "name": queue.name,
-            "counts": {
-                "queued": len(queued_ids),
-                "started": len(started_ids),
-                "deferred": len(deferred_ids),
-                "scheduled": len(scheduled_ids),
-                "failed": len(failed_ids),
-                "pending_total": pending,
-            },
-            "caps": {
-                "max_pending_jobs": pending_cap,
-                "max_schedule_per_call": max(1, int(settings.analysis_queue_max_schedule_per_call)),
-            },
-            "pressure_0_1": round(pressure, 4),
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "detail": str(exc),
-        }
 
 
 def _current_regional_automation_season() -> int:
@@ -429,9 +263,6 @@ def _regional_automation_snapshot() -> dict[str, Any]:
             "caps": {
                 "max_events": int(settings.automation_regional_max_events),
                 "max_teams": int(settings.automation_regional_max_teams),
-                "max_matches_per_event": int(settings.automation_regional_max_matches_per_event),
-                "max_new_jobs_per_tick": int(settings.automation_regional_max_new_jobs_per_tick),
-                "max_pending_jobs": int(settings.analysis_queue_max_pending_jobs),
             },
         }
     except Exception as exc:
@@ -446,53 +277,6 @@ def _ops_metrics_payload(db: Session, sample_days: int) -> dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     days = max(1, min(sample_days, 90))
     since = now_utc - timedelta(days=days)
-
-    run_status_rows = (
-        db.query(models.AnalysisRun.status, func.count(models.AnalysisRun.id))
-        .filter(models.AnalysisRun.created_at >= since)
-        .group_by(models.AnalysisRun.status)
-        .all()
-    )
-    run_status_counts = {str(status or "unknown"): int(count or 0) for status, count in run_status_rows}
-
-    # Use a SQL GROUP BY on the source column instead of loading all ORM objects.
-    # The tracking_backend is also embedded in the JSON summary, but source is a
-    # reliable indexed column and avoids hydrating thousands of wide rows into Python.
-    source_count_rows = (
-        db.query(models.TeamMatchFinding.source, func.count(models.TeamMatchFinding.id))
-        .filter(models.TeamMatchFinding.created_at >= since)
-        .group_by(models.TeamMatchFinding.source)
-        .all()
-    )
-    backend_counts: dict[str, int] = {
-        str(src or "unknown").strip().lower(): int(cnt or 0)
-        for src, cnt in source_count_rows
-    }
-
-    event_age_rows = (
-        db.query(
-            models.TeamMatchFinding.event_key,
-            func.max(models.Match.time).label("latest_match_time"),
-            func.count(models.TeamMatchFinding.id).label("finding_count"),
-        )
-        .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-        .group_by(models.TeamMatchFinding.event_key)
-        .all()
-    )
-    event_ages = []
-    for event_key, latest_match_time, finding_count in event_age_rows:
-        age_hours = _safe_age_hours(now_utc, int(latest_match_time) if isinstance(latest_match_time, int) else None)
-        event_ages.append(
-            {
-                "event_key": str(event_key),
-                "finding_count": int(finding_count or 0),
-                "latest_match_time": int(latest_match_time) if isinstance(latest_match_time, int) else None,
-                "age_hours": age_hours,
-            }
-        )
-
-    stale_hours_threshold = max(1, int(settings.freshness_sla_stale_hours))
-    stale_events = [row for row in event_ages if isinstance(row.get("age_hours"), float) and row["age_hours"] > stale_hours_threshold]
 
     rating_span_rows = (
         db.query(
@@ -521,34 +305,36 @@ def _ops_metrics_payload(db: Session, sample_days: int) -> dict[str, Any]:
             }
         )
 
-    freshness_recovery_last = load_freshness_recovery_last_result()
     scheduler_metrics = get_scheduler_runtime_metrics()
     statbotics_runtime = statbotics_client.runtime_metrics()
     fuel_rate_calibration = get_fuel_phase_calibration(force_refresh=False)
+    on_device_status_rows = (
+        db.query(
+            models.OnDeviceSession.status,
+            func.count(models.OnDeviceSession.id),
+            func.avg(models.OnDeviceSession.quality_score),
+        )
+        .filter(models.OnDeviceSession.created_at >= since)
+        .group_by(models.OnDeviceSession.status)
+        .all()
+    )
 
     return {
         "window_days": days,
         "generated_at": now_utc.isoformat(),
-        "analysis_runs": {
-            "status_counts": run_status_counts,
-            "total": int(sum(run_status_counts.values())),
-        },
-        "tracking_backend": {
-            "counts": backend_counts,
-            "total_findings": int(sum(backend_counts.values())),
-        },
-        "freshness": {
-            "stale_hours_threshold": stale_hours_threshold,
-            "event_ages": event_ages,
-            "stale_events": stale_events,
-            "stale_event_count": len(stale_events),
+        "on_device_sessions": {
+            "status_counts": {
+                str(status): int(count or 0)
+                for status, count, _average_quality in on_device_status_rows
+            },
+            "average_quality_by_status": {
+                str(status): round(float(average_quality or 0.0), 4)
+                for status, _count, average_quality in on_device_status_rows
+            },
+            "total": int(sum(int(count or 0) for _status, count, _avg in on_device_status_rows)),
         },
         "ratings": {
             "recent_recompute_spans": rating_recompute_spans,
-        },
-        "freshness_recovery": {
-            "last_result": freshness_recovery_last,
-            "last_result_available": bool(isinstance(freshness_recovery_last, dict)),
         },
         "fuel_rate_calibration": {
             "model_version": fuel_rate_calibration.get("model_version"),
@@ -600,7 +386,6 @@ def get_ops_dashboard(
     require_admin_access(request, "Ops dashboard")
     metrics = _ops_metrics_payload(db, sample_days)
     alerts = _ops_alerts_from_metrics(metrics)
-    queue = _queue_snapshot()
     # metrics already contains automation from _ops_metrics_payload; reuse it instead
     # of making a second Redis round-trip.
     automation = metrics.get("automation") or {}
@@ -615,7 +400,6 @@ def get_ops_dashboard(
         "alerts": alerts,
         "alert_count": len(alerts),
         "metrics": metrics,
-        "queue": queue,
         "automation": automation,
         "media_usage": media,
         "climb_integrity": {
@@ -700,143 +484,6 @@ def get_climb_signal_coverage(
         max_events=max_events,
     )
     return {"ok": True, "coverage": result}
-
-
-@router.get("/freshness-sla")
-def get_freshness_sla(
-    request: Request,
-    event_key: str | None = None,
-    stale_hours: int | None = Query(default=None, ge=1, le=24 * 30),
-    db: Session = Depends(get_db),
-):
-    require_admin_access(request, "Freshness SLA")
-    now_utc = datetime.now(timezone.utc)
-    threshold_hours = int(stale_hours or settings.freshness_sla_stale_hours)
-
-    normalized_event_key = event_key.strip().lower() if isinstance(event_key, str) and event_key.strip() else None
-    if normalized_event_key:
-        teams_payload = build_event_team_freshness_rows(
-            db,
-            normalized_event_key,
-            stale_hours_threshold=threshold_hours,
-            now_utc=now_utc,
-        )
-
-        return {
-            "ok": True,
-            "scope": "event",
-            "event_key": normalized_event_key,
-            "stale_hours_threshold": threshold_hours,
-            "summary": {
-                "teams": len(teams_payload),
-                "fresh": sum(1 for row in teams_payload if row["status"] == "fresh"),
-                "stale": sum(1 for row in teams_payload if row["status"] == "stale"),
-                "missing": sum(1 for row in teams_payload if row["status"] == "missing"),
-            },
-            "teams": teams_payload,
-        }
-
-    event_rows = (
-        db.query(
-            models.TeamMatchFinding.event_key,
-            func.count(models.TeamMatchFinding.id).label("finding_count"),
-            func.max(models.Match.time).label("latest_match_time"),
-        )
-        .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-        .group_by(models.TeamMatchFinding.event_key)
-        .all()
-    )
-
-    events_payload = []
-    for found_event_key, finding_count, latest_match_time in event_rows:
-        age_hours = _safe_age_hours(now_utc, int(latest_match_time) if isinstance(latest_match_time, int) else None)
-        if int(finding_count or 0) <= 0:
-            status = "missing"
-        elif isinstance(age_hours, float) and age_hours > threshold_hours:
-            status = "stale"
-        else:
-            status = "fresh"
-        events_payload.append(
-            {
-                "event_key": str(found_event_key),
-                "finding_count": int(finding_count or 0),
-                "latest_match_time": int(latest_match_time) if isinstance(latest_match_time, int) else None,
-                "age_hours": age_hours,
-                "status": status,
-            }
-        )
-
-    return {
-        "ok": True,
-        "scope": "global",
-        "stale_hours_threshold": threshold_hours,
-        "summary": {
-            "events": len(events_payload),
-            "fresh": sum(1 for row in events_payload if row["status"] == "fresh"),
-            "stale": sum(1 for row in events_payload if row["status"] == "stale"),
-            "missing": sum(1 for row in events_payload if row["status"] == "missing"),
-        },
-        "events": events_payload,
-    }
-
-
-@router.post("/freshness/recover")
-def recover_freshness_coverage(
-    request: Request,
-    event_key: str | None = None,
-    stale_hours: int | None = Query(default=None, ge=1, le=24 * 30),
-    max_events: int = Query(default=3, ge=1, le=50),
-    max_target_teams_per_event: int = Query(default=30, ge=1, le=300),
-    force_analysis: bool = False,
-    require_video: bool = True,
-    require_calibration: bool = True,
-    run_post_compute: bool = True,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    quality_threshold: float = Query(default=QUALITY_THRESHOLD_DEFAULT, ge=0.0, le=1.0),
-    db: Session = Depends(get_db),
-):
-    require_admin_access(request, "Freshness recovery")
-    require_write_access("Freshness recovery")
-    threshold_hours = int(stale_hours or settings.freshness_sla_stale_hours)
-    normalized_event_key = event_key.strip().lower() if isinstance(event_key, str) and event_key.strip() else None
-
-    if normalized_event_key:
-        result = recover_event_freshness(
-            db,
-            event_key=normalized_event_key,
-            stale_hours_threshold=threshold_hours,
-            force_analysis=force_analysis,
-            require_video=require_video,
-            require_calibration=require_calibration,
-            run_post_compute=run_post_compute,
-            model_version=synergy_model_version,
-            quality_threshold=quality_threshold,
-            max_target_teams=max_target_teams_per_event,
-        )
-        return {"ok": True, "mode": "event", "result": result}
-
-    result = recover_stale_events(
-        db,
-        stale_hours_threshold=threshold_hours,
-        max_events=max_events,
-        max_target_teams_per_event=max_target_teams_per_event,
-        force_analysis=force_analysis,
-        require_video=require_video,
-        require_calibration=require_calibration,
-        run_post_compute=run_post_compute,
-        model_version=synergy_model_version,
-        quality_threshold=quality_threshold,
-    )
-    return {"ok": True, "mode": "global", "result": result}
-
-
-@router.get("/freshness/recover/last")
-def get_last_freshness_recovery(request: Request):
-    require_admin_access(request, "Freshness recovery last result")
-    return {
-        "ok": True,
-        "last_result": load_freshness_recovery_last_result(),
-    }
 
 
 @router.get("/ml/shadow/status")

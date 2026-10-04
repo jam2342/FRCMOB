@@ -12,6 +12,7 @@ from app.api import routes_scouting_rooms
 from app.core.config import settings
 from app.db import models
 from app.db.base import Base
+from tests.workspace_helpers import seed_workspace
 
 
 class ScoutingRoomIdempotencyTests(unittest.TestCase):
@@ -24,6 +25,8 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
         Base.metadata.create_all(self.engine)
         self.db = self.SessionLocal()
+        workspace, _member, _headers = seed_workspace(self.db)
+        self.workspace_id = workspace.id
         self.db.add(models.Event(event_key="2026txhou", name="Houston", year=2026))
         self.db.add(models.Team(team_key="frc118", team_number=118, nickname="Robonauts"))
         self.db.add(
@@ -39,6 +42,7 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         self.db.add(
             models.ScoutingRoom(
                 room_key="room-test",
+                workspace_id=self.workspace_id,
                 event_key="2026txhou",
                 title="test room",
                 created_by="ScoutA",
@@ -155,7 +159,9 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         self.assertEqual(leader_profile, "ScoutB")
         self.assertEqual(leader_source, "presence_fallback")
 
-    def test_resolve_room_role_with_presence_promotes_fallback_leader(self):
+    def test_presence_never_promotes_anyone_to_owner(self):
+        # Being first into an ownerless room used to make you its leader, which let
+        # any teammate take over a room whose owner had left.
         role = routes_scouting_rooms._resolve_room_role_with_presence(
             self.room,
             "ScoutB",
@@ -177,7 +183,7 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             ],
             secondary_leader_profiles=[],
         )
-        self.assertEqual(role, routes_scouting_rooms.ROOM_ROLE_OWNER)
+        self.assertEqual(role, routes_scouting_rooms.ROOM_ROLE_EDITOR)
 
     def test_resolve_room_role_with_presence_keeps_non_leader_as_editor(self):
         role = routes_scouting_rooms._resolve_room_role_with_presence(
@@ -296,6 +302,7 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         self.db.add(
             models.ScoutingRoom(
                 room_key="room-no-owner",
+                workspace_id=self.workspace_id,
                 event_key="2026txhou",
                 title="legacy room",
                 created_by=None,
@@ -309,7 +316,20 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             event_key="2026txhou",
             title="legacy room",
             created_by="Owner Scout",
+            workspace_id=self.workspace_id,
         )
+        # A plain member doesn't claim an ownerless room...
+        self.assertEqual(str(room.created_by or ""), "")
+        room = routes_scouting_rooms._upsert_room(
+            self.db,
+            room_key="room-no-owner",
+            event_key="2026txhou",
+            title="legacy room",
+            created_by="Owner Scout",
+            workspace_id=self.workspace_id,
+            can_claim_owner=True,
+        )
+        # ...a workspace leader does.
         self.assertEqual(str(room.created_by or ""), "Owner Scout")
 
         role = routes_scouting_rooms._resolve_room_role_with_presence(
@@ -319,38 +339,6 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             secondary_leader_profiles=[],
         )
         self.assertEqual(role, routes_scouting_rooms.ROOM_ROLE_OWNER)
-
-    def test_room_profile_claim_conflicts_when_profile_is_already_active(self):
-        conflict = routes_scouting_rooms._room_profile_claim_conflicts(
-            room_key="room-test",
-            scout_profile="ScoutA",
-            presence=[{"scout_profile": "ScoutA", "connections": 1}],
-            existing_room_access_payload=None,
-        )
-        self.assertTrue(conflict)
-
-    def test_room_profile_claim_does_not_conflict_with_bound_existing_token(self):
-        issued = routes_scouting_rooms.issue_room_access_token(
-            room_key="room-test",
-            scout_profile="ScoutA",
-        )
-        payload = routes_scouting_rooms.parse_room_access_token(issued.get("token"))
-        conflict = routes_scouting_rooms._room_profile_claim_conflicts(
-            room_key="room-test",
-            scout_profile="ScoutA",
-            presence=[{"scout_profile": "ScoutA", "connections": 1}],
-            existing_room_access_payload=payload,
-        )
-        self.assertFalse(conflict)
-
-    def test_room_profile_claim_does_not_conflict_when_profile_not_present(self):
-        conflict = routes_scouting_rooms._room_profile_claim_conflicts(
-            room_key="room-test",
-            scout_profile="ScoutA",
-            presence=[{"scout_profile": "ScoutB", "connections": 1}],
-            existing_room_access_payload=None,
-        )
-        self.assertFalse(conflict)
 
     def test_websocket_write_access_is_not_admin_gated(self):
         prior_public_readonly_mode = bool(settings.public_readonly_mode)

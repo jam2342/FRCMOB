@@ -1,22 +1,25 @@
 # FRCMOB
 
-FRCMOB is an open-source scouting and match-analysis platform for the FIRST Robotics Competition. It combines manual scouting, live scouting rooms, team and alliance analytics, match predictions, and a video pipeline built around YOLO, ByteTrack, homography calibration, and bumper-number identity voting.
+FRCMOB is an open-source scouting and match-analysis platform for the FIRST Robotics Competition. It combines manual scouting, live scouting rooms, team and alliance analytics, match predictions, and an on-device match recorder that runs an FRC robot detector in the browser, maps robots onto the field from a four-tap calibration, and turns a recorded match into heat maps and offense/defense profiles.
 
 FRCMOB is an independent community project. It is not affiliated with, endorsed by, or sponsored by FIRST. FIRST®, FIRST Robotics Competition®, and related marks and game materials belong to For Inspiration and Recognition of Science and Technology (FIRST).
 
 ## What is included
 
-- `ScoutingApp/`: React + TypeScript progressive web app
-- `backend/`: FastAPI API, analysis pipeline, scheduler, database models, and tests
-- `worker/`: RQ analysis worker
+- `ScoutingApp/`: React + TypeScript web/PWA frontend and Capacitor iOS/Android projects
+- `backend/`: FastAPI API, official-data ingest, ratings and ML, scheduler, database models, and tests
 - `game_config/`: season-specific field and scoring configuration
 - `docker/`: local and production Compose definitions
 
 Model weights, training datasets, match recordings, database contents, credentials, and FIRST game manuals are intentionally not distributed. See [Third-party assets](docs/THIRD_PARTY_ASSETS.md).
 
+## Native app
+
+The iOS and Android foundation bundles the frontend and on-device detector for offline startup. Build commands, platform requirements, verification, and remaining beta-release work are in [Native app setup](docs/NATIVE_APP.md).
+
 ## Local development
 
-Requirements: Node.js 20+, Python 3.11+, PostgreSQL 16, Redis 7, and system FFmpeg/Tesseract packages for the full video pipeline.
+Requirements: Node.js 20+, Python 3.11+, PostgreSQL 16, and Redis 7. Detector training needs `backend/requirements-training.txt` on top.
 
 1. Copy `.env.example` to `.env`. The defaults describe local development; generate secrets before enabling admin access.
 2. Start PostgreSQL and Redis with `docker compose -f docker/docker-compose.yml up postgres redis -d`.

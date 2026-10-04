@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventTeamsIntel,
   getTheoreticalAlliance,
@@ -27,6 +27,7 @@ import {
 } from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import styles from './AllianceAdvisorPage.module.css';
+import { DEFAULT_WEIGHTS, normalizedWeights, teamsFromParam } from './allianceBuilder';
 import {
   asRecord,
   metric,
@@ -108,7 +109,10 @@ export function AllianceAdvisorPage() {
   const [errorText, setErrorText] = useState('');
 
   /* --- Alliance builder (what-if) --- */
-  const [builderSlots, setBuilderSlots] = useState<[string, string, string]>(['', '', '']);
+  const [searchParams] = useSearchParams();
+  const [builderSlots, setBuilderSlots] = useState<[string, string, string]>(() => teamsFromParam(searchParams.get('teams')));
+  const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
+  const weightShares = useMemo(() => normalizedWeights(weights), [weights]);
   const [builderResult, setBuilderResult] = useState<TheoreticalAllianceResponse | null>(null);
   const [loadingBuilder, setLoadingBuilder] = useState(false);
   const [builderError, setBuilderError] = useState('');
@@ -220,9 +224,9 @@ export function AllianceAdvisorPage() {
     try {
       const result = await getTheoreticalAlliance(eventKey, {
         team_keys: keys,
-        compatibility_weight: 0.5,
-        pros_weight: 0.3,
-        cons_weight: 0.2,
+        compatibility_weight: weightShares.compatibility,
+        pros_weight: weightShares.pros,
+        cons_weight: weightShares.cons,
         include_selection_model: false,
         selection_rank_weight: rankWeight,
         selection_scale: scale,
@@ -237,7 +241,7 @@ export function AllianceAdvisorPage() {
     } finally {
       setLoadingBuilder(false);
     }
-  }, [eventKey, builderSlots, teamKeySet, rankWeight, scale, simulations]);
+  }, [eventKey, builderSlots, teamKeySet, rankWeight, scale, simulations, weightShares]);
 
   // Memoised because the table columns depend on it; a fresh function each
   // render would rebuild every column definition on every keystroke.
@@ -396,7 +400,7 @@ export function AllianceAdvisorPage() {
 
           {eventTeams ? (
             <p className={styles.eventSummary}>
-              <strong>{eventTeams.event_name || eventKey}</strong> — {teamPool.length} teams loaded
+              <strong>{eventTeams.event_name || eventKey}</strong> — {teamPool.length} team{teamPool.length === 1 ? '' : 's'} loaded
               {eventTeams.teams_with_event_rating > 0
                 ? ` (${eventTeams.teams_with_event_rating} with ratings)`
                 : ''}
@@ -470,7 +474,7 @@ export function AllianceAdvisorPage() {
         {selectionModel && selectionModel.top_desirability.length > 0 ? (
           <SurfaceCard
             title="Team Desirability Rankings"
-            subtitle={`${selectionModel.top_desirability.length} teams ranked by selection desirability. ${selectionModel.simulations.toLocaleString()} Monte Carlo simulations.`}
+            subtitle={`${selectionModel.top_desirability.length} team${selectionModel.top_desirability.length === 1 ? '' : 's'} ranked by selection desirability. ${selectionModel.simulations.toLocaleString()} simulation${selectionModel.simulations === 1 ? '' : 's'}.`}
             right={
               <Chip tone={selectionModel.rank_source === 'tba' ? 'accent' : 'neutral'}>
                 {selectionModel.rank_source === 'tba' ? 'TBA Rankings' : 'Model Rankings'}
@@ -586,6 +590,35 @@ export function AllianceAdvisorPage() {
                 ))}
               </div>
 
+              <details className={styles.weights}>
+                <summary>Adjust weights</summary>
+                <p className={styles.note}>
+                  How much each part counts toward the alliance score. They're balanced to 100% for you.
+                </p>
+                <div className={styles.paramGrid}>
+                  {([
+                    ['compatibility', 'Compatibility'],
+                    ['pros', 'Strengths'],
+                    ['cons', 'Risk penalty'],
+                  ] as const).map(([key, label]) => (
+                    <FieldStepper
+                      key={key}
+                      label={label}
+                      hint={`${Math.round(weightShares[key] * 100)}% of the score`}
+                      value={weights[key]}
+                      onValueChange={(next) => {
+                        setWeights((current) => ({ ...current, [key]: next }));
+                        setBuilderResult(null);
+                      }}
+                      min={0}
+                      max={100}
+                      step={5}
+                      name={`${label} weight`}
+                    />
+                  ))}
+                </div>
+              </details>
+
               <div className={styles.actions}>
                 <Button variant="primary" onClick={() => void runBuilder()} loading={loadingBuilder}>
                   {loadingBuilder ? 'Analyzing...' : 'Analyze Alliance'}
@@ -621,6 +654,18 @@ export function AllianceAdvisorPage() {
                         size="sm"
                         label="Synergy Points"
                         value={metric(builderResult.compatibility.alliance_synergy_points, 2)}
+                      />
+                      <Stat
+                        size="sm"
+                        label="Strengths"
+                        value={metric(builderResult.pros_cons.alliance_pros_score_0_100, 1)}
+                        unit="/ 100"
+                      />
+                      <Stat
+                        size="sm"
+                        label="Risk"
+                        value={metric(builderResult.pros_cons.alliance_cons_risk_0_100, 1)}
+                        unit="/ 100"
                       />
                     </div>
                   </div>

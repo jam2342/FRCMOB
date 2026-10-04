@@ -50,7 +50,8 @@ const DEFAULTS = {
   quickJumpMode: 'auto' as QuickJumpMode,
   quickJumpRegion: 'all' as QuickJumpRegion,
   liveRefreshSec: 60,
-  tutorialAutoplay: true,
+  // Off: tours opening on their own blocked every section on a first visit.
+  tutorialAutoplay: false,
 };
 
 function normalizeThemeMode(value: string | null): ThemeMode {
@@ -95,9 +96,9 @@ function normalizeLiveRefreshSec(value: string | null): number {
 }
 
 function normalizeTutorialAutoplay(value: string | null): boolean {
-  if (value === 'false') return false;
-  if (value === '0') return false;
-  return true;
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  return DEFAULTS.tutorialAutoplay;
 }
 
 export type ScoutingSettings = {

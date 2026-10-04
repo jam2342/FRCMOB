@@ -51,6 +51,7 @@ const RATINGS_PREVIEW_COLUMNS: TableColumn<EventTeamRatingItem>[] = [
 ];
 import { downloadCsv } from '../utils/csvExport';
 import { metric, pct } from './centerUtils';
+import { useWorkspace } from '../features/workspace/useWorkspace';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -62,7 +63,18 @@ const STORAGE_KEY = 'scouting_center_event_key';
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+// Desktop-only page. The redirect lives out here so the page's hooks never
+// run on a phone: rendered inline, useEventKeyParam wrote ?event= back onto
+// this route in the same pass and cancelled the redirect, leaving a blank
+// screen.
 export function ExportPage() {
+  const isMobile = useMobileLayout();
+  if (isMobile) return <Navigate to="/events" replace />;
+  return <ExportPageContent />;
+}
+
+function ExportPageContent() {
+  const workspace = useWorkspace();
   const isMobile = useMobileLayout();
 
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
@@ -132,102 +144,117 @@ export function ExportPage() {
 
   /* ---- Export functions ---- */
 
-  function exportRatings() {
-    if (!ratings?.length) return;
-    const headers = [
-      'Team', 'Number', 'Nickname', 'Rating', 'Confidence',
-      'Robot Level', 'Driver Skill',
-      'Results Anchor', 'Throughput', 'Shift Productivity',
-      'Capacity Utilization', 'Endgame', 'Auto Contribution',
-      'Manual Points', 'RP Contribution', 'Defense', 'Consistency', 'Penalty Discipline',
-      'Pros', 'Cons', 'Model Version', 'Updated At',
-    ];
-    const rows = ratings.map((r) => [
-      r.team_key,
-      r.team_number,
-      r.nickname || '',
-      r.rating_0_100,
-      r.confidence_0_1,
-      r.robot_level_0_100,
-      r.driver_skill_0_100,
-      r.subscores?.results_anchor,
-      r.subscores?.throughput,
-      r.subscores?.shift_productivity,
-      r.subscores?.capacity_utilization,
-      r.subscores?.endgame,
-      r.subscores?.auto_contribution,
-      r.subscores?.manual_points_impact,
-      r.subscores?.rp_contribution,
-      r.subscores?.defense_presence,
-      r.subscores?.consistency,
-      r.subscores?.penalty_discipline,
-      (r.pros || []).map((p) => p.label || '').filter(Boolean).join('; '),
-      (r.cons || []).map((c) => c.label || '').filter(Boolean).join('; '),
-      r.model_version,
-      r.updated_at || '',
-    ]);
-    downloadCsv(`${eventKey}_team_ratings.csv`, headers, rows);
-    setStatusText(`Exported ${rows.length} team ratings.`);
-  }
-
-  function exportSchedule() {
-    if (!schedule?.length) return;
-    const headers = [
-      'Match Key', 'Display Name', 'Comp Level', 'Set', 'Match',
-      'Red 1', 'Red 2', 'Red 3', 'Blue 1', 'Blue 2', 'Blue 3',
-      'Red Score', 'Blue Score', 'Winner', 'Completed',
-    ];
-    const rows = schedule.map((m) => [
-      m.match_key,
-      m.display_name || '',
-      m.comp_level,
-      m.set_number,
-      m.match_number,
-      m.red?.[0]?.team_key || '',
-      m.red?.[1]?.team_key || '',
-      m.red?.[2]?.team_key || '',
-      m.blue?.[0]?.team_key || '',
-      m.blue?.[1]?.team_key || '',
-      m.blue?.[2]?.team_key || '',
-      m.red_score ?? '',
-      m.blue_score ?? '',
-      m.winner_alliance || '',
-      m.is_completed ? 'Yes' : 'No',
-    ]);
-    downloadCsv(`${eventKey}_match_schedule.csv`, headers, rows);
-    setStatusText(`Exported ${rows.length} matches.`);
-  }
-
-  function exportRankings() {
-    if (!rankings?.length) return;
-    // TBA rankings format: each row has team_key, rank, record, etc.
-    const firstRow = rankings[0];
-    const headers = Object.keys(firstRow).filter(
-      (k) => typeof firstRow[k] !== 'object' || firstRow[k] == null,
-    );
-    // Handle nested record
-    const record = firstRow.record as Record<string, unknown> | undefined;
-    if (record) {
-      for (const k of Object.keys(record)) {
-        headers.push(`record.${k}`);
-      }
+  async function exportRatings() {
+    try {
+      if (!ratings?.length) return;
+      const headers = [
+        'Team', 'Number', 'Nickname', 'Rating', 'Confidence',
+        'Robot Level', 'Driver Skill',
+        'Results Anchor', 'Throughput', 'Shift Productivity',
+        'Capacity Utilization', 'Endgame', 'Auto Contribution',
+        'Manual Points', 'RP Contribution', 'Defense', 'Consistency', 'Penalty Discipline',
+        'Pros', 'Cons', 'Model Version', 'Updated At',
+      ];
+      const rows = ratings.map((r) => [
+        r.team_key,
+        r.team_number,
+        r.nickname || '',
+        r.rating_0_100,
+        r.confidence_0_1,
+        r.robot_level_0_100,
+        r.driver_skill_0_100,
+        r.subscores?.results_anchor,
+        r.subscores?.throughput,
+        r.subscores?.shift_productivity,
+        r.subscores?.capacity_utilization,
+        r.subscores?.endgame,
+        r.subscores?.auto_contribution,
+        r.subscores?.manual_points_impact,
+        r.subscores?.rp_contribution,
+        r.subscores?.defense_presence,
+        r.subscores?.consistency,
+        r.subscores?.penalty_discipline,
+        (r.pros || []).map((p) => p.label || '').filter(Boolean).join('; '),
+        (r.cons || []).map((c) => c.label || '').filter(Boolean).join('; '),
+        r.model_version,
+        r.updated_at || '',
+      ]);
+      if (!await downloadCsv(`${eventKey}_team_ratings.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      setStatusText(`Exported ${rows.length} team ratings.`);
+    } catch (error) {
+      setStatusText('');
+      setErrorText(error instanceof Error ? error.message : 'The file could not be exported. Please try again.');
     }
-    const rows = rankings.map((row) => {
-      const values: unknown[] = [];
-      for (const h of headers) {
-        if (h.startsWith('record.')) {
-          const subKey = h.slice(7);
-          const rec = row.record as Record<string, unknown> | undefined;
-          values.push(rec?.[subKey] ?? '');
-        } else {
-          const v = row[h];
-          values.push(v != null && typeof v !== 'object' ? v : '');
+  }
+
+  async function exportSchedule() {
+    try {
+      if (!schedule?.length) return;
+      const headers = [
+        'Match Key', 'Display Name', 'Comp Level', 'Set', 'Match',
+        'Red 1', 'Red 2', 'Red 3', 'Blue 1', 'Blue 2', 'Blue 3',
+        'Red Score', 'Blue Score', 'Winner', 'Completed',
+      ];
+      const rows = schedule.map((m) => [
+        m.match_key,
+        m.display_name || '',
+        m.comp_level,
+        m.set_number,
+        m.match_number,
+        m.red?.[0]?.team_key || '',
+        m.red?.[1]?.team_key || '',
+        m.red?.[2]?.team_key || '',
+        m.blue?.[0]?.team_key || '',
+        m.blue?.[1]?.team_key || '',
+        m.blue?.[2]?.team_key || '',
+        m.red_score ?? '',
+        m.blue_score ?? '',
+        m.winner_alliance || '',
+        m.is_completed ? 'Yes' : 'No',
+      ]);
+      if (!await downloadCsv(`${eventKey}_match_schedule.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      setStatusText(`Exported ${rows.length} match${rows.length === 1 ? '' : 'es'}.`);
+    } catch (error) {
+      setStatusText('');
+      setErrorText(error instanceof Error ? error.message : 'The file could not be exported. Please try again.');
+    }
+  }
+
+  async function exportRankings() {
+    try {
+      if (!rankings?.length) return;
+      // TBA rankings format: each row has team_key, rank, record, etc.
+      const firstRow = rankings[0];
+      const headers = Object.keys(firstRow).filter(
+        (k) => typeof firstRow[k] !== 'object' || firstRow[k] == null,
+      );
+      // Handle nested record
+      const record = firstRow.record as Record<string, unknown> | undefined;
+      if (record) {
+        for (const k of Object.keys(record)) {
+          headers.push(`record.${k}`);
         }
       }
-      return values;
-    });
-    downloadCsv(`${eventKey}_rankings.csv`, headers, rows);
-    setStatusText(`Exported ${rows.length} rankings.`);
+      const rows = rankings.map((row) => {
+        const values: unknown[] = [];
+        for (const h of headers) {
+          if (h.startsWith('record.')) {
+            const subKey = h.slice(7);
+            const rec = row.record as Record<string, unknown> | undefined;
+            values.push(rec?.[subKey] ?? '');
+          } else {
+            const v = row[h];
+            values.push(v != null && typeof v !== 'object' ? v : '');
+          }
+        }
+        return values;
+      });
+      if (!await downloadCsv(`${eventKey}_rankings.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      setStatusText(`Exported ${rows.length} rankings.`);
+    } catch (error) {
+      setStatusText('');
+      setErrorText(error instanceof Error ? error.message : 'The file could not be exported. Please try again.');
+    }
   }
 
   async function exportRawScoutingEntries() {
@@ -289,9 +316,10 @@ export function ExportPage() {
           ...sortedFormKeys.map((key) => form[key] ?? ''),
         ];
       });
-      downloadCsv(`${eventKey}_scouting_entries.csv`, headers, rows);
+      if (!await downloadCsv(`${eventKey}_scouting_entries.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} raw scouting entries.`);
     } catch (error) {
+      setStatusText('');
       setErrorText(error instanceof Error ? error.message : 'Failed to export scouting entries.');
     }
   }
@@ -322,17 +350,16 @@ export function ExportPage() {
           return Array.isArray(value) ? value.join('; ') : value ?? '';
         }),
       ]);
-      downloadCsv(`${eventKey}_pit_scouting.csv`, headers, rows);
+      if (!await downloadCsv(`${eventKey}_pit_scouting.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} pit scouting entries.`);
     } catch (error) {
+      setStatusText('');
       setErrorText(error instanceof Error ? error.message : 'Failed to export pit scouting data.');
     }
   }
 
   const surfaceGroupId = 'data-export';
   const hasAnyData = (ratings?.length ?? 0) > 0 || (schedule?.length ?? 0) > 0 || (rankings?.length ?? 0) > 0;
-
-  if (isMobile) return <Navigate to="/events" replace />;
 
   return (
     <>
@@ -371,7 +398,7 @@ export function ExportPage() {
               {/* Team Ratings */}
               <ExportCard
                 title="Team Ratings"
-                description={`${ratings?.length ?? 0} teams with rating data, subscores, and scouting signals.`}
+                description={`${ratings?.length ?? 0} team${ratings?.length === 1 ? '' : 's'} with rating data, subscores, and scouting signals.`}
                 available={Boolean(ratings?.length)}
                 onExport={exportRatings}
                 icon="[#]"
@@ -380,7 +407,7 @@ export function ExportPage() {
               {/* Match Schedule */}
               <ExportCard
                 title="Match Schedule"
-                description={`${schedule?.length ?? 0} matches with scores, alliances, and results.`}
+                description={`${schedule?.length ?? 0} match${schedule?.length === 1 ? '' : 'es'} with scores, alliances, and results.`}
                 available={Boolean(schedule?.length)}
                 onExport={exportSchedule}
                 icon="[L]"
@@ -398,8 +425,12 @@ export function ExportPage() {
               {/* Raw scouting entries */}
               <ExportCard
                 title="Scouting Entries (raw)"
-                description="Every scouting entry across all rooms, with all form metrics flattened into columns."
-                available={Boolean(eventKey)}
+                description={
+                  workspace
+                    ? "Every entry from your team's scouting rooms, with all form metrics flattened into columns."
+                    : 'Your team\'s own scouting data. Join your team on My Team to export it.'
+                }
+                available={Boolean(eventKey && workspace)}
                 onExport={() => { void exportRawScoutingEntries(); }}
                 icon="[S]"
               />
@@ -407,8 +438,12 @@ export function ExportPage() {
               {/* Pit scouting */}
               <ExportCard
                 title="Pit Scouting"
-                description="Pit form answers per team (drivetrain, capabilities, photos count)."
-                available={Boolean(eventKey)}
+                description={
+                  workspace
+                    ? "Your team's pit form answers per robot (drivetrain, capabilities, photos count)."
+                    : 'Your team\'s own pit notes. Join your team on My Team to export them.'
+                }
+                available={Boolean(eventKey && workspace)}
                 onExport={() => { void exportPitScoutingCsv(); }}
                 icon="[P]"
               />

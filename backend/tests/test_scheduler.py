@@ -14,17 +14,11 @@ class SchedulerContextTests(unittest.TestCase):
         self._settings_snapshot = {
             "app_env": scheduler.settings.app_env,
             "strict_startup_env_validation": scheduler.settings.strict_startup_env_validation,
-            "storage_cleanup_enabled": scheduler.settings.storage_cleanup_enabled,
-            "storage_cleanup_post_analysis": scheduler.settings.storage_cleanup_post_analysis,
             "intel_snapshot_refresh_enabled": scheduler.settings.intel_snapshot_refresh_enabled,
-            "freshness_recovery_enabled": scheduler.settings.freshness_recovery_enabled,
             "climb_integrity_audit_enabled": scheduler.settings.climb_integrity_audit_enabled,
             "climb_official_backfill_enabled": scheduler.settings.climb_official_backfill_enabled,
             "automation_regional_enabled": scheduler.settings.automation_regional_enabled,
             "automation_regional_halfday_scheduler_enabled": scheduler.settings.automation_regional_halfday_scheduler_enabled,
-            "live_analysis_enabled": scheduler.settings.live_analysis_enabled,
-            "live_analysis_regional_auto_enabled": scheduler.settings.live_analysis_regional_auto_enabled,
-            "analysis_low_quality_reprocess_enabled": scheduler.settings.analysis_low_quality_reprocess_enabled,
             "ops_smoke_check_enabled": scheduler.settings.ops_smoke_check_enabled,
             "scouting_rooms_cleanup_enabled": scheduler.settings.scouting_rooms_cleanup_enabled,
             "ml_auto_scout_training_export_enabled": scheduler.settings.ml_auto_scout_training_export_enabled,
@@ -66,16 +60,6 @@ class SchedulerContextTests(unittest.TestCase):
         state = scheduler._JOB_RUNTIME_STATE_FALLBACK.get("demo") or {}
         self.assertEqual(state.get("last_status"), "ok")
         self.assertEqual(state.get("last_details"), {"processed": 3})
-
-    def test_cleanup_job_returns_early_when_lock_is_held(self):
-        with patch.object(
-            scheduler,
-            "_acquire_distributed_job_lock",
-            return_value=(None, "scheduler:lock:cleanup_old_media", None),
-        ), patch.object(scheduler, "cleanup_old_media") as cleanup:
-            scheduler._scheduled_cleanup_old_media()
-
-        cleanup.assert_not_called()
 
     def test_auto_scout_export_job_calls_export_service(self):
         @contextmanager
@@ -159,19 +143,13 @@ class SchedulerContextTests(unittest.TestCase):
     def test_start_scheduler_raises_on_registration_failure_in_production_like_env(self):
         scheduler.settings.app_env = "production"
         scheduler.settings.strict_startup_env_validation = False
-        scheduler.settings.storage_cleanup_enabled = True
-        scheduler.settings.storage_cleanup_post_analysis = True
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.freshness_recovery_enabled = False
         scheduler.settings.climb_integrity_audit_enabled = False
         scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = False
         scheduler.settings.automation_regional_halfday_scheduler_enabled = False
-        scheduler.settings.live_analysis_enabled = False
-        scheduler.settings.live_analysis_regional_auto_enabled = False
-        scheduler.settings.analysis_low_quality_reprocess_enabled = False
         scheduler.settings.ops_smoke_check_enabled = False
-        scheduler.settings.scouting_rooms_cleanup_enabled = False
+        scheduler.settings.scouting_rooms_cleanup_enabled = True
         scheduler.settings.ml_auto_scout_training_export_enabled = False
 
         fake_scheduler = SimpleNamespace(
@@ -187,19 +165,13 @@ class SchedulerContextTests(unittest.TestCase):
     def test_start_scheduler_warns_but_does_not_raise_in_development(self):
         scheduler.settings.app_env = "development"
         scheduler.settings.strict_startup_env_validation = False
-        scheduler.settings.storage_cleanup_enabled = True
-        scheduler.settings.storage_cleanup_post_analysis = True
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.freshness_recovery_enabled = False
         scheduler.settings.climb_integrity_audit_enabled = False
         scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = False
         scheduler.settings.automation_regional_halfday_scheduler_enabled = False
-        scheduler.settings.live_analysis_enabled = False
-        scheduler.settings.live_analysis_regional_auto_enabled = False
-        scheduler.settings.analysis_low_quality_reprocess_enabled = False
         scheduler.settings.ops_smoke_check_enabled = False
-        scheduler.settings.scouting_rooms_cleanup_enabled = False
+        scheduler.settings.scouting_rooms_cleanup_enabled = True
         scheduler.settings.ml_auto_scout_training_export_enabled = False
 
         fake_scheduler = SimpleNamespace(

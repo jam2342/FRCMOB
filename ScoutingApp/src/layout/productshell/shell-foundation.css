@@ -2789,6 +2789,9 @@ select.center-input option,
 .home-fotmob-right {
   min-width: 0;
   display: grid;
+  /* Without an explicit track the implicit column grew to its widest child:
+     on a phone, a match day made Home 452px wide on a 390px screen. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   align-content: start;
 }
@@ -3381,6 +3384,7 @@ select.center-input option,
 
 .home-fotmob-feed {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);  /* see .home-fotmob-center */
   gap: 12px;
 }
 
@@ -3417,6 +3421,7 @@ select.center-input option,
 
 .home-match-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -5350,6 +5355,7 @@ select.center-input option,
 
 .page-hero > :first-child,
 .center-team-hero > :first-child {
+  max-width: 100%;
   flex: none;
   min-width: 0;
 }

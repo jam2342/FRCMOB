@@ -71,6 +71,7 @@ class ShiftPlayEngineTests(unittest.TestCase):
         result = analyze_robot_shift_play(
             team_key="frc_atk", alliance="red", points_by_team=points,
             alliance_by_team=alliances, schedule=self.schedule,
+            shift1_active_alliance="red",
         )
         self.assertGreaterEqual(result.offense_level_1_5, 4)
         self.assertLessEqual(result.defense_level_1_5, 2)
@@ -88,6 +89,7 @@ class ShiftPlayEngineTests(unittest.TestCase):
         result = analyze_robot_shift_play(
             team_key="frc_def", alliance="red", points_by_team=points,
             alliance_by_team=alliances, schedule=self.schedule,
+            shift1_active_alliance="red",
         )
         self.assertGreaterEqual(result.defense_level_1_5, 3)
         self.assertTrue(result.defense_assessable)
@@ -101,6 +103,7 @@ class ShiftPlayEngineTests(unittest.TestCase):
         result = analyze_robot_shift_play(
             team_key="frc_idle", alliance="red", points_by_team=points,
             alliance_by_team=alliances, schedule=self.schedule,
+            shift1_active_alliance="red",
         )
         self.assertLessEqual(result.offense_level_1_5, 2)
         self.assertLessEqual(result.defense_level_1_5, 2)
@@ -123,6 +126,7 @@ class ShiftPlayEngineTests(unittest.TestCase):
         result = analyze_robot_shift_play(
             team_key="frc_def", alliance="red", points_by_team=points,
             alliance_by_team=alliances, schedule=self.schedule,
+            shift1_active_alliance="red",
         )
         self.assertGreater(result.metrics["disruption_0_1"], 0.5)
 
@@ -132,7 +136,46 @@ class ShiftPlayEngineTests(unittest.TestCase):
         result = analyze_robot_shift_play(
             team_key="frc_atk", alliance="red", points_by_team=points,
             alliance_by_team={"frc_atk": "red"}, schedule=self.schedule,
+            shift1_active_alliance="red",
         )
+        self.assertFalse(result.defense_assessable)
+        self.assertEqual(result.defense_confidence, 0.0)
+
+    def test_dwell_is_split_at_every_shift_boundary(self):
+        points = {
+            "frc_red": [
+                TrackPoint(54.9, 14.0, 4.0, "red_alliance_scoring_zone", 0.0),
+                TrackPoint(56.9, 14.0, 4.0, "red_alliance_scoring_zone", 0.0),
+            ]
+        }
+        result = analyze_robot_shift_play(
+            team_key="frc_red", alliance="red", points_by_team=points,
+            alliance_by_team={"frc_red": "red"}, schedule=self.schedule,
+            shift1_active_alliance="red",
+        )
+        shift1 = next(row for row in result.shift_breakdown if row["key"] == "shift_1")
+        shift2 = next(row for row in result.shift_breakdown if row["key"] == "shift_2")
+        self.assertEqual(shift1["tracked_sec"], 0.1)
+        self.assertEqual(shift2["tracked_sec"], 1.9)
+
+    def test_defense_requires_simultaneous_opponent_coverage(self):
+        points = {
+            "frc_red": [
+                TrackPoint(60.0, 2.0, 4.0, "blue_alliance_scoring_zone", 0.0),
+                TrackPoint(61.0, 2.0, 4.0, "blue_alliance_scoring_zone", 0.0),
+            ],
+            "frc_blue": [
+                TrackPoint(1.0, 2.0, 4.0, "blue_alliance_scoring_zone", 0.0),
+                TrackPoint(2.0, 2.0, 4.0, "blue_alliance_scoring_zone", 0.0),
+            ],
+        }
+        result = analyze_robot_shift_play(
+            team_key="frc_red", alliance="red", points_by_team=points,
+            alliance_by_team={"frc_red": "red", "frc_blue": "blue"}, schedule=self.schedule,
+            shift1_active_alliance="red",
+        )
+        self.assertTrue(result.coverage["opponent_tracks_available"])
+        self.assertEqual(result.coverage["simultaneous_opponent_sec"], 0.0)
         self.assertFalse(result.defense_assessable)
         self.assertEqual(result.defense_confidence, 0.0)
 
@@ -143,10 +186,41 @@ class ShiftPlayEngineTests(unittest.TestCase):
             "frc_blue": series([(55, 80, "blue_alliance_scoring_zone", 0.8)]),
         }
         alliances = {"frc_atk": "red", "frc_def": "red", "frc_blue": "blue"}
-        results = analyze_match_shift_play(points_by_team=points, alliance_by_team=alliances, schedule=self.schedule)
+        results = analyze_match_shift_play(
+            points_by_team=points,
+            alliance_by_team=alliances,
+            schedule=self.schedule,
+            shift1_active_alliance="red",
+        )
         self.assertEqual(set(results), {"frc_atk", "frc_def", "frc_blue"})
         self.assertIn("offense", results["frc_atk"])
         self.assertIn("heatmaps", results["frc_atk"])
+
+    def test_blue_first_resolves_alternating_windows(self):
+        result = analyze_robot_shift_play(
+            team_key="frc_blue",
+            alliance="blue",
+            points_by_team={
+                "frc_blue": series(
+                    [(30, 55, "blue_alliance_scoring_zone", 1.0)]
+                )
+            },
+            alliance_by_team={"frc_blue": "blue"},
+            schedule=self.schedule,
+            shift1_active_alliance="blue",
+        )
+        shift1 = next(row for row in result.shift_breakdown if row["key"] == "shift_1")
+        shift2 = next(row for row in result.shift_breakdown if row["key"] == "shift_2")
+        self.assertEqual(shift1["active"], "blue")
+        self.assertEqual(shift2["active"], "red")
+
+    def test_dynamic_schedule_refuses_unknown_shift_order(self):
+        with self.assertRaisesRegex(ValueError, "shift1_active_alliance"):
+            analyze_match_shift_play(
+                points_by_team={},
+                alliance_by_team={},
+                schedule=self.schedule,
+            )
 
 
 if __name__ == "__main__":

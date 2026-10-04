@@ -6,6 +6,7 @@
 // is unit-tested; the OpenCV.js flow estimate runs only in a real browser (WASM).
 
 import { carryPose, type Mat3 } from './homography';
+import { estimateInterframeMotionCore, grayscaleFromRgba, type GrayImage } from './opticalFlowCore';
 
 // ── pure carry core (no OpenCV; unit-tested) ────────────────────────────
 // Mirror of on_device_cv.StabilizedPose minus the cv2 flow estimate. Feed it the
@@ -193,12 +194,42 @@ export type CvPoseResolver = {
   dispose: () => void;
 };
 
+export function registerCalibrationFrame(
+  baseHomography: Mat3,
+  reference: GrayImage,
+  current: GrayImage,
+): Mat3 {
+  if (reference.width !== current.width || reference.height !== current.height) {
+    throw new Error(
+      `Recording frame is ${current.width}×${current.height}, but calibration was ` +
+      `${reference.width}×${reference.height}. Please re-calibrate for this camera size.`,
+    );
+  }
+  const motion = estimateInterframeMotionCore(reference, current);
+  if (!motion) {
+    throw new Error('Could not register the recording view to the calibration frame. Please re-calibrate.');
+  }
+  return carryPose(baseHomography, motion);
+}
+
+export function grayFromCanvas(canvas: HTMLCanvasElement): GrayImage {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not read the recording frame. Please re-calibrate.');
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return grayscaleFromRgba(data, canvas.width, canvas.height);
+}
+
 // Build a per-frame pose resolver for MatchRecorder backed by OpenCV.js optical flow.
 // The first frame returns the base pose; each later frame carries it by the measured
 // inter-frame motion (or holds on flow loss). Manages the prev-grayscale Mat lifecycle.
-export function createCvPoseResolver(cv: OpenCvLike, baseHomography: Mat3): CvPoseResolver {
+export function createCvPoseResolver(
+  cv: OpenCvLike,
+  baseHomography: Mat3,
+  calibrationFrame?: GrayImage,
+): CvPoseResolver {
   const stab = new StabilizedPose(baseHomography);
   let prevGray: CvMat | null = null;
+  let reference = calibrationFrame;
 
   const toGray = (canvas: HTMLCanvasElement): CvMat | null => {
     const ctx = canvas.getContext('2d');
@@ -218,11 +249,15 @@ export function createCvPoseResolver(cv: OpenCvLike, baseHomography: Mat3): CvPo
 
   return {
     resolve(canvas) {
+      if (reference) {
+        stab.homography = registerCalibrationFrame(stab.homography, reference, grayFromCanvas(canvas));
+        reference = undefined;
+      }
       const gray = toGray(canvas);
       if (!gray) return stab.homography;
       const previous = prevGray;
       if (previous) {
-        let motion: Mat3 | null = null;
+        let motion: Mat3 | null;
         try {
           motion = estimateInterframeMotion(cv, previous, gray);
         } catch {
@@ -242,3 +277,54 @@ export function createCvPoseResolver(cv: OpenCvLike, baseHomography: Mat3): CvPo
     },
   };
 }
+
+// ── OpenCV-free pose resolver ───────────────────────────────────────────────────
+// Same contract as createCvPoseResolver, backed by opticalFlowCore instead of the 7.3 MB
+// emscripten build. Nothing to load, so there is no async warm-up and no main-thread
+// compile stall for the caller to work around.
+
+export function createLocalPoseResolver(
+  baseHomography: Mat3,
+  calibrationFrame?: GrayImage,
+): CvPoseResolver {
+  const stab = new StabilizedPose(baseHomography);
+  let prevGray: GrayImage | null = null;
+  let reference = calibrationFrame;
+
+  return {
+    resolve(canvas) {
+      const gray = grayFromCanvas(canvas);
+      if (reference) {
+        stab.homography = registerCalibrationFrame(stab.homography, reference, gray);
+        reference = undefined;
+      }
+      if (prevGray) {
+        let motion: Mat3 | null;
+        try {
+          motion = estimateInterframeMotionCore(prevGray, gray);
+        } catch {
+          motion = null;
+        }
+        stab.update(motion); // null → holds pose, bumps lostFrames
+      }
+      prevGray = gray;
+      return stab.homography;
+    },
+    lostFrames: () => stab.lostFrames,
+    dispose() {
+      prevGray = null;
+    },
+  };
+}
+
+// Which implementation the capture path uses. The local core is the default now that it is
+// validated: on real Einstein frames it recovers known motion to 0.003 px and holds a
+// static field point to 0.1 mm across 20 carried frames with no flow losses, at 46 ms a
+// frame. OpenCV stays reachable for one release as an escape hatch --
+// VITE_ONDEVICE_LOCAL_OPTICAL_FLOW=false -- because the one case no footage here could
+// exercise is real handheld motion, with rotation, parallax and moving robots.
+//
+// Because the import is dynamic and now never reached, no scout downloads the 7.3 MB
+// build any more even though it is still in the tree.
+export const USE_LOCAL_OPTICAL_FLOW =
+  String(import.meta.env.VITE_ONDEVICE_LOCAL_OPTICAL_FLOW || 'true').toLowerCase() !== 'false';

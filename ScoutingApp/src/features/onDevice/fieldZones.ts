@@ -1,9 +1,11 @@
+import { SEASON } from '../../config/season';
+
 // 2026 REBUILT field zones + point-in-polygon classify — the in-browser mirror of the
 // backend game_config zones + classify_point. Hardcoded for the current season so zone
-// tagging works fully offline; should come from a game-config endpoint when generalized.
+// tagging works fully offline; config/season.test.ts fails if these drift from the template.
 
-export const FIELD_LENGTH_M = 16.541;
-export const FIELD_WIDTH_M = 8.0693;
+export const FIELD_LENGTH_M = SEASON.fieldLengthM;
+export const FIELD_WIDTH_M = SEASON.fieldWidthM;
 
 export type Zone = { key: string; kind: string; polygon: [number, number][] };
 

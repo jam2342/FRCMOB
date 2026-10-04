@@ -173,9 +173,9 @@ def rebuild_synergy_pair_feature_snapshots(
     if not event_keys:
         return {"rows_written": 0, "skipped_no_prior": 0}
 
-    from app.services.ml.shadow import _latest_year, _split_tag_for_year
+    from app.services.ml.shadow import holdout_event_keys, split_tag_for_event
 
-    latest_year = _latest_year(year_map)
+    holdout_keys = holdout_event_keys(db, event_keys)
     rows_written = 0
     skipped_no_prior = 0
 
@@ -238,7 +238,7 @@ def rebuild_synergy_pair_feature_snapshots(
                 event_year=season,
             )
 
-            split_tag = _split_tag_for_year(year_map.get(event_key), latest_year)
+            split_tag = split_tag_for_event(event_key, holdout_keys)
             snapshot_key = f"{FEATURE_SCOPE_SYNERGY_PAIR}:{event_key}:{pair[0]}:{pair[1]}:{source_version}"
             db.merge(
                 models.MLFeatureSnapshot(

@@ -4,18 +4,10 @@
 
 !backend/
 !backend/**
-!worker/
-!worker/**
 
-# Exclude heavy and non-runtime backend artifacts.
-# Keep only tracked model artifacts under backend/media/models/.
-backend/media/*
-!backend/media/models/
-backend/media/models/*
-# Whitelist the currently-deployed detector(s). v2 is primary; v1 kept for
-# rollback. Bump these when versions change.
-!backend/media/models/frc_robot_detector_v2.pt
-!backend/media/models/frc_robot_detector_v1.pt
+# Exclude heavy and non-runtime backend artifacts. Runtime media (pit photos, ML
+# shadow models) lives in the backend_media volume, not the image.
+backend/media/
 backend/manual_videos/
 backend/*.pt
 backend/tests/
@@ -29,14 +21,3 @@ backend/venv/
 backend/.env
 backend/.env.*
 backend/*.log
-
-# Exclude worker local artifacts.
-worker/__pycache__/
-worker/.pytest_cache/
-worker/.ruff_cache/
-worker/.venv/
-worker/venv/
-worker/*.pt
-worker/.env
-worker/.env.*
-worker/*.log

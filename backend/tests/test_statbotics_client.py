@@ -45,3 +45,24 @@ class StatboticsClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StatboticsClientLoopTests(unittest.TestCase):
+    # Sync callers (ratings in the worker, scheduler threads) each run on a fresh loop;
+    # sharing one AsyncClient across loops failed with "Event loop is closed".
+    def test_each_loop_gets_its_own_client_and_run_sync_closes_it(self):
+        from app.services.clients import statbotics as client_module
+
+        seen = []
+
+        async def grab():
+            client = await client_module._get_client()
+            seen.append(client)
+            return client
+
+        first = client_module.run_sync(grab())
+        second = client_module.run_sync(grab())
+        self.assertIsNot(first, second)
+        self.assertTrue(first.is_closed)
+        self.assertTrue(second.is_closed)
+        self.assertEqual(len(client_module._CLIENTS), 0)

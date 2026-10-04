@@ -85,7 +85,7 @@ class TeamIntelUtilsTests(unittest.TestCase):
             )
         self.assertEqual(selected, fallback)
         self.assertEqual(len(fallbacks), 1)
-        self.assertTrue(any("temporarily using season-wide data" in message for message in warnings))
+        self.assertTrue(any("using season-wide data" in message for message in warnings))
 
     def test_breakdown_fallback_is_not_used_when_disabled(self):
         primary = {"matches_analyzed": 0, "averages": None, "season_scope": {"season_year": 2026}}
@@ -128,88 +128,77 @@ class TeamIntelUtilsTests(unittest.TestCase):
         self.assertIsInstance(subscores["defense_presence"], float)
         self.assertIsInstance(subscores["penalty_discipline"], float)
 
-    def test_analysis_enrichment_uses_rating_estimates_for_missing_averages(self):
-        preview = routes_teams._rating_preview(
-            _fake_rating_row(), source="event_rating", context_event_key="2026txhou"
+    def _empty_analysis(self):
+        keys = (
+            "fuel_scoring_rate",
+            "cycle_time_sec",
+            "auto_contribution",
+            "climb_success_prob",
+            "defensive_engagement_sec",
+            "reliability_score",
         )
-        preview["details"] = {
-            "raw_features": {
-                "bps_median": 0.74,
-                "auto_points_est": 5.8,
-                "climb_success": 0.62,
-                "defense_presence": 21.0,
-                "uptime": 0.81,
-            }
+        return {
+            "averages": {key: None for key in keys},
+            "metric_coverage": {key: {"observed_matches": 0} for key in keys},
+            "climb_sources": {"level_capability": {"matches_considered": 0}},
         }
-        analysis_payload = {
-            "averages": {
-                "fuel_scoring_rate": None,
-                "cycle_time_sec": None,
-                "auto_contribution": None,
-                "climb_success_prob": None,
-                "defensive_engagement_sec": None,
-                "reliability_score": None,
-            },
-            "metric_coverage": {
-                "fuel_scoring_rate": {"observed_matches": 0},
-                "cycle_time_sec": {"observed_matches": 0},
-                "auto_contribution": {"observed_matches": 0},
-                "climb_success_prob": {"observed_matches": 0},
-                "defensive_engagement_sec": {"observed_matches": 0},
-                "reliability_score": {"observed_matches": 0},
-            },
-        }
-        merged, fields = routes_teams._enrich_analysis_with_rating_estimates(
-            analysis_payload,
-            preview,
-        )
-        self.assertTrue(fields)
-        self.assertTrue(merged["estimated_averages"]["applied"])
-        self.assertTrue(all(metric in merged["averages"] for metric in fields))
-        self.assertAlmostEqual(float(merged["averages"]["fuel_scoring_rate"]), 44.4, places=3)
-        self.assertTrue(
-            all(
-                merged["metric_coverage"][metric].get("estimated_from_model")
-                for metric in fields
-            )
-        )
 
-    def test_analysis_enrichment_skips_estimates_without_observed_or_raw_signals(self):
-        analysis_payload = {
-            "averages": {
-                "fuel_scoring_rate": None,
-                "cycle_time_sec": None,
-                "auto_contribution": None,
-                "climb_success_prob": None,
-                "defensive_engagement_sec": None,
-                "reliability_score": None,
-            },
-            "metric_coverage": {
-                "fuel_scoring_rate": {"observed_matches": 0},
-                "cycle_time_sec": {"observed_matches": 0},
-            },
-        }
-        rating_payload = {
+    def _official_stats(self):
+        return {
             "available": True,
-            "source": "event_rating",
-            "model_version": "rating_v13_forgiving_scale",
-            "subscores": {
-                "throughput": 66.0,
-                "auto_contribution": 54.0,
-                "endgame": 51.0,
-                "defense_presence": 44.0,
-                "consistency": 68.0,
+            "matches": 71,
+            "copr_matches": 67,
+            "events": [{"event_key": "2026casj", "matches": 12, "copr": True}, {"event_key": "2026cur", "matches": 55, "copr": True}],
+            "fuel_per_match": 350.6,
+            "fuel_per_active_minute": 131.5,
+            "auto_points_per_match": 68.1,
+            "climb": {
+                "matches": 71,
+                "climbs": 0,
+                "rate": 0.0,
+                "level_capability": {"best_level": None, "best_level_label": "No Climbs", "matches_considered": 71},
             },
-            "details": {"raw_features": {}},
         }
 
-        merged, fields = routes_teams._enrich_analysis_with_rating_estimates(
-            analysis_payload,
-            rating_payload,
-        )
+    def test_official_stats_fill_fuel_auto_and_climb_but_never_invent_the_rest(self):
+        merged, fields = routes_teams._enrich_analysis_with_official_stats(self._empty_analysis(), self._official_stats())
+
+        self.assertEqual(fields, ["fuel_scoring_rate", "auto_contribution"])
+        self.assertEqual(merged["averages"]["fuel_scoring_rate"], 131.5)
+        self.assertEqual(merged["averages"]["auto_contribution"], 68.1)
+        self.assertEqual(merged["averages"]["climb_success_prob"], 0.0)
+        for key in ("cycle_time_sec", "defensive_engagement_sec", "reliability_score"):
+            self.assertIsNone(merged["averages"][key])
+        coverage = merged["metric_coverage"]
+        self.assertTrue(coverage["fuel_scoring_rate"]["estimated_from_model"])
+        self.assertEqual(coverage["fuel_scoring_rate"]["estimate_source"], "tba_copr")
+        self.assertIn("67 official matches at 2 events", coverage["fuel_scoring_rate"]["missing_reason"])
+        # The tower result is recorded per robot, so the climb is a record, not an estimate.
+        self.assertTrue(coverage["climb_success_prob"]["official_record"])
+        self.assertFalse(coverage["climb_success_prob"].get("estimated_from_model", False))
+        self.assertEqual(coverage["climb_success_prob"]["official_matches"], 71)
+        self.assertEqual(merged["climb_sources"]["level_capability"]["best_level_label"], "No Climbs")
+        self.assertEqual(merged["estimated_averages"], {"applied": True, "source": "official_tba", "fields": fields})
+
+    def test_observed_values_win_over_official_estimates(self):
+        analysis = self._empty_analysis()
+        analysis["averages"]["fuel_scoring_rate"] = 44.0
+        analysis["averages"]["climb_success_prob"] = 0.9
+        analysis["climb_sources"]["level_capability"] = {"matches_considered": 6, "best_level_label": "Level 2"}
+
+        merged, fields = routes_teams._enrich_analysis_with_official_stats(analysis, self._official_stats())
+
+        self.assertEqual(fields, ["auto_contribution"])
+        self.assertEqual(merged["averages"]["fuel_scoring_rate"], 44.0)
+        self.assertEqual(merged["averages"]["climb_success_prob"], 0.9)
+        self.assertEqual(merged["climb_sources"]["level_capability"]["best_level_label"], "Level 2")
+
+    def test_no_official_data_leaves_metrics_empty(self):
+        merged, fields = routes_teams._enrich_analysis_with_official_stats(self._empty_analysis(), {"available": False})
+
         self.assertEqual(fields, [])
         self.assertFalse(merged["estimated_averages"]["applied"])
-        self.assertIsNone(merged["averages"]["fuel_scoring_rate"])
+        self.assertTrue(all(value is None for value in merged["averages"].values()))
 
     def test_sparse_signal_rating_synthesis_uses_statbotics_and_analysis(self):
         analysis_payload = {
@@ -234,52 +223,43 @@ class TeamIntelUtilsTests(unittest.TestCase):
         self.assertIsInstance(synthesized["rating_0_100"], float)
         self.assertGreaterEqual(float(synthesized["confidence_0_1"]), 0.12)
 
-    def test_sparse_external_rating_does_not_inject_constant_metric_defaults(self):
-        analysis_payload = {
-            "averages": {
-                "fuel_scoring_rate": None,
-                "cycle_time_sec": None,
-                "auto_contribution": None,
-                "climb_success_prob": None,
-                "defensive_engagement_sec": None,
-                "reliability_score": None,
-            },
-            "metric_coverage": {
-                "fuel_scoring_rate": {"observed_matches": 0},
-            },
-        }
-        rating_payload = {
-            "available": True,
-            "source": "sparse_external_fallback",
-            "model_version": "rating_sparse_external_fallback_v1",
-            "subscores": {
-                "throughput": 65.2,
-                "auto_contribution": 32.0,
-                "endgame": 62.0,
-                "defense_presence": 56.0,
-                "consistency": 66.1,
-            },
-            "details": {
-                "fallback_model": {"active": True, "label": "sparse_external_fallback"},
-                "raw_features": {
-                    "bps_median": None,
-                    "auto_points_est": None,
-                    "climb_success": None,
-                    "defense_presence": None,
-                    "uptime": None,
-                    "statbotics_norm_epa": 1899.0,
-                },
-            },
-        }
+    def test_build_team_intel_payload_returns_official_stats_to_the_page(self):
+        class _FakeDB:
+            def get(self, *_args, **_kwargs):
+                return None
 
-        merged, fields = routes_teams._enrich_analysis_with_rating_estimates(
-            analysis_payload,
-            rating_payload,
-        )
-        self.assertEqual(fields, [])
-        self.assertFalse(merged["estimated_averages"]["applied"])
-        self.assertIsNone(merged["averages"]["fuel_scoring_rate"])
-        self.assertIsNone(merged["averages"]["cycle_time_sec"])
+        breakdown = {**self._empty_analysis(), "team": {"team_key": "frc254"}, "matches_analyzed": 0}
+        fake_rating = {"available": False, "source": "none", "context_event_key": None}
+        with patch("app.api.routes_teams._team_registered_events", return_value=(2026, [], "none")), patch(
+            "app.api.routes_teams._load_team_breakdown_with_fallback",
+            return_value=(breakdown, [], []),
+        ), patch(
+            "app.api.routes_teams._resolve_team_rating_context",
+            return_value=(fake_rating, [], []),
+        ), patch(
+            "app.api.routes_teams.official_team_stats",
+            return_value=self._official_stats(),
+        ), patch(
+            "app.api.routes_teams._synthesize_rating_from_sparse_signals",
+            return_value=None,
+        ):
+            payload = asyncio.run(
+                routes_teams._build_team_intel_payload(
+                    db=_FakeDB(),  # type: ignore[arg-type]
+                    team_key="frc254",
+                    event_key="2026cur",
+                    preferred_year=2026,
+                    fallback_year=2025,
+                    include_tba=False,
+                    include_statbotics=False,
+                    allow_season_fallback=True,
+                    auto_heal_ratings=False,
+                )
+            )
+        analysis = payload["analysis"]
+        self.assertEqual(analysis["official_stats"]["fuel_per_match"], 350.6)
+        self.assertEqual(analysis["averages"]["fuel_scoring_rate"], 131.5)
+        self.assertTrue(analysis["metric_coverage"]["climb_success_prob"]["official_record"])
 
     def test_build_team_intel_payload_falls_back_when_team_not_in_local_db(self):
         class _FakeDB:
@@ -304,8 +284,8 @@ class TeamIntelUtilsTests(unittest.TestCase):
             "app.api.routes_teams._resolve_team_rating_context",
             return_value=(fake_rating, [], []),
         ), patch(
-            "app.api.routes_teams._enrich_analysis_with_rating_estimates",
-            return_value=(fake_breakdown, []),
+            "app.api.routes_teams.official_team_stats",
+            return_value={"available": False},
         ), patch(
             "app.api.routes_teams._synthesize_rating_from_sparse_signals",
             return_value=None,

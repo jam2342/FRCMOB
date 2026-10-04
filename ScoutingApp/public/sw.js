@@ -4,19 +4,25 @@
  * FRCMOB Service Worker
  *
  * Strategy:
- *  - App shell (HTML, JS, CSS, images): Cache-first, falling back to network.
- *  - API GET requests: Network-first, falling back to cache (stale data offline).
- *  - API mutations (POST/PUT/DELETE): Always network; failures are handled
- *    by the in-app offline queue (offlineQueue.ts).
- *
- * The service worker does NOT attempt to queue mutations itself — that is
- * handled at the application layer with full retry + idempotency support.
+ *  - Navigations (HTML): network first, cached copy when offline.
+ *  - Static assets (hashed JS/CSS, fonts, images) and on-device models: cache first.
+ *  - API and websocket traffic is never touched here; the app's own cache layer
+ *    (memory + localStorage) and offline queue (offlineQueue.ts) handle it.
  */
 
-const CACHE_NAME = "frcmob-v5";
+// v7: the recorder page is cross-origin isolated, and a worker it starts refuses any
+// script without a COEP header -- assets cached before /assets/* carried one would hang
+// the detector's thread pool, so they are dropped.
+const CACHE_NAME = "frcmob-v10";
 
-/** Static asset extensions that should be aggressively cached. */
-const STATIC_EXTENSIONS = /\.(js|css|woff2?|ttf|eot|svg|png|jpe?g|gif|ico|webp|json)$/i;
+/** Static asset extensions that should be aggressively cached. `wasm`/`mjs` are the
+ *  detector's runtime (onnxruntime-web, ~27 MB): without them in the cache the model
+ *  loads but nothing can run it, and recording exists for venues without signal. */
+const STATIC_EXTENSIONS = /\.(js|mjs|wasm|css|woff2?|ttf|eot|svg|png|jpe?g|gif|ico|webp|json)$/i;
+/** The on-device detector. Recording exists for venues without signal, so the model
+ *  must come from the cache once it has been loaded online. Model files are named by
+ *  version, so a cached copy never goes stale. */
+const MODEL_EXTENSIONS = /\/models\/[^/]+\.onnx$/i;
 
 /** Paths that should never be cached by the service worker. */
 const NEVER_CACHE = /\/(api|ws)\//;
@@ -24,9 +30,9 @@ const DEV_RUNTIME_PATHS = /^(\/@vite\/|\/src\/|\/node_modules\/|\/@fs\/|\/__vite
 
 // ────────────────────────────────────────────────────────────────
 
-function safeCachePut(request, response) {
-  caches
-    .open(CACHE_NAME)
+function safeCachePut(request, response, cacheName = CACHE_NAME) {
+  return caches
+    .open(cacheName)
     .then((cache) => cache.put(request, response))
     .catch(() => {
       // Ignore cache write failures (unsupported schemes, quota, private mode).
@@ -34,17 +40,42 @@ function safeCachePut(request, response) {
 }
 
 self.addEventListener("install", (event) => {
-  // Activate immediately — don't wait for old clients to close.
-  self.skipWaiting();
+  // Install the two entry documents and their immediate JS/CSS before replacing
+  // the previous worker. If any critical fetch fails, the old worker stays active.
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const assets = new Set([
+      "/", "/record.html", "/manifest.json", "/Heading.png", "/Heading.webp",
+      "/fonts/ibm-plex-sans-latin.woff2", "/fonts/ibm-plex-sans-latin-ext.woff2",
+    ]);
+    for (const path of ["/", "/record.html"]) {
+      const response = await fetch(path, { cache: "reload" });
+      if (!response.ok) throw new Error(`Offline shell ${path}: ${response.status}`);
+      const html = await response.clone().text();
+      for (const match of html.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)) assets.add(match[1]);
+      await cache.put(path, response);
+    }
+    for (const path of assets) {
+      if (path === "/" || path === "/record.html") continue;
+      const response = await fetch(path, { cache: "reload" });
+      if (!response.ok) throw new Error(`Offline shell ${path}: ${response.status}`);
+      await cache.put(path, response);
+    }
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
   // Claim all open tabs so the SW controls them without a reload.
   event.waitUntil(
     caches.keys().then((names) => {
+      // Keep the previous asset cache for tabs still running its hashed JS.
+      // Saved API responses live in a separate cache and are never touched here.
+      const assetCaches = names.filter((n) => /^frcmob-v\d+$/.test(n)).sort((a, b) => Number(b.slice(8)) - Number(a.slice(8)));
+      const keep = new Set([CACHE_NAME, ...assetCaches.slice(0, 2)]);
       return Promise.all(
-        names
-          .filter((n) => n !== CACHE_NAME)
+        assetCaches
+          .filter((n) => !keep.has(n))
           .map((n) => caches.delete(n)),
       ).then(() => self.clients.claim());
     }),
@@ -76,24 +107,33 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const clone = response.clone();
-          safeCachePut(request, clone);
+          if (response.status >= 500) throw new Error(`Navigation failed: ${response.status}`);
+          if (response.ok) {
+            const clone = response.clone();
+            event.waitUntil(safeCachePut(request, clone));
+          }
           return response;
         })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+        .catch(async () => {
+          const current = await caches.open(CACHE_NAME);
+          // Recorder navigations must keep their COOP/COEP document, including
+          // when an unseen query string misses the exact cached request.
+          const shell = url.pathname === "/record.html" ? "/record.html" : "/";
+          return (await current.match(request)) || (await current.match(shell)) || caches.match(shell);
+        })
     );
     return;
   }
 
-  // Static assets: cache-first (they have content hashes in filenames).
-  if (STATIC_EXTENSIONS.test(url.pathname)) {
+  // Static assets and models: cache-first (content-hashed or versioned names).
+  if (STATIC_EXTENSIONS.test(url.pathname) || MODEL_EXTENSIONS.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
           if (response.ok) {
             const clone = response.clone();
-            safeCachePut(request, clone);
+            event.waitUntil(safeCachePut(request, clone, MODEL_EXTENSIONS.test(url.pathname) || url.pathname.endsWith(".wasm") ? "frcmob-offline-models-v1" : CACHE_NAME));
           }
           return response;
         });

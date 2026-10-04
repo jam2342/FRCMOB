@@ -147,3 +147,49 @@ controls lost that a direct check found present on three consecutive loads.
 about 200 characters on every route and masks an empty page, and it reloads up
 to three times below 400 characters. It cannot rescue a backend that is simply
 saturated.
+
+## Offline sync recovery
+
+Build and serve the production app, then run the local fixture check:
+
+```sh
+npm run build
+npm run preview -- --host 127.0.0.1 --port 4179 --strictPort
+# In a second terminal:
+node e2e/validate-offline-sync.mjs
+```
+
+The check uses installed Chrome and accepts only a localhost preview URL
+(`OFFLINE_TEST_URL` overrides port 4179). It mocks backend and analytics requests;
+no scouting data is sent to a real server. It verifies a rejected pit edit survives
+reload, exports the original notes without authorization headers, checks phone
+width, prepares the recorder files, and reopens the recorder offline with a new
+query string while preserving cross-origin isolation. Screenshots are written to
+`/tmp/frcmob-offline-recovery.png` and `/tmp/frcmob-offline-recorder.png`.
+
+This does not measure detector accuracy or replace a full-match test on a physical
+phone. Rejected edits remain on the device for manual recovery; automatic replay
+cannot safely resolve conflicts with a teammate's newer data.
+
+For per-recording status and recovery exports, run `node e2e/validate-recording-sync.mjs`
+against the same production preview. It verifies saved tracks survive reload and
+export without credentials, with a workspace reminder and no phone overflow.
+
+## Robot identification flow
+
+With a dev server on port 4180, run `node e2e/validate-identity-flow.mjs`.
+`IDENTITY_TEST_URL` can select another localhost dev server. The fixture mounts
+the actual identification component with 24 synthetic paths and never contacts
+a backend. It verifies longest-first ordering, point-weighted progress, preserved
+assignments under filters, and phone/desktop overflow. It does not judge identity
+accuracy or detector recall. Screenshots go to `/tmp/frcmob-identify-{phone,desktop}.png`.
+
+## Native app foundation
+
+Against a local production preview on port 4179, run
+`node e2e/validate-native-shell.mjs` (`NATIVE_TEST_URL` can select another localhost
+preview). It mounts the real app with a mocked Capacitor bridge, intercepts all
+external API calls, and checks native recovery sharing, endpoint selection,
+external links, app links, Android Back, bundled-asset readiness, and no recorder
+document redirect or service worker. It does not test a native WebView. Build and
+release instructions are in `../../docs/NATIVE_APP.md`.

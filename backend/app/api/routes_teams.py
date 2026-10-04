@@ -26,7 +26,6 @@ from app.core.config import settings
 from app.core.security import sanitize_external_error
 from app.db import models
 from app.services.auto_scout.scouting import summarize_team_auto_scout_profile
-from app.services.calibration import fuel_rate as fuel_rate_calibration
 from app.services.clients import statbotics as statbotics_client
 from app.services.cache import get_async_cache
 from app.services.intel.helpers import (
@@ -36,6 +35,7 @@ from app.services.intel.helpers import (
     _team_intel_cache_token as _intel_team_cache_token,
 )
 from app.services.ratings.model import calibrate_public_rating_scale, recompute_event_ratings
+from app.services.scoring.official_team_stats import official_team_stats
 from app.services.scouting_rooms.scope import (
     active_game_season_year as _active_game_season_year,
     build_data_freshness_payload as _build_data_freshness_payload,
@@ -528,169 +528,66 @@ def _build_event_team_data_coverage_payload(
         },
     }
 
-def _model_derived_averages_from_rating(rating_payload: dict[str, Any]) -> dict[str, float]:
-    if not isinstance(rating_payload, dict) or not bool(rating_payload.get("available")):
-        return {}
+# Team Center metrics nobody has scouted or filmed, filled from official results
+# (services/scoring/official_team_stats.py). Only fuel, auto and climb can be
+# recovered from those; cycle time, defense and reliability stay empty rather
+# than being made up.
+_OFFICIAL_ESTIMATE_FIELDS = {
+    "fuel_scoring_rate": "fuel_per_active_minute",
+    "auto_contribution": "auto_points_per_match",
+}
 
-    details = rating_payload.get("details") if isinstance(rating_payload.get("details"), dict) else {}
-    raw_features = (
-        details.get("raw_features")
-        if isinstance(details, dict) and isinstance(details.get("raw_features"), dict)
-        else {}
-    )
-    fallback_model = (
-        details.get("fallback_model")
-        if isinstance(details, dict) and isinstance(details.get("fallback_model"), dict)
-        else {}
-    )
-    subscores = rating_payload.get("subscores") if isinstance(rating_payload.get("subscores"), dict) else {}
-    source_token = str(rating_payload.get("source") or "").strip().lower()
-    model_version = str(rating_payload.get("model_version") or "").strip().lower()
-    fallback_label = str(fallback_model.get("label") or "").strip().lower()
-    sparse_external_fallback = (
-        source_token == "sparse_external_fallback"  # nosec B105
-        or model_version.startswith("rating_sparse_external_fallback")
-        or fallback_label.startswith("sparse_external")
-    )
 
-    throughput = _as_float(subscores.get("throughput"))
-    auto_subscore = _as_float(subscores.get("auto_contribution"))
-    endgame_subscore = _as_float(subscores.get("endgame"))
-    defense_subscore = _as_float(subscores.get("defense_presence"))
-    consistency_subscore = _as_float(subscores.get("consistency"))
-
-    fuel_rate_bps = _as_float(raw_features.get("bps_median"))
-    fuel_rate_per_min = (
-        _clamp(float(fuel_rate_bps) * 60.0, 0.0, 180.0)
-        if isinstance(fuel_rate_bps, (int, float))
-        else None
-    )
-    if (not sparse_external_fallback) and fuel_rate_per_min is None and throughput is not None:
-        phase_estimate = fuel_rate_calibration.estimate_fuel_rate_per_min(
-            throughput_score_0_100=throughput,
-            auto_score_0_100=auto_subscore,
-        )
-        fuel_rate_per_min = _as_float(phase_estimate.get("fuel_rate_per_min"))
-    if (not sparse_external_fallback) and fuel_rate_per_min is None and throughput is not None:
-        # Defensive fallback if calibration output is unavailable.
-        fuel_rate_bps = _clamp(0.1 + (throughput * 0.018), 0.05, 2.4)
-        fuel_rate_per_min = _clamp(float(fuel_rate_bps) * 60.0, 0.0, 180.0)
-
-    cycle_time = _as_float(raw_features.get("cycle_time_sec"))
-    if (not sparse_external_fallback) and cycle_time is None and throughput is not None:
-        cycle_time = _clamp(55.0 - (throughput * 0.42), 12.0, 65.0)
-
-    auto_contribution = _as_float(raw_features.get("auto_points_est"))
-    if (not sparse_external_fallback) and auto_contribution is None and auto_subscore is not None:
-        auto_contribution = _clamp((auto_subscore / 100.0) * 12.0, 0.0, 18.0)
-
-    climb_success = _as_float(raw_features.get("climb_success"))
-    if (not sparse_external_fallback) and climb_success is None and endgame_subscore is not None:
-        climb_success = _clamp(endgame_subscore / 100.0, 0.0, 1.0)
-    elif climb_success is not None:
-        climb_success = _clamp(climb_success, 0.0, 1.0)
-
-    defense_time = _as_float(raw_features.get("defense_presence"))
-    if (not sparse_external_fallback) and defense_time is None and defense_subscore is not None:
-        defense_time = _clamp(defense_subscore * 0.55, 0.0, 65.0)
-
-    reliability = _as_float(raw_features.get("uptime"))
-    if (not sparse_external_fallback) and reliability is None and consistency_subscore is not None:
-        reliability = _clamp(consistency_subscore / 100.0, 0.0, 1.0)
-    elif reliability is not None:
-        reliability = _clamp(reliability, 0.0, 1.0)
-
-    return {
-        "fuel_scoring_rate": (
-            round(fuel_rate_per_min, 3)
-            if isinstance(fuel_rate_per_min, (int, float))
-            else None
-        ),
-        "cycle_time_sec": round(cycle_time, 3) if isinstance(cycle_time, (int, float)) else None,
-        "auto_contribution": round(auto_contribution, 3) if isinstance(auto_contribution, (int, float)) else None,
-        "climb_success_prob": round(climb_success, 3) if isinstance(climb_success, (int, float)) else None,
-        "defensive_engagement_sec": round(defense_time, 3) if isinstance(defense_time, (int, float)) else None,
-        "reliability_score": round(reliability, 3) if isinstance(reliability, (int, float)) else None,
-    }
-
-def _enrich_analysis_with_rating_estimates(
+def _enrich_analysis_with_official_stats(
     analysis_payload: dict[str, Any],
-    rating_payload: dict[str, Any],
+    official_stats: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[str]]:
     merged = dict(analysis_payload)
-    averages = merged.get("averages")
-    metric_coverage = merged.get("metric_coverage")
-    normalized_averages = dict(averages) if isinstance(averages, dict) else {}
-    normalized_coverage = dict(metric_coverage) if isinstance(metric_coverage, dict) else {}
+    merged["official_stats"] = official_stats if isinstance(official_stats, dict) else {"available": False}
+    averages = dict(merged.get("averages")) if isinstance(merged.get("averages"), dict) else {}
+    coverage = dict(merged.get("metric_coverage")) if isinstance(merged.get("metric_coverage"), dict) else {}
+    applied: list[str] = []
+    if not isinstance(official_stats, dict) or not official_stats.get("available"):
+        merged["estimated_averages"] = {"applied": False, "source": "official_tba", "fields": []}
+        return merged, applied
 
-    has_observed_matches = any(
-        int(_as_float(entry.get("observed_matches")) or 0) > 0
-        for entry in normalized_coverage.values()
-        if isinstance(entry, dict)
-    )
-    rating_details = rating_payload.get("details") if isinstance(rating_payload.get("details"), dict) else {}
-    raw_features = (
-        rating_details.get("raw_features")
-        if isinstance(rating_details, dict) and isinstance(rating_details.get("raw_features"), dict)
-        else {}
-    )
-    has_raw_metric_signal = any(
-        _as_float(raw_features.get(key)) is not None
-        for key in (
-            "bps_median",
-            "cycle_time_sec",
-            "auto_points_est",
-            "climb_success",
-            "defense_presence",
-            "uptime",
-        )
-    )
-    if not has_observed_matches and not has_raw_metric_signal:
-        merged["estimated_averages"] = {
-            "applied": False,
-            "source": "rating_model_fallback",
-            "fields": [],
-        }
-        return merged, []
-
-    model_estimates = _model_derived_averages_from_rating(rating_payload)
-    applied_fields: list[str] = []
-    for metric_key, metric_value in model_estimates.items():
-        if metric_value is None:
+    event_count = sum(1 for event in official_stats.get("events") or [] if event.get("copr"))
+    for metric_key, stats_key in _OFFICIAL_ESTIMATE_FIELDS.items():
+        value = _as_float(official_stats.get(stats_key))
+        if value is None or _as_float(averages.get(metric_key)) is not None:
             continue
-        existing_value = _as_float(normalized_averages.get(metric_key))
-        if existing_value is not None:
-            continue
-        normalized_averages[metric_key] = metric_value
-        applied_fields.append(metric_key)
-        coverage_entry = (
-            dict(normalized_coverage.get(metric_key))
-            if isinstance(normalized_coverage.get(metric_key), dict)
-            else {}
+        averages[metric_key] = value
+        entry = dict(coverage.get(metric_key)) if isinstance(coverage.get(metric_key), dict) else {}
+        entry["estimated_from_model"] = True
+        entry["estimate_source"] = "tba_copr"
+        entry["missing_reason"] = (
+            f"TBA's per-team estimate (component OPR) over {official_stats.get('copr_matches')} official "
+            f"matches at {event_count} event{'s' if event_count != 1 else ''}. Scout or film this team for measured values."
         )
-        coverage_entry["estimated_from_model"] = True
-        if int(_as_float(coverage_entry.get("observed_matches")) or 0) <= 0:
-            coverage_entry["missing_reason"] = (
-                "Using model-derived estimate until analyzed clips are available."
-            )
-        normalized_coverage[metric_key] = coverage_entry
+        coverage[metric_key] = entry
+        applied.append(metric_key)
 
-    if applied_fields:
-        merged["averages"] = normalized_averages
-        if normalized_coverage:
-            merged["metric_coverage"] = normalized_coverage
-        merged["estimated_averages"] = {
-            "applied": True,
-            "source": "rating_model_fallback",
-            "fields": applied_fields,
-        }
-    else:
-        merged["estimated_averages"] = {
-            "applied": False,
-            "source": "rating_model_fallback",
-            "fields": [],
-        }
-    return merged, applied_fields
+    climb = official_stats.get("climb") if isinstance(official_stats.get("climb"), dict) else {}
+    climb_rate = _as_float(climb.get("rate"))
+    if climb_rate is not None and _as_float(averages.get("climb_success_prob")) is None:
+        # The tower result is recorded per robot in every official breakdown, so
+        # this is the team's actual record, not an estimate.
+        averages["climb_success_prob"] = climb_rate
+        entry = dict(coverage.get("climb_success_prob")) if isinstance(coverage.get("climb_success_prob"), dict) else {}
+        entry["official_record"] = True
+        entry["official_matches"] = int(climb.get("matches") or 0)
+        entry["official_climbs"] = int(climb.get("climbs") or 0)
+        coverage["climb_success_prob"] = entry
+        climb_sources = dict(merged.get("climb_sources")) if isinstance(merged.get("climb_sources"), dict) else {}
+        level_capability = climb_sources.get("level_capability") if isinstance(climb_sources.get("level_capability"), dict) else {}
+        if not int(level_capability.get("matches_considered") or 0) and isinstance(climb.get("level_capability"), dict):
+            climb_sources["level_capability"] = {**climb["level_capability"], "source": "official_score_breakdown"}
+            merged["climb_sources"] = climb_sources
+
+    merged["averages"] = averages
+    merged["metric_coverage"] = coverage
+    merged["estimated_averages"] = {"applied": bool(applied), "source": "official_tba", "fields": applied}
+    return merged, applied
 
 def _freshness_warnings_from_analysis_payload(payload: dict[str, Any]) -> list[str]:
     data_freshness = payload.get("data_freshness") if isinstance(payload.get("data_freshness"), dict) else {}
@@ -831,6 +728,7 @@ def _analysis_snapshot_from_breakdown(payload: dict[str, Any]) -> dict[str, Any]
         "metric_units": payload.get("metric_units"),
         "climb_sources": payload.get("climb_sources"),
         "estimated_averages": payload.get("estimated_averages"),
+        "official_stats": payload.get("official_stats"),
         "metric_coverage": payload.get("metric_coverage"),
         "active_perimeter_type": payload.get("active_perimeter_type"),
         "perimeter_types": payload.get("perimeter_types") or [],
@@ -907,11 +805,26 @@ def _latest_team_rating_row(
     db: Session,
     team_key: str,
 ) -> tuple[models.EventTeamRating | None, str | None]:
+    # "Latest" used to mean the newest rating row, which for every Championship team
+    # was Einstein: TBA lists all ~600 Championship teams there, a few play 16 matches,
+    # and 254 read 39.0, 596th of 605. Prefer the newest season, then the event where
+    # the team actually played the most matches.
+    played = (
+        db.query(models.MatchTeam.event_key, func.count(models.MatchTeam.match_key).label("played"))
+        .filter(models.MatchTeam.team_key == team_key)
+        .group_by(models.MatchTeam.event_key)
+        .subquery()
+    )
     row = (
         db.query(models.EventTeamRating, models.Event)
         .join(models.Event, models.Event.event_key == models.EventTeamRating.event_key)
+        .outerjoin(played, played.c.event_key == models.EventTeamRating.event_key)
         .filter(models.EventTeamRating.team_key == team_key)
-        .order_by(models.Event.year.desc(), models.EventTeamRating.updated_at.desc())
+        .order_by(
+            models.Event.year.desc(),
+            func.coalesce(played.c.played, 0).desc(),
+            models.EventTeamRating.updated_at.desc(),
+        )
         .first()
     )
     if row is None:
@@ -933,6 +846,20 @@ def _event_team_rating_row(
         .first()
     )
 
+def _rated_field_filter(db: Session, event_key: str):
+    # TBA's Championship finals roster lists every Championship team, most of whom
+    # never play there; "4th of 605" means nothing. Rank against teams that played
+    # at the event whenever it has match rows at all.
+    has_matches = (
+        db.query(models.MatchTeam.match_key).filter(models.MatchTeam.event_key == event_key).first()
+        is not None
+    )
+    if not has_matches:
+        return None
+    return models.EventTeamRating.team_key.in_(
+        db.query(models.MatchTeam.team_key).filter(models.MatchTeam.event_key == event_key).distinct()
+    )
+
 def _event_rating_rank_context(
     db: Session,
     *,
@@ -945,11 +872,13 @@ def _event_rating_rank_context(
     rank = _event_rating_rank(db, event_key=event_key, team_key=team_key)
     if rank is None:
         return None
-    field_size = (
-        db.query(func.count(models.EventTeamRating.team_key))
-        .filter(models.EventTeamRating.event_key == event_key)
-        .scalar()
+    field_query = db.query(func.count(models.EventTeamRating.team_key)).filter(
+        models.EventTeamRating.event_key == event_key
     )
+    field_filter = _rated_field_filter(db, event_key)
+    if field_filter is not None:
+        field_query = field_query.filter(field_filter)
+    field_size = field_query.scalar()
     # "4th" says nothing without "of 75". A figure with no comparison is
     # decoration, so the two travel together or not at all.
     return {"rank": int(rank), "field_size": int(field_size or 0)}
@@ -963,24 +892,20 @@ def _event_rating_rank(
     row = _event_team_rating_row(db, event_key, team_key)
     if row is None:
         return None
-    higher_count = (
-        db.query(func.count(models.EventTeamRating.team_key))
-        .filter(
-            models.EventTeamRating.event_key == event_key,
-            models.EventTeamRating.rating_0_100 > row.rating_0_100,
-        )
-        .scalar()
+    field_filter = _rated_field_filter(db, event_key)
+    higher = db.query(func.count(models.EventTeamRating.team_key)).filter(
+        models.EventTeamRating.event_key == event_key,
+        models.EventTeamRating.rating_0_100 > row.rating_0_100,
     )
-    tie_break_count = (
-        db.query(func.count(models.EventTeamRating.team_key))
-        .filter(
-            models.EventTeamRating.event_key == event_key,
-            models.EventTeamRating.rating_0_100 == row.rating_0_100,
-            models.EventTeamRating.team_key < team_key,
-        )
-        .scalar()
+    tied_before = db.query(func.count(models.EventTeamRating.team_key)).filter(
+        models.EventTeamRating.event_key == event_key,
+        models.EventTeamRating.rating_0_100 == row.rating_0_100,
+        models.EventTeamRating.team_key < team_key,
     )
-    return int(higher_count or 0) + int(tie_break_count or 0) + 1
+    if field_filter is not None:
+        higher = higher.filter(field_filter)
+        tied_before = tied_before.filter(field_filter)
+    return int(higher.scalar() or 0) + int(tied_before.scalar() or 0) + 1
 
 def _extract_tba_rank_record(status_payload: dict[str, Any] | None) -> dict[str, Any]:
     payload = status_payload if isinstance(status_payload, dict) else {}
@@ -1103,7 +1028,7 @@ def _load_team_breakdown_with_fallback(
                 else None
             )
             warnings.append(
-                "No analyzed clips available in the selected event context; temporarily using season-wide data."
+                "No scouted matches at this event yet; using season-wide data."
             )
             if isinstance(fallback_year, int):
                 warnings.append(
@@ -1570,6 +1495,22 @@ async def _build_team_intel_payload(
             fallback_year=fallback_year,
         )
 
+    def _sync_official_stats():
+        thread_db = _thread_db()
+        try:
+            return official_team_stats(
+                thread_db,
+                team_key=normalized_team_key,
+                season_year=_event_year_from_key(normalized_event_key) or preferred_year,
+                tba=tba_client,
+            )
+        except Exception:
+            logger.exception("team_intel.official_stats_failed team_key=%s", normalized_team_key)
+            return {"available": False}
+        finally:
+            if thread_db is not db and hasattr(thread_db, "close"):
+                thread_db.close()
+
     # Run sync DB + TBA work in thread pool, Statbotics async — all concurrently
     (
         (selected_year, registered_events, registered_source),
@@ -1578,6 +1519,7 @@ async def _build_team_intel_payload(
         auto_scout_profile,
         tba_context,
         statbotics_context,
+        official_stats,
     ) = await asyncio.gather(
         loop.run_in_executor(None, _sync_registered_events),
         loop.run_in_executor(None, _sync_analysis),
@@ -1585,25 +1527,26 @@ async def _build_team_intel_payload(
         loop.run_in_executor(None, _sync_auto_scout_profile),
         loop.run_in_executor(None, _sync_tba_context),
         _async_statbotics_context(),
+        loop.run_in_executor(None, _sync_official_stats),
     )
 
     # ── Sequential post-processing (depends on parallel results) ──
-    analysis_payload, estimated_average_fields = _enrich_analysis_with_rating_estimates(
+    # The sparse rating below scores observed scouting and video only; official
+    # per-match numbers are on another scale and would swamp it.
+    observed_analysis_payload = analysis_payload
+    analysis_payload, estimated_average_fields = _enrich_analysis_with_official_stats(
         analysis_payload,
-        rating_payload,
+        official_stats,
     )
     if estimated_average_fields:
         analysis_fallbacks.append(
             {
                 "kind": "analysis_metric_estimates",
                 "from": "missing_analysis_metrics",
-                "to": "rating_model_fallback",
+                "to": "official_tba",
                 "fields": estimated_average_fields,
-                "reason": "sparse_analysis_signal",
+                "reason": "no_scouting_or_video",
             }
-        )
-        analysis_warnings.append(
-            "Some scouting averages are temporarily model-derived because analyzed clip coverage is still sparse."
         )
 
     # Rank against the event the rating actually came from, not the event that
@@ -1663,7 +1606,7 @@ async def _build_team_intel_payload(
     if not bool(rating_payload.get("available")):
         synthesized = _synthesize_rating_from_sparse_signals(
             event_key=normalized_event_key,
-            analysis_payload=analysis_payload,
+            analysis_payload=observed_analysis_payload,
             statbotics_context=statbotics_context,
         )
         if synthesized is not None:
@@ -1680,20 +1623,6 @@ async def _build_team_intel_payload(
             rating_warnings.append(
                 "No precomputed event rating was available; using sparse external fallback rating."
             )
-            analysis_payload, synthesized_fields = _enrich_analysis_with_rating_estimates(
-                analysis_payload,
-                rating_payload,
-            )
-            if synthesized_fields:
-                analysis_fallbacks.append(
-                    {
-                        "kind": "analysis_metric_estimates",
-                        "from": "missing_analysis_metrics",
-                        "to": "sparse_external_fallback",
-                        "fields": synthesized_fields,
-                        "reason": "no_precomputed_rating",
-                    }
-                )
     warnings = analysis_warnings + rating_warnings
     if local_team_missing_warning:
         warnings.append(local_team_missing_warning)
@@ -1754,127 +1683,164 @@ async def _build_event_teams_intel_payload(
     include_rating_details: bool,
     include_rating_signals: bool,
 ) -> dict[str, Any]:
-    normalized_event_key = event_key.strip().lower()
-    event = db.get(models.Event, normalized_event_key)
-    source = "local"
-    refresh_error: str | None = None
-    event_refreshed, refreshed, refresh_error = _upsert_event_roster_if_missing(db, normalized_event_key)
-    if refreshed:
-        event = event_refreshed
-        source = "remote_refreshed"
-    elif refresh_error:
-        source = "remote_refresh_failed"
-    if event is None:
-        raise HTTPException(status_code=404, detail=f"Event {normalized_event_key} not found")
+    # Everything here is blocking (SQLAlchemy, the TBA roster/status calls, an optional
+    # ratings recompute). This coroutine runs on the event loop that also serves every
+    # other request and the room websockets, so it runs on a worker thread instead.
+    def _prepare_sync() -> tuple[Any, ...]:
+        normalized_event_key = event_key.strip().lower()
+        event = db.get(models.Event, normalized_event_key)
+        source = "local"
+        refresh_error: str | None = None
+        event_refreshed, refreshed, refresh_error = _upsert_event_roster_if_missing(db, normalized_event_key)
+        if refreshed:
+            event = event_refreshed
+            source = "remote_refreshed"
+        elif refresh_error:
+            source = "remote_refresh_failed"
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"Event {normalized_event_key} not found")
 
-    team_rows = (
-        db.query(models.EventTeam, models.Team, models.TeamProfile)
-        .join(models.Team, models.Team.team_key == models.EventTeam.team_key)
-        .outerjoin(models.TeamProfile, models.TeamProfile.team_key == models.Team.team_key)
-        .filter(models.EventTeam.event_key == normalized_event_key)
-        .order_by(models.Team.team_number.asc())
-        .all()
-    )
-    team_keys = [event_team.team_key for event_team, *_ in team_rows]
-
-    rating_rows = (
-        db.query(models.EventTeamRating)
-        .filter(models.EventTeamRating.event_key == normalized_event_key)
-        .all()
-    )
-    rating_by_team = {row.team_key: row for row in rating_rows}
-    if auto_heal_ratings and team_keys and not settings.public_readonly_mode and not rating_by_team:
-        try:
-            recompute_event_ratings(db, normalized_event_key)
-            rating_rows = (
-                db.query(models.EventTeamRating)
-                .filter(models.EventTeamRating.event_key == normalized_event_key)
-                .all()
-            )
-            rating_by_team = {row.team_key: row for row in rating_rows}
-            source = "local_auto_heal_ratings"
-        except Exception as exc:
-            logger.warning(
-                "teams.event_intel rating recompute failed event=%s error=%s",
-                normalized_event_key,
-                sanitize_external_error(exc, default="refresh_failed"),
-            )
-    event_rating_rank_by_team: dict[str, int] = {}
-    for idx, row in enumerate(
-        sorted(
-            rating_rows,
-            key=lambda item: (-float(item.rating_0_100), str(item.team_key)),
-        ),
-        start=1,
-    ):
-        event_rating_rank_by_team[str(row.team_key)] = idx
-
-    latest_rating_rows = (
-        db.query(models.EventTeamRating, models.Event)
-        .join(models.Event, models.Event.event_key == models.EventTeamRating.event_key)
-        .filter(models.EventTeamRating.team_key.in_(team_keys) if team_keys else False)
-        .order_by(models.Event.year.desc(), models.EventTeamRating.updated_at.desc())
-        .all()
-    )
-    latest_rating_by_team: dict[str, tuple[models.EventTeamRating, str | None]] = {}
-    for row, source_event in latest_rating_rows:
-        if row.team_key not in latest_rating_by_team:
-            latest_rating_by_team[row.team_key] = (row, source_event.event_key if source_event else None)
-    latest_rating_rank_by_team: dict[str, int] = {}
-    for idx, item in enumerate(
-        sorted(
-            latest_rating_by_team.items(),
-            key=lambda pair: (-float(pair[1][0].rating_0_100), str(pair[0])),
-        ),
-        start=1,
-    ):
-        latest_rating_rank_by_team[str(item[0])] = idx
-
-    findings_event_rows = (
-        db.query(
-            models.TeamMatchFinding.team_key,
-            func.count(models.TeamMatchFinding.id).label("count"),
-            func.max(models.Match.time).label("latest_match_time"),
+        team_rows = (
+            db.query(models.EventTeam, models.Team, models.TeamProfile)
+            .join(models.Team, models.Team.team_key == models.EventTeam.team_key)
+            .outerjoin(models.TeamProfile, models.TeamProfile.team_key == models.Team.team_key)
+            .filter(models.EventTeam.event_key == normalized_event_key)
+            .order_by(models.Team.team_number.asc())
+            .all()
         )
-        .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-        .filter(models.TeamMatchFinding.event_key == normalized_event_key)
-        .group_by(models.TeamMatchFinding.team_key)
-        .all()
-    )
-    findings_event_by_team: dict[str, tuple[int, int | None]] = {
-        str(team_key): (int(count or 0), int(latest_match_time) if isinstance(latest_match_time, int) else None)
-        for team_key, count, latest_match_time in findings_event_rows
-    }
+        team_keys = [event_team.team_key for event_team, *_ in team_rows]
 
-    season_year = int(event.year)
-    findings_season_rows = (
-        db.query(
-            models.TeamMatchFinding.team_key,
-            func.count(models.TeamMatchFinding.id).label("count"),
-            func.max(models.Match.time).label("latest_match_time"),
+        rating_rows = (
+            db.query(models.EventTeamRating)
+            .filter(models.EventTeamRating.event_key == normalized_event_key)
+            .all()
         )
-        .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
-        .join(models.Event, models.Event.event_key == models.TeamMatchFinding.event_key)
-        .filter(models.TeamMatchFinding.team_key.in_(team_keys) if team_keys else False)
-        .filter(models.Event.year == season_year)
-        .group_by(models.TeamMatchFinding.team_key)
-        .all()
-    )
-    findings_season_by_team: dict[str, tuple[int, int | None]] = {
-        str(team_key): (int(count or 0), int(latest_match_time) if isinstance(latest_match_time, int) else None)
-        for team_key, count, latest_match_time in findings_season_rows
-    }
+        rating_by_team = {row.team_key: row for row in rating_rows}
+        if auto_heal_ratings and team_keys and not settings.public_readonly_mode and not rating_by_team:
+            try:
+                recompute_event_ratings(db, normalized_event_key)
+                rating_rows = (
+                    db.query(models.EventTeamRating)
+                    .filter(models.EventTeamRating.event_key == normalized_event_key)
+                    .all()
+                )
+                rating_by_team = {row.team_key: row for row in rating_rows}
+                source = "local_auto_heal_ratings"
+            except Exception as exc:
+                logger.warning(
+                    "teams.event_intel rating recompute failed event=%s error=%s",
+                    normalized_event_key,
+                    sanitize_external_error(exc, default="refresh_failed"),
+                )
+        event_rating_rank_by_team: dict[str, int] = {}
+        for idx, row in enumerate(
+            sorted(
+                rating_rows,
+                key=lambda item: (-float(item.rating_0_100), str(item.team_key)),
+            ),
+            start=1,
+        ):
+            event_rating_rank_by_team[str(row.team_key)] = idx
 
-    tba_statuses: dict[str, Any] = {}
-    tba_warning: str | None = None
-    if include_tba and settings.tba_auth_key.strip():
-        try:
-            raw_statuses = TBAClient().event_team_statuses(normalized_event_key)
-            if isinstance(raw_statuses, dict):
-                tba_statuses = {str(k).strip().lower(): v for k, v in raw_statuses.items()}
-        except Exception as exc:
-            tba_warning = sanitize_external_error(exc, default="team_statuses_request_failed")
+        latest_rating_rows = (
+            db.query(models.EventTeamRating, models.Event)
+            .join(models.Event, models.Event.event_key == models.EventTeamRating.event_key)
+            .filter(models.EventTeamRating.team_key.in_(team_keys) if team_keys else False)
+            .order_by(models.Event.year.desc(), models.EventTeamRating.updated_at.desc())
+            .all()
+        )
+        latest_rating_by_team: dict[str, tuple[models.EventTeamRating, str | None]] = {}
+        for row, source_event in latest_rating_rows:
+            if row.team_key not in latest_rating_by_team:
+                latest_rating_by_team[row.team_key] = (row, source_event.event_key if source_event else None)
+        latest_rating_rank_by_team: dict[str, int] = {}
+        for idx, item in enumerate(
+            sorted(
+                latest_rating_by_team.items(),
+                key=lambda pair: (-float(pair[1][0].rating_0_100), str(pair[0])),
+            ),
+            start=1,
+        ):
+            latest_rating_rank_by_team[str(item[0])] = idx
 
+        findings_event_rows = (
+            db.query(
+                models.TeamMatchFinding.team_key,
+                func.count(models.TeamMatchFinding.id).label("count"),
+                func.max(models.Match.time).label("latest_match_time"),
+            )
+            .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
+            .filter(models.TeamMatchFinding.event_key == normalized_event_key)
+            .group_by(models.TeamMatchFinding.team_key)
+            .all()
+        )
+        findings_event_by_team: dict[str, tuple[int, int | None]] = {
+            str(team_key): (int(count or 0), int(latest_match_time) if isinstance(latest_match_time, int) else None)
+            for team_key, count, latest_match_time in findings_event_rows
+        }
+
+        season_year = int(event.year)
+        findings_season_rows = (
+            db.query(
+                models.TeamMatchFinding.team_key,
+                func.count(models.TeamMatchFinding.id).label("count"),
+                func.max(models.Match.time).label("latest_match_time"),
+            )
+            .join(models.Match, models.Match.match_key == models.TeamMatchFinding.match_key)
+            .join(models.Event, models.Event.event_key == models.TeamMatchFinding.event_key)
+            .filter(models.TeamMatchFinding.team_key.in_(team_keys) if team_keys else False)
+            .filter(models.Event.year == season_year)
+            .group_by(models.TeamMatchFinding.team_key)
+            .all()
+        )
+        findings_season_by_team: dict[str, tuple[int, int | None]] = {
+            str(team_key): (int(count or 0), int(latest_match_time) if isinstance(latest_match_time, int) else None)
+            for team_key, count, latest_match_time in findings_season_rows
+        }
+
+        tba_statuses: dict[str, Any] = {}
+        tba_warning: str | None = None
+        if include_tba and settings.tba_auth_key.strip():
+            try:
+                raw_statuses = TBAClient().event_team_statuses(normalized_event_key)
+                if isinstance(raw_statuses, dict):
+                    tba_statuses = {str(k).strip().lower(): v for k, v in raw_statuses.items()}
+            except Exception as exc:
+                tba_warning = sanitize_external_error(exc, default="team_statuses_request_failed")
+
+        return (
+            normalized_event_key,
+            event,
+            source,
+            refresh_error,
+            team_rows,
+            rating_by_team,
+            event_rating_rank_by_team,
+            latest_rating_by_team,
+            latest_rating_rank_by_team,
+            findings_event_by_team,
+            findings_season_by_team,
+            season_year,
+            tba_statuses,
+            tba_warning,
+        )
+
+    (
+        normalized_event_key,
+        event,
+        source,
+        refresh_error,
+        team_rows,
+        rating_by_team,
+        event_rating_rank_by_team,
+        latest_rating_by_team,
+        latest_rating_rank_by_team,
+        findings_event_by_team,
+        findings_season_by_team,
+        season_year,
+        tba_statuses,
+        tba_warning,
+    ) = await asyncio.get_running_loop().run_in_executor(None, _prepare_sync)
     statbotics_by_team: dict[str, dict[str, Any] | None] = {}
     statbotics_errors: list[str] = []
     if include_statbotics:
@@ -1980,10 +1946,17 @@ async def _build_event_teams_intel_payload(
         statbotics_payload = statbotics_by_team.get(team.team_key)
         norm_epa = statbotics_payload.get("norm_epa") if isinstance(statbotics_payload, dict) else {}
         event_epa = statbotics_payload.get("epa") if isinstance(statbotics_payload, dict) else {}
+        # Statbotics returns epa.total_points as a bare number for 2026 events and as a
+        # {"mean": ...} object elsewhere. Guarding only the enclosing dict let the scalar
+        # through to .get("mean"), which raised AttributeError and 500'd the whole
+        # event-wide intel payload for every event, not just the offending team.
+        event_epa_total_points_raw = (
+            event_epa.get("total_points") if isinstance(event_epa, dict) else None
+        )
         event_epa_total_points = (
-            _as_float((event_epa.get("total_points") or {}).get("mean"))
-            if isinstance(event_epa, dict)
-            else None
+            _as_float(event_epa_total_points_raw.get("mean"))
+            if isinstance(event_epa_total_points_raw, dict)
+            else _as_float(event_epa_total_points_raw)
         )
         if event_epa_total_points is None and isinstance(event_epa, dict):
             event_breakdown = event_epa.get("breakdown")

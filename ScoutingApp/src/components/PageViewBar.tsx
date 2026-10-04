@@ -11,6 +11,9 @@ export type ViewBarItem = {
    *  equals, which said the app's main job and a camera-calibration utility
    *  were the same kind of thing. */
   secondary?: boolean;
+  // Hidden on phones: the page redirects small screens away, so the tab was
+  // a dead end that bounced the user back where they came from.
+  desktopOnly?: boolean;
 };
 
 const MOBILE_MEDIA_QUERY = '(max-width: 1120px)';
@@ -50,7 +53,7 @@ function ChevronIcon() {
 // screens, so it doesn't stack a second full-width bar onto the already
 // bar-heavy scouting layout.
 export function PageViewBar({
-  items,
+  items: allItems,
   className = '',
   collapseToMenuOnMobile = false,
 }: {
@@ -69,6 +72,7 @@ export function PageViewBar({
     if (!matches) setMenuOpen(false);
   }, []);
   const isMobile = useIsMobile(closeMenuOnDesktop);
+  const items = isMobile ? allItems.filter((item) => !item.desktopOnly) : allItems;
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 });

@@ -132,6 +132,8 @@ class Settings(BaseSettings):
     admin_session_token_secret: str = ""
     admin_session_ttl_sec: int = 7200
     scouting_room_access_ttl_sec: int = 43200
+    # Scouts join a workspace once per season; removal revokes access immediately.
+    team_workspace_access_ttl_sec: int = 15552000
     log_level: str = "INFO"
     log_format: str = "text"  # "text" for human-readable, "json" for structured
     cors_allow_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -156,34 +158,6 @@ class Settings(BaseSettings):
     push_match_lead_minutes_default: int = 15
     push_ttl_sec: int = 1800
     push_subscription_max_failures: int = 8
-    media_cleanup_enabled: bool = True
-    media_retention_days_videos: int = 2
-    media_retention_days_analysis_frames: int = 2
-    media_cleanup_min_free_gb: float = 12.0
-    media_cleanup_max_total_gb: float = 30.0
-    media_cleanup_min_interval_sec: int = 300
-    media_cleanup_protect_recent_minutes: int = 20
-    video_extraction_prefer_streaming: bool = True
-    video_extraction_allow_download_fallback: bool = True
-    video_extraction_cleanup_fallback_download: bool = True
-    video_extraction_youtube_timeout_sec: int = 60
-    video_extraction_ffmpeg_timeout_sec: int = 180
-    video_extraction_live_clip_timeout_buffer_sec: int = 45
-    video_extraction_stream_resolve_max_attempts: int = 3
-    video_extraction_stream_resolve_backoff_sec: float = 1.0
-    storage_cleanup_enabled: bool = True
-    storage_cleanup_post_analysis: bool = True
-    storage_cleanup_delete_videos: bool = True
-    storage_cleanup_delete_analysis_frames: bool = True
-    storage_cleanup_delete_sampled_frames: bool = False
-    storage_cleanup_age_days_auto: int = 7
-    analysis_job_timeout_sec: int = 3600
-    analysis_job_result_ttl_sec: int = 86400
-    analysis_job_failure_ttl_sec: int = 604800
-    analysis_job_retry_max: int = 2
-    analysis_job_retry_intervals_sec: str = "45,180"
-    analysis_queue_max_pending_jobs: int = 1200
-    analysis_queue_max_schedule_per_call: int = 180
     fuel_scoring_rate_max_per_min: float = 16.0
     events_ingest_run_post_compute: bool = True
     events_ingest_backfill_match_videos: bool = True
@@ -192,8 +166,6 @@ class Settings(BaseSettings):
     automation_regional_interval_minutes: int = 45
     automation_regional_max_events: int = 300
     automation_regional_max_teams: int = 1000
-    automation_regional_max_matches_per_event: int = 42
-    automation_regional_max_new_jobs_per_tick: int = 220
     automation_regional_include_all_events: bool = False
     automation_regional_include_out_of_region_events: bool = True
     automation_regional_include_ended_today: bool = False
@@ -203,122 +175,15 @@ class Settings(BaseSettings):
     automation_regional_halfday_season: int = 0
     automation_regional_halfday_include_out_of_region_events: bool = False
     automation_regional_halfday_include_ended_today: bool = True
-    automation_regional_halfday_all_matches_in_region_events: bool = True
-    automation_regional_auto_calibrate_missing: bool = True
-    automation_regional_auto_calibration_overwrite_existing: bool = False
-    automation_regional_auto_calibration_refresh_video: bool = False
-    automation_regional_auto_calibration_sample_count: int = 18
-    automation_regional_auto_calibration_min_inliers: int = 4
-    automation_regional_auto_calibration_ransac_reproj_threshold_px: float = 3.0
-    automation_regional_auto_calibration_focus_time_sec: float = 0.0
-    automation_regional_auto_calibration_allow_synthetic_fallback: bool = True
-    automation_regional_auto_calibration_synthetic_margin_ratio: float = 0.08
-    automation_regional_clone_event_calibration: bool = True
-    automation_regional_require_video: bool = True
-    automation_regional_require_calibration: bool = False
     automation_regional_run_post_compute: bool = True
+    # A finished event's results still settle (score fixes, late breakdowns) for a few
+    # days; after that it only needs an occasional re-check, capped per tick.
+    automation_regional_settle_days: int = 3
+    automation_regional_max_rechecks_per_tick: int = 20
     automation_regional_countries: str = "USA,Canada"
-    video_tracking_mode: str = "auto"
-    # FRC-tuned detector is the PRIMARY model; generic COCO yolo11n.pt is only a
-    # last-resort fallback (it barely detects FRC robots -> empty findings).
-    # v2 (2026-05-26): mAP@0.5=0.7172 on locked Einstein holdout, beats v1 (0.6991).
-    video_tracking_yolo_model: str = "media/models/frc_robot_detector_v2.pt"
-    # Object-storage URL to fetch the detector on startup if the local file is
-    # absent (empty -> no download attempt; relies on baked/mounted file).
-    video_tracking_yolo_model_url: str = ""
-    # Pin downloaded production weights so a partial or substituted artifact
-    # can never be used for scouting.
-    video_tracking_yolo_model_sha256: str = ""
-    video_tracking_yolo_model_max_bytes: int = 1_073_741_824
-    # Production must not silently fall back to a generic COCO detector: it can
-    # appear healthy while producing unusable FRC robot tracks.
-    video_tracking_require_primary_model_in_production: bool = True
-    video_tracking_require_primary_model_sha256_in_production: bool = True
-    # Identifies the generic non-FRC fallback so the pipeline can flag a run as
-    # degraded when it has to use it.
-    video_tracking_generic_model_names: str = "yolo11n.pt,yolo11s.pt,yolov8n.pt,yolov8s.pt"
-    video_tracking_yolo_device: str = ""
-    video_tracking_yolo_conf: float = 0.2
-    video_tracking_yolo_iou: float = 0.45
-    video_tracking_yolo_max_det: int = 20
-    video_tracking_yolo_imgsz: int = 960
-    video_tracking_yolo_model_fallbacks: str = "yolo11n.pt"
-    video_tracking_yolo_classes: str = ""
-    video_tracking_yolo_generic_allowed_classes: str = "0,1,2,3,5,7"
-    video_tracking_bytetrack_config: str = "config/bytetrack_frc.yaml"
-    video_tracking_yolo_auto_robot_classes: bool = True
-    video_tracking_yolo_min_box_area_ratio: float = 0.00008
-    video_tracking_yolo_max_box_area_ratio: float = 0.09
-    video_tracking_yolo_min_aspect_ratio: float = 0.32
-    video_tracking_yolo_max_aspect_ratio: float = 3.2
-    video_tracking_yolo_max_detections_per_frame: int = 14
-    video_tracking_yolo_min_track_observations: int = 3
-    video_tracking_yolo_min_track_avg_confidence: float = 0.24
-    video_tracking_sampling_mode: str = "adaptive"
-    video_tracking_sample_interval_sec: float = 2.0
-    video_tracking_dense_interval_sec: float = 0.8
-    video_tracking_adaptive_min_interval_sec: float = 0.75
-    video_tracking_adaptive_max_interval_sec: float = 2.0
-    video_tracking_max_sample_frames: int = 120
-    video_tracking_interlude_trim_enabled: bool = True
-    video_tracking_interlude_trim_long_video_min_sec: float = 260.0
-    video_tracking_interlude_trim_pre_roll_sec: float = 8.0
-    video_tracking_interlude_trim_post_roll_sec: float = 12.0
-    video_tracking_interlude_trim_allow_calibration_anchor: bool = True
-    video_tracking_interlude_trim_calibration_anchor_fraction: float = 0.5
-    video_tracking_interlude_trim_calibration_anchor_max_reuse: int = 3
-    video_tracking_interlude_trim_weak_signal_fallback_enabled: bool = True
-    video_tracking_interlude_trim_weak_signal_min_observations_per_team: int = 8
-    video_tracking_interlude_trim_weak_signal_min_tracks: int = 4
-    video_tracking_interlude_trim_anchor_tolerance_sec: float = 1.0
-    video_tracking_max_artifact_sample_frames: int = 30
-    video_tracking_dense_retry_enabled: bool = True
-    video_tracking_dense_retry_interval_sec: float = 0.7
-    video_tracking_dense_retry_max_frames: int = 220
-    video_tracking_dense_retry_min_observations_per_team: int = 18
-    video_tracking_dense_retry_min_tracks: int = 4
-    video_tracking_main_view_min_x_ratio: float = 0.02
-    video_tracking_main_view_max_x_ratio: float = 0.98
-    video_tracking_main_view_min_y_ratio: float = 0.06
-    video_tracking_main_view_max_y_ratio: float = 0.78
-    video_tracking_main_view_min_box_overlap_ratio: float = 0.6
-    video_tracking_field_bounds_prune_enabled: bool = True
-    video_tracking_field_bounds_prune_margin_m: float = 0.8
-    video_tracking_field_bounds_drop_unprojectable: bool = False
-    video_tracking_cut_detection_enabled: bool = True
-    video_tracking_cut_detection_hist_threshold: float = 0.34
-    video_tracking_cut_detection_frame_diff_threshold: float = 0.19
-    video_tracking_cut_detection_min_gap_sec: float = 1.0
-    video_tracking_cut_track_id_segment_stride: int = 1000000
-    video_tracking_enable_bumper_ocr: bool = True
-    video_tracking_bumper_ocr_language: str = "eng"
-    video_tracking_bumper_ocr_max_samples_per_track: int = 12
-    video_tracking_bumper_ocr_min_text_conf: float = 0.35
-    video_tracking_bumper_ocr_expand_ratio: float = 0.25
-    video_tracking_bumper_ocr_bottom_band_ratio: float = 0.55
-    video_event_classifier_enabled: bool = True
-    video_event_classifier_model_path: str = "media/models/frc_event_transition_v1.json"
-    video_event_classifier_conf_threshold: float = 0.58
-    video_event_classifier_margin_threshold: float = 0.06
-    video_event_classifier_prefer_model: bool = True
-    live_analysis_enabled: bool = True
-    live_analysis_default_interval_sec: int = 35
-    live_analysis_default_clip_duration_sec: int = 26
-    live_analysis_live_window_sec: int = 170
-    live_analysis_analysis_cooldown_sec: int = 75
-    live_analysis_max_matches_per_tick: int = 2
-    live_analysis_analysis_version: str = "video_v3_live_window"
-    live_analysis_post_compute: bool = True
-    live_analysis_synergy_quality_threshold: float = 0.35
-    live_analysis_regional_auto_enabled: bool = True
-    live_analysis_regional_auto_interval_sec: int = 120
-    live_analysis_regional_auto_max_events: int = 16
-    live_analysis_regional_auto_require_schedule: bool = False
     analysis_quality_gate_enabled: bool = True
     analysis_quality_min_coverage_score: float = 0.2
     analysis_quality_min_detections: int = 8
-    analysis_quality_reject_low_runs: bool = True
-    analysis_quality_min_overall_score: float = 0.35
     scouting_data_outdated_days: int = 45
     rating_recent_match_window: int = 20
     rating_recent_priority_window: int = 10
@@ -373,29 +238,8 @@ class Settings(BaseSettings):
     ops_metrics_sample_days: int = 14
     ops_smoke_check_enabled: bool = True
     ops_smoke_check_interval_minutes: int = 30
-    ops_alert_queue_pressure_threshold: float = 0.9
-    ops_alert_queue_stuck_minutes: int = 25
     ops_alert_regional_automation_stale_hours: int = 14
     ops_alert_automation_lock_spike_threshold: int = 3
-    ops_alert_automation_missing_calibration_threshold: int = 20
-    ops_alert_automation_blocked_ratio_threshold: float = 0.45
-    ops_youtube_slo_lookback_runs: int = 200
-    ops_alert_youtube_stream_fallback_ratio_threshold: float = 0.10
-    ops_alert_youtube_hard_failure_ratio_threshold: float = 0.02
-    ops_alert_interlude_trim_weak_signal_ratio_threshold: float = 0.15
-    ops_alert_interlude_trim_weak_signal_min_samples: int = 20
-    analysis_low_quality_reprocess_enabled: bool = True
-    analysis_low_quality_reprocess_interval_minutes: int = 180
-    analysis_low_quality_reprocess_lookback_hours: int = 72
-    analysis_low_quality_reprocess_max_matches_per_run: int = 4
-    analysis_low_quality_reprocess_cooldown_hours: int = 24
-    analysis_low_quality_reprocess_reason_tokens: str = (
-        "detections_below_threshold,average_coverage_below_threshold,overall_quality_below_threshold"
-    )
-    analysis_low_quality_reprocess_sample_interval_sec: float = 0.75
-    analysis_low_quality_reprocess_max_frames: int = 240
-    analysis_low_quality_reprocess_max_artifact_frames: int = 40
-    analysis_low_quality_reprocess_queue_pressure_ceiling: float = 0.75
     request_slow_log_threshold_ms: float = 900.0
     request_timing_header_enabled: bool = False
     db_slow_query_logging_enabled: bool = True
@@ -430,8 +274,6 @@ class Settings(BaseSettings):
     ml_auto_scout_training_export_interval_hours: int = 24
     ml_auto_scout_training_export_replace_existing: bool = False
     ml_auto_scout_training_export_max_drafts: int = 4000
-    # Auto-generate drafts for all assigned teams when a match analysis completes.
-    auto_scout_generate_after_analysis_enabled: bool = True
     # Scheduler-backed catch-up for matches analyzed before the hook shipped or when the hook fails.
     auto_scout_backfill_enabled: bool = True
     auto_scout_backfill_interval_minutes: int = 30
@@ -446,20 +288,14 @@ class Settings(BaseSettings):
     on_device_sync_max_points_per_team: int = 6000  # ~160s match well above any real fps
     on_device_sync_max_total_points: int = 24000
     on_device_sync_max_runs_per_match: int = 50  # cap distinct on-device runs per match
+    # A verified four-corner calibration + stable pose + strong identity must all
+    # be present before ordinary acceptance. Legacy payloads always score zero.
+    on_device_sync_min_quality_score: float = 0.8
     ml_match_outcome_blend: float = 0.0  # 0..1 — blend ML prob with deterministic baseline
     ml_team_strength_blend: float = 0.0  # 0..1 — reserved for Phase 3 rating blend
     ml_synergy_blend: float = 0.0  # 0..1 — blend ML pair synergy with deterministic shrinkage
     ml_role_blend: float = 0.0  # 0..1 — blend ML role signals with deterministic classifier
     matches_live_results_cache_ttl_sec: int = 5
-    freshness_sla_stale_hours: int = 48
-    freshness_recovery_enabled: bool = True
-    freshness_recovery_interval_minutes: int = 30
-    freshness_recovery_max_events_per_run: int = 5
-    freshness_recovery_max_target_teams_per_event: int = 30
-    freshness_recovery_force_analysis: bool = False
-    freshness_recovery_require_video: bool = True
-    freshness_recovery_require_calibration: bool = False
-    freshness_recovery_run_post_compute: bool = True
 
     @field_validator(
         "tba_auth_key",

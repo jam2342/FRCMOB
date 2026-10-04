@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import routes_teams
 from app.api.routes_teams import router as teams_router
 from app.db import models
 from app.db.base import Base
@@ -154,6 +156,50 @@ class TeamIntelEndpointIntegrationTests(unittest.TestCase):
         Base.metadata.drop_all(self.engine)
         self.engine.dispose()
 
+    def test_event_intel_keeps_the_event_loop_free_while_tba_is_slow(self):
+        # The builder is async but its TBA/DB work is blocking; on the loop it froze
+        # every other request and the room websockets for the whole TBA round trip.
+        import asyncio
+        import time as _time
+
+        class _SlowTba:
+            def event_team_statuses(self, event_key):
+                _time.sleep(0.3)
+                return {}
+
+        async def _run():
+            ticks = 0
+            done = False
+
+            async def _ticker():
+                nonlocal ticks
+                while not done:
+                    ticks += 1
+                    await asyncio.sleep(0.01)
+
+            ticker = asyncio.create_task(_ticker())
+            db = self.SessionLocal()
+            try:
+                await routes_teams._build_event_teams_intel_payload(
+                    db=db,
+                    event_key="2026txhou",
+                    include_tba=True,
+                    include_statbotics=False,
+                    auto_heal_ratings=False,
+                    include_season_fallback=True,
+                    include_rating_details=False,
+                    include_rating_signals=False,
+                )
+            finally:
+                done = True
+                db.close()
+                await ticker
+            return ticks
+
+        with patch.object(routes_teams, "TBAClient", _SlowTba), patch.object(routes_teams.settings, "tba_auth_key", "test"):
+            ticks = asyncio.run(_run())
+        self.assertGreater(ticks, 10)
+
     def test_get_team_intel_includes_data_coverage_payload(self):
         response = self.client.get(
             "/teams/frc118/intel",
@@ -187,6 +233,54 @@ class TeamIntelEndpointIntegrationTests(unittest.TestCase):
         teams = payload.get("teams") or []
         self.assertTrue(teams)
         self.assertIn("data_coverage", teams[0])
+
+    def _event_intel_with_statbotics(self, total_points):
+        # Every other test in this file passes include_statbotics=false, which is
+        # exactly why the scalar-EPA crash reached production unnoticed.
+        row = {
+            "team": 118,
+            "epa": {
+                "total_points": total_points,
+                "unitless": 2149.0,
+                "norm": 1885.0,
+                "breakdown": {"auto_points": 73.13, "teleop_points": 140.52},
+            },
+        }
+
+        async def _fake_get_team_events(**_kwargs):
+            return [row]
+
+        with patch.object(
+            routes_teams.statbotics_client, "get_team_events", _fake_get_team_events
+        ):
+            return self.client.get(
+                "/teams/event/2026txhou/intel",
+                params={
+                    "include_tba": "false",
+                    "include_statbotics": "true",
+                    "auto_heal_ratings": "false",
+                },
+            )
+
+    def test_event_intel_survives_scalar_statbotics_total_points(self):
+        # Statbotics returns epa.total_points as a bare number for 2026 events.
+        # Calling .get("mean") on it raised AttributeError and 500'd the payload for
+        # every team at the event, not just the one with the odd shape.
+        response = self._event_intel_with_statbotics(287.57)
+        self.assertEqual(response.status_code, 200)
+        teams = response.json().get("teams") or []
+        self.assertTrue(teams)
+        statbotics = teams[0].get("statbotics") or {}
+        self.assertAlmostEqual(statbotics.get("event_epa_points"), 287.57, places=2)
+
+    def test_event_intel_still_reads_mean_from_object_statbotics_total_points(self):
+        # The older {"mean": ...} shape must keep working.
+        response = self._event_intel_with_statbotics({"mean": 301.4})
+        self.assertEqual(response.status_code, 200)
+        teams = response.json().get("teams") or []
+        self.assertTrue(teams)
+        statbotics = teams[0].get("statbotics") or {}
+        self.assertAlmostEqual(statbotics.get("event_epa_points"), 301.4, places=2)
 
     def test_event_intel_compact_rating_mode_omits_details_and_signals(self):
         response = self.client.get(

@@ -10,8 +10,10 @@ from contextlib import suppress
 
 from app.services.game_config import load_game_config
 from app.services.season_config import (
+    REBUILT_SEASON_YEAR,
     REBUILT_HUB_SCORE_GRACE_SEC as _SEASON_REBUILT_HUB_SCORE_GRACE_SEC,
     rebuilt_active_hub_duration_from_phases as _rebuilt_active_hub_duration_from_phases,
+    require_known_season_rules,
 )
 from app.services.utils import _as_float
 
@@ -174,6 +176,7 @@ def _parse_2026_alliance_truth(
     breakdown: dict,
     context: dict[str, dict[str, float]],
     team_weight_by_key: dict[str, float] | None = None,
+    auto_fuel_copr_by_team: dict[str, float] | None = None,
 ) -> list[dict]:
     count = len(team_keys)
     if count == 0:
@@ -237,7 +240,23 @@ def _parse_2026_alliance_truth(
         total_teleop_count = float(total_teleop_points)
         teleop_count_capped_to_points = True
 
-    auto_points_by_team = _share_evenly(hub_auto_points, count)
+    # The breakdown reports hub fuel for the alliance, not for each robot.
+    # COPR gives a per-team estimate; without all three estimates, do not
+    # manufacture an individual auto score by dividing the alliance total.
+    auto_weights = [
+        max(0.0, float(_as_float((auto_fuel_copr_by_team or {}).get(key)) or 0.0))
+        for key in team_keys
+    ]
+    has_auto_copr = (
+        auto_fuel_copr_by_team is not None
+        and all(_as_float(auto_fuel_copr_by_team.get(key)) is not None for key in team_keys)
+        and sum(auto_weights) > 0.0
+    )
+    auto_points_by_team = (
+        [float(hub_auto_points) * weight / sum(auto_weights) for weight in auto_weights]
+        if hub_auto_points is not None and has_auto_copr
+        else None
+    )
     teleop_points_by_team = _share_weighted(total_teleop_points, team_keys, team_weight_by_key)
     teleop_count_by_team = (
         _share_weighted(total_teleop_count, team_keys, team_weight_by_key)
@@ -279,7 +298,11 @@ def _parse_2026_alliance_truth(
         )
         endgame_token = str(endgame_status or "").strip().lower()
         has_endgame_result = endgame_token not in {"", "none", "no", "unknown", "null"}
-        auto_points_value = max(0.0, float(auto_points_by_team[idx - 1] or 0.0) + float(auto_tower_points))
+        auto_points_value = (
+            max(0.0, float(auto_points_by_team[idx - 1]) + float(auto_tower_points))
+            if auto_points_by_team is not None
+            else float(auto_tower_points) if hub_auto_points == 0.0 else None
+        )
         teleop_points_value = max(0.0, float(teleop_points_by_team[idx - 1] or 0.0))
         rows.append(
             {
@@ -299,6 +322,11 @@ def _parse_2026_alliance_truth(
                     "hub_shift_points": hub_shift_points,
                     "hub_shift_counts": hub_shift_counts,
                     "teleop_count_capped_to_points": teleop_count_capped_to_points,
+                    "auto_allocation": (
+                        "event_auto_fuel_copr" if auto_points_by_team is not None
+                        else "no_hub_fuel" if hub_auto_points == 0.0
+                        else "unknown"
+                    ),
                     "teleop_allocation": (
                         "weighted_team_prior"
                         if isinstance(team_weight_by_key, dict) and any(
@@ -430,7 +458,12 @@ def _extract_score_breakdown_truth_rows(
     season_year: int,
     context: dict[str, dict[str, float]],
     team_weight_by_key: dict[str, float] | None = None,
+    auto_fuel_copr_by_team: dict[str, float] | None = None,
 ) -> list[dict]:
+    require_known_season_rules(
+        season_year,
+        feature="score-breakdown truth extraction",
+    )
     alliances = match.get("alliances")
     score_breakdown = match.get("score_breakdown")
     if not isinstance(alliances, dict) or not isinstance(score_breakdown, dict):
@@ -450,7 +483,7 @@ def _extract_score_breakdown_truth_rows(
         if not team_keys or not isinstance(breakdown, dict):
             continue
 
-        if season_year >= 2026:
+        if season_year == REBUILT_SEASON_YEAR:
             rows.extend(
                 _parse_2026_alliance_truth(
                     team_keys=team_keys,
@@ -458,6 +491,7 @@ def _extract_score_breakdown_truth_rows(
                     breakdown=breakdown,
                     context=context,
                     team_weight_by_key=team_weight_by_key,
+                    auto_fuel_copr_by_team=auto_fuel_copr_by_team,
                 )
             )
         elif season_year == 2025:

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 import unittest
 
 from app.api import routes_scouting
-from app.services import jobs
 
 
 def _finding(
@@ -45,35 +44,15 @@ class FuelRateAccuracyTests(unittest.TestCase):
 
         payload = routes_scouting._serialize_finding(finding, match_time=0)
         self.assertAlmostEqual(float(payload.get("fuel_scoring_rate") or 0.0), 45.0, places=3)
+        self.assertIsNone(payload["cycle_time_sec"])
 
-    def test_score_breakdown_fallbacks_do_not_cap_high_fuel_rates(self):
-        payload = {
-            "alliances": {
-                "red": {"team_keys": ["frc1", "frc2", "frc3"]},
-                "blue": {"team_keys": ["frc4", "frc5", "frc6"]},
-            },
-            "score_breakdown": {
-                "red": {
-                    "teleopCount": 279,
-                    "teleopPoints": 279,
-                },
-                "blue": {
-                    "teleopCount": 0,
-                    "teleopPoints": 0,
-                },
-            },
-        }
-
-        fallbacks = jobs._score_breakdown_cycle_fallbacks_from_match_payload(
-            match_payload=payload,
-            teleop_duration_sec=120.0,
-        )
-
-        for team_key in ("frc1", "frc2", "frc3"):
-            row = fallbacks.get(team_key)
-            self.assertIsNotNone(row)
-            assert row is not None
-            self.assertAlmostEqual(float(row.get("fuel_scoring_rate") or 0.0), 46.5, places=3)
+    def test_legacy_official_auto_is_not_shown_as_robot_output(self):
+        finding = _finding(match_key="qm3", fuel_scoring_rate=45.0, cycle_time_sec=1.5)
+        finding.auto_contribution = 30.0
+        averages = routes_scouting._compute_averages([finding])
+        self.assertIsNone(averages["cycle_time_sec"])
+        self.assertIsNone(averages["auto_contribution"])
+        self.assertIsNone(routes_scouting._serialize_finding(finding, match_time=0)["auto_contribution"])
 
 
 if __name__ == "__main__":

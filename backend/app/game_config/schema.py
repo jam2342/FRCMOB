@@ -29,7 +29,7 @@ class ShiftWindow(BaseModel):
     end_sec: int = Field(gt=0)
     # Which alliance's hub is active during this window. "both" = everyone can score
     # (auto / transition / endgame) and never counts as defense.
-    active: Literal["red", "blue", "both"]
+    active: Literal["red", "blue", "both", "shift_1", "opposite_shift_1"]
 
     @model_validator(mode="after")
     def validate_window(self):
