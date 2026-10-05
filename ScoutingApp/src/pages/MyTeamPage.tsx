@@ -16,6 +16,7 @@ import { OfflineReadyCard } from '../components/ui/OfflineReadyCard';
 import { SyncStatusCard } from '../features/offline/SyncStatusCard';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, FieldText, Modal } from '../components/ui/primitives';
+import { TeamScoutingCard } from '../features/workspace/TeamScoutingCard';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 import { issuedJoinCodeFor, workspaceEndReason } from '../features/workspace/workspaceSession';
 import { hapticSuccess } from '../utils/haptics';
@@ -401,6 +402,8 @@ function TeamWorkspaceView() {
           </Button>
         ) : null}
       </SurfaceCard>
+
+      <TeamScoutingCard />
 
       <SurfaceCard title="Invite scouts" subtitle="Anyone with the code can join this workspace." expandable={false} mobileCollapsible={false}>
         <JoinCodePanel

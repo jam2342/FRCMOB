@@ -58,6 +58,7 @@ def _cleanup_inactive_scouting_rooms_db(
         db.query(models.ScoutingRoom)
         .filter(
             models.ScoutingRoom.last_activity_at < cutoff,
+            models.ScoutingRoom.team_event_key.is_(None),
             ~has_entries,
             ~has_assignments,
             ~has_on_device_runs,

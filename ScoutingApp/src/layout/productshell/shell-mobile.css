@@ -1179,6 +1179,17 @@
     text-align: left;
   }
 
+  /* The grid's one column used to size to its widest row, so a long team
+     name pushed the whole page sideways on a small phone. */
+  .fm-alliance-card,
+  .fm-alliance-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fm-team-row {
+    min-width: 0;
+  }
+
   .fm-team-row:active {
     background: color-mix(in srgb, var(--color-surface-soft) 80%, transparent);
   }
@@ -2189,7 +2200,7 @@
   .scouting-mobile-compact .fm-scout-hero {
     padding: 5px 8px;
     gap: 4px;
-    top: calc(env(safe-area-inset-top, 0px) + 94px);
+    top: calc(env(safe-area-inset-top, 0px) + 94px + var(--ps-offline-banner-height, 0px));
   }
 
   .scouting-mobile-compact .fm-scout-hero-actions .center-btn {

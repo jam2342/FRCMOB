@@ -1,0 +1,26 @@
+/* My Team's "Scouting at <event>" card. Tokens only. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: var(--space-3);
+}
+
+.note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.primary {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+}

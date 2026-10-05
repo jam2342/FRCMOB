@@ -1,12 +1,12 @@
 // Signs the test "device" in to a team workspace, for tests of team-only features.
 import { clearWorkspaceSession, setWorkspaceSession, type WorkspaceRole } from '../features/workspace/workspaceSession';
 
-export function signInTestWorkspace(role: WorkspaceRole = 'leader') {
+export function signInTestWorkspace(role: WorkspaceRole = 'leader', member?: { id: number; display_name: string }) {
   setWorkspaceSession({
     token: 'test-workspace-token',
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     workspace: { id: 1, name: 'Test Team', frc_team_number: 118 },
-    me: { id: 1, display_name: 'Test Scout', role },
+    me: { id: member?.id ?? 1, display_name: member?.display_name ?? 'Test Scout', role },
   });
 }
 

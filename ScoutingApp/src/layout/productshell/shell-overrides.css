@@ -754,7 +754,7 @@
   }
 
   .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle {
-    top: calc(env(safe-area-inset-top, 0px) + 48px);
+    top: calc(env(safe-area-inset-top, 0px) + 48px + var(--ps-offline-banner-height, 0px));
     gap: 4px;
     padding: 4px;
     border-radius: 12px;
@@ -772,7 +772,7 @@
   }
 
   .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
-    top: calc(env(safe-area-inset-top, 0px) + 84px);
+    top: calc(env(safe-area-inset-top, 0px) + 84px + var(--ps-offline-banner-height, 0px));
     gap: 4px;
     padding: 6px 8px;
     border-radius: 12px;
@@ -948,11 +948,13 @@
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero {
-    top: calc(env(safe-area-inset-top, 0px) + 90px);
+    top: calc(env(safe-area-inset-top, 0px) + 90px + var(--ps-offline-banner-height, 0px));
     gap: 4px;
     padding: 5px 8px;
     border-radius: 12px;
-    max-height: 80px;
+    /* Save, the match/team chips and one status line. Clipping here once hid
+       the chips, so a scout couldn't see which robot they were scouting. */
+    max-height: 132px;
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero-actions {
@@ -962,7 +964,7 @@
 
   .product-shell .scouting-layout-grid .fm-scout-hero-actions .center-btn {
     grid-column: auto;
-    min-height: 32px;
+    min-height: 44px;
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero-context {
@@ -1006,7 +1008,7 @@
   }
 
   .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
-    top: calc(env(safe-area-inset-top, 0px) + 84px);
+    top: calc(env(safe-area-inset-top, 0px) + 84px + var(--ps-offline-banner-height, 0px));
     gap: 4px;
     padding: 6px 8px;
     border-radius: 12px;
@@ -1037,7 +1039,7 @@
 
 @media (max-width: 320px), (max-height: 500px) {
   .product-shell .scouting-layout-grid .mobile-view-toggle {
-    top: calc(env(safe-area-inset-top, 0px) + 44px);
+    top: calc(env(safe-area-inset-top, 0px) + 44px + var(--ps-offline-banner-height, 0px));
     gap: 4px;
     padding: 4px;
     border-radius: 11px;
@@ -1055,11 +1057,11 @@
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero {
-    top: calc(env(safe-area-inset-top, 0px) + 72px);
+    top: calc(env(safe-area-inset-top, 0px) + 72px + var(--ps-offline-banner-height, 0px));
     gap: 3px;
     padding: 4px 6px;
     border-radius: 10px;
-    max-height: 76px;
+    max-height: 116px;
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero-actions {
@@ -1067,7 +1069,7 @@
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero-actions .center-btn{
-    min-height: 34px;
+    min-height: 40px;
     padding: 0 10px;
     font-size: var(--font-size-legacy-10);
     border-radius: 7px;
@@ -1118,12 +1120,12 @@
   }
 
   .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle {
-    top: calc(env(safe-area-inset-top, 0px) + 40px);
+    top: calc(env(safe-area-inset-top, 0px) + 40px + var(--ps-offline-banner-height, 0px));
     padding: 3px;
   }
 
   .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
-    top: calc(env(safe-area-inset-top, 0px) + 66px);
+    top: calc(env(safe-area-inset-top, 0px) + 66px + var(--ps-offline-banner-height, 0px));
     padding: 3px 5px;
     max-height: 82px;
   }

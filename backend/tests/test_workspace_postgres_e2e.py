@@ -1,6 +1,7 @@
 """Concurrent requests through real HTTP, auth middleware, and PostgreSQL sessions."""
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import copy
@@ -10,8 +11,9 @@ import socket
 import threading
 import time
 import uuid
+from unittest.mock import AsyncMock
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 import httpx
 import pytest
@@ -55,6 +57,7 @@ def beta(monkeypatch):
         conn.execute(CreateSchema(schema))
     engine = root_engine.execution_options(schema_translate_map={None: schema})
     session_local = sessionmaker(bind=engine, autoflush=False)
+    monkeypatch.setattr(settings, "app_env", "test")
     monkeypatch.setattr(settings, "public_readonly_mode", False)
     monkeypatch.setattr(settings, "enforce_admin_auth_for_writes", True)
     monkeypatch.setattr(settings, "admin_api_key", "disposable-local-beta-only")
@@ -71,7 +74,7 @@ def beta(monkeypatch):
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return await call_next(request)
 
-    for router in (workspaces_router, tracks_router, picklists_router, pit_router):
+    for router in (workspaces_router, tracks_router, picklists_router, pit_router, routes_scouting_rooms.router):
         app.include_router(router)
 
     def override_db():
@@ -349,3 +352,95 @@ def test_write_authenticated_before_removal_is_rechecked_before_save(beta, monke
         assert db.query(models.PitScoutingEntry).count() == 0
         assert db.query(models.OnDeviceSession).count() == 0
         assert db.get(models.EventPicklist, picklist_id).title == "Original"
+
+
+def team_request(member):
+    return Request({"type": "http", "headers": [
+        (key.lower().encode(), value.encode()) for key, value in headers(member).items()
+    ]})
+
+
+def test_concurrent_first_team_room_calls_share_one_room(beta, monkeypatch):
+    client, sessions, engine = beta
+    lead = create_workspace(client)
+    scout = join(client, lead, "Scout")
+    monkeypatch.setattr(routes_scouting_rooms, "_safe_touch_http_presence", AsyncMock(return_value=[]))
+
+    def join_room(member):
+        with sessions() as db:
+            return asyncio.run(routes_scouting_rooms.create_or_join_team_room(
+                routes_scouting_rooms.TeamRoomRequest(event_key=EVENT_KEY), team_request(member), db,
+            ))
+
+    with overlap_unlocked_reads(engine, "team_workspace_members"):
+        payloads = concurrently(*[lambda member=member: join_room(member) for member in (lead, scout)])
+    assert len({p["room_key"] for p in payloads}) == 1
+    assert sorted(p["created"] for p in payloads) == [False, True]
+    with sessions() as db:
+        assert db.query(models.ScoutingRoom).filter_by(team_event_key=EVENT_KEY).count() == 1
+
+
+def test_team_write_waiting_for_lock_rechecks_removed_leader(beta, monkeypatch):
+    client, sessions, engine = beta
+    lead = create_workspace(client)
+    second = join(client, lead, "Second lead")
+    assert client.post(
+        f"/workspaces/me/members/{second['me']['id']}/role", headers=headers(lead), json={"role": "leader"}
+    ).status_code == 200
+    monkeypatch.setattr(routes_scouting_rooms, "_safe_touch_http_presence", AsyncMock(return_value=[]))
+    assert client.post("/scouting/rooms/team", headers=headers(lead), json={"event_key": EVENT_KEY}).status_code == 200
+    authenticated = threading.Event()
+    resume = threading.Event()
+    original = workspaces.lock_workspace_row
+
+    def pause_before_lock(db, workspace_id):
+        authenticated.set()
+        assert resume.wait(timeout=5)
+        return original(db, workspace_id)
+
+    def write():
+        with sessions() as db:
+            return asyncio.run(routes_scouting_rooms.update_team_assignments(
+                EVENT_KEY, routes_scouting_rooms.TeamAssignmentRequest(changes=[{
+                    "match_key": MATCH_KEY, "team_key": "frc118", "assigned_member_id": second['me']['id'],
+                }]), team_request(lead), db,
+            ))
+
+    monkeypatch.setattr(workspaces, "lock_workspace_row", pause_before_lock)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(write)
+        try:
+            assert authenticated.wait(timeout=5)
+            removed = client.post(
+                f"/workspaces/me/members/{lead['me']['id']}/remove", headers=headers(second), json={}
+            )
+            assert removed.status_code == 200, removed.text
+        finally:
+            resume.set()
+        with pytest.raises(HTTPException) as rejected:
+            pending.result(timeout=10)
+        assert rejected.value.status_code == 401
+    with sessions() as db:
+        assert db.query(models.ScoutingRoomAssignment).count() == 0
+
+
+def test_team_room_migration_matches_metadata(beta):
+    from importlib.util import module_from_spec, spec_from_file_location
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    client, sessions, engine = beta
+    schema = engine.get_execution_options()["schema_translate_map"][None]
+    migration_path = Path(__file__).resolve().parents[1] / "alembic/versions/20261005_0018_team_event_rooms.py"
+    spec = spec_from_file_location("team_room_migration", migration_path)
+    migration = module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.down_revision == "20260929_0017"
+    with engine.begin() as conn:
+        conn.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
+        context = MigrationContext.configure(conn)
+        with Operations.context(context):
+            migration.downgrade()
+            migration.upgrade()
+        assert compare_metadata(context, Base.metadata) == []
