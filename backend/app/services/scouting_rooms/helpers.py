@@ -40,14 +40,6 @@ def rating_display_value(value: object, model_version: object) -> float | None:
         return round(parsed, 3)
     return round(calibrate_public_rating_scale(parsed), 3)
 
-def delta_or_none(after_value: float | None, before_value: float | None) -> float | None:
-    if after_value is None or before_value is None:
-        return None
-    return after_value - before_value
-
-def clamp_metric(value: float, low: float, high: float) -> float:
-    return max(low, min(high, float(value)))
-
 def mean_metric(values: list[float]) -> float | None:
     if not values:
         return None
@@ -70,20 +62,6 @@ def safe_div(numerator: float, denominator: float) -> float | None:
     if abs(denominator) < 1e-12:
         return None
     return numerator / denominator
-
-def pearson_correlation(xs: list[float], ys: list[float]) -> float | None:
-    n = min(len(xs), len(ys))
-    if n < 3:
-        return None
-    x_vals, y_vals = xs[:n], ys[:n]
-    x_mean = sum(x_vals) / n
-    y_mean = sum(y_vals) / n
-    cov = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_vals, y_vals))
-    sx = math.sqrt(max(0.0, sum((x - x_mean) ** 2 for x in x_vals)))
-    sy = math.sqrt(max(0.0, sum((y - y_mean) ** 2 for y in y_vals)))
-    if sx < 1e-12 or sy < 1e-12:
-        return None
-    return max(-1.0, min(1.0, cov / (sx * sy)))
 
 # ── Finding source helpers ────────────────────────────────────
 
@@ -680,15 +658,16 @@ def rows_for_metric_coverage(
     accepted_rows: list[tuple],
     quality_gate: dict,
 ) -> tuple[list[tuple], dict]:
-    fallback_used = bool(quality_gate.get("enabled") and not accepted_rows and raw_rows)
-    selected_rows = accepted_rows if accepted_rows else raw_rows
+    # Rows the gate rejected are never shown in their place: ratings drop them, so the
+    # team's history and averages must too (it used to fall back to them).
+    gate_enabled = bool(quality_gate.get("enabled"))
+    selected_rows = accepted_rows if gate_enabled else raw_rows
+    fallback_used = False
     source = "quality_gate_accepted"
-    if not quality_gate.get("enabled"):
+    if not gate_enabled:
         source = "quality_gate_disabled"
-    elif fallback_used:
-        source = "quality_gate_fallback_raw"
     elif not selected_rows:
-        source = "none"
+        source = "quality_gate_rejected_all" if raw_rows else "none"
 
     raw_count = int(quality_gate.get("raw_count") or 0)
     accepted_count = int(quality_gate.get("accepted_count") or 0)
@@ -756,18 +735,6 @@ def serialize_rating_row(row: models.EventTeamRating, team: models.Team | None) 
         "model_version": row.model_version,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
-
-def signal_labels(signals: object) -> set[str]:
-    labels: set[str] = set()
-    if not isinstance(signals, list):
-        return labels
-    for signal in signals:
-        if not isinstance(signal, dict):
-            continue
-        label = signal.get("label")
-        if isinstance(label, str) and label.strip():
-            labels.add(label.strip())
-    return labels
 
 # ── Quality-gate helpers for upstream callers ─────────────────
 

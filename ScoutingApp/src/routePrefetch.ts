@@ -60,7 +60,7 @@ export async function prepareAppShellOffline(): Promise<void> {
   if (typeof caches === 'undefined') throw new Error('This browser cannot save app pages for offline use.');
   for (const load of ROUTE_LOADERS) await load();
   const urls = new Set<string>([
-    '/', '/record.html', '/Heading.png', '/Heading.webp',
+    '/', '/record.html', '/icon.svg', '/icons/icon-192.png',
     '/fonts/ibm-plex-sans-latin.woff2', '/fonts/ibm-plex-sans-latin-ext.woff2',
   ]);
   const entry = currentEntry();

@@ -42,17 +42,20 @@ def _merge_missing_fields_only(
     existing_payload: dict[str, Any],
     fresh_payload: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
-    merged = dict(existing_payload)
+    # Fresh values win; the previous snapshot only fills fields this build couldn't
+    # get (say TBA timed out). It used to be the other way round, so a snapshot
+    # froze at its first build: ratings, ranks and team lists never updated.
+    merged = dict(fresh_payload)
     filled = 0
-    for key, fresh_value in fresh_payload.items():
-        existing_value = merged.get(key)
+    for key, existing_value in existing_payload.items():
+        fresh_value = merged.get(key)
         if isinstance(existing_value, dict) and isinstance(fresh_value, dict):
             child, child_filled = _merge_missing_fields_only(existing_value, fresh_value)
             merged[key] = child
             filled += int(child_filled)
             continue
-        if _is_missing_value(existing_value) and not _is_missing_value(fresh_value):
-            merged[key] = fresh_value
+        if _is_missing_value(fresh_value) and not _is_missing_value(existing_value):
+            merged[key] = existing_value
             filled += 1
     return merged, filled
 
@@ -226,12 +229,14 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
             fallback_year = max(2015, preferred_year - 1)
 
             try:
+                # Built with the parameters the app's pages request, or no one reads
+                # them: heal is admin-only and the pages ask for include_statbotics=false.
                 event_payload = build_event_teams_intel_payload(
                     db=db,
                     event_key=normalized_event_key,
                     include_tba=True,
-                    include_statbotics=True,
-                    auto_heal_ratings=True,
+                    include_statbotics=False,
+                    auto_heal_ratings=False,
                     include_season_fallback=True,
                     include_rating_details=False,
                     include_rating_signals=False,
@@ -239,8 +244,8 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                 event_token = _event_intel_cache_token(
                     event_key=normalized_event_key,
                     include_tba=True,
-                    include_statbotics=True,
-                    auto_heal_ratings=True,
+                    include_statbotics=False,
+                    auto_heal_ratings=False,
                     include_season_fallback=True,
                     include_rating_details=False,
                     include_rating_signals=False,
@@ -283,9 +288,9 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                         preferred_year=preferred_year,
                         fallback_year=fallback_year,
                         include_tba=True,
-                        include_statbotics=True,
+                        include_statbotics=False,
                         allow_season_fallback=True,
-                        auto_heal_ratings=True,
+                        auto_heal_ratings=False,
                     )
                     team_token = _team_intel_cache_token(
                         team_key=team_key,
@@ -293,9 +298,9 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                         preferred_year=preferred_year,
                         fallback_year=fallback_year,
                         include_tba=True,
-                        include_statbotics=True,
+                        include_statbotics=False,
                         allow_season_fallback=True,
-                        auto_heal_ratings=True,
+                        auto_heal_ratings=False,
                     )
                     team_cache_key = _cache_key("team", team_token)
                     team_payload_to_store = team_payload

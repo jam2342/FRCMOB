@@ -10,12 +10,14 @@ from apscheduler.jobstores.base import ConflictingIdError
 from apscheduler.schedulers.background import BackgroundScheduler
 import redis
 
+from app.services.season_config import regional_automation_season
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.auto_scout.backfill import backfill_missing_auto_scout_drafts
 from app.services.auto_scout.training import export_auto_scout_training_snapshots
 from app.services.climb.official_backfill import run_official_climb_backfill
 from app.services.climb.integrity import safe_run_climb_integrity_audit
+from app.services.ratings.snapshots import prune_rating_snapshots
 from app.services.intel.snapshots import refresh_hot_intel_snapshots
 from app.services.push.match_alerts import run_match_alert_tick
 from app.services.push.sender import push_configured
@@ -361,6 +363,16 @@ def start_scheduler() -> None:
             misfire_grace_time=300,
         )
 
+    _register_job(
+        job_fn=_scheduled_prune_rating_snapshots,
+        trigger="interval",
+        job_id="prune_rating_snapshots",
+        job_name="Prune old rating snapshots",
+        success_log="Scheduled rating snapshot prune job added (interval: 24 h)",
+        hours=24,
+        misfire_grace_time=3600,
+    )
+
     if settings.climb_integrity_audit_enabled:
         interval_minutes = max(30, int(settings.climb_integrity_audit_interval_minutes))
         _register_job(
@@ -527,6 +539,14 @@ def _scheduled_refresh_intel_snapshots() -> None:
             error_count=len(result.get("errors") or []),
         )
 
+def _scheduled_prune_rating_snapshots() -> None:
+    with _scheduled_job("prune_rating_snapshots", lock_ttl_sec=3600, use_db=True) as details:
+        if details is None:
+            return
+        deleted = prune_rating_snapshots(details["_db"])
+        logger.info("Rating snapshot prune deleted=%s", deleted)
+        details.update(deleted=deleted)
+
 def _scheduled_climb_integrity_audit() -> None:
     interval_minutes = max(30, int(settings.climb_integrity_audit_interval_minutes))
     with _scheduled_job("climb_integrity_audit", lock_ttl_sec=max(300, interval_minutes * 120), use_db=True) as details:
@@ -580,12 +600,6 @@ def _scheduled_climb_official_backfill() -> None:
             totals=totals if isinstance(totals, dict) else {},
         )
 
-def _current_regional_automation_season() -> int:
-    configured = int(settings.automation_regional_halfday_season or 0)
-    if 2015 <= configured <= 2100:
-        return configured
-    return int(datetime.now(timezone.utc).year)
-
 def _scheduled_regional_post_event_breakdowns() -> None:
     interval_hours = max(1, int(settings.automation_regional_halfday_interval_hours))
     with _scheduled_job("regional_post_event_halfday", lock_ttl_sec=max(600, interval_hours * 2 * 3600), use_db=True) as details:
@@ -595,7 +609,7 @@ def _scheduled_regional_post_event_breakdowns() -> None:
         from app.services.events.regional_automation import run_regional_automation_tick
         from app.services.ml.synergy import QUALITY_THRESHOLD_DEFAULT, SYNERGY_MODEL_VERSION
 
-        season = _current_regional_automation_season()
+        season = regional_automation_season()
         result = run_regional_automation_tick(
             season=season, db=db, force_tick=False,
             min_interval_minutes=interval_hours * 60,

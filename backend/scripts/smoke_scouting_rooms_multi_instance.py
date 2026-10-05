@@ -317,6 +317,24 @@ async def run() -> None:
                 label="cross-instance entry_saved on instance A websocket",
             )
 
+        # The same member opening the room on a second device whose socket lands on the
+        # other instance takes over; the older socket is closed as replaced.
+        ws_a_second_url = ws_a_url.replace(f":{PORT_A}/", f":{PORT_B}/").replace("client-a", "client-a2")
+        async with websockets.connect(ws_a_url, open_timeout=8.0) as first:
+            await recv_until(first, predicate=lambda p: p.get("type") == "snapshot", timeout_sec=8.0, label="first socket snapshot")
+            async with websockets.connect(ws_a_second_url, open_timeout=8.0) as second:
+                await recv_until(second, predicate=lambda p: p.get("type") == "snapshot", timeout_sec=8.0, label="takeover socket snapshot")
+                deadline = time.monotonic() + 8.0
+                while first.close_code is None and time.monotonic() < deadline:
+                    try:
+                        await asyncio.wait_for(first.recv(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    except websockets.ConnectionClosed:
+                        break
+                if first.close_code != 4403:
+                    raise RuntimeError(f"older socket on instance A was not replaced (close code {first.close_code})")
+
         print(
             json.dumps(
                 {
@@ -328,6 +346,7 @@ async def run() -> None:
                     ],
                     "checks": [
                         "join_on_a_socket_on_b",
+                        "second_device_takeover_across_instances",
                         "instance_a_local_broadcast",
                         "instance_b_receives_a",
                         "instance_b_local_broadcast",

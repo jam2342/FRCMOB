@@ -139,6 +139,7 @@ class ScoutingRoomRealtimeHub:
         *,
         close_code: int = 4403,
         reason: str = "Removed from room by room leader.",
+        connected_before: datetime | None = None,
     ) -> tuple[int, list[dict[str, Any]]]:
         target_room_key = str(room_key or "").strip().lower()
         target_profile_lookup = str(scout_profile or "").strip().lower()
@@ -154,6 +155,8 @@ class ScoutingRoomRealtimeHub:
                 for websocket, meta in self._connection_meta.items()
                 if str(meta.room_key or "").strip().lower() == target_room_key
                 and str(meta.scout_profile or "").strip().lower() == target_profile_lookup
+                # A takeover only closes sockets older than the one taking over.
+                and (connected_before is None or meta.connected_at < connected_before)
             ]
             http_targets = self._pop_http_presence_unlocked(
                 room_key=target_room_key,

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  QueuedForSyncError,
   deletePitPhoto,
   getEventTeamsIntel,
   listPitEntries,
-  resolveMediaUrl,
+  pitPhotoDisplayUrl,
   upsertPitEntry,
   uploadPitPhoto,
 } from '../api';
@@ -89,6 +90,8 @@ function PitScoutingWorkspacePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [statusText, setStatusText] = useState('');
+  const [waitingForSync, setWaitingForSync] = useState(false);
+  const queuedSaveRef = useRef<{ workspaceId: number; eventKey: string; team: string; form: Record<string, unknown>; editVersion: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editVersionRef = useRef(0);
   const formRef = useRef<Record<string,unknown>>({});
@@ -205,11 +208,40 @@ function PitScoutingWorkspacePage() {
       hapticSuccess();
       setStatusText(`Saved pit entry for #${teamNumber(selectedTeam)}.`);
     } catch (err) {
-      setErrorText((err as Error).message || 'Failed to save pit entry.');
+      if (err instanceof QueuedForSyncError) {
+        // Not an error: kept on this phone and replayed on reconnect.
+        setStatusText(`Saved #${teamNumber(selectedTeam)} on this phone. It will sync to your team when you're back online.`);
+        queuedSaveRef.current = { workspaceId, eventKey, team: selectedTeam, form: savedForm, editVersion: savedEditVersion };
+        setWaitingForSync(true);
+      } else setErrorText((err as Error).message || 'Failed to save pit entry.');
     } finally {
       setSavingForm(false);
     }
   }
+
+  // The queued message used to stay up after the edit had synced.
+  useEffect(() => {
+    if (!waitingForSync) return;
+    const onChange = (event: Event) => {
+      if ((event as CustomEvent<{ count: number }>).detail?.count === 0) {
+        const queued = queuedSaveRef.current;
+        queuedSaveRef.current = null;
+        if (queued) {
+          // Same as a save that reached the server: the draft is done unless the
+          // scout kept editing after saving.
+          clearConfirmedPitDraft(queued.workspaceId, queued.eventKey, queued.team, queued.form);
+          if (contextRef.current.selectedTeam === queued.team && editVersionRef.current === queued.editVersion) {
+            setFormDirty(false);
+            setDraftStored(false);
+          }
+        }
+        setWaitingForSync(false);
+        setStatusText('Synced with your team.');
+      }
+    };
+    window.addEventListener('offlinequeue:change', onChange);
+    return () => window.removeEventListener('offlinequeue:change', onChange);
+  }, [waitingForSync]);
 
   async function handlePhotoSelected(file: File | null) {
     if (!file || !eventKey || !selectedTeam) return;
@@ -390,7 +422,7 @@ function PitScoutingWorkspacePage() {
               disabled={savingForm || uploadingPhoto}
             />
             {errorText && !selectedTeam ? <p ref={errorRef} className="center-callout warning" role="alert">{errorText}</p> : null}
-            {statusText ? <p className="center-success-text">{statusText}</p> : null}
+            {statusText ? <p className="center-success-text" role="status">{statusText}</p> : null}
           </SurfaceCard>
 
           {teams.length > 0 ? (
@@ -454,9 +486,9 @@ function PitScoutingWorkspacePage() {
               {errorText ? <p ref={errorRef} className="center-callout warning" role="alert">{errorText}</p> : null}
               {/* Photos */}
               <div className="pit-photos">
-                {(selectedEntry?.photos ?? []).map((photo) => (
+                {(selectedEntry?.photos ?? []).map((photo, index) => (
                   <figure key={photo} className="pit-photo-item">
-                    <img src={resolveMediaUrl(photo)} alt={`Robot ${teamNumber(selectedTeam)}`} loading="lazy" />
+                    <img src={selectedEntry ? pitPhotoDisplayUrl(selectedEntry, index) : ''} alt={`Robot ${teamNumber(selectedTeam)}`} loading="lazy" />
                     <button
                       type="button"
                       className="pit-photo-delete"

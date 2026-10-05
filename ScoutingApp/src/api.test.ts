@@ -353,3 +353,19 @@ describe('scoutingRoomWebSocketUrl', () => {
     expect(suggestedCalls.length).toBe(1);
   });
 });
+
+describe('pitPhotoDisplayUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('shows the signed link and falls back to the stored path for older saved responses', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://scouting.example.com/api');
+    const { pitPhotoDisplayUrl } = await import('./api');
+    const path = '/media/pit_photos/2026test/frc254/a.jpg';
+    expect(pitPhotoDisplayUrl({ photos: [path], photo_urls: [`${path}?exp=1&sig=abc`] }, 0))
+      .toBe(`https://scouting.example.com/api${path}?exp=1&sig=abc`);
+    expect(pitPhotoDisplayUrl({ photos: [path] }, 0)).toBe(`https://scouting.example.com/api${path}`);
+  });
+});

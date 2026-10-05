@@ -5,6 +5,53 @@ Design errors, contradictions, disconnected or duplicated systems, and bloat acr
 this audit. Severity: **H** = wrong result, broken feature or data risk today;
 **M** = two systems that disagree, or a design that will bite; **L** = cleanup.
 
+## Status on 4 October 2026
+
+Every item below was re-checked against `main`. "This round" is the audit-leftovers PR
+that adds this section.
+
+| Item | Status |
+|---|---|
+| 1.1 Alliance scorer / auto drafts admin-gated | Fixed (#54); auto drafts are admin-only (#55) |
+| 1.2 Live data cached 300 s | Fixed (#54, live endpoints 15 s) |
+| 1.3 Offline picklist conflicts dropped | Fixed (#54) |
+| 1.4 Room cleanup deletes assignments | Fixed (#54) |
+| 1.5 Statbotics client across event loops | Fixed (#54) |
+| 1.6 Anonymous GET creates fake events | Fixed this round: a TBA 404 now returns 404 and creates nothing; the TBA client no longer retries 4xx answers (it backed off three times on every 404) |
+| 1.7 Event-teams intel blocks the loop | Fixed (#54) |
+| 1.8 Auto-scout empty drafts | Moot: broadcast video retired (#57); drafts come from accepted on-device sessions; auto mode admin-only |
+| 1.9 Last member leaving doesn't lock | Fixed (#54) |
+| 1.10 Detector not cached offline | Fixed (#55, offline packs #71–#76) |
+| 1.11 Tour prompt under the tab bar | Fixed (breakpoint now 1120 px) |
+| 2.1 Three win-probability models | Fixed (#57, one answer); now official fuel rates (#101) |
+| 2.2 Two "fuel/min" definitions | Fixed (#57, per active-hub minute everywhere) |
+| 2.3 Team Center shows rejected rows | Fixed this round: rejected findings are never shown in their place |
+| 2.4 Scout rating on old-game scales | Recalibrated (#55); still computed on both sides |
+| 2.5 / 2.7 Match time meaning, push on schedule | Fixed (#57, predicted/actual times stored and used) |
+| 2.6 Two schedule endpoints | Open by design: live results vs synergy + win probability |
+| 2.8 Two "my team" systems; 2.9 two alliance-selection systems | Open: product decisions |
+| 2.10 Two coverage formulas | Left: neither score is shown anywhere |
+| 2.11 Rank fallbacks / invented EPA | Invented EPA removed (#55); model rank fallback is labelled `model_rating_fallback` |
+| 2.12 Four team-key normalizers; 2.14 shift timing defined twice; 2.19 labels/thresholds | Open (cleanup) |
+| 2.13 "Current season" sources | Fixed this round: one `regional_automation_season()`, falling back to the game config, never the calendar year |
+| 2.15–2.17 Provenance, two enqueue systems, two media deleters | Moot: removed with the video pipeline (#57) |
+| 2.18 Capacity utilisation constant 0.8 | Open: no capacity data exists; changing it moves every rating |
+| 3.1 On-device sync invisible | Fixed (#57: accepted sessions feed heatmaps, Attack vs Defense, drafts) |
+| 3.2 Elite/role computed, unread | Open: still computed on every recompute (whole recompute ~0.3 s) |
+| 3.3 Intel snapshots nobody reads | Fixed this round: built with the parameters pages request (it used admin-only `auto_heal_ratings=true`, ~1 min of work every 2 min for nothing), and fresh values now win over the previous snapshot (snapshots used to freeze at their first build) |
+| 3.4 Model-QA subsystem dead | Fixed this round: route and helpers removed (~930 lines) |
+| 3.5 Unreachable code (appendix) | Removed (#57); last helper (`_require_scout_profile`) removed this round |
+| 3.6 Routes without a frontend caller | Open: many are admin/ops tools |
+| 3.7 Sparse fallback rating | Fixed this round: removed; it scored REBUILT numbers on old-game constants, so every team with data read ~72+ |
+| 3.8 Dead config; snapshots never pruned | Snapshots: fixed this round (written only on change, trend reads the last 12 per team instead of every row, pruned daily at 30 days; 2026cmptx alone had ~112k rows). Dead config: open |
+| 4.1 Percentile ties | Fixed (#54) |
+| 4.2 GET triggers recompute | Fixed this round: off by default, admin-only |
+| 5 Performance | Team search no longer calls TBA per result by default (this round). Room endpoints doing sync DB work on the loop, and the N+1 queries: open |
+| 6 Names, concurrency, backups | Unique names and write locks (#79); stale `backup_postgres.sh` deleted this round; daily archive of pit photos + ML artifacts added to the backup (this round; same disk, so not off-site). The always-False `_bootstrap_missing_room_table` stays: it performs the rollback its callers' fallbacks depend on |
+| 7 Duplication | Open |
+| 8 Frontend | Home empty state, `/primitives` and SW cache versioning fixed; UI guards still not in CI |
+| 9 Infra/docs | Docs updated; `alembic check` in CI (#61); CI on PostgreSQL 17 (this round); ruff still skips `scripts/` |
+
 ## How this was done
 
 - **Read line by line:** backend `core/`, `db/`, `main.py`, `api/routes_teams.py` + `api/teams/*`,

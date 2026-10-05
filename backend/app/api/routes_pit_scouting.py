@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import sign_media_path
 from app.db import models
 from app.db.session import get_db
 from app.services.workspaces import require_workspace_actor, require_workspace_writer
@@ -75,6 +76,8 @@ def _serialize_entry(row: models.PitScoutingEntry) -> dict[str, Any]:
         "scout_profile": row.scout_profile,
         "payload": row.payload if isinstance(row.payload, dict) else {},
         "photos": row.photos if isinstance(row.photos, list) else [],
+        # What to display: the stored paths above stay the identifiers (delete uses them).
+        "photo_urls": [sign_media_path(str(path)) for path in (row.photos if isinstance(row.photos, list) else [])],
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -234,7 +237,7 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
     row.photos = photos
     db.commit()
     db.refresh(row)
-    return {"ok": True, "photo": photo_url, "entry": _serialize_entry(row)}
+    return {"ok": True, "photo": photo_url, "photo_url": sign_media_path(photo_url), "entry": _serialize_entry(row)}
 
 @router.post("/photo/delete")
 def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Session = Depends(get_db)):

@@ -28,9 +28,10 @@ npm run native:build:ios # local simulator build, ad-hoc signed
 npm run native:bundle:android # unsigned release AAB + release lint
 ```
 
-Native version is **0.1.0 (build 2)** on both platforms. Branding uses the existing
-`public/Heading.png`, with generated icons and splash assets committed. On macOS,
-`npm run native:branding` regenerates them without any external service.
+Native version is **0.1.0 (build 2)** on both platforms. Branding comes from the hand-drawn
+mark in `brand/logo.mjs`; generated icons and splash assets are committed.
+`npm run brand:assets` regenerates every web and native icon from it (uses
+Playwright's Chromium, or installed Chrome; no external service).
 
 The debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. It is a local
 development build, not a signed Play Store release. It includes the current web

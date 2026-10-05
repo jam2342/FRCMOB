@@ -8,6 +8,7 @@ from typing import Any
 
 import redis
 
+from app.services.season_config import regional_automation_season
 from app.core.config import settings
 from app.services.utils import (
     automation_redis_key as _automation_redis_key,
@@ -16,14 +17,7 @@ from app.services.utils import (
 
 logger = logging.getLogger(__name__)
 
-_MIN_VALID_SEASON_YEAR = 2000  # FRC seasons began in 1992; values <= this indicate "not configured"
 
-
-def _current_regional_automation_season() -> int:
-    configured = int(settings.automation_regional_halfday_season or 0)
-    if configured > _MIN_VALID_SEASON_YEAR:
-        return configured
-    return datetime.now(timezone.utc).year
 
 
 def run_ops_smoke_check() -> dict[str, Any]:
@@ -33,7 +27,7 @@ def run_ops_smoke_check() -> dict[str, Any]:
         socket_timeout=5,
     )
     try:
-        season = _current_regional_automation_season()
+        season = regional_automation_season()
         now_ts = datetime.now(timezone.utc).timestamp()
 
         last_run_ts = _decode_redis_float(redis_conn.get(_automation_redis_key("regional", season, "last_run_ts")))

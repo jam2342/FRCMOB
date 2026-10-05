@@ -1,20 +1,20 @@
-fastapi==0.141.1
+fastapi==0.142.2
 uvicorn[standard]==0.52.3
 sqlalchemy==2.0.52
-psycopg[binary]==3.2.1
+psycopg[binary]==3.3.6
 alembic==1.19.1
 pydantic==2.13.4
 pydantic-settings==2.15.0
 PyJWT==2.15.1
 pywebpush==2.4.0
 requests==2.34.2
-httpx==0.27.2
+httpx==0.28.1
 redis==8.1.0
-apscheduler==3.10.4
+apscheduler==3.11.3
 python-dotenv==1.2.3
 numpy==2.1.1
 # ML shadow models (ratings, match outcome, synergy, roles). The production image
 # installs this from the CPU-only index; see Dockerfile.prod.
 torch==2.14.0
 # on_device_cv.py: the Python reference for the in-browser optical-flow stabiliser.
-opencv-python-headless>=4.10,<5.0
+opencv-python-headless>=5.0.0.93,<6.0

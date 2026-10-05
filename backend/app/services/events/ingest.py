@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import sanitize_external_error
 from app.db import models
+from app.services.analysis.evidence import evidence_rejection_reason
 from app.services.events.match_times import match_times_from_payload
 from app.services.ml.shadow import auto_train_shadow_models_for_event_breakdown
 from app.services.ratings.model import recompute_event_ratings
@@ -249,17 +250,26 @@ def upsert_score_breakdown_truth(
     endgame_start_sec = max(auto_end_sec, total_sec - float(phases["endgame_sec"]))
     cleared_runs = clear_existing_score_breakdown_rows(db, event_key)
 
+    # Only usable non-official evidence stands in for the official row. A rejected
+    # finding (e.g. legacy video marked ratings_eligible=false) used to block it, so the
+    # team lost its official result for that match on every re-ingest.
     non_tba_findings_by_team_match = {
         (str(match_key), str(team_key))
-        for match_key, team_key in (
-            db.query(models.TeamMatchFinding.match_key, models.TeamMatchFinding.team_key)
+        for match_key, team_key, summary in (
+            db.query(
+                models.TeamMatchFinding.match_key,
+                models.TeamMatchFinding.team_key,
+                models.TeamMatchFinding.summary,
+            )
             .filter(
                 models.TeamMatchFinding.event_key == event_key,
                 models.TeamMatchFinding.source != TBA_SCOREBREAKDOWN_SOURCE,
             )
             .all()
         )
-        if isinstance(match_key, str) and isinstance(team_key, str)
+        if isinstance(match_key, str)
+        and isinstance(team_key, str)
+        and evidence_rejection_reason(summary if isinstance(summary, dict) else {}) is None
     }
 
     inserted_runs = 0
@@ -320,7 +330,8 @@ def upsert_score_breakdown_truth(
 
             auto_points_raw = _as_float(row.get("auto_points"))
             auto_points = max(0.0, float(auto_points_raw)) if auto_points_raw is not None else None
-            teleop_points = max(0.0, float(_as_float(row.get("teleop_points")) or 0.0))
+            teleop_points_raw = _as_float(row.get("teleop_points"))
+            teleop_points = max(0.0, float(teleop_points_raw or 0.0))
             teleop_score_count = _as_float(row.get("teleop_score_count"))
             climb_points = max(0.0, float(_as_float(row.get("climb_points")) or 0.0))
             climb_success = bool(row.get("climb_success"))
@@ -346,14 +357,17 @@ def upsert_score_breakdown_truth(
                 )
                 inserted_runs += 1
 
-            scoring_proxy = (
-                teleop_score_count
-                if teleop_score_count is not None and teleop_score_count > 0.0
-                else teleop_points
-            )
+            # A published zero is a known zero (a shutout counts in averages); only an
+            # absent breakdown field is missing.
+            if teleop_score_count is not None and teleop_score_count > 0.0:
+                scoring_proxy = teleop_score_count
+            elif teleop_points_raw is not None or teleop_score_count is not None:
+                scoring_proxy = teleop_points
+            else:
+                scoring_proxy = None
             fuel_scoring_rate_raw = (
-                (float(scoring_proxy) / teleop_sec) * 60.0
-                if scoring_proxy is not None and float(scoring_proxy) > 0.0
+                (max(0.0, float(scoring_proxy)) / teleop_sec) * 60.0
+                if scoring_proxy is not None
                 else None
             )
             fuel_scoring_rate = (
