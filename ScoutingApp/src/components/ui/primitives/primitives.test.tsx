@@ -307,7 +307,7 @@ describe('FieldStepper', () => {
       );
     }
     render(<Fractional />);
-    const increase = screen.getByRole('button', { name: 'Increase Rank weight' });
+    const increase = screen.getByRole('button', { name: 'Increase Rank weight by 0.1' });
     fireEvent.click(increase);
     fireEvent.click(increase);
     fireEvent.click(increase);

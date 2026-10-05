@@ -41,8 +41,8 @@ export function officialMetricsNote(stats: OfficialTeamStats | null | undefined)
   if (stats.copr_matches > 0) {
     return (
       `Nobody has scouted this team yet. Fuel and auto are TBA's per-team estimates from ` +
-      `${stats.copr_matches} official matches at ${eventCount} event${eventCount === 1 ? '' : 's'}; ` +
-      `climb is its official record.`
+      `${stats.copr_matches} official matches at ${eventCount} event${eventCount === 1 ? '' : 's'} this season, ` +
+      `so one event's numbers can differ; climb is its official record.`
     );
   }
   return "Nobody has scouted this team yet. Climb is its official record; TBA's per-team fuel estimates aren't available.";

@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from urllib.parse import urlsplit
 
 import redis
@@ -39,6 +40,7 @@ from app.core.config import (
 )
 from app.core.security import ADMIN_SESSION_HEADER
 from app.core.security import enforce_write_request_access
+from app.core.security import media_signature_valid
 from app.core.security import request_has_admin_access
 from app.db.session import SessionLocal
 from app.services.utils import pg_sqlstate_code as _pg_sqlstate
@@ -300,7 +302,11 @@ def _enforce_media_access(request: Request) -> None:
     if not request_path.startswith("/media"):
         return
     if request_path.startswith("/media/pit_photos/"):
-        return
+        # Private team data: only the signed links the API gives a workspace's members.
+        params = request.query_params
+        if request_has_admin_access(request) or media_signature_valid(request_path, params.get("exp"), params.get("sig")):
+            return
+        raise HTTPException(status_code=403, detail="This photo link is invalid or expired. Reopen the pit page.")
     if not bool(settings.enforce_admin_auth_for_writes):
         return
     if request_has_admin_access(request):
@@ -459,11 +465,16 @@ async def _handle_scouting_room_bus_message(room_key: str, payload: dict) -> Non
         except Exception:
             close_code = 4403
         reason = str((payload or {}).get("reason") or "").strip() or "Removed from room by room leader."
+        try:
+            connected_before = datetime.fromisoformat(str(payload.get("connected_before")))
+        except (TypeError, ValueError):
+            connected_before = None
         removed_connections, presence_after = await scouting_room_hub.disconnect_scout_profile(
             room_key,
             target_profile,
             close_code=close_code,
             reason=reason,
+            connected_before=connected_before,
         )
         if removed_connections > 0:
             await scouting_room_bus.publish(

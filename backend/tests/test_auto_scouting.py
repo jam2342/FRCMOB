@@ -34,6 +34,8 @@ def _accept_recording(db, *, run: models.AnalysisRun, event_key: str, match_key:
         quality_score=0.9,
         status="accepted",
         reviewed_at=datetime.now(timezone.utc),
+        # Recorded on the phone, so shift play never has to ask TBA (no network in tests).
+        shift1_active_alliance="red",
     )
     db.add(session)
     db.flush()
@@ -238,7 +240,8 @@ class AutoScoutingServiceTests(DBTestCase):
         self.assertEqual(form_patch.get("teleop_cycles"), 14)
         self.assertIn("teleop_under_defense_scored", form_patch)
         self.assertIn("offense_level_1_5", form_patch)
-        self.assertIn("defense_level_1_5", form_patch)
+        # Only this robot was tracked, so defense can't be assessed and stays blank.
+        self.assertNotIn("defense_level_1_5", form_patch)
         self.assertIn("field_awareness_1_5", form_patch)
         self.assertIn("decision_quality_1_5", form_patch)
         self.assertIn("intake_failures", form_patch)
@@ -249,7 +252,7 @@ class AutoScoutingServiceTests(DBTestCase):
         self.assertEqual((row.field_provenance or {}).get("auto_mobility"), "auto")
         self.assertEqual((row.field_provenance or {}).get("teleop_scored"), "auto")
         self.assertEqual((row.field_provenance or {}).get("offense_level_1_5"), "auto")
-        self.assertEqual((row.field_provenance or {}).get("defense_level_1_5"), "auto")
+        self.assertEqual((row.field_provenance or {}).get("defense_level_1_5"), "needs_review")
         self.assertEqual((row.field_provenance or {}).get("endgame_mode"), "auto")
         self.assertGreater(float((row.field_confidence or {}).get("auto_mobility") or 0.0), 0.7)
         self.assertGreater(float((row.field_confidence or {}).get("teleop_scored") or 0.0), 0.7)
@@ -710,6 +713,8 @@ class AutoScoutPredictorCacheTests(DBTestCase):
         # Six round-2 fields used to each build the vector twice (12 builds); now one.
         self.assertEqual(calls["n"], 1)
 
+    # Offense/defense on phone recordings come from shift play, so the ML path is
+    # exercised on another round-2 field.
     def test_ml_high_confidence_prediction_wins(self):
         event_key, match_key, team_key = _seed_core_entities(self.db)
         _seed_analysis_rows(self.db, event_key=event_key, match_key=match_key, team_key=team_key)
@@ -727,7 +732,7 @@ class AutoScoutPredictorCacheTests(DBTestCase):
             row, _ = auto_scouting.generate_auto_scout_draft(
                 self.db, event_key=event_key, match_key=match_key, team_key=team_key
             )
-        refs = (row.field_evidence_refs or {}).get("offense_level_1_5") or []
+        refs = (row.field_evidence_refs or {}).get("field_awareness_1_5") or []
         self.assertTrue(any(str(ref.get("ref_id", "")).startswith("ml_model:") for ref in refs))
 
     def test_ml_missing_falls_back_to_deterministic(self):
@@ -742,10 +747,10 @@ class AutoScoutPredictorCacheTests(DBTestCase):
             row, _ = auto_scouting.generate_auto_scout_draft(
                 self.db, event_key=event_key, match_key=match_key, team_key=team_key
             )
-        refs = (row.field_evidence_refs or {}).get("offense_level_1_5") or []
+        refs = (row.field_evidence_refs or {}).get("field_awareness_1_5") or []
         self.assertTrue(refs)
         self.assertTrue(all(str(ref.get("ref_id", "")).startswith("auto_scout_rule:") for ref in refs))
-        self.assertEqual((row.field_provenance or {}).get("offense_level_1_5"), "auto")
+        self.assertEqual((row.field_provenance or {}).get("field_awareness_1_5"), "auto")
 
 
 class AutoScoutTeamProfileTests(DBTestCase):

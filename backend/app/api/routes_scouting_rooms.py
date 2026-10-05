@@ -213,15 +213,6 @@ def _member_scout_profile(actor: WorkspaceActor) -> str:
     # otherwise any teammate could claim the room owner's name and get owner rights.
     return _normalize_scout_profile(actor.member.display_name)
 
-def _require_scout_profile(raw: str | None, *, context: str) -> str:
-    profile = _normalize_scout_profile(raw)
-    if not profile:
-        raise HTTPException(
-            status_code=400,
-            detail=f"scout_profile is required for {context}. Enter your name to continue.",
-        )
-    return profile
-
 def _clamp_0_100(value: float) -> float:
     return _clamp(float(value), 0.0, 100.0)
 
@@ -1333,6 +1324,24 @@ def _persist_room_entry(
             .first()
         )
         if existing is not None:
+            # A retry carries the same saved_at_ms and changes nothing. The same scout
+            # re-saving that report later (correcting it) replaces it, so teammates
+            # see the correction instead of the first version forever.
+            previous_saved = _float_or_none((existing.payload or {}).get("saved_at_ms")) or 0.0
+            incoming_saved = _float_or_none(entry_payload.get("saved_at_ms")) or 0.0
+            if existing.scout_profile != scout_profile or incoming_saved <= previous_saved:
+                return existing, False
+            payload = {**dict(entry_payload), "id": (existing.payload or {}).get("id") or normalized_client_id}
+            payload["scout_profile"] = scout_profile
+            existing.payload = payload
+            existing.total_points = _entry_metric(payload, "points", "total")
+            existing.driver_score_0_100 = _entry_metric(payload, "driver_competency", "score_0_100")
+            existing.manual_rating_0_100 = _entry_metric(payload, "manual_rating", "score_0_100")
+            existing.scouting_api_rating_0_100 = _entry_metric(payload, "scouting_api_rating", "score_0_100")
+            existing.updated_at = datetime.now(timezone.utc)
+            room.last_activity_at = existing.updated_at
+            db.commit()
+            db.refresh(existing)
             return existing, False
 
     now = datetime.now(timezone.utc)
@@ -2518,6 +2527,21 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                 scout_profile,
                 reason=f"Session replaced for scout profile {scout_profile}.",
             )
+            if removed_connections <= 0 and await scouting_room_bus.publish(
+                normalized,
+                {
+                    # The older socket lives on another worker: every worker closes this
+                    # member's sockets that predate this one, then this one takes over.
+                    "type": _ROOM_BUS_CONTROL_DISCONNECT_PROFILE,
+                    "room_key": normalized,
+                    "scout_profile": scout_profile,
+                    "reason": f"Session replaced for scout profile {scout_profile}.",
+                    "close_code": 4403,
+                    "connected_before": datetime.now(timezone.utc).isoformat(),
+                },
+            ):
+                removed_connections = 1
+                presence_after_replace = await _safe_presence_snapshot(normalized, context="websocket takeover")
             if removed_connections <= 0:
                 await websocket.close(
                     code=4409,

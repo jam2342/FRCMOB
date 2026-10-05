@@ -1,6 +1,6 @@
 import { exportPrintableReport } from '../platform/exportFile';
 import { isNativeApp } from '../platform/runtime';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getEventSchedule,
@@ -365,8 +365,21 @@ export function StrategyBriefingPage() {
   const teamFromWorkspace = workspaceTeamKey();
 
   // Fetch all data
+  // A new event starts empty (a failed load used to leave the old event's name and
+  // schedule on screen), and only the latest request may write.
+  const requestGeneration = useRef(0);
+  const loadedEventKey = useRef('');
   const fetchData = useCallback(async (key: string) => {
     if (!key) return;
+    const generation = ++requestGeneration.current;
+    if (loadedEventKey.current !== key) {
+      loadedEventKey.current = key;
+      setSchedule(null);
+      setEventName('');
+      setSynergyMatches([]);
+      setRatings([]);
+      setLiveFormStatuses({});
+    }
     setLoading(true);
     setErrorText('');
 
@@ -376,6 +389,7 @@ export function StrategyBriefingPage() {
       getEventRatings(key),
       getEventTeamLiveForm(key),
     ]);
+    if (generation !== requestGeneration.current) return;
 
     if (results[0].status === 'fulfilled') {
       setSchedule(results[0].value.matches);

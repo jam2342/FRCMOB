@@ -1142,6 +1142,7 @@ export function normalizeEntry(value: unknown): SavedScoutingEntry | null {
     entry_source: row.entry_source === 'reviewed_auto' ? 'reviewed_auto' : 'manual',
     auto_scout_meta: normalizeAutoScoutMeta(asRecord(row.auto_scout_meta)),
     field_overrides: normalizeFieldOverrides(row.field_overrides),
+    ...(row.server_synced === true ? { server_synced: true } : {}),
   };
 }
 
@@ -1300,23 +1301,41 @@ export function mergeEntry(existing: SavedScoutingEntry[], incoming: SavedScouti
 export function entriesFromRoomRecords(records: ScoutingRoomEntryRecord[], fallbackRoomKey?: string): SavedScoutingEntry[] {
   const normalizedFallbackRoomKey = normalizeRoomKey(fallbackRoomKey || '');
   const normalized = records
-    .map((record) => {
+    .map((record): SavedScoutingEntry | null => {
       const parsed = normalizeEntry(record.entry);
       if (!parsed) return null;
       const recordRoomKey = normalizeRoomKey(record.room_key || '');
       return {
         ...parsed,
         room_key: recordRoomKey || normalizedFallbackRoomKey || parsed.room_key || null,
-      } satisfies SavedScoutingEntry;
+        server_synced: true,
+      };
     })
     .filter((entry): entry is SavedScoutingEntry => Boolean(entry));
   return mergeEntries([], normalized);
 }
 
+// Drops a room's server copies (a snapshot will replace them). Entries saved on this
+// phone that the server hasn't acknowledged stay: a snapshot that lacks them proves
+// nothing, and dropping them lost scouting the phone had promised to keep.
 export function stripEntriesForRoom(entries: SavedScoutingEntry[], roomKey: string): SavedScoutingEntry[] {
   const normalizedRoomKey = normalizeRoomKey(roomKey);
   if (!normalizedRoomKey) return entries;
-  return entries.filter((entry) => normalizeRoomKey(entry.room_key || '') !== normalizedRoomKey);
+  return entries.filter((entry) => normalizeRoomKey(entry.room_key || '') !== normalizedRoomKey || !entry.server_synced);
+}
+
+// A room snapshot replacing that room's entries. A kept phone-only entry the snapshot
+// now contains is dropped first, or mergeEntries would keep both copies.
+export function replaceRoomEntries(
+  entries: SavedScoutingEntry[],
+  roomKey: string,
+  snapshot: SavedScoutingEntry[],
+): SavedScoutingEntry[] {
+  const snapshotIds = new Set(snapshot.map((entry) => entry.id));
+  return mergeEntries(
+    stripEntriesForRoom(entries, roomKey).filter((entry) => !snapshotIds.has(entry.id)),
+    snapshot,
+  );
 }
 
 export function normalizeRoomKey(raw: string): string {

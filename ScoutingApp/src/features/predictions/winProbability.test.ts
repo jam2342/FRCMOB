@@ -37,6 +37,22 @@ describe('matchWinProbability', () => {
     expect(result).toEqual({ red: 0.7, blue: 0.3, source: 'rating_model', edgeConfidence: 0.4 });
   });
 
+  it('labels the fuel-rate formula', () => {
+    const result = matchWinProbability(match({
+      prediction: {
+        available: true,
+        source_label: 'deterministic_fuel_v1',
+        model_key: 'match_outcome',
+        model_version: null,
+        red_win_prob: 0.8,
+        blue_win_prob: 0.2,
+        favored_alliance: 'red',
+        edge_confidence_0_1: 0.6,
+      },
+    }));
+    expect(result?.source).toBe('fuel_model');
+  });
+
   it('marks an ML-blended prediction as ML', () => {
     const result = matchWinProbability(match({
       prediction: {

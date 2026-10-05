@@ -2243,16 +2243,10 @@ export async function getTeamIntel(
   if (typeof options?.allow_season_fallback === "boolean") {
     params.set("allow_season_fallback", String(options.allow_season_fallback));
   }
-  if (typeof options?.auto_heal_ratings === "boolean") {
-    if (!options.auto_heal_ratings || canUseAdminReadFlags) {
-      params.set("auto_heal_ratings", String(options.auto_heal_ratings));
-    }
-  }
-  if (typeof options?.refresh === "boolean") {
-    if (!options.refresh || canUseAdminReadFlags) {
-      params.set("refresh", String(options.refresh));
-    }
-  }
+  // Flags the server defaults to false go in the URL only when true, so equivalent
+  // requests share one cache entry (an offline pack missed pages that sent "=false").
+  if (options?.auto_heal_ratings && canUseAdminReadFlags) params.set("auto_heal_ratings", "true");
+  if (options?.refresh && canUseAdminReadFlags) params.set("refresh", "true");
   const makeSuffix = (query: URLSearchParams) => (query.toString() ? `?${query.toString()}` : "");
   const resolvedRequestOptions = _cacheRequestOptions(requestOptions, {
     cacheTtlMs: TEAM_INTEL_CACHE_TTL_MS,
@@ -2298,25 +2292,15 @@ export async function getEventTeamsIntel(
   if (typeof options?.include_statbotics === "boolean") {
     params.set("include_statbotics", String(options.include_statbotics));
   }
-  if (typeof options?.auto_heal_ratings === "boolean") {
-    if (!options.auto_heal_ratings || canUseAdminReadFlags) {
-      params.set("auto_heal_ratings", String(options.auto_heal_ratings));
-    }
-  }
+  // Flags the server defaults to false go in the URL only when true, so equivalent
+  // requests share one cache entry (an offline pack missed pages that sent "=false").
+  if (options?.auto_heal_ratings && canUseAdminReadFlags) params.set("auto_heal_ratings", "true");
   if (typeof options?.include_season_fallback === "boolean") {
     params.set("include_season_fallback", String(options.include_season_fallback));
   }
-  if (typeof options?.include_rating_details === "boolean") {
-    params.set("include_rating_details", String(options.include_rating_details));
-  }
-  if (typeof options?.include_rating_signals === "boolean") {
-    params.set("include_rating_signals", String(options.include_rating_signals));
-  }
-  if (typeof options?.refresh === "boolean") {
-    if (!options.refresh || canUseAdminReadFlags) {
-      params.set("refresh", String(options.refresh));
-    }
-  }
+  if (options?.include_rating_details) params.set("include_rating_details", "true");
+  if (options?.include_rating_signals) params.set("include_rating_signals", "true");
+  if (options?.refresh && canUseAdminReadFlags) params.set("refresh", "true");
   const makeSuffix = (query: URLSearchParams) => (query.toString() ? `?${query.toString()}` : "");
   const resolvedRequestOptions = _cacheRequestOptions(requestOptions, {
     cacheTtlMs: EVENT_INTEL_CACHE_TTL_MS,
@@ -3398,6 +3382,10 @@ export async function leaveWorkspace(confirmLastMember = false): Promise<void> {
 // ── Media helpers ──────────────────────────────────────────────
 
 /** Resolve a backend-relative media path ("/media/...") to a fetchable URL. */
+export function pitPhotoDisplayUrl(entry: Pick<PitScoutingEntry, "photos" | "photo_urls">, index: number): string {
+  return resolveMediaUrl(entry.photo_urls?.[index] || entry.photos[index]);
+}
+
 export function resolveMediaUrl(path: string | null | undefined): string {
   const raw = String(path || "").trim();
   if (!raw) return "";
@@ -3510,6 +3498,8 @@ export interface PitScoutingEntry {
   scout_profile: string | null;
   payload: Record<string, unknown>;
   photos: string[];
+  // Signed display links, aligned with `photos` (the stored paths, used to delete).
+  photo_urls?: string[];
   created_at: string | null;
   updated_at: string | null;
 }

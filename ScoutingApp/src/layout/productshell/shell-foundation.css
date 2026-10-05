@@ -215,6 +215,12 @@
   border-radius: 8px;
 }
 
+.ps-brand-wordmark {
+  display: block;
+  height: 17px;
+  width: auto;
+}
+
 .ps-brand strong {
   display: block;
   font-size: var(--font-size-base);

@@ -1,10 +1,11 @@
 import type { ScheduleWithSynergyMatch } from '../../api';
 
-// One answer to "who wins this match" for every page. The server's prediction
-// (ratings, blended with the ML model when that is switched on) comes first; a
-// logistic on the synergy-score gap is the fallback when the server has none.
+// One answer to "who wins this match" for every page. The server's prediction comes
+// first: official fuel rates from earlier matches, or the rating formula when there are
+// none yet (blended with the ML model when that is switched on). A logistic on the
+// synergy-score gap is the fallback when the server has none.
 
-export type WinProbabilitySource = 'ml_model' | 'rating_model' | 'synergy_derived';
+export type WinProbabilitySource = 'ml_model' | 'fuel_model' | 'rating_model' | 'synergy_derived';
 
 export type WinProbability = {
   red: number;
@@ -33,8 +34,8 @@ export function matchWinProbability(match: ScheduleWithSynergyMatch | null | und
     return {
       red,
       blue: typeof prediction.blue_win_prob === 'number' ? prediction.blue_win_prob : 1 - red,
-      // The plain rating formula is what ships while the ML blend is off.
-      source: /(^|_)ml(_|$)/.test(prediction.source_label || '') ? 'ml_model' : 'rating_model',
+      source: /(^|_)ml(_|$)/.test(prediction.source_label || '') ? 'ml_model'
+        : /(^|_)fuel(_|$)/.test(prediction.source_label || '') ? 'fuel_model' : 'rating_model',
       edgeConfidence: prediction.edge_confidence_0_1 ?? null,
     };
   }

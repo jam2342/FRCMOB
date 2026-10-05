@@ -99,9 +99,20 @@ def test_prune_drops_old_snapshots(db_session):
         captured_at=datetime.now(timezone.utc) - timedelta(days=45),
     )
     db_session.add(old)
+    db_session.query(models.EventTeamRating).one().rating_0_100 = 51.0
     db_session.commit()
     record_event_rating_snapshots(db_session, "2026test")  # one fresh row
 
     deleted = prune_rating_snapshots(db_session, older_than_days=30)
     assert deleted == 1
     assert db_session.query(models.RatingSnapshot).count() == 1
+
+
+def test_unchanged_recompute_writes_no_snapshot(db_session):
+    _seed_event_team(db_session, rating=50.0)
+    assert record_event_rating_snapshots(db_session, "2026test") == 1
+    assert record_event_rating_snapshots(db_session, "2026test") == 0
+    db_session.query(models.EventTeamRating).one().rating_0_100 = 52.0
+    db_session.commit()
+    assert record_event_rating_snapshots(db_session, "2026test") == 1
+    assert db_session.query(models.RatingSnapshot).count() == 2

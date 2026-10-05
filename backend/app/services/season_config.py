@@ -47,6 +47,16 @@ def require_known_season_rules(season_year: int, *, feature: str) -> None:
 
 # Resolved once at import; concrete int so it can serve as a default arg value.
 CURRENT_SEASON_YEAR: int = _resolve_current_season_year()
+
+
+def regional_automation_season() -> int:
+    # The season the regional automation refreshes: the configured override, else the
+    # game config's season. Never the calendar year: on 1 January that would point
+    # the automation at a game the backend doesn't know yet.
+    from app.core.config import settings
+
+    configured = int(getattr(settings, "automation_regional_halfday_season", 0) or 0)
+    return configured if 2015 <= configured <= 2100 else CURRENT_SEASON_YEAR
 PREVIOUS_SEASON_YEAR: int = CURRENT_SEASON_YEAR - 1
 
 # ── Alliance shift helpers ─────────────────────────────────────────────────────

@@ -202,6 +202,9 @@ class MatchOutcomePrediction(BaseModel):
     red_win_prob: float | None = None
     blue_win_prob: float | None = None
     red_win_prob_deterministic: float | None = None
+    # The rating formula's number, kept for comparison when the fuel formula decides.
+    red_win_prob_rating: float | None = None
+    fuel_margin_per_min: float | None = None
     red_win_prob_ml: float | None = None
     prediction_blend: float | None = None
     favored_alliance: str | None = None
@@ -227,7 +230,8 @@ class ScheduleWithSynergyResponse(OkEnvelope):
     ml_prediction_model_version: str | None = None
     ml_prediction_count: int = 0
     ml_blended_prediction_count: int = 0
-    deterministic_prediction_count: int = 0
+    deterministic_prediction_count: int
+    fuel_prediction_count: int = 0
     prediction_blend: float = 0.0
     count: int
     precompute: dict[str, Any] | None = None

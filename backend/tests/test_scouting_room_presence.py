@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 import fnmatch
 import unittest
 
-from app.services.scouting_rooms.realtime import ScoutingRoomRealtimeHub
+from app.services.scouting_rooms.realtime import ScoutingRoomRealtimeHub, _ConnectionMeta
 
 
 class _SharedRedis:
@@ -69,6 +70,33 @@ class ScoutingRoomPresenceTests(unittest.TestCase):
             presence = await worker_b.clear_http_presence("room-1", "Scout B")
             # A real socket for the same name still counts, so replacement rules apply.
             self.assertEqual(_connections(presence, "Scout B"), 1)
+
+        asyncio.run(scenario())
+
+    def test_takeover_closes_only_sockets_older_than_the_new_one(self):
+        class _Socket:
+            def __init__(self):
+                self.closed = None
+
+            async def close(self, code=1000, reason=""):
+                self.closed = code
+
+        async def scenario():
+            hub = _hub(_SharedRedis())
+            now = datetime.now(timezone.utc)
+            old, new = _Socket(), _Socket()
+            for socket, connected_at in ((old, now - timedelta(seconds=30)), (new, now + timedelta(seconds=1))):
+                hub._connection_meta[socket] = _ConnectionMeta(
+                    room_key="room-1", scout_profile="Scout B", client_id=None,
+                    connection_id=f"c-{id(socket)}", connected_at=connected_at, seen_at=connected_at,
+                )
+                hub._room_connections.setdefault("room-1", set()).add(socket)
+            removed, _presence = await hub.disconnect_scout_profile(
+                "room-1", "Scout B", reason="Session replaced", connected_before=now,
+            )
+            self.assertEqual(removed, 1)
+            self.assertEqual(old.closed, 4403)
+            self.assertIsNone(new.closed)
 
         asyncio.run(scenario())
 

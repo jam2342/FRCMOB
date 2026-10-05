@@ -47,7 +47,8 @@ async def search_teams(
     q: str,
     limit: int = 25,
     include_global: bool = True,
-    include_event_registrations: bool = True,
+    # Off unless asked for: it's one blocking TBA call per result (up to 75).
+    include_event_registrations: bool = False,
     preferred_year: int = CURRENT_SEASON_YEAR,
     fallback_year: int = PREVIOUS_SEASON_YEAR,
     db: Session = Depends(get_db),

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
@@ -58,6 +57,25 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         Base.metadata.drop_all(self.engine)
         self.engine.dispose()
 
+    def test_same_scout_resave_replaces_but_retries_and_others_do_not(self):
+        def entry(total, saved_at):
+            return {"match_key": "2026txhou_qm1", "team_key": "frc118", "points": {"total": total}, "saved_at_ms": saved_at}
+
+        def persist(payload, scout):
+            return routes_scouting_rooms._persist_room_entry(
+                self.db, room=self.room, entry_payload=payload, scout_profile=scout, client_entry_id="entry-1",
+            )
+
+        persist(entry(12, 1000), "ScoutA")
+        row, _ = persist(entry(12, 1000), "ScoutA")  # a retry
+        self.assertEqual(row.total_points, 12)
+        row, _ = persist(entry(30, 2000), "ScoutA")  # the scout corrects the report
+        self.assertEqual(row.total_points, 30)
+        self.assertEqual(row.payload["points"]["total"], 30)
+        row, _ = persist(entry(99, 3000), "ScoutB")  # someone else reusing the id
+        self.assertEqual(row.total_points, 30)
+        self.assertEqual(self.db.query(models.ScoutingRoomEntry).count(), 1)
+
     def test_same_client_entry_id_is_idempotent(self):
         payload = {
             "id": "entry-local-1",
@@ -109,11 +127,6 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         assert score is not None
         self.assertGreater(score, 70.0)
         self.assertLess(score, 90.0)
-
-    def test_require_scout_profile_rejects_blank(self):
-        with self.assertRaises(HTTPException) as context:
-            routes_scouting_rooms._require_scout_profile("   ", context="joining a scouting room")
-        self.assertEqual(context.exception.status_code, 400)
 
     def test_resolve_room_leader_prefers_owner_when_present(self):
         leader_profile, leader_source = routes_scouting_rooms._resolve_room_leader(

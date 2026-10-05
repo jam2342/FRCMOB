@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.services.auto_scout.common import _safe_float, _clamp, _round, _match_total_sec, _approx_track_coverage
 from app.db import models
-from app.services.analysis.runs import best_on_device_run
+from app.services.analysis.runs import RUN_KIND_ON_DEVICE, best_on_device_run
+from app.services.auto_scout.shift_play import analyze_run_shift_play
 from app.services.auto_scout.predictors import PREDICTORS, PredictorContext
 from app.services.auto_scout.shift_play import ON_DEVICE_ANALYSIS_VERSION as ANALYSIS_VERSION
 from app.services.auto_scout.specs import (
@@ -248,6 +249,26 @@ def _supersede_other_drafts(
         row.updated_at = now
 
 
+def withdraw_drafts_for_run(db: Session, run_id: int) -> int:
+    # A recording an operator rejects must stop feeding Team Center's robot profile.
+    # Drafts a human approved stay: those are the scout's own record now.
+    now = _utc_now()
+    rows = (
+        db.query(models.AutoScoutDraft)
+        .filter(
+            models.AutoScoutDraft.analysis_run_id == int(run_id),
+            models.AutoScoutDraft.superseded_at.is_(None),
+            models.AutoScoutDraft.status.notin_(["approved", "rejected", "superseded"]),
+        )
+        .all()
+    )
+    for row in rows:
+        row.status = "superseded"
+        row.superseded_at = now
+        row.updated_at = now
+    return len(rows)
+
+
 def _match_auto_sec() -> float:
     try:
         return float(load_game_config().phases.auto_sec)
@@ -430,6 +451,37 @@ def _build_ready_payload(
         throughput=throughput,
         quality=quality,
     )
+    if str(run.run_kind or "") == RUN_KIND_ON_DEVICE:
+        # Offense/defense come from the same shift-play assessment Attack vs Defense
+        # shows (defense only when it could be assessed). Every other field needs its own
+        # evidence: the phone uploads positions only, so without a finding or match
+        # events, scoring, misses, fouls, intake and endgame stay blank rather than
+        # reading as observed zeros.
+        has_scoring_evidence = finding is not None or bool(events) or throughput is not None
+        supported_form_fields = tuple(
+            field_name
+            for field_name in supported_form_fields
+            if has_scoring_evidence and field_name not in {"offense_level_1_5", "defense_level_1_5"}
+        )
+        try:
+            shift = analyze_run_shift_play(db, run_id=int(run.id), only_team_key=team_key).get(team_key)
+        except ValueError:
+            # Shift order unknown (no phone value, no official breakdown): offense and
+            # defense can't be judged, so they stay blank.
+            shift = None
+        if shift:
+            for field_name, part in (("offense_level_1_5", shift["offense"]), ("defense_level_1_5", shift["defense"])):
+                if field_name not in AUTO_SCOUT_FORM_FIELDS:
+                    continue
+                if field_name == "defense_level_1_5" and not part.get("assessable"):
+                    continue
+                draft_payload["form_patch"][field_name] = int(part["level_1_5"])
+                field_provenance[field_name] = "auto"
+                field_confidence[field_name] = _round(_clamp(float(part.get("confidence_0_1") or 0.0)), 4) or 0.0
+                field_evidence_refs[field_name] = [
+                    {"type": "shift_play", "ref_id": f"shift_play:run:{int(run.id)}", "t_sec": 0.0, "meta": {"team_key": team_key}}
+                ]
+
     video_contract = (finding.summary or {}).get("video_evidence") if finding else None
     for field_name in supported_form_fields:
         if isinstance(video_contract, dict) and field_name not in video_contract.get("supported_form_fields", []):

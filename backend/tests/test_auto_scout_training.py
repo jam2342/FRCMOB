@@ -26,7 +26,12 @@ class AutoScoutTrainingExportTests(DBTestCase):
             draft_version=draft.draft_version,
             approved_by="Test",
             edited_payload={
-                "form_patch": (draft.draft_payload or {}).get("form_patch", {}),
+                # The scout fills what the recording couldn't measure (defense needs
+                # tracked opponents), as they would when approving.
+                "form_patch": {
+                    **{field: 3 for field in AUTO_SCOUT_ROUND2_ML_FIELDS},
+                    **(draft.draft_payload or {}).get("form_patch", {}),
+                },
                 "notes_seed": "",
                 "derived_insights": (draft.draft_payload or {}).get("derived_insights", {}),
             },

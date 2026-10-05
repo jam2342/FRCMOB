@@ -314,13 +314,25 @@ export function flush(): Promise<number> {
   return flushInFlight;
 }
 
+// Writes to the same record replay in order. A pit save is a whole-entry replace, so
+// a retried older edit that lands after a newer one would undo the correction.
+function recordKey(item: QueuedMutation): string {
+  let body: Record<string, unknown> = {};
+  try { body = item.body ? (JSON.parse(item.body) as Record<string, unknown>) : {}; } catch { /* not JSON */ }
+  const part = (name: string) => (typeof body[name] === 'string' ? String(body[name]).toLowerCase() : '');
+  return [item.method, item.url.split('?')[0], part('event_key'), part('team_key'), part('client_entry_id')].join('|');
+}
+
 async function flushQueue(): Promise<number> {
   const queue = await readQueue();
   if (queue.length === 0) return 0;
 
   let successCount = 0;
+  const waiting = new Set<string>();
   for (const item of queue) {
     if (item.failure) continue;
+    const key = recordKey(item);
+    if (waiting.has(key)) continue;
     let res: Response;
     let conflict: boolean;
     const controller = new AbortController();
@@ -335,6 +347,7 @@ async function flushQueue(): Promise<number> {
       conflict = res.status === 409 || (res.ok && await isConflictBody(res));
     } catch {
       await saveQueuedItem({ ...item, attempts: item.attempts + 1 });
+      waiting.add(key);
       continue;
     } finally {
       clearTimeout(timeout);
@@ -345,6 +358,7 @@ async function flushQueue(): Promise<number> {
       successCount++;
     } else if (res.status >= 500 || res.status === 408 || res.status === 429) {
       await saveQueuedItem({ ...item, attempts: item.attempts + 1 });
+      waiting.add(key);
     } else {
       const reason = conflict ? 'conflict' : 'server-rejected';
       await saveQueuedItem({ ...item, attempts: item.attempts + 1, failure: { reason, status: res.status } });

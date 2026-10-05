@@ -190,6 +190,10 @@ class PitScoutingEndpointTests(_EndpointTestCase):
         self.assertTrue(photo.startswith("/media/pit_photos/2026test/frc254/"))
         stored = Path(self._tmpdir.name) / "2026test" / "frc254" / Path(photo).name
         self.assertTrue(stored.is_file())
+        # Display links are signed; the stored path stays the identifier.
+        urls = response.json()["entry"]["photo_urls"]
+        self.assertEqual(len(urls), 1)
+        self.assertTrue(urls[0].startswith(photo + "?exp=") and "&sig=" in urls[0])
 
         response = self.client.post(
             "/pit-scouting/photo/delete",

@@ -24,6 +24,8 @@ from app.core.security import (
 )
 from app.db import models
 from app.db.session import get_db
+from app.services.analysis.runs import best_on_device_run
+from app.services.auto_scout.scouting import withdraw_drafts_for_run
 from app.services.analysis.runs import RUN_KIND_ON_DEVICE
 # On-device source/version identifiers live in shift_play (the engine layer) so
 # every authoritative consumer excludes on-device data by the same constant.
@@ -136,6 +138,15 @@ def get_team_heatmap(
     )
     if match_key:
         base = base.filter(models.RobotTrack.match_key == match_key)
+    # One recording per match, the same best-quality pick Attack vs Defense uses: two
+    # scouts filming one match used to be blended (and counted twice) here.
+    match_keys = [row[0] for row in base.with_entities(models.RobotTrack.match_key).distinct().all() if row[0]]
+    chosen_runs = []
+    for key in match_keys:
+        best = best_on_device_run(db, match_key=key, team_key=team_key, statuses=statuses)
+        if best is not None:
+            chosen_runs.append(best[0].id)
+    base = base.filter(models.RobotTrack.analysis_run_id.in_(chosen_runs or [-1]))
 
     raw_points: list[tuple[float, float]] = [
         (float(fx), float(fy))
@@ -965,6 +976,8 @@ def review_on_device_session(
     session_row.status = body.status
     session_row.review_note = str(body.note or "").strip() or None
     session_row.reviewed_at = datetime.now(timezone.utc)
+    if body.status == "rejected" and session_row.analysis_run_id is not None:
+        withdraw_drafts_for_run(db, session_row.analysis_run_id)
     db.commit()
     return {
         "ok": True,

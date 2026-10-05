@@ -2197,18 +2197,13 @@ export function EventsPage() {
             <span className="center-chip">{liveMatchCount > 0 ? <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> : null} {liveMatchCount} live</span>
             <span className="center-chip"><RefreshIcon className="icon-inline icon-muted" /> {effectiveEventPollSec}s refresh</span>
             <span className="center-chip"><GlobeIcon className="icon-inline icon-muted" /> {regionLabel(regionFilter)}</span>
-            <span className="center-chip">
-              Writes:{' '}
-                {canSyncEvent
-                  ? 'enabled'
-                  : publicReadonlyMode
-                    ? 'public read-only'
-                    : writeAuthEnforced && !hasClientAdminKey
-                      ? 'client admin key missing'
-                      : 'restricted'}
-            </span>
+            {/* Sync is an operator tool: fans and scouts saw "Writes: client admin key
+                missing" and an admin-session notice here. Only admins see it now. */}
+            {hasClientAdminKey ? (
+              <span className="center-chip">Writes: {canSyncEvent ? 'enabled' : publicReadonlyMode ? 'public read-only' : 'restricted'}</span>
+            ) : null}
           </div>
-          {!canSyncEvent ? (
+          {!canSyncEvent && hasClientAdminKey ? (
             <p className="center-callout muted helper-text">
               {publicReadonlyMode === true
                 ? 'Event sync disabled in public read-only mode.'
@@ -3167,16 +3162,21 @@ export function EventsPage() {
                     { key: 'history_count', label: 'Matches', numeric: true, sortable: true },
                     {
                       key: 'fuel',
-                      label: 'Fuel/active min',
+                      // This event's matches; Team Center's figure covers the season.
+                      label: 'Fuel/active min (this event)',
                       numeric: true,
                       render: (team) => metric(team.averages?.fuel_scoring_rate ?? null, 1),
                     },
-                    {
-                      key: 'cycle',
-                      label: 'Cycle',
-                      numeric: true,
-                      render: (team) => metric(team.averages?.cycle_time_sec ?? null, 1),
-                    },
+                    // Official data has no cycle times, so the column was "N/A" for every
+                    // team; it shows once scouting provides some.
+                    ...(visibleEventTeamRows.some((team) => typeof team.averages?.cycle_time_sec === 'number')
+                      ? [{
+                          key: 'cycle',
+                          label: 'Cycle',
+                          numeric: true,
+                          render: (team: (typeof visibleEventTeamRows)[number]) => metric(team.averages?.cycle_time_sec ?? null, 1),
+                        }]
+                      : []),
                     {
                       key: 'auto',
                       label: 'Auto',
@@ -3185,9 +3185,12 @@ export function EventsPage() {
                     },
                     {
                       key: 'climb',
-                      label: 'Climb',
+                      label: 'Climb rate',
                       numeric: true,
-                      render: (team) => metric(team.averages?.climb_success_prob ?? null, 2),
+                      render: (team) => {
+                        const rate = team.averages?.climb_success_prob;
+                        return typeof rate === 'number' ? `${Math.round(rate * 100)}%` : metric(null, 0);
+                      },
                     },
                   ]}
                   rows={visibleEventTeamRows}

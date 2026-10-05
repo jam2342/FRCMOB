@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist-native',
   // Bridge debug logs can include request headers and credential arguments.
   loggingBehavior: 'none',
-  backgroundColor: '#292929',
+  backgroundColor: '#151413',
   // Ship local files, including both detector models. No remote website shell.
   server: { androidScheme: 'https', iosScheme: 'capacitor' },
   ios: { contentInset: 'automatic', preferredContentMode: 'mobile' },

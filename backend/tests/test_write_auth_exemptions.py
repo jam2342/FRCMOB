@@ -7,13 +7,13 @@ from app.core.config import settings
 from app.core.security import enforce_write_request_access
 
 
-def _make_request(method: str, path: str) -> Request:
+def _make_request(method: str, path: str, query: str = "") -> Request:
     scope = {
         "type": "http",
         "method": method,
         "path": path,
         "headers": [],
-        "query_string": b"",
+        "query_string": query.encode(),
         "scheme": "http",
         "server": ("testserver", 80),
         "client": ("testclient", 12345),
@@ -82,15 +82,25 @@ class WriteAuthExemptionsTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             enforce_write_request_access(_make_request("POST", "/synergy/event/2026arc/theoretical-alliance"))
 
-    def test_pit_photo_media_is_public_but_other_media_stays_admin_gated(self):
+    def test_pit_photos_need_a_signed_link_and_other_media_stays_admin_gated(self):
+        from app.core.security import sign_media_path
         from app.main import _enforce_media_access
 
-        _enforce_media_access(_make_request("GET", "/media/pit_photos/2026test/frc254/robot.jpg"))
+        path = "/media/pit_photos/2026test/frc254/robot.jpg"
+        signed = sign_media_path(path)
+        _enforce_media_access(_make_request("GET", path, signed.split("?", 1)[1]))
+
+        expired = sign_media_path(path, now=0)
+        tampered = signed.split("?", 1)[1].replace("sig=", "sig=0")
+        other_photo = sign_media_path("/media/pit_photos/2026test/frc254/other.jpg").split("?", 1)[1]
+        for query in ("", expired.split("?", 1)[1], tampered, other_photo):
+            with self.assertRaises(HTTPException) as context:
+                _enforce_media_access(_make_request("GET", path, query))
+            self.assertEqual(context.exception.status_code, 403)
 
         with self.assertRaises(HTTPException) as context:
             _enforce_media_access(_make_request("GET", "/media/usage"))
         self.assertEqual(context.exception.status_code, 403)
-
 
 if __name__ == "__main__":
     unittest.main()

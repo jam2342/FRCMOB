@@ -22,6 +22,7 @@ from app.services.ml.shadow import (
     infer_match_outcome_shadow_from_rows,
 )
 from app.services.cache import get_cache
+from app.services.events.fuel_win_probability import fuel_margin_details, fuel_red_win_prob
 from app.services.ml.synergy import SYNERGY_MODEL_VERSION, precompute_event_synergy
 from app.services.season_config import CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR
 from app.services.utils import COMP_LEVEL_ORDER, _as_float
@@ -1156,8 +1157,34 @@ def get_event_schedule_with_synergy(
             float(confidence) if confidence is not None else 0.0,
         )
 
+    # The fuel model needs playing order, not display order: a postponed match played
+    # later must not feed the prediction of one listed after it.
+    display_index = {match.match_key: index for index, match in enumerate(matches)}
+    played_order = sorted(
+        matches,
+        key=lambda match: (
+            int(match.actual_time or match.time or 0) or 10**12,
+            display_index[match.match_key],
+        ),
+    )
+    fuel_details = fuel_margin_details(
+        db,
+        event_key,
+        [
+            (
+                match.match_key,
+                [str(item.get("team_key") or "") for item in teams_by_match.get(match.match_key, {}).get("red", [])],
+                [str(item.get("team_key") or "") for item in teams_by_match.get(match.match_key, {}).get("blue", [])],
+            )
+            for match in played_order
+        ],
+        event_start=min((int(match.time) for match in matches if match.time), default=None),
+    )
+    fuel_margin_by_match = {key: margin for key, (margin, _seen) in fuel_details.items()}
+
     ml_feature_rows: list[dict[str, float | str]] = []
     deterministic_prob_by_match: dict[str, float] = {}
+    rating_prob_by_match: dict[str, float] = {}
     schedule_rows = []
     for match in matches:
         teams_group = teams_by_match.get(match.match_key, {"red": [], "blue": []})
@@ -1264,9 +1291,19 @@ def get_event_schedule_with_synergy(
                     "projected_margin": projected_margin,
                 }
             )
-            deterministic_prob_by_match[str(match.match_key or "").strip().lower()] = (
+            rating_prob_by_match[str(match.match_key or "").strip().lower()] = (
                 _deterministic_red_win_prob(rating_margin, synergy_margin, projected_margin)
             )
+
+    # Official fuel rates known before the match decide it; the rating formula covers
+    # matches with no fuel data yet (a new event whose teams haven't played before).
+    for match in matches:
+        match_key = str(match.match_key or "").strip().lower()
+        fuel_margin = fuel_margin_by_match.get(match_key)
+        if fuel_margin is not None:
+            deterministic_prob_by_match[match_key] = fuel_red_win_prob(fuel_margin, matches_seen=fuel_details[match_key][1])
+        elif match_key in rating_prob_by_match:
+            deterministic_prob_by_match[match_key] = rating_prob_by_match[match_key]
 
     ml_prediction_by_match: dict[str, float] = {}
     ml_prediction_model_version: str | None = None
@@ -1301,12 +1338,9 @@ def get_event_schedule_with_synergy(
             # is computed whenever ratings exist, but be defensive).
             final_prob = float(ml_prob) if ml_prob is not None else 0.5
             source_label = "ml_shadow_match_outcome_live"
-        elif ml_prob is None:
+        elif ml_prob is None or effective_blend <= 0.0:
             final_prob = float(det_prob)
-            source_label = "deterministic_rating_synergy_v1"
-        elif effective_blend <= 0.0:
-            final_prob = float(det_prob)
-            source_label = "deterministic_rating_synergy_v1"
+            source_label = "deterministic_fuel_v1" if match_key in fuel_margin_by_match else "deterministic_rating_synergy_v1"
         elif effective_blend >= 1.0:
             final_prob = float(ml_prob)
             source_label = "ml_shadow_match_outcome_live"
@@ -1334,6 +1368,12 @@ def get_event_schedule_with_synergy(
             "red_win_prob": round(final_prob, 4),
             "blue_win_prob": round(blue_win_prob, 4),
             "red_win_prob_deterministic": round(float(det_prob), 4) if det_prob is not None else None,
+            "red_win_prob_rating": (
+                round(rating_prob_by_match[match_key], 4) if match_key in rating_prob_by_match else None
+            ),
+            "fuel_margin_per_min": (
+                round(fuel_margin_by_match[match_key], 2) if match_key in fuel_margin_by_match else None
+            ),
             "red_win_prob_ml": round(float(ml_prob), 4) if ml_prob is not None else None,
             "prediction_blend": round(effective_blend, 4),
             "favored_alliance": favored,
@@ -1350,6 +1390,7 @@ def get_event_schedule_with_synergy(
         "ml_prediction_count": len(ml_prediction_by_match),
         "ml_blended_prediction_count": ml_blended_prediction_count,
         "deterministic_prediction_count": len(deterministic_prob_by_match),
+        "fuel_prediction_count": len(fuel_margin_by_match),
         "prediction_blend": round(ml_blend_knob, 4),
         "count": len(schedule_rows),
         "precompute": precompute,

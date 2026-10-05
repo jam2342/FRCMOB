@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { getScoutingCoverage } from '../api';
 import type { ScoutingCoverageResponse } from '../api';
 import { EventPicker } from '../components/EventPicker';
@@ -87,21 +87,27 @@ function ScoutingCoverageWorkspacePage() {
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
 
+  // A response for an event the page has since left is dropped; otherwise a slow
+  // old request replaced the new event's coverage.
+  const activeEventKey = useRef(eventKey);
   const fetchCoverage = useCallback(async (key: string, silent = false) => {
     if (!silent) setLoading(true);
     try {
       const result = await getScoutingCoverage(key);
+      if (key !== activeEventKey.current) return;
       setData(result);
       setErrorText('');
     } catch (err) {
+      if (key !== activeEventKey.current) return;
       if (!silent) setErrorText((err as Error).message || 'Failed to load coverage data.');
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && key === activeEventKey.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (!eventKey) return;
+    activeEventKey.current = eventKey;
     setData(null);
     void fetchCoverage(eventKey);
     const interval = window.setInterval(() => void fetchCoverage(eventKey, true), REFRESH_MS);

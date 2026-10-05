@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getEventScheduleWithSynergy,
@@ -239,8 +239,12 @@ export function MatchPredictionPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   /* --- Fetch data --- */
+  // Only the latest request may write: switching events on a slow connection let
+  // the old event's late response replace the new one's predictions.
+  const requestGeneration = useRef(0);
   const fetchData = useCallback(async (key: string) => {
     if (!key) return;
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setErrorText('');
     setSynergyData(null);
@@ -252,6 +256,7 @@ export function MatchPredictionPage() {
       getEventSchedule(key),
       getEventPredictions(key),
     ]);
+    if (generation !== requestGeneration.current) return;
 
     if (results[0].status === 'fulfilled') {
       setSynergyData(results[0].value);
@@ -349,6 +354,8 @@ export function MatchPredictionPage() {
     return {
       total: predictions.length,
       completed: completed.length,
+      // Fuel-rate predictions use only results from before each match: real forecasts.
+      forecast: completed.filter((p) => p.prediction_source === 'fuel_model').length,
       correct,
       accuracy: nonTie.length > 0 ? correct / nonTie.length : null,
       ml_powered: mlCount,
@@ -397,8 +404,14 @@ export function MatchPredictionPage() {
         {/* ---- Model Accuracy ---- */}
         {stats.completed > 0 ? (
           <SurfaceCard
-            title="Hindsight check"
-            subtitle="Today's ratings already include these results, so this measures fit, not how well matches were forecast."
+            title={stats.forecast > 0 ? 'Forecast check' : 'Hindsight check'}
+            subtitle={
+              stats.forecast === stats.completed
+                ? 'Each match was predicted only from results before it, so this is how well matches were forecast.'
+                : stats.forecast > 0
+                  ? `${stats.forecast} of ${stats.completed} played matches were predicted from results before them. The rest use today's ratings, which already include their results.`
+                  : "Today's ratings already include these results, so this measures fit, not how well matches were forecast."
+            }
           >
             <div className="page-hero">
               <Stat

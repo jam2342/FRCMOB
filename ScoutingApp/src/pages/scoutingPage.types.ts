@@ -239,6 +239,9 @@ export type SavedScoutingEntry = {
   entry_source?: 'manual' | 'reviewed_auto';
   auto_scout_meta?: AutoScoutMeta | null;
   field_overrides?: Record<string, AutoScoutFieldOverride> | null;
+  // True once the room server has this entry (it came in a snapshot, or the save
+  // was acknowledged). Until then it lives only on this phone and is never replaced.
+  server_synced?: boolean;
 };
 
 export type MatchTeamOption = {

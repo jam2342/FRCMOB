@@ -11,6 +11,7 @@ import redis
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.services.season_config import regional_automation_season
 from app.core.config import settings
 from app.core.security import (
     ADMIN_SESSION_HEADER,
@@ -207,15 +208,9 @@ def _get_redis_conn() -> "redis.Redis":
     return redis.from_url(settings.redis_url, socket_connect_timeout=5, socket_timeout=5)
 
 
-def _current_regional_automation_season() -> int:
-    configured = int(getattr(settings, "automation_regional_halfday_season", 0) or 0)
-    if 2015 <= configured <= 2100:
-        return configured
-    return int(datetime.now(timezone.utc).year)
-
 
 def _regional_automation_snapshot() -> dict[str, Any]:
-    season = _current_regional_automation_season()
+    season = regional_automation_season()
     interval_minutes = max(1, int(settings.automation_regional_interval_minutes))
     interval_seconds = interval_minutes * 60
     try:

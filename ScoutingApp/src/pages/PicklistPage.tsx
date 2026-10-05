@@ -133,7 +133,7 @@ function PicklistWorkspacePage() {
       const map = new Map<string, string>();
       for (const entry of result.entries ?? []) {
         if (entry.photos?.length) {
-          map.set(entry.team_key.toLowerCase(), entry.photos[0]);
+          map.set(entry.team_key.toLowerCase(), entry.photo_urls?.[0] || entry.photos[0]);
         }
       }
       if (loadSequence.current === sequence) setPitPhotoByTeam(map);

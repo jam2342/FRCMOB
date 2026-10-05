@@ -97,6 +97,14 @@
 }
 
 @media (max-width: 1120px) {
+  /* Keep focused fields (keyboard, "scroll into view") clear of the sticky top bar
+     and the bottom tab bar. Body is the scroller on some pages, html on others. */
+  html,
+  body {
+    scroll-padding-top: calc(var(--ps-topbar-height) + 8px);
+    scroll-padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
   .product-shell .ps-content {
     padding-bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 16px));
     scroll-padding-bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 16px));
