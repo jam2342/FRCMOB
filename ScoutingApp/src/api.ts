@@ -4,6 +4,7 @@ import { resolveApiBaseUrl, resolveWebSocketBaseUrl } from './platform/runtime';
 const API = resolveApiBaseUrl();
 const WS_API = resolveWebSocketBaseUrl(API);
 const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 12000);
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 import { enqueue as enqueueOffline } from "./utils/offlineQueue";
 import { getStoredResponse, putStoredResponse } from "./utils/apiResponseStore";
 
@@ -1246,6 +1247,7 @@ function _cacheRequestOptions(
 
 type TimeoutState = {
   didTimeout: boolean;
+  clear?: () => void;
 };
 
 // Writes a replay can't duplicate: room entries carry client_entry_id, pit
@@ -1357,6 +1359,7 @@ function withTimeout(
     },
     { once: true },
   );
+  if (timeoutState) timeoutState.clear = () => globalThis.clearTimeout(timeout);
   return controller.signal;
 }
 
@@ -1720,14 +1723,25 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     const requestSignal = withTimeout(forBackground ? undefined : init?.signal, timeoutMs, timeoutState);
     let response: Response;
     try {
-      response = await fetch(url, {
+      const fetched = await fetch(url, {
         ...init,
         method,
         headers,
         signal: requestSignal,
       });
+      // The timeout covers the whole download. Once it is in, the timer must not
+      // fire: in Chrome its abort breaks every unread clone, including the copy
+      // kept in the cache, so a cache hit after 12 s failed with "timed out".
+      const body = NULL_BODY_STATUSES.has(fetched.status) ? null : await fetched.arrayBuffer();
+      response = new Response(body, {
+        status: fetched.status,
+        statusText: fetched.statusText,
+        headers: fetched.headers,
+      });
     } catch (error) {
       throw normalizeApiFetchError(error, timeoutMs, timeoutState, requestSignal);
+    } finally {
+      timeoutState.clear?.();
     }
     if (ENABLE_REQUEST_LOGS) {
       const tookMs = Math.round(performance.now() - start);

@@ -352,6 +352,31 @@ describe('scoutingRoomWebSocketUrl', () => {
     );
     expect(suggestedCalls.length).toBe(1);
   });
+
+  it('keeps cached responses readable after the request timeout would have fired', async () => {
+    // In Chrome the timeout's abort broke the cached copy, so a cache hit more
+    // than 12 s after the fetch failed with "Request timed out after 12s".
+    vi.useFakeTimers();
+    vi.stubEnv('VITE_API_URL', '/api');
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return Promise.resolve(new Response(JSON.stringify({ event_key: '2026x', matches: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    await api.getEventScheduleWithSynergy('2026x', { include_pair_breakdown: false });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(signals.every((signal) => !signal.aborted)).toBe(true);
+
+    const again = await api.getEventScheduleWithSynergy('2026x', { include_pair_breakdown: false });
+    expect(again.event_key).toBe('2026x');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('pitPhotoDisplayUrl', () => {

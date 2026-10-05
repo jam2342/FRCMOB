@@ -423,6 +423,10 @@ export function ScoutingPage() {
   const [roomDemotePendingProfile, setRoomDemotePendingProfile] = useState('');
   const [roomConnectionState, setRoomConnectionState] = useState<RoomConnectionState>('disconnected');
   const [roomErrorText, setRoomErrorText] = useState('');
+  // Leader actions report here, not in roomErrorText: a socket reconnect clears
+  // that one, which could wipe "Promotion rejected" before the leader saw it.
+  const [roomLeaderActionError, setRoomLeaderActionError] = useState('');
+  useEffect(() => { setRoomLeaderActionError(''); }, [activeRoom?.room_key]);
   const [roomHttpFallbackActive, setRoomHttpFallbackActive] = useState(false);
   const [roomClientId] = useState(() => getOrCreateScoutingRoomClientId());
   const [roomSocketNonce, setRoomSocketNonce] = useState(0);
@@ -2607,22 +2611,22 @@ export function ScoutingPage() {
   async function kickRoomMember(targetScoutProfile: string) {
     const activeRoomKey = normalizeRoomKey(activeRoom?.room_key || '');
     if (!activeRoomKey) {
-      setRoomErrorText('Join a room before kicking members.');
+      setRoomLeaderActionError('Join a room before kicking members.');
       return;
     }
     if (!hasRoomOwnerAuthority) {
-      setRoomErrorText('Only room leaders can kick members.');
+      setRoomLeaderActionError('Only room leaders can kick members.');
       return;
     }
     const targetProfile = normalizeScoutProfile(targetScoutProfile);
     if (!targetProfile) return;
     if (targetProfile.toLowerCase() === normalizeScoutProfile(scoutProfile).toLowerCase()) {
-      setRoomErrorText('Use Leave Room to remove yourself.');
+      setRoomLeaderActionError('Use Leave Room to remove yourself.');
       return;
     }
     const roomAccessToken = await ensureRoomAccessToken(activeRoomKey);
     if (!roomAccessToken) {
-      setRoomErrorText('Room access token missing or expired. Re-join room to continue.');
+      setRoomLeaderActionError('Room access token missing or expired. Re-join room to continue.');
       return;
     }
     setRoomKickPendingProfile(targetProfile);
@@ -2636,9 +2640,9 @@ export function ScoutingPage() {
       } else {
         setStatusText(`${targetProfile} is not currently connected.`);
       }
-      setRoomErrorText('');
+      setRoomLeaderActionError('');
     } catch (error) {
-      setRoomErrorText((error as Error).message || 'Unable to remove member from room.');
+      setRoomLeaderActionError((error as Error).message || 'Unable to remove member from room.');
     } finally {
       setRoomKickPendingProfile('');
     }
@@ -2648,18 +2652,18 @@ export function ScoutingPage() {
     const promote = action === 'promote';
     const activeRoomKey = normalizeRoomKey(activeRoom?.room_key || '');
     if (!activeRoomKey) {
-      setRoomErrorText(`Join a room before ${promote ? 'promoting' : 'removing'} leaders.`);
+      setRoomLeaderActionError(`Join a room before ${promote ? 'promoting' : 'removing'} leaders.`);
       return;
     }
     if (!hasRoomOwnerAuthority) {
-      setRoomErrorText(`Only room leaders can ${promote ? 'promote' : 'remove'} secondary leaders.`);
+      setRoomLeaderActionError(`Only room leaders can ${promote ? 'promote' : 'remove'} secondary leaders.`);
       return;
     }
     const targetProfile = normalizeScoutProfile(targetScoutProfile);
     if (!targetProfile) return;
     const roomAccessToken = await ensureRoomAccessToken(activeRoomKey);
     if (!roomAccessToken) {
-      setRoomErrorText('Room access token missing or expired. Re-join room to continue.');
+      setRoomLeaderActionError('Room access token missing or expired. Re-join room to continue.');
       return;
     }
     const setPending = promote ? setRoomPromotePendingProfile : setRoomDemotePendingProfile;
@@ -2680,14 +2684,14 @@ export function ScoutingPage() {
           }
           : current
       ));
-      setRoomErrorText('');
+      setRoomLeaderActionError('');
       setStatusText(promote
         ? `Promoted ${response.target_scout_profile} to secondary leader.`
         : ('removed' in response && response.removed
           ? `Removed ${response.target_scout_profile} from secondary leaders.`
           : `${response.target_scout_profile} is not a secondary leader.`));
     } catch (error) {
-      setRoomErrorText((error as Error).message || `Unable to ${promote ? 'promote' : 'remove'} secondary leader.`);
+      setRoomLeaderActionError((error as Error).message || `Unable to ${promote ? 'promote' : 'remove'} secondary leader.`);
     } finally {
       setPending('');
     }
@@ -4015,6 +4019,9 @@ export function ScoutingPage() {
                           </button>
                         ))}
                       </div>
+                    ) : null}
+                    {roomLeaderActionError ? (
+                      <p className="center-callout warning" role="alert">{roomLeaderActionError}</p>
                     ) : null}
                   </div>
                 ) : null}

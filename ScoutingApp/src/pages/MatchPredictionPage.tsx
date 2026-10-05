@@ -15,6 +15,9 @@ import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
+import { usePageVisibility } from '../hooks/usePageVisibility';
+import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
+import { eventHasMatchesInPlay } from './matchStatus';
 import { buildMatchCenterPath, metric, pct, teamNumberFromTeamKey } from './centerUtils';
 import { MOBILE_LAYOUT_BREAKPOINT } from '../hooks/useMobileLayout';
 import { Stat, Table, type TableColumn } from '../components/ui/primitives';
@@ -26,6 +29,7 @@ import { matchWinProbability, type WinProbabilitySource } from '../features/pred
 /* ------------------------------------------------------------------ */
 
 const STORAGE_KEY = 'scouting_center_event_key';
+const PREDICTIONS_REFRESH_MS = 60_000;
 
 const COMP_LEVEL_ORDER: Record<string, number> = { qm: 0, ef: 1, qf: 2, sf: 3, f: 4 };
 
@@ -242,37 +246,46 @@ export function MatchPredictionPage() {
   // Only the latest request may write: switching events on a slow connection let
   // the old event's late response replace the new one's predictions.
   const requestGeneration = useRef(0);
-  const fetchData = useCallback(async (key: string) => {
-    if (!key) return;
+  const loadedAtMs = useRef(0);
+  // A refresh keeps what is on screen and only replaces what came back, so a
+  // dropped request on venue Wi-Fi never blanks the list.
+  const fetchData = useCallback(async (key: string, refresh = false) => {
+    if (!key) return false;
     const generation = ++requestGeneration.current;
-    setLoading(true);
-    setErrorText('');
-    setSynergyData(null);
-    setScheduleData(null);
-    setTbaPredictions(null);
+    if (!refresh) {
+      setLoading(true);
+      setErrorText('');
+      setSynergyData(null);
+      setScheduleData(null);
+      setTbaPredictions(null);
+    }
 
     const results = await Promise.allSettled([
       getEventScheduleWithSynergy(key, { include_pair_breakdown: false }),
       getEventSchedule(key),
       getEventPredictions(key),
     ]);
-    if (generation !== requestGeneration.current) return;
+    if (generation !== requestGeneration.current) return true;
 
     if (results[0].status === 'fulfilled') {
       setSynergyData(results[0].value);
-    } else {
+      setErrorText('');
+    } else if (!refresh) {
       setErrorText((results[0].reason as Error)?.message || 'Failed to load synergy data.');
     }
 
     if (results[1].status === 'fulfilled') {
       setScheduleData(results[1].value.matches);
+      loadedAtMs.current = Date.now();
     }
 
     if (results[2].status === 'fulfilled') {
       setTbaPredictions(results[2].value.predictions);
     }
 
-    setLoading(false);
+    if (!refresh) setLoading(false);
+    // TBA's own predictions are optional; back off only when ours fail.
+    return results[0].status === 'fulfilled' && results[1].status === 'fulfilled';
   }, []);
 
   useEffect(() => {
@@ -282,6 +295,29 @@ export function MatchPredictionPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [eventKey, fetchData, fetchTrigger]);
+
+  // While the event is running, results and forecasts change every few minutes.
+  const pageVisible = usePageVisibility();
+  const [inPlay, setInPlay] = useState(false);
+  useEffect(() => {
+    const check = () => setInPlay(eventHasMatchesInPlay(scheduleData, Date.now()));
+    check();
+    const timer = window.setInterval(check, 60_000);
+    return () => window.clearInterval(timer);
+  }, [scheduleData]);
+  useSingleFlightPolling({
+    enabled: Boolean(eventKey) && inPlay,
+    visible: pageVisible,
+    intervalMs: PREDICTIONS_REFRESH_MS,
+    minBackoffMs: PREDICTIONS_REFRESH_MS,
+    maxBackoffMs: 5 * 60_000,
+    // 'initial' also fires when a locked phone wakes up; refresh only if stale.
+    run: (reason) => (
+      reason === 'initial' && Date.now() - loadedAtMs.current < PREDICTIONS_REFRESH_MS
+        ? true
+        : fetchData(eventKey, true)
+    ),
+  });
 
   /* --- Merge synergy + schedule into predictions --- */
   const predictions = useMemo<MatchPrediction[]>(() => {

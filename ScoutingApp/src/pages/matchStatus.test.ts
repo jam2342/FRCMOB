@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EventScheduleItem } from '../api';
 import { liveTimerLabel, matchStartTime } from './centerUtils';
-import { inferMatchCompleted, matchHasScores } from './matchStatus';
+import { eventHasMatchesInPlay, inferMatchCompleted, matchHasScores } from './matchStatus';
 
 function match(overrides: Partial<EventScheduleItem>): EventScheduleItem {
   return { match_key: '2026x_qm1', scheduled_time: 1000, red: [], blue: [], ...overrides } as EventScheduleItem;
@@ -40,5 +40,24 @@ describe('matchStartTime', () => {
     const now = 1_000_000;
     const lateMatch = { scheduled_time: now / 1000 - 60, predicted_time: now / 1000 + 900 };
     expect(liveTimerLabel(matchStartTime(lateMatch), now).state).toBe('upcoming');
+  });
+});
+
+describe('eventHasMatchesInPlay', () => {
+  const now = 2_000_000 * 1000;
+  const at = (offsetSec: number, extra: Partial<EventScheduleItem> = {}) =>
+    match({ scheduled_time: 2_000_000 + offsetSec, ...extra });
+
+  it('is true when an unplayed match is due soon or running late', () => {
+    expect(eventHasMatchesInPlay([at(-600, { is_completed: true }), at(420)], now)).toBe(true);
+    expect(eventHasMatchesInPlay([at(-2 * 3600)], now)).toBe(true);
+  });
+
+  it('is false for a finished event, one days away, or no schedule', () => {
+    expect(eventHasMatchesInPlay([at(-600, { winner_alliance: 'red' })], now)).toBe(false);
+    expect(eventHasMatchesInPlay([at(3 * 86400)], now)).toBe(false);
+    expect(eventHasMatchesInPlay([at(-2 * 86400)], now)).toBe(false);
+    expect(eventHasMatchesInPlay([], now)).toBe(false);
+    expect(eventHasMatchesInPlay(null, now)).toBe(false);
   });
 });

@@ -3434,6 +3434,27 @@
   }
 }
 
+/* Five Team Center stats in one row left ~40px each at 250px, so the rating
+   (the page's key number) read "2…". It gets its own row there. */
+@media (max-width: 359px) {
+  .fm-team-hero-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .fm-team-hero-stat.highlight {
+    grid-column: 1 / -1;
+  }
+
+  .fm-team-hero-stat {
+    padding-inline: 2px;
+  }
+
+  .fm-team-hero-stat span {
+    letter-spacing: 0;
+  }
+}
+
 /* ── match-center-finder-access ───────────────────────── */
 
 /* Replace the Match Finder / Match Center toggle on phones: the hero opens
