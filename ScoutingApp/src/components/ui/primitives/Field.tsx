@@ -251,9 +251,10 @@ export function FieldStepper({
           className={styles.stepperButton}
           onClick={() => onValueChange(clamp(value - step))}
           disabled={disabled || value <= min}
-          aria-label={`Decrease ${subject}`}
+          aria-label={`Decrease ${subject}${step === 1 ? '' : ` by ${step}`}`}
         >
-          −
+          {/* A step other than 1 is shown, or a tap that adds 3 reads as adding 1. */}
+          {step === 1 ? '−' : `−${step}`}
         </button>
         <input
           id={id}
@@ -282,9 +283,9 @@ export function FieldStepper({
           className={styles.stepperButton}
           onClick={() => onValueChange(clamp(value + step))}
           disabled={disabled || value >= max}
-          aria-label={`Increase ${subject}`}
+          aria-label={`Increase ${subject}${step === 1 ? '' : ` by ${step}`}`}
         >
-          +
+          {step === 1 ? '+' : `+${step}`}
         </button>
       </div>
     </FieldFrame>

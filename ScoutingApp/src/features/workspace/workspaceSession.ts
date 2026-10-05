@@ -131,6 +131,8 @@ export function clearWorkspaceSession(reason: WorkspaceEndReason) {
   const clearRevision = ++revision;
   if (!isNativeApp() && cached === null && storage()?.getItem(STORAGE_KEY) === null) return;
   cached = null;
+  // Pit photos cached for offline belong to the team being left.
+  if (typeof caches !== 'undefined') void caches.delete('frcmob-pit-photos-v1').catch(() => {});
   if (isNativeApp()) {
     try { storage()?.setItem(CLEAR_PENDING_KEY, '1'); } catch { reportSecureStorageFailure(); }
     void persistNativeSession(null).then(() => { if (clearRevision === revision) storage()?.removeItem(CLEAR_PENDING_KEY); }).catch(reportSecureStorageFailure);

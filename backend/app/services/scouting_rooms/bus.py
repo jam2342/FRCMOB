@@ -94,16 +94,16 @@ class ScoutingRoomRedisBus:
         self._handler = None
         self._started = False
 
-    async def publish(self, room_key: str, payload: dict[str, Any]) -> None:
+    async def publish(self, room_key: str, payload: dict[str, Any]) -> bool:
         if not room_key:
-            return
+            return False
         if self._redis is None:
             if self._enabled and not self._warned_unavailable:
                 self._warned_unavailable = True
                 logger.warning(
                     "Scouting room redis bus publish skipped because redis connection is unavailable"
                 )
-            return
+            return False
         message = dict(payload)
         message["_origin_instance_id"] = self._instance_id
         try:
@@ -113,6 +113,8 @@ class ScoutingRoomRedisBus:
             )
         except Exception as exc:
             logger.warning("Scouting room redis publish failed for room %s: %s", room_key, exc)
+            return False
+        return True
 
     async def _listen_loop(self) -> None:
         pubsub = self._pubsub

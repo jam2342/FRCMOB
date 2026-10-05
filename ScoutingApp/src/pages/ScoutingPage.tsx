@@ -123,7 +123,6 @@ import {
   inferMatchCompleted,
   inferWinnerAlliance,
   manualScoutingRating,
-  mergeEntries,
   mergeEntry,
   MOBILE_CAPTURE_PANEL_TABS,
   MOBILE_HISTORY_PANEL_TABS,
@@ -147,6 +146,7 @@ import {
   readStoredMobileCompactMode,
   scoutingApiRating,
   scoreTierLevel,
+  replaceRoomEntries,
   stripEntriesForRoom,
   teamAllianceForMatch,
 } from './scoutingPage.helpers';
@@ -154,7 +154,7 @@ import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 import { clearWorkspaceSession, getWorkspaceSession, getWorkspaceToken } from '../features/workspace/workspaceSession';
-import { MY_TEAM_STORAGE_KEY } from '../features/workspace/myTeam';
+import { MY_TEAM_STORAGE_KEY, workspaceTeamKey } from '../features/workspace/myTeam';
 
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
 const SCOUTING_ROOM_KEY_STORAGE = 'scouting_room_active_key_v1';
@@ -503,11 +503,7 @@ export function ScoutingPage() {
         setRoomPresence(Array.isArray(room.presence) ? room.presence : []);
         setRoomAssignments(Array.isArray(response.assignments) ? response.assignments : []);
         const roomEntries = entriesFromRoomRecords(response.entries || [], joinedRoomKey);
-        setEntries((current) => {
-          const withoutRoomEntries = stripEntriesForRoom(current, joinedRoomKey);
-          if (roomEntries.length === 0) return withoutRoomEntries;
-          return mergeEntries(withoutRoomEntries, roomEntries);
-        });
+        setEntries((current) => replaceRoomEntries(current, joinedRoomKey, roomEntries));
         setRoomErrorText('');
         if (!options?.silent) {
           setStatusText(`Room session refreshed for ${joinedRoomKey}.`);
@@ -1606,11 +1602,7 @@ export function ScoutingPage() {
         setRoomPresence(Array.isArray(room.presence) ? room.presence : []);
         setRoomAssignments(Array.isArray(response.assignments) ? response.assignments : []);
         const roomEntries = entriesFromRoomRecords(response.entries || [], joinedRoomKey);
-        setEntries((current) => {
-          const withoutJoinedRoomEntries = stripEntriesForRoom(current, joinedRoomKey);
-          if (roomEntries.length === 0) return withoutJoinedRoomEntries;
-          return mergeEntries(withoutJoinedRoomEntries, roomEntries);
-        });
+        setEntries((current) => replaceRoomEntries(current, joinedRoomKey, roomEntries));
         setHistoryMineOnly(false);
         setRoomSocketNonce((current) => current + 1);
         setStatusText(`Restored room ${room.room_key}.`);
@@ -1913,11 +1905,7 @@ export function ScoutingPage() {
             ? (payload.entries as ScoutingRoomEntryRecord[])
             : [];
           const normalized = entriesFromRoomRecords(records, snapshotRoomKey);
-          setEntries((current) =>
-            normalized.length > 0
-              ? mergeEntries(stripEntriesForRoom(current, snapshotRoomKey), normalized)
-              : stripEntriesForRoom(current, snapshotRoomKey),
-          );
+          setEntries((current) => replaceRoomEntries(current, snapshotRoomKey, normalized));
           return;
         }
         if (messageType === 'presence') {
@@ -2163,11 +2151,7 @@ export function ScoutingPage() {
           Array.isArray(response.entries) ? response.entries : [],
           roomKey,
         );
-        setEntries((current) => (
-          normalized.length > 0
-            ? mergeEntries(stripEntriesForRoom(current, roomKey), normalized)
-            : stripEntriesForRoom(current, roomKey)
-        ));
+        setEntries((current) => replaceRoomEntries(current, roomKey, normalized));
 
         setRoomConnectionState('connected');
         setRoomErrorText('');
@@ -2363,9 +2347,7 @@ export function ScoutingPage() {
       const roomEntries = entriesFromRoomRecords(response.entries || [], joinedRoomKey);
       setEntries((current) => {
         const withoutPrevious = switchedRooms ? stripEntriesForRoom(current, activeRoomKey) : current;
-        const withoutJoinedRoomEntries = stripEntriesForRoom(withoutPrevious, joinedRoomKey);
-        if (roomEntries.length === 0) return withoutJoinedRoomEntries;
-        return mergeEntries(withoutJoinedRoomEntries, roomEntries);
+        return replaceRoomEntries(withoutPrevious, joinedRoomKey, roomEntries);
       });
       if (switchedRooms) {
         setLastSavedEntryId('');
@@ -2634,14 +2616,30 @@ export function ScoutingPage() {
       const apiSnapshot = snapshotCached ? apiSnapshotCache[snapshotKey] ?? null : null;
       const baseline = eventApiBaselineByTeam[selectedTeam.team_key] || null;
       const apiRating = scoutingApiRating(manualRating, apiSnapshot, baseline);
+      // One report per robot per match from this scout. Saving again used to add a
+      // second report (both counted in the team's averages); now it asks, then
+      // replaces the earlier one under the same id, so the room updates it too.
+      const entryRoomKey = activeRoom?.room_key ? normalizeRoomKey(activeRoom.room_key) : null;
+      const entryMatchKey = selectedMatch.match_key.toLowerCase();
+      const previousReport = latestEntriesRef.current.find((row) =>
+        row.match_key === entryMatchKey
+        && row.team_key === selectedTeam.team_key
+        && row.scout_profile === scoutProfile
+        && (row.room_key || null) === entryRoomKey);
+      if (previousReport && !window.confirm(
+        `You already saved ${selectedTeam.team_key.toUpperCase()} in ${selectedMatch.display_name}. Replace that report with this one?`,
+      )) {
+        setStatusText('Not saved. Your earlier report is unchanged.');
+        return;
+      }
       const entry = buildSavedScoutingEntry({
-        id: `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
+        id: previousReport?.id ?? `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
         saved_at_ms: savedAt,
         scout_profile: scoutProfile,
-        room_key: activeRoom?.room_key ? normalizeRoomKey(activeRoom.room_key) : null,
+        room_key: entryRoomKey,
         mode: scoutingMode,
         event_key: selectedEventKey,
-        match_key: selectedMatch.match_key.toLowerCase(),
+        match_key: entryMatchKey,
         match_display: selectedMatch.display_name,
         team_key: selectedTeam.team_key,
         team_label: selectedTeam.team_label,
@@ -2664,7 +2662,7 @@ export function ScoutingPage() {
         setErrorText('Your team workspace changed while saving. Switch back to the original workspace to save this report.');
         return;
       }
-      const nextEntries = [entry, ...latestEntriesRef.current].slice(0, 600);
+      const nextEntries = [entry, ...latestEntriesRef.current.filter((row) => row.id !== previousReport?.id)].slice(0, 600);
       try {
         // Confirm storage before reporting success or clearing a rapid form.
         window.localStorage.setItem(scoutingEntriesStorageKey(workspaceId), JSON.stringify(nextEntries));
@@ -2685,7 +2683,7 @@ export function ScoutingPage() {
       setLastSavedEntryId(entry.id);
       setErrorText('');
       hapticSuccess();
-      const label = `Saved ${selectedTeam.team_key.toUpperCase()} · ${overallRating.score_0_100}/100${entrySource === 'reviewed_auto' ? ' · reviewed auto draft' : ''}.`;
+      const label = `${previousReport ? 'Updated' : 'Saved'} ${selectedTeam.team_key.toUpperCase()} · ${overallRating.score_0_100}/100${entrySource === 'reviewed_auto' ? ' · reviewed auto draft' : ''}.`;
       const roomKey = activeRoom?.room_key || null;
       setStatusText(`${label} ${roomKey ? 'Saved on this phone; syncing to your team…' : 'Saved on this phone.'}`);
       if (scoutingMode === 'rapid') {
@@ -2758,6 +2756,7 @@ export function ScoutingPage() {
           const syncedWithRoom = {
             ...syncedEntry,
             room_key: normalizeRoomKey(sync.entry.room_key || roomKey) || syncedEntry.room_key || null,
+            server_synced: true,
           } satisfies SavedScoutingEntry;
           setEntries((current) => mergeEntry(current, syncedWithRoom));
         }
@@ -3655,6 +3654,16 @@ export function ScoutingPage() {
                 </button>
               ) : null}
             </div>
+            {!myTeamKey && workspaceTeamKey() ? (
+              // The workspace already knows the team: offer it first instead of making
+              // the scout find it among the event's teams (it stays a choice, because
+              // picking a team switches this page to that team's opponents).
+              <div className="scout-profile-chip-row">
+                <button type="button" className="scout-profile-chip" onClick={() => setMyTeamKey(workspaceTeamKey())}>
+                  Use {workspaceTeamKey().toUpperCase()} (your team on My Team)
+                </button>
+              </div>
+            ) : null}
             {eventTeamOptions.length > 0 ? (
               <div className="scout-profile-chip-row">
                 {eventTeamOptions
@@ -4015,6 +4024,10 @@ export function ScoutingPage() {
                 </button>
                 {saveBlockedReason ? <span className={styles.saveHint}>{saveBlockedReason}</span> : null}
               </div>
+              {/* The save result, here and not only on the Data tab: scouts on the Board
+                  had no sign their report was kept and saved it again. */}
+              {errorText ? <p className="center-callout danger" role="alert">{errorText}</p> : null}
+              {!errorText && statusText ? <p className={styles.saveHint} role="status">{statusText}</p> : null}
               <div className="fm-scout-hero-context" role="list" aria-label="Core scouting context">
                 <span className="fm-scout-hero-chip match" role="listitem"><strong>{selectedMatch?.display_name || 'N/A'}</strong></span>
                 <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? selectedTeamKey.toUpperCase() : 'N/A'}</strong></span>

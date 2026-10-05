@@ -443,6 +443,19 @@ class TeamWorkspaceTests(unittest.TestCase):
                     socket.receive_json()
                 self.assertEqual(closed.exception.code, 4401)
 
+    def test_scout_on_a_new_phone_gets_their_name_back_after_removal(self):
+        lead_session = self._create()
+        lead = self._headers(lead_session)
+        old_phone = self._join(lead_session["join_code"], "Scout Sam")
+        retry = self.client.post("/workspaces/join", json={"join_code": lead_session["join_code"], "display_name": "Scout Sam"})
+        self.assertEqual(retry.status_code, 409)
+        self.assertIn("new phone", retry.json()["detail"])
+        removed = self.client.post(
+            f"/workspaces/me/members/{old_phone['me']['id']}/remove", json={"rotate_join_code": False}, headers=lead,
+        )
+        self.assertEqual(removed.status_code, 200, removed.text)
+        self.assertEqual(self._join(lead_session["join_code"], "Scout Sam")["me"]["display_name"], "Scout Sam")
+
     def test_member_reopens_room_from_another_device(self):
         lead = self._headers(self._create())
         body = {"room_key": "room-two-devices", "event_key": EVENT, "scout_profile": "Lead", "create_if_missing": True}

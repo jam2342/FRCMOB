@@ -10,6 +10,7 @@ ROOT="${FRCMOB_ROOT:-/home/ubuntu/frcmob}"
 DEST="${FRCMOB_BACKUP_DIR:-/home/ubuntu/backups}"
 KEEP="${FRCMOB_BACKUP_KEEP:-72}"
 CONTAINER="${FRCMOB_POSTGRES_CONTAINER:-scouting-postgres}"
+BACKEND="${FRCMOB_BACKEND_CONTAINER:-scouting-backend}"
 
 env_value() {
   grep -E "^$1=" "$ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"'"'"
@@ -31,6 +32,21 @@ chmod 600 "$DEST/$name"
 ls -1t "$DEST"/frcmob_*.dump 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r rm -f
 find "$DEST" -name 'neon_*.dump' -mtime +14 -delete
 echo "backup ok $name tables=$tables size=$(du -h "$DEST/$name" | cut -f1)"
+
+# Files the database points at but doesn't hold: pit photos and the ML model artifacts
+# registry rows reference. Once a day, kept for a week. Same disk as the dumps, so this
+# covers deletion and volume damage, not losing the VM.
+media="frcmob_media_$(date -u +%Y%m%d).tar.gz"
+if [ ! -f "$DEST/$media" ]; then
+  dirs=$(docker exec "$BACKEND" sh -c 'cd /app/media && for d in pit_photos models/shadow; do [ -d "$d" ] && echo "$d"; done' || true)
+  if [ -n "$dirs" ]; then
+    docker exec "$BACKEND" tar -C /app/media -czf - $dirs > "$DEST/$media.tmp"
+    mv "$DEST/$media.tmp" "$DEST/$media"
+    chmod 600 "$DEST/$media"
+    ls -1t "$DEST"/frcmob_media_*.tar.gz 2>/dev/null | tail -n +8 | xargs -r rm -f
+    echo "media ok $media size=$(du -h "$DEST/$media" | cut -f1)"
+  fi
+fi
 
 # Off-site copy. Neon's direct endpoint, never the "-pooler" one: pg_restore sets
 # session state (search_path) that PgBouncer in transaction mode leaks onto shared

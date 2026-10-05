@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { searchTeams } from '../api';
 import { BottomTabBar } from '../components/navigation/BottomTabBar';
+import { BrandWordmark } from './BrandWordmark';
 import { MobileSearchOverlay } from '../components/navigation/MobileSearchOverlay';
 import { MoreSheet } from '../components/navigation/MoreSheet';
 import {
@@ -581,12 +582,9 @@ export function ProductShell() {
         aria-label="Primary navigation"
       >
         <div className="ps-brand">
-          <picture>
-            <source srcSet="/Heading.webp" type="image/webp" />
-            <img src="/Heading.png" alt="FRCMOB logo" className="ps-brand-logo" decoding="async" />
-          </picture>
+          <img src="/icon.svg" alt="" className="ps-brand-logo" decoding="async" />
           <div>
-            <strong>FRCMOB</strong>
+            <strong><BrandWordmark className="ps-brand-wordmark" /></strong>
           </div>
         </div>
         {sidebarCollapseAvailable ? (

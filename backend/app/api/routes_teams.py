@@ -609,105 +609,6 @@ def _statbotics_norm_epa_from_context(statbotics_context: dict[str, Any]) -> flo
             return value
     return None
 
-def _synthesize_rating_from_sparse_signals(
-    *,
-    event_key: str | None,
-    analysis_payload: dict[str, Any],
-    statbotics_context: dict[str, Any],
-) -> dict[str, Any] | None:
-    averages = analysis_payload.get("averages") if isinstance(analysis_payload.get("averages"), dict) else {}
-    fuel = _as_float(averages.get("fuel_scoring_rate"))
-    auto = _as_float(averages.get("auto_contribution"))
-    climb = _as_float(averages.get("climb_success_prob"))
-    reliability = _as_float(averages.get("reliability_score"))
-    defense = _as_float(averages.get("defensive_engagement_sec"))
-    epa = _statbotics_norm_epa_from_context(statbotics_context)
-
-    score = 50.0
-    signal_count = 0
-    if epa is not None:
-        score += _clamp((epa - 1600.0) / 18.0, -20.0, 30.0)
-        signal_count += 1
-    if fuel is not None:
-        score += _clamp((fuel - 0.6) * 22.0, -12.0, 12.0)
-        signal_count += 1
-    if auto is not None:
-        score += _clamp((auto - 4.0) * 2.4, -10.0, 10.0)
-        signal_count += 1
-    if climb is not None:
-        score += _clamp((climb - 0.50) * 20.0, -10.0, 10.0)
-        signal_count += 1
-    if reliability is not None:
-        score += _clamp((reliability - 0.60) * 25.0, -10.0, 10.0)
-        signal_count += 1
-
-    if signal_count <= 0:
-        return None
-
-    raw_rating_value = _clamp(score, 30.0, 92.0)
-    throughput = _clamp(42.0 + ((fuel or 0.7) * 24.0) + ((auto or 4.0) * 1.6), 20.0, 95.0)
-    endgame = _clamp(35.0 + ((climb or 0.45) * 60.0), 20.0, 95.0)
-    defense_presence = _clamp(32.0 + ((defense or 20.0) * 1.2), 20.0, 95.0)
-    consistency = _clamp(32.0 + ((reliability or 0.55) * 62.0), 20.0, 95.0)
-    raw_robot_level = _clamp((0.58 * raw_rating_value) + (0.42 * throughput), 20.0, 95.0)
-    raw_driver_skill = _clamp((0.56 * consistency) + (0.44 * defense_presence), 20.0, 95.0)
-    rating_value = calibrate_public_rating_scale(raw_rating_value)
-    robot_level = calibrate_public_rating_scale(raw_robot_level)
-    driver_skill = calibrate_public_rating_scale(raw_driver_skill)
-    confidence = _clamp(0.12 + (0.07 * float(signal_count)), 0.12, 0.44)
-
-    return {
-        "available": True,
-        "source": "sparse_external_fallback",
-        "context_event_key": event_key,
-        "rating_0_100": round(rating_value, 3),
-        "confidence_0_1": round(confidence, 4),
-        "robot_level_0_100": round(robot_level, 3),
-        "driver_skill_0_100": round(driver_skill, 3),
-        "subscores": {
-            "results_anchor": round(_clamp((0.60 * rating_value) + 18.0, 20.0, 95.0), 4),
-            "throughput": round(throughput, 4),
-            "shift_productivity": round(_clamp((0.65 * throughput) + 12.0, 20.0, 95.0), 4),
-            "capacity_utilization": round(_clamp((0.55 * throughput) + 18.0, 20.0, 95.0), 4),
-            "endgame": round(endgame, 4),
-            "auto_contribution": round(_clamp((auto or 4.0) * 8.0, 20.0, 95.0), 4),
-            "anti_defense": round(_clamp((0.55 * defense_presence) + (0.45 * consistency), 20.0, 95.0), 4),
-            "manual_points_impact": round(_clamp((0.62 * throughput) + (0.38 * rating_value), 20.0, 95.0), 4),
-            "rp_contribution": round(_clamp((0.35 * endgame) + (0.65 * throughput), 20.0, 95.0), 4),
-            "defense_presence": round(defense_presence, 4),
-            "consistency": round(consistency, 4),
-            "penalty_discipline": 50.0,
-        },
-        "pros": [],
-        "cons": [
-            {
-                "label": "Sparse analysis coverage",
-                "metric_value": float(signal_count),
-                "percentile": 50.0,
-                "confidence_0_1": round(confidence, 4),
-            }
-        ],
-        "details": {
-            "fallback_model": {
-                "active": True,
-                "label": "sparse_external_fallback",
-                "signal_count": int(signal_count),
-                "raw_rating_0_100": round(raw_rating_value, 4),
-                "public_scale": "calibrated_v1",
-            },
-            "raw_features": {
-                "bps_median": fuel,
-                "auto_points_est": auto,
-                "climb_success": climb,
-                "defense_presence": defense,
-                "uptime": reliability,
-                "statbotics_norm_epa": epa,
-            },
-        },
-        "model_version": "rating_sparse_external_fallback_v1",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-
 def _analysis_snapshot_from_breakdown(payload: dict[str, Any]) -> dict[str, Any]:
     team_data = payload.get("team") if isinstance(payload.get("team"), dict) else {}
     return {
@@ -1531,9 +1432,6 @@ async def _build_team_intel_payload(
     )
 
     # ── Sequential post-processing (depends on parallel results) ──
-    # The sparse rating below scores observed scouting and video only; official
-    # per-match numbers are on another scale and would swamp it.
-    observed_analysis_payload = analysis_payload
     analysis_payload, estimated_average_fields = _enrich_analysis_with_official_stats(
         analysis_payload,
         official_stats,
@@ -1603,26 +1501,6 @@ async def _build_team_intel_payload(
                 analysis_warnings.append(
                     "TBA event rank was unavailable; using model rank fallback for now."
                 )
-    if not bool(rating_payload.get("available")):
-        synthesized = _synthesize_rating_from_sparse_signals(
-            event_key=normalized_event_key,
-            analysis_payload=observed_analysis_payload,
-            statbotics_context=statbotics_context,
-        )
-        if synthesized is not None:
-            rating_payload = synthesized
-            rating_fallbacks.append(
-                {
-                    "kind": "event_rating",
-                    "from": "missing",
-                    "to": "sparse_external_fallback",
-                    "event_key": normalized_event_key,
-                    "reason": "no_precomputed_rating",
-                }
-            )
-            rating_warnings.append(
-                "No precomputed event rating was available; using sparse external fallback rating."
-            )
     warnings = analysis_warnings + rating_warnings
     if local_team_missing_warning:
         warnings.append(local_team_missing_warning)

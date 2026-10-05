@@ -6,14 +6,15 @@
  * Strategy:
  *  - Navigations (HTML): network first, cached copy when offline.
  *  - Static assets (hashed JS/CSS, fonts, images) and on-device models: cache first.
- *  - API and websocket traffic is never touched here; the app's own cache layer
+ *  - Pit photos (signed API links): network first, last copy offline.
+ *  - Other API and websocket traffic is never touched here; the app's own cache layer
  *    (memory + localStorage) and offline queue (offlineQueue.ts) handle it.
  */
 
 // v7: the recorder page is cross-origin isolated, and a worker it starts refuses any
 // script without a COEP header -- assets cached before /assets/* carried one would hang
 // the detector's thread pool, so they are dropped.
-const CACHE_NAME = "frcmob-v10";
+const CACHE_NAME = "frcmob-v11";
 
 /** Static asset extensions that should be aggressively cached. `wasm`/`mjs` are the
  *  detector's runtime (onnxruntime-web, ~27 MB): without them in the cache the model
@@ -23,6 +24,10 @@ const STATIC_EXTENSIONS = /\.(js|mjs|wasm|css|woff2?|ttf|eot|svg|png|jpe?g|gif|i
  *  must come from the cache once it has been loaded online. Model files are named by
  *  version, so a cached copy never goes stale. */
 const MODEL_EXTENSIONS = /\/models\/[^/]+\.onnx$/i;
+
+/** Pit photos come through the API as signed links; see the fetch handler. */
+const PIT_PHOTOS = /\/media\/pit_photos\//;
+const PIT_PHOTO_CACHE = "frcmob-pit-photos-v1";
 
 /** Paths that should never be cached by the service worker. */
 const NEVER_CACHE = /\/(api|ws)\//;
@@ -45,7 +50,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     const assets = new Set([
-      "/", "/record.html", "/manifest.json", "/Heading.png", "/Heading.webp",
+      "/", "/record.html", "/manifest.json", "/icon.svg", "/icons/icon-192.png",
       "/fonts/ibm-plex-sans-latin.woff2", "/fonts/ibm-plex-sans-latin-ext.woff2",
     ]);
     for (const path of ["/", "/record.html"]) {
@@ -93,6 +98,23 @@ self.addEventListener("fetch", (event) => {
   if (url.protocol !== "http:" && url.protocol !== "https:") return;
   // Restrict caching to same-origin app shell/assets.
   if (url.origin !== self.location.origin) return;
+
+  // Pit photos: network first, so the server's signature check decides whenever there
+  // is signal; the last copy serves the pit page offline. Links are re-signed daily,
+  // so the copy is keyed by path without the signature.
+  if (PIT_PHOTOS.test(url.pathname)) {
+    const key = url.origin + url.pathname;
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request);
+        if (response.ok) event.waitUntil(safeCachePut(key, response.clone(), PIT_PHOTO_CACHE));
+        return response;
+      } catch {
+        return (await caches.match(key)) || Response.error();
+      }
+    })());
+    return;
+  }
 
   // Don't intercept API or WebSocket calls — the app's own cache layer
   // (localStorage + in-memory stale-while-revalidate) handles those.
@@ -157,8 +179,9 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(title, {
       body: payload.body || "",
       tag: payload.tag || undefined,
-      icon: "/Heading.png",
-      badge: "/Heading.png",
+      icon: "/icons/icon-192.png",
+      // Android draws the badge as a white silhouette.
+      badge: "/icons/badge-96.png",
       data: { url: payload.url || "/home" },
     }),
   );

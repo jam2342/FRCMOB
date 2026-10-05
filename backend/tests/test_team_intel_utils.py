@@ -200,29 +200,6 @@ class TeamIntelUtilsTests(unittest.TestCase):
         self.assertFalse(merged["estimated_averages"]["applied"])
         self.assertTrue(all(value is None for value in merged["averages"].values()))
 
-    def test_sparse_signal_rating_synthesis_uses_statbotics_and_analysis(self):
-        analysis_payload = {
-            "averages": {
-                "fuel_scoring_rate": 0.8,
-                "auto_contribution": 4.2,
-                "climb_success_prob": 0.55,
-                "defensive_engagement_sec": 18.0,
-                "reliability_score": 0.72,
-            }
-        }
-        statbotics_context = {"team": {"norm_epa": {"current": 1775.0}}}
-        synthesized = routes_teams._synthesize_rating_from_sparse_signals(
-            event_key="2026txhou",
-            analysis_payload=analysis_payload,
-            statbotics_context=statbotics_context,
-        )
-        self.assertIsNotNone(synthesized)
-        assert synthesized is not None
-        self.assertTrue(synthesized["available"])
-        self.assertEqual(synthesized["source"], "sparse_external_fallback")
-        self.assertIsInstance(synthesized["rating_0_100"], float)
-        self.assertGreaterEqual(float(synthesized["confidence_0_1"]), 0.12)
-
     def test_build_team_intel_payload_returns_official_stats_to_the_page(self):
         class _FakeDB:
             def get(self, *_args, **_kwargs):
@@ -239,9 +216,6 @@ class TeamIntelUtilsTests(unittest.TestCase):
         ), patch(
             "app.api.routes_teams.official_team_stats",
             return_value=self._official_stats(),
-        ), patch(
-            "app.api.routes_teams._synthesize_rating_from_sparse_signals",
-            return_value=None,
         ):
             payload = asyncio.run(
                 routes_teams._build_team_intel_payload(
@@ -286,9 +260,6 @@ class TeamIntelUtilsTests(unittest.TestCase):
         ), patch(
             "app.api.routes_teams.official_team_stats",
             return_value={"available": False},
-        ), patch(
-            "app.api.routes_teams._synthesize_rating_from_sparse_signals",
-            return_value=None,
         ):
             payload = asyncio.run(
                 routes_teams._build_team_intel_payload(

@@ -714,7 +714,12 @@ def _upsert_event_if_missing(
             event = db.get(models.Event, event_key)
             if event is not None:
                 return event
-        except (TBAClientError, RuntimeError, ValueError, TypeError):
+        except TBAClientError as exc:
+            db.rollback()
+            # TBA says the event doesn't exist: don't turn a typo into a permanent event.
+            if exc.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Event {event_key} not found") from exc
+        except (RuntimeError, ValueError, TypeError):
             db.rollback()
 
     season, _ = _split_event_key(event_key)

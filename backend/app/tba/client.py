@@ -80,8 +80,11 @@ def _cached_tba_payload(cache_key: str) -> dict | list | None:
         return None
 
 class TBAClientError(Exception):
-    # Custom exception for TBA client errors.
-    pass
+    # status_code is set when TBA answered with a client error (e.g. 404 for an
+    # event or team that doesn't exist).
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 class TBAClient:
     def __init__(self):
@@ -119,6 +122,9 @@ class TBAClient:
                         continue
                     r.raise_for_status()
 
+                # A missing key won't appear on retry: fail at once instead of backing off.
+                if 400 <= r.status_code < 500:
+                    raise TBAClientError(f"TBA returned {r.status_code} for {url}", status_code=r.status_code)
                 r.raise_for_status()
                 logger.debug(f"TBA request successful: {url}")
                 payload = r.json()

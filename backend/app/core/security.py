@@ -115,6 +115,37 @@ def _token_secret_bytes() -> bytes:
     )
     return _DEV_EPHEMERAL_TOKEN_SECRET
 
+# Pit photos load through <img>, which can't send the workspace header, so the API
+# hands its members expiring signed URLs. Expiry is rounded to the day so a URL stays
+# the same (and cacheable, offline included) for a day at a time.
+MEDIA_URL_TTL_DAYS = 8
+
+
+def _media_signature(path: str, expires_unix: int) -> str:
+    secret = _token_secret_bytes()
+    if not secret:
+        return ""
+    return hmac.new(secret, f"media|{path}|{expires_unix}".encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+
+
+def sign_media_path(path: str, *, now: float | None = None) -> str:
+    day = int((time.time() if now is None else now) // 86400)
+    expires_unix = (day + MEDIA_URL_TTL_DAYS) * 86400
+    signature = _media_signature(path, expires_unix)
+    return f"{path}?exp={expires_unix}&sig={signature}" if signature else path
+
+
+def media_signature_valid(path: str, expires: str | None, signature: str | None, *, now: float | None = None) -> bool:
+    try:
+        expires_unix = int(str(expires or ""))
+    except ValueError:
+        return False
+    if expires_unix < (time.time() if now is None else now):
+        return False
+    expected = _media_signature(path, expires_unix)
+    return bool(expected) and hmac.compare_digest(expected, str(signature or ""))
+
+
 def _b64url_decode(token: str) -> bytes:
     raw = str(token or "").strip()
     if not raw:

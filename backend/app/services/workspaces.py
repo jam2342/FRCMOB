@@ -151,15 +151,24 @@ def ensure_display_name_free(
     display_name: str,
     *,
     except_member_id: int | None = None,
+    joining: bool = False,
 ) -> None:
     # Names are how leaders tell scouts apart in assignments, so they stay unique
-    # among current members (case-insensitive).
+    # among current members (case-insensitive). A name isn't handed to whoever asks
+    # with the join code, or a teammate could take over someone's assignments; a
+    # scout on a new phone gets their name back once a leader removes the old one.
     wanted = display_name.casefold()
     for member in active_members(db, workspace_id):
         if member.id != except_member_id and member.display_name.casefold() == wanted:
+            hint = (
+                " If that's you on a new phone, ask a team leader to remove your old device on"
+                " My Team, then join again with this name."
+                if joining
+                else " Pick another name."
+            )
             raise HTTPException(
                 status_code=409,
-                detail=f"Someone in this workspace already goes by '{member.display_name}'. Pick another name.",
+                detail=f"Someone in this workspace already goes by '{member.display_name}'.{hint}",
             )
 
 
@@ -172,7 +181,7 @@ def add_member(
 ) -> models.TeamWorkspaceMember:
     if len(active_members(db, workspace.id)) >= MAX_ACTIVE_MEMBERS:
         raise HTTPException(status_code=409, detail="This workspace is full.")
-    ensure_display_name_free(db, workspace.id, display_name)
+    ensure_display_name_free(db, workspace.id, display_name, joining=True)
     member = models.TeamWorkspaceMember(
         workspace_id=workspace.id,
         member_key=secrets.token_hex(16),
