@@ -1,4 +1,5 @@
 import { EventCalendarGrid, EventCalendarModal } from './EventCalendarView';
+import { shareableAppUrl } from '../platform/runtime';
 import { useCalendarExpansion, useEventCalendar } from './useEventCalendar';
 import { mergeEventLists } from '../utils/mergeEventLists';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -712,6 +713,9 @@ export function HomePage() {
 
   // Moving to another day loads just that day's events, once.
   const dayFetchRequestedRef = useRef<Set<string>>(new Set());
+  // Events whose schedule failed to download. Kept apart from a real empty schedule, so bad
+  // Wi-Fi reads as "couldn't load", not "nothing is scheduled".
+  const [failedScheduleKeys, setFailedScheduleKeys] = useState<string[]>([]);
   const homeMountedRef = useRef(true);
   useEffect(() => {
     homeMountedRef.current = true;
@@ -735,6 +739,13 @@ export function HomePage() {
         const chunk = missing.slice(offset, offset + HOME_SCHEDULE_FETCH_BATCH);
         const results = await Promise.allSettled(chunk.map((key) => getEventSchedule(key, false)));
         if (!homeMountedRef.current) return;
+        const failed = chunk.filter((_, idx) => results[idx].status === 'rejected');
+        const loaded = chunk.filter((_, idx) => results[idx].status === 'fulfilled');
+        setFailedScheduleKeys((previous) => {
+          const next = previous.filter((key) => !loaded.includes(key));
+          failed.forEach((key) => { if (!next.includes(key)) next.push(key); });
+          return next.length === previous.length && next.every((key, i) => key === previous[i]) ? previous : next;
+        });
         setScheduleByEvent((previous) => {
           const next = { ...previous };
           results.forEach((result, idx) => {
@@ -1060,6 +1071,11 @@ export function HomePage() {
   }, [selectedEventStream]);
 
   const selectedStreamEmbedUrl = selectedEventStream?.preferred_stream?.embed_url || null;
+  const selectedEventFinished = useMemo(() => {
+    const endToken = parseEventDateToken(eventByKey[selectedEventKey]?.end_date ?? null);
+    return endToken !== null && endToken < localDateTokenFromMs(Date.now());
+  }, [eventByKey, selectedEventKey]);
+  const streamWatchLabel = selectedEventFinished ? 'Watch the stream' : 'Watch Live';
 
   const hasAnySelectedDayMatches = useMemo(() => {
     return feedEventKeys.some((eventKey) => {
@@ -1074,6 +1090,25 @@ export function HomePage() {
   );
   // Schedules for the selected day arrive a few seconds after the page. Until they
   // do, "No matches scheduled" was a false statement, not an empty state.
+  const selectedDayFailedKeys = useMemo(() => {
+    const dayToken = localDateTokenFromMs(selectedDayMs);
+    return suggestedEvents
+      .filter((event) => eventRunsOnDateToken(event, dayToken))
+      .map((event) => normalizeEventKey(event.event_key))
+      .filter((key) => failedScheduleKeys.includes(key));
+  }, [failedScheduleKeys, selectedDayMs, suggestedEvents]);
+
+  function retryFailedSchedules() {
+    const keys = selectedDayFailedKeys;
+    keys.forEach((key) => dayFetchRequestedRef.current.delete(key));
+    setFailedScheduleKeys((previous) => previous.filter((key) => !keys.includes(key)));
+    setScheduleByEvent((previous) => {
+      const next = { ...previous };
+      keys.forEach((key) => { delete next[key]; });
+      return next;
+    });
+  }
+
   const selectedDaySchedulesPending = useMemo(() => {
     if (loadingHome) return true;
     const dayToken = localDateTokenFromMs(selectedDayMs);
@@ -1588,7 +1623,7 @@ export function HomePage() {
 
   async function copyMatchDeepLink(eventKey: string, matchKey: string) {
     const path = buildMatchCenterPath(eventKey, matchKey);
-    const deepLink = new URL(path, window.location.origin).toString();
+    const deepLink = shareableAppUrl(path);
     const copied = await copyTextToClipboard(deepLink);
     if (copied) {
       setStatusText(`Copied deep link for ${normalizeMatchKey(matchKey, eventKey).toUpperCase()}.`);
@@ -1849,16 +1884,12 @@ export function HomePage() {
             >
               <ChevronDownIcon className={`icon-inline ${allHomeCardsCollapsed ? '' : 'icon-rotate-180'}`.trim()} /> {allHomeCardsCollapsed ? 'Expand All' : 'Minimize All'}
             </button>
-            {!isMobileLayout || nextLiveHomeMatch ? (
+            {nextLiveHomeMatch ? (
               <button
                 type="button"
                 className="home-mini-tab-btn"
-                disabled={!nextLiveHomeMatch}
-                onClick={() => {
-                  if (!nextLiveHomeMatch) return;
-                  openMatch(nextLiveHomeMatch.eventKey, nextLiveHomeMatch.match.match_key);
-                }}
-                title={nextLiveHomeMatch ? `Open ${nextLiveHomeMatch.match.display_name}` : 'No live matches right now'}
+                onClick={() => openMatch(nextLiveHomeMatch.eventKey, nextLiveHomeMatch.match.match_key)}
+                title={`Open ${nextLiveHomeMatch.match.display_name}`}
               >
                 <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> {isMobileLayout ? 'Live' : 'Open Next Live'}
               </button>
@@ -1868,9 +1899,9 @@ export function HomePage() {
                 type="button"
                 className={`home-mini-tab-btn ${teamsPanelOpen ? 'active' : ''}`.trim()}
                 onClick={() => setTeamsPanelOpen((prev) => !prev)}
-                title="Toggle EPA rankings table"
+                title="Show this event's rankings"
               >
-                <BarChartIcon className="icon-inline" /> Teams Insights
+                <BarChartIcon className="icon-inline" /> Rankings
               </button>
             ) : null}
             {isMobileLayout ? (
@@ -1903,11 +1934,11 @@ export function HomePage() {
           >
             <header className="home-mini-panel-head home-card-head">
               <div>
-                <h3>Teams Insights</h3>
-                <small>Event rankings from TBA/FRC</small>
+                <h3>Rankings</h3>
+                <small>Official event rankings</small>
               </div>
               <div className="home-card-head-actions">
-                {renderMobileCollapseButton('teams-insights', 'Teams Insights')}
+                {renderMobileCollapseButton('teams-insights', 'Rankings')}
                 <div className="center-actions-row compact">
                   <button type="button" className="center-btn ghost" onClick={() => setTeamsPanelOpen(false)}>
                     Close
@@ -2022,6 +2053,17 @@ export function HomePage() {
           />
         ) : !hasAnySelectedDayMatches && selectedDaySchedulesPending ? (
           <EmptyState title="Loading matches" description={`Getting ${selectedDayDateLabel}'s schedules…`} />
+        ) : !hasAnySelectedDayMatches && selectedDayFailedKeys.length > 0 ? (
+          <EmptyState
+            type="offline"
+            title="Couldn't load this day's matches"
+            description="Check your connection and try again."
+            action={(
+              <button type="button" className="center-btn" onClick={retryFailedSchedules}>
+                Try again
+              </button>
+            )}
+          />
         ) : !hasAnySelectedDayMatches ? (
           <EmptyState
             title="No matches on this day"
@@ -2334,7 +2376,7 @@ export function HomePage() {
         <section className={`home-fotmob-card ${liveStreamCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <div>
-              <h3>Live Stream</h3>
+              <h3>{selectedEventFinished ? 'Stream' : 'Live Stream'}</h3>
               <small>{selectedEventDisplay || 'No event selected'}</small>
             </div>
             {renderMobileCollapseButton('live-stream', 'Live Stream')}
@@ -2355,11 +2397,11 @@ export function HomePage() {
                 </p>
               ) : null}
               {selectedStreamWatchUrl ? (
-                <a className="home-fotmob-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open live stream in new tab">
-                  Watch Live
+                <a className="home-fotmob-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open the stream in a new tab">
+                  {streamWatchLabel}
                 </a>
               ) : null}
-              {selectedEventStream?.game_day_url ? (
+              {selectedEventStream?.game_day_url && !selectedEventFinished ? (
                 <a className="home-fotmob-btn subtle" href={selectedEventStream.game_day_url} target="_blank" rel="noreferrer">
                   Open TBA GameDay
                 </a>
@@ -2558,15 +2600,15 @@ export function HomePage() {
 
             {/* Live Stream */}
             <section className="home-drawer-section">
-              <h4><VideoIcon className="icon-inline" /> Live Stream</h4>
+              <h4><VideoIcon className="icon-inline" /> {selectedEventFinished ? 'Stream' : 'Live Stream'}</h4>
               {selectedStreamWatchUrl ? (
-                <a className="home-fotmob-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open live stream">
-                  <VideoIcon className="icon-inline" /> Watch Live
+                <a className="home-fotmob-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open the stream">
+                  <VideoIcon className="icon-inline" /> {streamWatchLabel}
                 </a>
               ) : (
                 <p className="center-callout muted">{streamCardSummary}</p>
               )}
-              {selectedEventStream?.game_day_url ? (
+              {selectedEventStream?.game_day_url && !selectedEventFinished ? (
                 <a className="home-fotmob-btn subtle" href={selectedEventStream.game_day_url} target="_blank" rel="noreferrer">
                   TBA GameDay
                 </a>

@@ -122,7 +122,8 @@ export function SurfaceCard({
 
 
 
-  const canExpand = Boolean(expandable);
+  // On a phone the card already fills the width, so "fullscreen" only added a button per card.
+  const canExpand = Boolean(expandable) && !isMobileViewport;
   const canCollapse = Boolean((collapsible || (mobileCollapsible && isMobileViewport)) && !expanded);
   const isCollapsed = Boolean(canCollapse && collapsed);
 

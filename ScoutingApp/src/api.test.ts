@@ -57,7 +57,7 @@ describe('scoutingRoomWebSocketUrl', () => {
     expect(calledUrl).not.toContain('/api/api/');
   });
 
-  it('surfaces plain-text backend errors without response stream reuse crashes', async () => {
+  it('shows a plain message, not the raw body, for plain-text backend errors', async () => {
     vi.stubEnv('VITE_API_URL', '/api');
     const fetchMock = vi.fn().mockResolvedValue(
       new Response('Internal Server Error', {
@@ -73,7 +73,48 @@ describe('scoutingRoomWebSocketUrl', () => {
         room_key: 'room-test',
         scout_profile: 'Scout A',
       }),
-    ).rejects.toThrow('Internal Server Error');
+    ).rejects.toThrow('The server had a problem. Try again in a minute.');
+  });
+
+  it('keeps long recovery instructions and ordinary words, hides stack traces', async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const recovery =
+      'Someone in this workspace is already called Sam Stack. If that was you on another phone, ask a team leader to remove the old device on My Team, then join again with the same name. Your saved reports stay on this phone until then.';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: recovery }), { status: 409, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: 'Traceback (most recent call last):\n  File "app/main.py", line 3, in x' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+    expect(recovery.length).toBeGreaterThan(200);
+    await expect(api.createOrJoinScoutingRoom({ room_key: 'room-a', scout_profile: 'Sam Stack' })).rejects.toThrow(recovery);
+    await expect(api.createOrJoinScoutingRoom({ room_key: 'room-b', scout_profile: 'Sam' })).rejects.toThrow(
+      'The server had a problem. Try again in a minute.',
+    );
+  });
+
+  it("passes a server's own detail message through", async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'That room key is already taken.' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    await expect(
+      api.createOrJoinScoutingRoom({
+        room_key: 'room-test',
+        scout_profile: 'Scout A',
+      }),
+    ).rejects.toThrow('That room key is already taken.');
   });
 
   it('normalizes body-stream-read errors into a status-based fallback', async () => {
@@ -92,7 +133,7 @@ describe('scoutingRoomWebSocketUrl', () => {
         room_key: 'room-test',
         scout_profile: 'Scout A',
       }),
-    ).rejects.toThrow('Request failed with status 500');
+    ).rejects.toThrow('The server had a problem. Try again in a minute.');
   });
 
   it('turns room request timeouts into readable errors', async () => {

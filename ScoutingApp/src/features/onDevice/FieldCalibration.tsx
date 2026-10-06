@@ -32,6 +32,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [taps, setTaps] = useState<Point[]>([]);
   const [calibration, setCalibration] = useState<Calibration | null>(null);
+  const [saveStatus, setSaveStatus] = useState('');
   const [error, setError] = useState<string>('');
 
   const revokePendingObjectUrl = useCallback(() => {
@@ -57,6 +58,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
       setImage(img);
       setTaps([]);
       setCalibration(null);
+      setSaveStatus('');
       setError('');
     };
     img.onerror = () => {
@@ -102,6 +104,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
   const reset = useCallback(() => {
     setTaps([]);
     setCalibration(null);
+    setSaveStatus('');
     setError('');
   }, []);
 
@@ -175,6 +178,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
     referenceContext.drawImage(image, 0, 0, referenceCanvas.width, referenceCanvas.height);
     const pixels = referenceContext.getImageData(0, 0, referenceCanvas.width, referenceCanvas.height);
     const referenceFrame = grayscaleFromRgba(pixels.data, referenceCanvas.width, referenceCanvas.height);
+    setSaveStatus('');
     // persist locally so the offline breakdown can reuse it without re-tapping
     try {
       const db = await openDb();
@@ -193,8 +197,10 @@ export function FieldCalibration({ onCalibrated }: Props) {
       } finally {
         db.close();
       }
+      setSaveStatus('Calibration saved on this device.');
     } catch {
-      // non-fatal: calibration still usable in-memory if IndexedDB is unavailable
+      setSaveStatus('Could not save this calibration on your device. Keep this page open and try again.');
+      if (!onCalibrated) return;
     }
     onCalibrated?.({ ...calibration, referenceFrame });
   }, [calibration, image, onCalibrated]);
@@ -210,6 +216,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
 
   return (
     <div className="field-calibration">
+      {saveStatus ? <p role="status">{saveStatus}</p> : null}
       <p className="muted">
         Take a photo of the field from where you&apos;ll film, then tap its four corners in the
         order shown. That&apos;s how the app works out where each robot is on the field.

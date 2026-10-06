@@ -1279,11 +1279,22 @@ export function mergeEntries(existing: SavedScoutingEntry[], incoming: SavedScou
     .slice(0, 600);
 }
 
+// The phone adds the API snapshot after a save; the server's copy (an ack, a live room update or a
+// room snapshot) is the payload as sent, without it. Keep what the phone already worked out.
+export function keepLocalAnalytics(incoming: SavedScoutingEntry, local: SavedScoutingEntry | undefined): SavedScoutingEntry {
+  if (!local) return incoming;
+  return {
+    ...incoming,
+    api_snapshot: incoming.api_snapshot ?? local.api_snapshot,
+    scouting_api_rating: incoming.scouting_api_rating ?? local.scouting_api_rating,
+  };
+}
+
 export function mergeEntry(existing: SavedScoutingEntry[], incoming: SavedScoutingEntry): SavedScoutingEntry[] {
   const normalizedIncoming = normalizeEntry(incoming);
   if (!normalizedIncoming) return existing;
   const nextMap = new Map(existing.map((entry) => [entry.id, entry]));
-  nextMap.set(normalizedIncoming.id, normalizedIncoming);
+  nextMap.set(normalizedIncoming.id, keepLocalAnalytics(normalizedIncoming, nextMap.get(normalizedIncoming.id)));
   return Array.from(nextMap.values())
     .sort((a, b) => b.saved_at_ms - a.saved_at_ms)
     .slice(0, 600);
@@ -1323,9 +1334,10 @@ export function replaceRoomEntries(
   snapshot: SavedScoutingEntry[],
 ): SavedScoutingEntry[] {
   const snapshotIds = new Set(snapshot.map((entry) => entry.id));
+  const localById = new Map(entries.map((entry) => [entry.id, entry]));
   return mergeEntries(
     stripEntriesForRoom(entries, roomKey).filter((entry) => !snapshotIds.has(entry.id)),
-    snapshot,
+    snapshot.map((entry) => keepLocalAnalytics(entry, localById.get(entry.id))),
   );
 }
 

@@ -404,6 +404,7 @@ export function SettingsPage() {
   }
 
   function clearFavorites() {
+    if (!window.confirm('Remove all your favorite teams and events from this device?')) return;
     window.localStorage.removeItem(FAVORITES_KEYS.events);
     window.localStorage.removeItem(FAVORITES_KEYS.teams);
     refreshDiagnostics();
@@ -412,6 +413,7 @@ export function SettingsPage() {
   }
 
   function clearCompareCache() {
+    if (!window.confirm('Clear the teams saved in Compare on this device?')) return;
     window.localStorage.removeItem(COMPARE_KEYS.event);
     window.localStorage.removeItem(COMPARE_KEYS.teams);
     refreshDiagnostics();
@@ -427,6 +429,7 @@ export function SettingsPage() {
   }
 
   function resetDefaults() {
+    if (!window.confirm('Put every setting on this page back to its default?')) return;
     const defaults = saveStoredSettings({
       theme: 'dark',
       density: 'comfortable',
@@ -726,7 +729,9 @@ export function SettingsPage() {
             refreshAdminSessionState();
           }}
         >
-          {adminModeEnabled ? 'Hide Admin Tools' : 'Show Admin Tools'}
+          {/* Closing the tools also ends the admin session (setClientAdminModeEnabled clears the
+              token), so the label says so instead of "Hide". Only the site operator needs this. */}
+          {!adminModeEnabled ? 'Operator sign-in' : clientAdminKeyAvailable() ? 'Sign out of admin' : 'Close operator sign-in'}
         </Button>
       </div>
 

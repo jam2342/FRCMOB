@@ -450,6 +450,13 @@ export function StrategyBriefingPage() {
       .sort((a, b) => matchSortKey(a) - matchSortKey(b));
   }, [schedule, myTeamKey, synergyMap, ratingsMap, liveFormMap]);
 
+  const myTeamPlaysHere = useMemo(
+    () => Boolean(schedule && myTeamKey && schedule.some((m) => [...m.red, ...m.blue].some((t) => t.team_key === myTeamKey))),
+    [schedule, myTeamKey],
+  );
+  const myTeamInputUnchanged =
+    !myTeamInput.trim() || normalizeTeamKeyInput(myTeamInput.trim()) === myTeamKey;
+
   function commitMyTeam() {
     const normalized = normalizeTeamKeyInput(myTeamInput.trim());
     if (!normalized) return;
@@ -508,14 +515,10 @@ export function StrategyBriefingPage() {
               onKeyDown={(e) => e.key === 'Enter' && commitMyTeam()}
               style={{ flex: 1, maxWidth: 200 }}
             />
-            <button type="button" className="center-btn" onClick={commitMyTeam}>
-              Set My Team
+            {/* The input already shows the briefed team; the button only matters once it's edited. */}
+            <button type="button" className="center-btn" onClick={commitMyTeam} disabled={myTeamInputUnchanged}>
+              Brief this team
             </button>
-            {myTeamKey ? (
-              <span className="center-chip" style={{ fontWeight: 600 }}>
-                Team {teamNum(myTeamKey)}
-              </span>
-            ) : null}
           </div>
           {teamFromWorkspace ? (
             <p className="center-callout muted">
@@ -834,9 +837,13 @@ export function StrategyBriefingPage() {
 
         {/* Empty state */}
         {myTeamKey && schedule && briefings.length === 0 ? (
-          <SurfaceCard title="No Upcoming Matches">
+          <SurfaceCard title={schedule.length === 0 ? 'Schedule Not Published' : myTeamPlaysHere ? 'No Upcoming Matches' : 'Not At This Event'}>
             <p className="center-callout muted">
-              Team {teamNum(myTeamKey)} has no upcoming matches, or all are completed.
+              {schedule.length === 0
+                ? `${eventName || 'This event'} hasn't published its match schedule yet. Briefings appear once it does.`
+                : myTeamPlaysHere
+                ? `Team ${teamNum(myTeamKey)} has no matches left on the published schedule.`
+                : `Team ${teamNum(myTeamKey)} isn't on the schedule at ${eventName || 'this event'}. Pick one of its events above.`}
             </p>
           </SurfaceCard>
         ) : null}

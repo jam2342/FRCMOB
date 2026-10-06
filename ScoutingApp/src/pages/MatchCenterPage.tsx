@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { shareableAppUrl } from '../platform/runtime';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventLiveStream,
@@ -170,6 +171,8 @@ export function MatchCenterPage() {
     readMatchCenterRecentMatches(),
   );
   const lastEventContextRef = useRef('');
+  const currentEventKeyRef = useRef(selectedEventKey);
+  currentEventKeyRef.current = selectedEventKey;
   const lastAutoJumpMatchKeyRef = useRef('');
 
   useEffect(() => {
@@ -308,6 +311,8 @@ export function MatchCenterPage() {
             })
           : Promise.resolve(null),
       ]);
+      // Another event was picked while this was loading; its own load follows right away.
+      if (currentEventKeyRef.current !== selectedEventKey) return true;
 
       const errors: string[] = [];
 
@@ -695,7 +700,7 @@ export function MatchCenterPage() {
 
   async function copyMatchDeepLink(matchKey: string, eventKey: string = selectedEventKey) {
     const path = buildMatchCenterPath(eventKey, matchKey);
-    const deepLink = new URL(path, window.location.origin).toString();
+    const deepLink = shareableAppUrl(path);
     const copied = await copyTextToClipboard(deepLink);
     if (copied) {
       setStatusText(`Copied deep link for ${normalizeMatchKey(matchKey, eventKey).toUpperCase()}.`);
@@ -712,7 +717,8 @@ export function MatchCenterPage() {
 
   function renderLiveStreamCard(title = 'Live Stream', subtitle = 'Event stream embed and links.') {
     return (
-      <SurfaceCard title={title} subtitle={subtitle}>
+      // Fullscreen and minimize remount the card's content, which stopped a playing video.
+      <SurfaceCard title={title} subtitle={subtitle} expandable={false} mobileCollapsible={false}>
         {!liveStream ? <p className="center-callout muted">Stream unavailable.</p> : null}
         {liveStream && !liveStream.available ? (
           <p className="center-callout muted">{liveStream.detail || 'No webcast published.'}</p>
@@ -782,7 +788,7 @@ export function MatchCenterPage() {
             <span className="center-chip">{statusText}</span>
             <span className="center-chip" title={`Refreshes every ${effectiveRefreshSec}s`}>Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
           </div>
-          {eventError ? <p className="center-callout warning">{eventError}</p> : null}
+          {eventError ? <p className="center-callout warning" title={eventError}>Some of this event's data didn't load. It retries on its own.</p> : null}
           <div className="center-actions-row primary-actions">
             <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}&tab=schedule` : '/events'} title="Go to Events">
               <CalendarIcon className="icon-inline" /> This event

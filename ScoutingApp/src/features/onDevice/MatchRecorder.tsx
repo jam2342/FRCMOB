@@ -30,6 +30,8 @@ type Props = {
   onTelemetry?: (telemetry: InferenceTelemetry) => void;
   targetFps?: number;
   confThreshold?: number;
+  // Lets the parent lock the capture-source switch while frames are being captured.
+  onRecordingChange?: (busy: boolean) => void;
 };
 
 type DetectorState = 'idle' | 'loading' | 'ready' | 'error';
@@ -42,6 +44,7 @@ export function MatchRecorder({
   targetFps = 3, // 2 fps measurably lost positions against a dense 10 fps run of the same match
   // Unset: the loaded model's own cutoff (modelArtifact.ts), tuned per model.
   confThreshold,
+  onRecordingChange,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -59,6 +62,13 @@ export function MatchRecorder({
   const [detectorState, setDetectorState] = useState<DetectorState>('idle');
   const [detectorError, setDetectorError] = useState('');
   const [recording, setRecording] = useState(false);
+  const busyForParent = recording;
+  const onRecordingChangeRef = useRef(onRecordingChange);
+  onRecordingChangeRef.current = onRecordingChange;
+  useEffect(() => {
+    onRecordingChangeRef.current?.(busyForParent);
+  }, [busyForParent]);
+  useEffect(() => () => onRecordingChangeRef.current?.(false), []);
   const [frames, setFrames] = useState(0);
   const [detections, setDetections] = useState(0);
   const [cameraError, setCameraError] = useState('');
