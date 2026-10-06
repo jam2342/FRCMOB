@@ -1165,8 +1165,26 @@ export type OpsDashboardResponse = {
   metrics: Record<string, unknown>;
 };
 
+// What a person sees when a request fails. Server "detail" strings are written for people
+// (e.g. "That scout already has this match"), so they pass through; raw bodies, HTML error
+// pages and stack traces don't.
+function friendlyStatusMessage(status: number): string {
+  if (status === 401 || status === 403) return "You don't have access to this. If you're on a team, rejoin its workspace.";
+  if (status === 404) return "That wasn't found. It may not be published yet.";
+  if (status === 408 || status === 504) return "The server took too long to answer. Try again.";
+  if (status === 429) return "Too many requests at once. Wait a moment and try again.";
+  if (status >= 500) return "The server had a problem. Try again in a minute.";
+  return "That didn't work. Try again.";
+}
+
+// Only real stack traces and markup. Server "detail" text is written for people, including
+// long recovery instructions, so it isn't judged by length or by ordinary words.
+function looksTechnical(text: string): boolean {
+  return /Traceback \(most recent call last\)|File "[^"]+", line \d+|\n\s+at \S+ \(|<!doctype|<html|<body|\b(sqlalchemy|psycopg)\.\w+/i.test(text);
+}
+
 async function readError(response: Response): Promise<string> {
-  const fallback = `Request failed with status ${response.status}`;
+  const fallback = friendlyStatusMessage(response.status);
   if (response.bodyUsed) return fallback;
   let bodyText: string;
   try {
@@ -1182,16 +1200,15 @@ async function readError(response: Response): Promise<string> {
 
   const trimmed = String(bodyText || "").trim();
   if (!trimmed) return fallback;
-  if (/body stream already read/i.test(trimmed)) return fallback;
 
   try {
     const data = JSON.parse(trimmed) as { detail?: unknown; message?: unknown };
-    if (typeof data.detail === "string" && data.detail.trim()) return data.detail.trim();
-    if (typeof data.message === "string" && data.message.trim()) return data.message.trim();
+    const detail = typeof data.detail === "string" ? data.detail.trim() : typeof data.message === "string" ? data.message.trim() : "";
+    if (detail && !looksTechnical(detail)) return detail;
   } catch {
-    // Non-JSON payloads should surface as raw text.
+    // Plain-text and HTML bodies (proxy error pages, stack traces) aren't shown to people.
   }
-  return trimmed;
+  return fallback;
 }
 
 function absoluteApiUrl(path: string): string {

@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { copyTextToClipboard } from './centerUtils';
 import {
   createWorkspace,
   getMyWorkspace,
@@ -184,16 +185,12 @@ function JoinCodePanel({ code, isLeader, onRotate, busy }: {
   onRotate: () => void;
   busy: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
   const copy = async () => {
     if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+    const ok = await copyTextToClipboard(code);
+    setCopied(ok ? 'copied' : 'failed');
+    if (ok) window.setTimeout(() => setCopied('idle'), 2000);
   };
 
   if (code) {
@@ -201,8 +198,11 @@ function JoinCodePanel({ code, isLeader, onRotate, busy }: {
       <div className="my-team__code-block">
         <p className="my-team__code" aria-label={`Join code ${code.split('').join(' ')}`}>{code}</p>
         <div className="my-team__code-actions">
-          <Button variant="primary" onClick={copy}>{copied ? 'Copied' : 'Copy code'}</Button>
+          <Button variant="primary" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy code'}</Button>
         </div>
+        {copied === 'failed' ? (
+          <p className="my-team__note" role="alert">This browser blocked copying. Write the code down or select it above.</p>
+        ) : null}
         <p className="my-team__note">
           Share it with your scouts now. It's only shown once; if you lose it, make a new one. People already in the
           workspace stay in.

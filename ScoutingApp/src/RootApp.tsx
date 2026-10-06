@@ -95,6 +95,13 @@ function RecorderDocumentGuard({ children }: { children: ReactNode }) {
   return target ? null : children;
 }
 
+// Old addresses still turn up in bookmarks and shared links; keep their ?event=/&team= so the
+// redirect lands on the same selection.
+function RedirectKeepingQuery({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
+
 export default function RootApp() {
   useEffect(() => {
     prefetchRoutesWhenIdle();
@@ -110,8 +117,8 @@ export default function RootApp() {
             <Route path="/events" element={withPageSuspense(<EventsPage />, 'Events')} />
             <Route path="/events/export" element={withPageSuspense(<ExportPage />, 'Export')} />
             <Route path="/events/dashboard" element={withPageSuspense(<DataVizPage />, 'Data Dashboard')} />
-            <Route path="/teams" element={<Navigate to="/team-center" replace />} />
-            <Route path="/teams-insights" element={<Navigate to="/team-center" replace />} />
+            <Route path="/teams" element={<RedirectKeepingQuery to="/team-center" />} />
+            <Route path="/teams-insights" element={<RedirectKeepingQuery to="/team-center" />} />
             <Route path="/my-team" element={withPageSuspense(<MyTeamPage />, 'My Team')} />
             <Route path="/scouting" element={withPageSuspense(<ScoutingPage />, 'Scouting')} />
             <Route path="/scouting/assignments" element={withPageSuspense(<ScoutingAssignPage />, 'Scouting Assignments')} />
@@ -128,10 +135,10 @@ export default function RootApp() {
             <Route path="/compare/alliance-advisor" element={withPageSuspense(<AllianceAdvisorPage />, 'Alliance Advisor')} />
             <Route path="/compare/picklist" element={withPageSuspense(<PicklistPage />, 'Picklist')} />
             {/* Legacy standalone routes → redirect to new sub-paths */}
-            <Route path="/alliance-advisor" element={<Navigate to="/compare/alliance-advisor" replace />} />
-            <Route path="/predictions" element={<Navigate to="/match-center/predictions" replace />} />
-            <Route path="/export" element={<Navigate to="/events/export" replace />} />
-            <Route path="/scouting-assignments" element={<Navigate to="/scouting/assignments" replace />} />
+            <Route path="/alliance-advisor" element={<RedirectKeepingQuery to="/compare/alliance-advisor" />} />
+            <Route path="/predictions" element={<RedirectKeepingQuery to="/match-center/predictions" />} />
+            <Route path="/export" element={<RedirectKeepingQuery to="/events/export" />} />
+            <Route path="/scouting-assignments" element={<RedirectKeepingQuery to="/scouting/assignments" />} />
             <Route path="/favorites" element={withPageSuspense(<FavoritesPage />, 'Favorites')} />
             <Route path="/settings" element={withPageSuspense(<SettingsPage />, 'Settings')} />
             {PrimitivesPage ? (

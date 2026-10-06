@@ -56,6 +56,9 @@ export function useSingleFlightPolling(options: UseSingleFlightPollingOptions): 
     let disposed = false;
     let timer: number | null = null;
     let requestInFlightFlag = false;
+    // A manual/initial refresh asked for while a request is running (e.g. the user picked
+    // another event) runs as soon as that request settles, not a whole interval later.
+    let pendingReason: SingleFlightPollReason | null = null;
     let nextDelayMs = safeIntervalMs;
 
     const clearTimer = () => {
@@ -77,7 +80,8 @@ export function useSingleFlightPolling(options: UseSingleFlightPollingOptions): 
     const execute = async (reason: SingleFlightPollReason) => {
       if (disposed || !enabled || !visible) return;
       if (requestInFlightFlag) {
-        schedule(nextDelayMs);
+        if (reason !== 'poll') pendingReason = reason;
+        else schedule(nextDelayMs);
         return;
       }
 
@@ -103,7 +107,13 @@ export function useSingleFlightPolling(options: UseSingleFlightPollingOptions): 
             const stepped = Math.round(nextDelayMs * Math.max(1.1, backoffMultiplier));
             nextDelayMs = Math.max(lowerBoundMs, Math.min(upperBoundMs, stepped));
           }
-          schedule(nextDelayMs);
+          if (pendingReason) {
+            const queued = pendingReason;
+            pendingReason = null;
+            void execute(queued);
+          } else {
+            schedule(nextDelayMs);
+          }
         }
       }
     };

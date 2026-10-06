@@ -5,6 +5,14 @@ export const isNativeApp = () => Capacitor.isNativePlatform();
 // These are public service addresses, never credentials. The native app has no /api proxy.
 export const NATIVE_API_URL = 'https://scouting-app-iryg.vercel.app/api';
 export const NATIVE_WS_URL = 'wss://141-148-171-128.sslip.io';
+const PUBLIC_SITE_URL = 'https://scouting-app-iryg.vercel.app/';
+
+// A link someone else can open. The app routes on the hash (HashRouter), so a bare
+// "/match-center?..." path lands on Home; the native app's own origin isn't reachable by anyone else.
+export function shareableAppUrl(route: string): string {
+  const base = isNativeApp() || typeof window === 'undefined' ? PUBLIC_SITE_URL : `${window.location.origin}/`;
+  return `${base}#${route.startsWith('/') ? route : `/${route}`}`;
+}
 
 export function resolveApiBaseUrl(): string {
   const configured = String(isNativeApp() ? import.meta.env.VITE_NATIVE_API_URL || '' : import.meta.env.VITE_API_URL || import.meta.env.NEXT_PUBLIC_API_URL || '').trim();

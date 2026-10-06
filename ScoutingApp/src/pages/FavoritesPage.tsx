@@ -147,7 +147,7 @@ export function FavoritesPage() {
   const [visibleTeamCardCount, setVisibleTeamCardCount] = useState(20);
   const [mobileFinderOpen, setMobileFinderOpen] = useState(false);
   const refreshInFlightRef = useRef(false);
-  const previousTabRef = useRef(activeTab);
+  const previousScopeRef = useRef(JSON.stringify([activeTab, favoriteEvents, favoriteTeams, eventContextInput]));
   const tabRefreshPendingRef = useRef(false);
   const pollTriggerRef = useRef<() => void>(() => {});
 
@@ -507,11 +507,12 @@ export function FavoritesPage() {
 
   pollTriggerRef.current = triggerNow;
   useEffect(() => {
-    if (previousTabRef.current === activeTab) return;
-    previousTabRef.current = activeTab;
+    const scope = JSON.stringify([activeTab, favoriteEvents, favoriteTeams, eventContextInput]);
+    if (previousScopeRef.current === scope) return;
+    previousScopeRef.current = scope;
     if (refreshInFlightRef.current) tabRefreshPendingRef.current = true;
     else triggerNow();
-  }, [activeTab, triggerNow]);
+  }, [activeTab, favoriteEvents, favoriteTeams, eventContextInput, triggerNow]);
 
   const orderedEventCards = useMemo(() => {
     return favoriteEvents.map((eventKey) => eventCards[eventKey]).filter((value): value is FavoriteEventCard => Boolean(value));
@@ -546,22 +547,16 @@ export function FavoritesPage() {
         }
       }
     }
+    const activeEvent = normalizeEventKey(eventContextInput);
+    if (activeEvent && !byKey.has(activeEvent)) byKey.set(activeEvent, {event_key: activeEvent, name: activeEvent, start_date: null});
     return [...byKey.values()].sort((a, b) => {
       const aDate = a.start_date || '';
       const bDate = b.start_date || '';
       if (aDate !== bDate) return aDate.localeCompare(bDate);
       return a.event_key.localeCompare(b.event_key);
     });
-  }, [orderedTeamCards]);
+  }, [orderedTeamCards, eventContextInput]);
 
-  useEffect(() => {
-    if (contextEventOptions.length === 0) return;
-    const current = normalizeEventKey(eventContextInput);
-    const valid = contextEventOptions.some((event) => event.event_key === current);
-    if (!valid) {
-      setEventContextInput(contextEventOptions[0]?.event_key || '');
-    }
-  }, [eventContextInput, contextEventOptions]);
 
   const liveFavoriteMatches = useMemo(() => {
     const rows: LiveFavoriteMatch[] = [];
@@ -594,6 +589,7 @@ export function FavoritesPage() {
     }
 
     persistFavoriteEvents([eventKey, ...favoriteEvents]);
+    if (activeTab === 'teams') setActiveTab('events');
     setEventInput('');
     setStatusText(`Added ${eventKey}.`);
     setErrorText('');
@@ -613,6 +609,7 @@ export function FavoritesPage() {
     }
 
     persistFavoriteTeams([teamKey, ...favoriteTeams]);
+    if (activeTab === 'events') setActiveTab('teams');
     setTeamInput('');
     setStatusText(`Added ${teamKey}.`);
     setErrorText('');
@@ -646,7 +643,8 @@ export function FavoritesPage() {
 
   const renderEventCards = (
     <div className="favorites-card-grid">
-      {orderedEventCards.length === 0 ? (
+      {favoriteEvents.filter(key => !eventCards[key]).map(key => <p key={key} role="status">Loading {key}…</p>)}
+      {favoriteEvents.length === 0 ? (
         <CardEmpty title="No favorite events yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
       ) : null}
       {visibleEventCards.map((card) => {
@@ -723,7 +721,8 @@ export function FavoritesPage() {
 
   const renderTeamCards = (
     <div className="favorites-card-grid">
-      {orderedTeamCards.length === 0 ? (
+      {favoriteTeams.filter(key => !teamCards[key]).map(key => <p key={key} role="status">Loading team {key.replace(/^frc/, '')}…</p>)}
+      {favoriteTeams.length === 0 ? (
         <CardEmpty title="No favorite teams yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
       ) : null}
       {visibleTeamCards.map((card) => (

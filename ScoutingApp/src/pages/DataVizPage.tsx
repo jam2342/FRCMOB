@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { plainSignalLabel } from './teamCenterOfficial';
 import { Navigate } from 'react-router-dom';
 import {
   getEventRatings,
@@ -83,11 +84,11 @@ const SUBSCORE_LABELS: Record<string, string> = {
 
 /* metric display mapping */
 const METRIC_LABELS: Record<keyof MetricAverages, string> = {
-  fuel_scoring_rate: 'Fuel Rate',
-  cycle_time_sec: 'Cycle Time',
+  fuel_scoring_rate: 'Fuel Rate (fuel/active min)',
+  cycle_time_sec: 'Cycle Time (s)',
   auto_contribution: 'Auto Contrib.',
   climb_success_prob: 'Climb %',
-  defensive_engagement_sec: 'Defense Time',
+  defensive_engagement_sec: 'Defense Time (s)',
   reliability_score: 'Reliability',
 };
 
@@ -284,11 +285,13 @@ function HBarChart({
 function Sparkline({
   values,
   label,
+  suffix = '',
   width = 300,
   height = 80,
 }: {
   values: (number | null)[];
   label: string;
+  suffix?: string;
   width?: number;
   height?: number;
 }) {
@@ -326,10 +329,10 @@ function Sparkline({
         })}
         {/* y axis labels */}
         <text className="dviz-sparkline-axis" x={padX - 4} y={padY} textAnchor="end" dominantBaseline="hanging">
-          {maxY.toFixed(1)}
+          {maxY.toFixed(1)}{suffix}
         </text>
         <text className="dviz-sparkline-axis" x={padX - 4} y={padY + drawH} textAnchor="end" dominantBaseline="auto">
-          {minY.toFixed(1)}
+          {minY.toFixed(1)}{suffix}
         </text>
       </svg>
     </div>
@@ -424,7 +427,7 @@ export function DataVizPage() {
 }
 
 function DataVizPageContent() {
-  const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
+  const { eventKey, fetchTrigger, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
   const [teamInput, setTeamInput] = useState(() => readMyTeamKey().replace(/^frc/, ''));
 
   /* ── data state ─────────────────────────────── */
@@ -437,6 +440,9 @@ function DataVizPageContent() {
   /* resolved team key */
   const teamKey = useMemo(() => normalizeTeamKeyInput(teamInput), [teamInput]);
 
+  const ratingsGeneration = useRef(0);
+  const breakdownGeneration = useRef(0);
+
   const fieldAverageRating = useMemo(
     () => (ratings.length ? ratings.reduce((sum, row) => sum + row.rating_0_100, 0) / ratings.length : 0),
     [ratings],
@@ -444,23 +450,28 @@ function DataVizPageContent() {
 
   /* ── fetch event ratings ────────────────────── */
   const loadRatings = useCallback(async () => {
+    const generation = ++ratingsGeneration.current;
+    setRatings([]);
     if (!eventKey) return;
     setLoading(true);
     setError(null);
     try {
       const resp = await getEventRatings(eventKey);
+      if (generation !== ratingsGeneration.current) return;
       if (resp.ok) {
         setRatings(resp.ratings.sort((a, b) => b.rating_0_100 - a.rating_0_100));
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load ratings');
+    } catch {
+      if (generation === ratingsGeneration.current) setError('Could not load ratings. Try loading the event again.');
     } finally {
-      setLoading(false);
+      if (generation === ratingsGeneration.current) setLoading(false);
     }
   }, [eventKey]);
 
   /* ── fetch team breakdown ───────────────────── */
   const loadBreakdown = useCallback(async () => {
+    const generation = ++breakdownGeneration.current;
+    setBreakdown(null);
     if (!teamKey || !eventKey) {
       setBreakdown(null);
       return;
@@ -469,21 +480,23 @@ function DataVizPageContent() {
     setError(null);
     try {
       const resp = await getTeamBreakdown(teamKey, eventKey);
-      if (resp.ok) setBreakdown(resp);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load breakdown');
+      if (generation === breakdownGeneration.current && resp.ok) setBreakdown(resp);
+    } catch {
+      if (generation === breakdownGeneration.current) setError('Could not load team data. Try loading the event again.');
     } finally {
-      setLoading(false);
+      if (generation === breakdownGeneration.current) setLoading(false);
     }
   }, [teamKey, eventKey]);
 
   useEffect(() => {
     void loadRatings();
-  }, [loadRatings]);
+    return () => { ratingsGeneration.current += 1; };
+  }, [loadRatings, fetchTrigger]);
 
   useEffect(() => {
     void loadBreakdown();
-  }, [loadBreakdown]);
+    return () => { breakdownGeneration.current += 1; };
+  }, [loadBreakdown, fetchTrigger]);
 
   /* ── derived data ───────────────────────────── */
   /* team rating from event ratings */
@@ -523,7 +536,8 @@ function DataVizPageContent() {
     return METRIC_KEYS.map((key) => ({
       key,
       label: METRIC_LABELS[key],
-      values: matches.map((m) => m[key] ?? null),
+      values: matches.map((m) => m[key] == null ? null : m[key]! * (key === 'climb_success_prob' ? 100 : 1)),
+      suffix: key === 'climb_success_prob' ? '%' : '',
     }));
   }, [breakdown]);
 
@@ -709,7 +723,7 @@ function DataVizPageContent() {
               >
                 <div className="dviz-trends-grid">
                   {matchTrends.map((t) => (
-                    <Sparkline key={t.key} values={t.values} label={t.label} width={300} />
+                    <Sparkline key={t.key} values={t.values} label={t.label} suffix={t.suffix} width={300} />
                   ))}
                 </div>
               </SurfaceCard>
@@ -786,7 +800,7 @@ function DataVizPageContent() {
                       <h4 className="dviz-proscons-heading dviz-pro-heading">Strengths</h4>
                       {teamRating.pros.map((p, i) => (
                         <div key={i} className="dviz-proscons-item dviz-pro-item">
-                          <span className="dviz-proscons-label">{p.label}</span>
+                          <span className="dviz-proscons-label">{plainSignalLabel(p.label)}</span>
                           <span className="dviz-proscons-val">
                             {p.metric_value.toFixed(1)} (P{(p.percentile * 100).toFixed(0)})
                           </span>
@@ -799,7 +813,7 @@ function DataVizPageContent() {
                       <h4 className="dviz-proscons-heading dviz-con-heading">Weaknesses</h4>
                       {teamRating.cons.map((c, i) => (
                         <div key={i} className="dviz-proscons-item dviz-con-item">
-                          <span className="dviz-proscons-label">{c.label}</span>
+                          <span className="dviz-proscons-label">{plainSignalLabel(c.label)}</span>
                           <span className="dviz-proscons-val">
                             {c.metric_value.toFixed(1)} (P{(c.percentile * 100).toFixed(0)})
                           </span>

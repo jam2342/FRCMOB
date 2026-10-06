@@ -113,7 +113,7 @@ function renderPredictionCards(rows: MatchPrediction[], onOpenMatch: (matchKey: 
               <strong className="text-blue">{pred.is_completed ? pred.blue_score : ''}</strong>
             </span>
             <span className={styles.cardFoot}>
-              {!pred.is_completed ? 'Upcoming' : correct !== null ? <ResultVerdict correct={correct} /> : 'Tie'}
+              {pred.is_completed == null ? <span title="Schedule unavailable" aria-label="Result unknown">—</span> : !pred.is_completed ? 'Upcoming' : correct !== null ? <ResultVerdict correct={correct} /> : 'Tie'}
             </span>
           </button>
         );
@@ -179,6 +179,8 @@ function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn
     key: 'result',
     label: 'Result',
     render: (pred) => {
+      // The banner above says why; repeating it on every row was noise.
+      if (pred.is_completed == null) return <span className="text-muted" title="Schedule unavailable" aria-label="Result unknown">—</span>;
       if (!pred.is_completed) return <span className="text-muted">Upcoming</span>;
       const correct = wasPredictionCorrect(pred);
       const tone = pred.winner === 'red' ? 'text-red' : pred.winner === 'blue' ? 'text-blue' : '';
@@ -222,7 +224,7 @@ type MatchPrediction = {
   red_score: number | null;
   blue_score: number | null;
   winner: 'red' | 'blue' | 'tie' | null;
-  is_completed: boolean;
+  is_completed: boolean | null;
 };
 
 type FilterMode = 'all' | 'upcoming' | 'completed';
@@ -239,6 +241,7 @@ export function MatchPredictionPage() {
   const [scheduleData, setScheduleData] = useState<EventScheduleItem[] | null>(null);
   const [tbaPredictions, setTbaPredictions] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
   const [errorText, setErrorText] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
@@ -257,6 +260,7 @@ export function MatchPredictionPage() {
       setErrorText('');
       setSynergyData(null);
       setScheduleData(null);
+      setScheduleError('');
       setTbaPredictions(null);
     }
 
@@ -276,7 +280,10 @@ export function MatchPredictionPage() {
 
     if (results[1].status === 'fulfilled') {
       setScheduleData(results[1].value.matches);
+      setScheduleError('');
       loadedAtMs.current = Date.now();
+    } else {
+      setScheduleError('Schedule unavailable. Match results could not be checked.');
     }
 
     if (results[2].status === 'fulfilled') {
@@ -293,7 +300,7 @@ export function MatchPredictionPage() {
     const timer = window.setTimeout(() => {
       void fetchData(eventKey);
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); requestGeneration.current += 1; };
   }, [eventKey, fetchData, fetchTrigger]);
 
   // While the event is running, results and forecasts change every few minutes.
@@ -364,14 +371,14 @@ export function MatchPredictionPage() {
           red_score: sched?.red_score ?? null,
           blue_score: sched?.blue_score ?? null,
           winner: sched?.winner_alliance ?? null,
-          is_completed: sched?.is_completed ?? false,
+          is_completed: sched?.is_completed ?? null,
         };
       })
       .sort((a, b) => matchSortKey(a) - matchSortKey(b));
   }, [synergyData, scheduleData]);
 
   const filteredPredictions = useMemo(() => {
-    if (filterMode === 'upcoming') return predictions.filter((p) => !p.is_completed);
+    if (filterMode === 'upcoming') return predictions.filter((p) => p.is_completed === false);
     if (filterMode === 'completed') return predictions.filter((p) => p.is_completed);
     return predictions;
   }, [predictions, filterMode]);
@@ -433,6 +440,7 @@ export function MatchPredictionPage() {
             </div>
           ) : null}
 
+          {scheduleError ? <p className="center-callout warning">{scheduleError} <button type="button" className="center-btn ghost" onClick={() => void fetchData(eventKey, true)}>Retry schedule</button></p> : null}
           {errorText ? <p className="center-callout warning">{errorText}</p> : null}
         </SurfaceCard>
 

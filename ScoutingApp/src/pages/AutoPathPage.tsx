@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useCanvasTokens } from '../hooks/useCanvasTokens';
 import { getTeamBreakdown } from '../api';
 import { EventPicker } from '../components/EventPicker';
@@ -142,6 +143,7 @@ type Zone = {
 type SavedPath = {
   id: string;
   teamKey: string;
+  eventKey?: string;
   matchKey: string;
   label: string;
   color: string;
@@ -236,10 +238,19 @@ function smoothForDisplay(keyPoints: Pt[]): Pt[] {
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
+function normalizedMatch(value: string): string {
+  return value.trim().toLowerCase().split('_').at(-1) || '';
+}
+
 export function AutoPathPage() {
-  const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
-  const [teamInput, setTeamInput] = useState(() => readMyTeamKey().replace(/^frc/, ''));
-  const [matchInput, setMatchInput] = useState('');
+  const { eventKey, fetchTrigger, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
+  const [searchParams] = useSearchParams();
+  const urlTeam = searchParams.get('team');
+  const urlMatch = searchParams.get('match');
+  const [teamInput, setTeamInput] = useState(() => (urlTeam || readMyTeamKey()).replace(/^frc/i, ''));
+  const [matchInput, setMatchInput] = useState(() => normalizedMatch(urlMatch || ''));
+  useEffect(() => { setTeamInput((urlTeam || readMyTeamKey()).replace(/^frc/i, '')); }, [urlTeam]);
+  useEffect(() => { setMatchInput(normalizedMatch(urlMatch || '')); }, [urlMatch]);
 
   /* canvas & drawing state */
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -257,6 +268,10 @@ export function AutoPathPage() {
       return [];
     }
   });
+  const [storageError, setStorageError] = useState('');
+  const [storageRetry, setStorageRetry] = useState(0);
+  const [trackError, setTrackError] = useState('');
+  const [trackRetry, setTrackRetry] = useState(0);
   const [pathLabel, setPathLabel] = useState('Auto Path');
   const [selectedPathIds, setSelectedPathIds] = useState<Set<string>>(new Set());
 
@@ -274,18 +289,25 @@ export function AutoPathPage() {
   useEffect(() => {
     try {
       localStorage.setItem(PATHS_STORAGE, JSON.stringify(savedPaths));
-    } catch { /* ignore quota errors */ }
-  }, [savedPaths]);
+      setStorageError('');
+    } catch {
+      setStorageError('These paths could not be saved on this device. Keep this page open and try again after freeing some space.');
+    }
+  }, [savedPaths, storageRetry]);
 
   /* load track points from API */
   useEffect(() => {
+    setTrackPoints([]);
+    setLoadedTrackRequestKey('');
+    setTrackError('');
     if (!teamKey || !eventKey) return;
     let cancelled = false;
     const requestKey = `${eventKey}|${teamKey}`;
     getTeamBreakdown(teamKey, eventKey)
       .then((resp) => {
         if (cancelled) return;
-        if (resp.ok && resp.recent_track_points) {
+        if (!resp.ok) throw new Error('Tracks unavailable');
+        if (resp.recent_track_points) {
           setTrackPoints(
             resp.recent_track_points.map((tp) => ({
               field_x: tp.field_x,
@@ -297,33 +319,36 @@ export function AutoPathPage() {
         } else {
           setTrackPoints([]);
         }
+        setLoadedTrackRequestKey(requestKey);
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoadedTrackRequestKey(requestKey);
+      .catch(() => {
+        if (cancelled) return;
+        setTrackPoints([]);
+        setTrackError('Could not load recorded tracks. Try again.');
       });
     return () => { cancelled = true; };
-  }, [teamKey, eventKey]);
+  }, [teamKey, eventKey, fetchTrigger, trackRetry]);
 
   const activeTrackPoints = useMemo(
     () => (activeTrackRequestKey && loadedTrackRequestKey === activeTrackRequestKey ? trackPoints : []),
     [activeTrackRequestKey, loadedTrackRequestKey, trackPoints],
   );
-  const loadingTracks = Boolean(activeTrackRequestKey) && loadedTrackRequestKey !== activeTrackRequestKey;
+  const loadingTracks = !trackError && Boolean(activeTrackRequestKey) && loadedTrackRequestKey !== activeTrackRequestKey;
 
   /* filtered paths for current team/match */
   const filteredPaths = useMemo(() => {
     return savedPaths.filter((p) => {
+      if (eventKey && p.eventKey && p.eventKey !== eventKey) return false;
       if (teamKey && p.teamKey !== teamKey) return false;
-      if (matchInput && p.matchKey !== matchInput) return false;
+      if (matchInput && normalizedMatch(p.matchKey) !== normalizedMatch(matchInput)) return false;
       return true;
     });
-  }, [savedPaths, teamKey, matchInput]);
+  }, [savedPaths, eventKey, teamKey, matchInput]);
 
   /* auto-only track points (time_sec <= 20s = auto period) */
   const autoTrackPts = useMemo(() => {
-    return activeTrackPoints.filter((tp) => tp.field_x != null && tp.field_y != null && tp.time_sec <= 20);
-  }, [activeTrackPoints]);
+    return activeTrackPoints.filter((tp) => tp.field_x != null && tp.field_y != null && tp.time_sec <= 20 && (!matchInput || normalizedMatch(tp.match_key) === normalizedMatch(matchInput)));
+  }, [activeTrackPoints, matchInput]);
 
   /* ── canvas coordinate mapping ─────────────── */
   function getCanvasSize(): { w: number; h: number } {
@@ -562,7 +587,8 @@ export function AutoPathPage() {
         const newPath: SavedPath = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           teamKey: teamKey || 'unknown',
-          matchKey: matchInput || 'unspecified',
+          eventKey: eventKey || undefined,
+          matchKey: normalizedMatch(matchInput) || 'unspecified',
           label: pathLabel || 'Auto Path',
           color: PATH_COLORS[savedPaths.length % PATH_COLORS.length],
           points: cleaned,
@@ -572,7 +598,7 @@ export function AutoPathPage() {
       }
       setCurrentStroke([]);
     },
-    [isDrawing, currentStroke, teamKey, matchInput, pathLabel, savedPaths.length],
+    [isDrawing, currentStroke, eventKey, teamKey, matchInput, pathLabel, savedPaths.length],
   );
 
   /* ── path management ───────────────────────── */
@@ -595,8 +621,10 @@ export function AutoPathPage() {
   }
 
   function clearAllPaths() {
-    setSavedPaths([]);
-    setSelectedPathIds(new Set());
+    if (!window.confirm(`Clear ${filteredPaths.length} visible path${filteredPaths.length === 1 ? '' : 's'}?`)) return;
+    const ids = new Set(filteredPaths.map(path => path.id));
+    setSavedPaths(paths => paths.filter(path => !ids.has(path.id)));
+    setSelectedPathIds(selected => new Set([...selected].filter(id => !ids.has(id))));
   }
 
 
@@ -674,6 +702,7 @@ export function AutoPathPage() {
               />
               Show Tracks
             </label>
+            {trackError ? <p role="alert">{trackError} <button type="button" onClick={() => setTrackRetry(value => value + 1)}>Retry tracks</button></p> : null}
             {loadingTracks && <span className="autopath-loading">Loading tracks...</span>}
           </div>
 
@@ -709,6 +738,7 @@ export function AutoPathPage() {
           title="Saved Paths"
           subtitle={`${filteredPaths.length} path${filteredPaths.length !== 1 ? 's' : ''}`}
         >
+          {storageError ? <p role="alert">{storageError} <button type="button" onClick={() => setStorageRetry(value => value + 1)}>Retry saving</button></p> : null}
           {filteredPaths.length === 0 ? (
             <p className="dviz-empty">No paths saved yet. Switch to Draw mode and draw on the field.</p>
           ) : (
@@ -730,6 +760,7 @@ export function AutoPathPage() {
                       <span className="autopath-list-meta">
                         {teamNumberFromTeamKey(p.teamKey) ?? p.teamKey}
                         {p.matchKey ? ` - ${p.matchKey}` : ''}
+                        {` - ${p.eventKey || 'Unknown event'}`}
                         {' - '}
                         {p.points.length} pts
                       </span>
@@ -747,7 +778,7 @@ export function AutoPathPage() {
                 </div>
               ))}
               <button type="button" className="autopath-clear-btn" onClick={clearAllPaths}>
-                Clear All Paths
+                Clear visible paths
               </button>
             </div>
           )}
