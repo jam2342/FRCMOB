@@ -98,7 +98,9 @@ export function SurfaceCard({
   children,
   className = '',
   expandable = true,
-  mobileCollapsible = true,
+  // Off by default: on a phone people scroll past a card rather than collapse it, and a
+  // minimize button on every card was clutter (and an easy mis-tap that hid content).
+  mobileCollapsible = false,
   collapsible = false,
   compactable = false,
 }: SurfaceCardProps) {

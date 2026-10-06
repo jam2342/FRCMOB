@@ -706,7 +706,7 @@
 }
 
 .product-shell .ps-topbar-search-form {
-  grid-template-columns: minmax(96px, auto) minmax(132px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 9px;
 }
 

@@ -34,10 +34,8 @@ import { CURRENT_SEASON_YEAR } from '../pages/centerUtils';
 import { matchesRegionFilter } from '../utils/regionFilters';
 import { resolveScopeFromPath } from './appUx';
 import { buildContextSummary, useContextStrip } from './useContextStrip';
-import {
-  type QuickJumpMode,
-  type TutorialScope,
-} from './userSettings';
+import { typedTeamName } from './quickJump';
+import { type TutorialScope } from './userSettings';
 import { useShellSettingsState } from './useShellSettingsState';
 import { Spinner } from '../components/ui/Spinner';
 import './ProductShell.css';
@@ -67,11 +65,6 @@ const PAGE_SCROLL_STORAGE_PREFIX = 'scouting_page_scroll:';
 const DESKTOP_SIDEBAR_BREAKPOINT_PX = 1120;
 const FINDER_COLLAPSED_STORAGE = 'scouting_finder_collapsed';
 const SIDEBAR_COLLAPSED_STORAGE = 'scouting_sidebar_collapsed';
-const QUICK_JUMP_MODE_OPTIONS: Array<{ value: QuickJumpMode; label: string }> = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'team', label: 'Team' },
-  { value: 'event', label: 'Event' },
-];
 
 function normalizedTeamKey(raw: string): string | null {
   const value = raw
@@ -192,12 +185,10 @@ export function ProductShell() {
   const { online: isOnline, queueSize, isShowingOfflineData } = useOnlineStatus();
   const pwaInstall = usePwaInstall();
   const {
-    jumpMode,
     jumpRegion,
     densityMode,
     themeMode,
     tutorialAutoplay,
-    setJumpMode,
   } = useShellSettingsState();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -424,7 +415,8 @@ export function ProductShell() {
     const value = String(rawInput ?? jumpInput).trim().toLowerCase();
     if (!value) return;
 
-    const activeMode: QuickJumpGuess = jumpMode === 'auto' ? guessedTarget : jumpMode;
+    // What was typed decides where it goes; the Auto/Team/Event switch made people choose first.
+    const activeMode: QuickJumpGuess = guessQuickJump(value);
     const region = jumpRegion;
 
     if (activeMode === 'match') {
@@ -492,22 +484,16 @@ export function ProductShell() {
     }
 
     if (activeMode === 'search') {
-      const params = new URLSearchParams();
-      params.set('q', value);
-      if (region !== 'all') params.set('region', region);
-      navigate(`/events?${params.toString()}`);
-      return;
-    }
-
-    if (jumpMode === 'auto') {
-      if (isEventKey(value)) {
-        navigate(`/events?event=${value}`);
-        return;
-      }
-      const matchJump = parseMatchJump(value);
-      if (matchJump) {
-        navigate(`/match-center?event=${matchJump.eventKey}&match=${matchJump.matchKey}`);
-        return;
+      // A team's name ("cheesy poofs") used to need the Team switch. Try names before events.
+      try {
+        const payload = await searchTeams(value, 10);
+        const named = payload.teams.find((team) => typedTeamName(value, team.nickname));
+        if (named?.team_key) {
+          navigate(`/team-center?team=${named.team_key.toLowerCase()}`);
+          return;
+        }
+      } catch {
+        // fall through to the events search
       }
     }
 
@@ -524,22 +510,13 @@ export function ProductShell() {
     void runGlobalJump().finally(() => setJumpBusy(false));
   }
 
-  const placeholder =
-    jumpMode === 'team'
-      ? 'Team key or number (e.g. frc118 or 118)'
-      : jumpMode === 'event'
-        ? 'Try "houston district 2026" or "2026txhou"'
-        : 'Jump to team, event, or match…';
+  const placeholder = 'Jump to team, event, or match…';
 
   // Only worth saying once there is something to classify. On an empty field
   // the guess falls back to "Search", so the hint rendered as "Detected input
   // type: Search" on every page — uppercased by the stylesheet, which made a
   // real feature read like leftover debug output.
-  const helperLabel = !jumpInput.trim()
-    ? ''
-    : jumpMode === 'auto'
-      ? `Detected input type: ${guessLabel(guessedTarget)}`
-      : `Searching as: ${guessLabel(jumpMode)}`;
+  const helperLabel = !jumpInput.trim() ? '' : `Detected input type: ${guessLabel(guessedTarget)}`;
 
   const openTutorial = useCallback((scope: TutorialScope) => {
     markTutorialSeen(scope);
@@ -681,19 +658,6 @@ export function ProductShell() {
             {!isMobileLiveScoutingRoute ? (
               <div className="ps-topbar-search">
                 <form className="ps-topbar-search-form" onSubmit={handleJumpSubmit}>
-                  <div className="ps-topbar-search-modes" role="group" aria-label="Quick search mode">
-                    {QUICK_JUMP_MODE_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={cx('ps-topbar-search-mode-pill', jumpMode === option.value && 'active')}
-                        onClick={() => setJumpMode(option.value)}
-                        aria-pressed={jumpMode === option.value}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
                   <input
                     ref={searchInputRef}
                     type="search"
@@ -898,7 +862,6 @@ export function ProductShell() {
           void runGlobalJump(query).finally(() => setJumpBusy(false));
         }}
         busy={jumpBusy}
-        jumpMode={jumpMode}
         jumpRegion={jumpRegion}
       />
 

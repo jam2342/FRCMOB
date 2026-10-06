@@ -13,48 +13,14 @@
 }
 
 .ps-topbar-search-form {
-  grid-template-columns: minmax(168px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.ps-topbar-search-modes {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px;
-  min-height: 38px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
-  background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
-}
-
-.ps-topbar-search-mode-pill {
-  min-height: 30px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-text-dim);
-  padding: 4px 10px;
-  font-size: var(--font-size-2xs);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
-}
-
-.ps-topbar-search-mode-pill:hover {
-  color: var(--color-text);
-}
-
-.ps-topbar-search-mode-pill.active {
-  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
-  color: var(--color-text);
-  background: color-mix(in srgb, var(--color-accent-soft) 65%, transparent);
-}
-
-.ps-topbar-search-mode-pill:focus-visible {
-  outline: none;
-  border-color: color-mix(in srgb, var(--color-accent) 78%, var(--color-border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-soft) 80%, transparent);
+/* The toolbar sizes to its contents; with the Auto/Team/Event switch gone the box shrank to
+   ~180px, so it gets a width of its own. */
+.ps-topbar-search {
+  width: clamp(260px, 34vw, 460px);
+  max-width: 100%;
 }
 
 /* Pin icon button — icon-only variant of ps-context-pin-btn */
