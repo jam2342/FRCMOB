@@ -22,6 +22,7 @@ import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
 import { hapticTap } from '../utils/haptics';
 import { asRecord, metric, parseNumber } from './centerUtils';
+import { slotIndexForRank } from '../features/picklists/rankMove';
 import './PicklistPage.css';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 import { useWorkspace } from '../features/workspace/useWorkspace';
@@ -89,6 +90,10 @@ function PicklistWorkspacePage() {
   const [errorText, setErrorText] = useState('');
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // Phones can't drag, and Up/Down is one place per tap. Tapping a rank opens
+  // "move to rank N" so a long move is one action.
+  const [movingTeam, setMovingTeam] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState('');
 
   const loadSequence = useRef(0);
   const teamInfoByKey = useMemo(() => {
@@ -286,6 +291,11 @@ function PicklistWorkspacePage() {
     });
   }
 
+  function moveSlotToRank(from: number, rank: number) {
+    moveSlotToIndex(from, slotIndexForRank(slots, rank));
+    hapticTap();
+  }
+
   function cycleTier(index: number) {
     mutateSlots((slots) => {
       const slot = { ...slots[index] };
@@ -461,7 +471,7 @@ function PicklistWorkspacePage() {
               subtitle={
                 doc.live_mode
                   ? `LIVE — ${pickedCount} picked, ${availableCount} still available. Tap a team as it gets picked or declines.`
-                  : `${slots.length} team${slots.length === 1 ? '' : 's'} ranked. Drag or use arrows to reorder.`
+                  : `${slots.length} team${slots.length === 1 ? '' : 's'} ranked. Tap a rank number to move a team, or use the arrows.`
               }
               right={
                 <span className="picklist-header-right">
@@ -516,9 +526,24 @@ function PicklistWorkspacePage() {
                           }
                         }}
                       >
-                        <span className="picklist-rank" aria-label={slot.tier === 'dnp' ? 'Do not pick' : `Rank ${rank}`}>
-                          {slot.tier === 'dnp' ? 'DNP' : rank}
-                        </span>
+                        {slot.tier === 'dnp' || doc.live_mode ? (
+                          <span className="picklist-rank" aria-label={slot.tier === 'dnp' ? 'Do not pick' : `Rank ${rank}`}>
+                            {slot.tier === 'dnp' ? 'DNP' : rank}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="picklist-rank picklist-rank--button"
+                            aria-label={`Rank ${rank}. Move #${teamNumber(slot.team_key)} to another rank`}
+                            aria-expanded={movingTeam === slot.team_key}
+                            onClick={() => {
+                              setMovingTeam(movingTeam === slot.team_key ? null : slot.team_key);
+                              setMoveTarget('');
+                            }}
+                          >
+                            {rank}
+                          </button>
+                        )}
                         {photo ? (
                           <img
                             className="picklist-photo"
@@ -591,23 +616,56 @@ function PicklistWorkspacePage() {
                                 className="center-btn ghost picklist-mini-btn"
                                 onClick={() => moveSlot(index, -1)}
                                 aria-label={`Move ${slot.team_key} up`}
+                                title="Move up"
                                 disabled={index === 0}
                               >
-                                Up
+                                <span aria-hidden="true">↑</span>
                               </button>
                               <button
                                 type="button"
                                 className="center-btn ghost picklist-mini-btn"
                                 onClick={() => moveSlot(index, 1)}
                                 aria-label={`Move ${slot.team_key} down`}
+                                title="Move down"
                                 disabled={index === slots.length - 1}
                               >
-                                Down
+                                <span aria-hidden="true">↓</span>
                               </button>
                             </>
                           )}
                         </span>
 
+                        {movingTeam === slot.team_key && !doc.live_mode && slot.tier !== 'dnp' ? (
+                          <form
+                            className="picklist-move"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              const target = Number(moveTarget);
+                              if (!Number.isInteger(target) || target < 1) return;
+                              moveSlotToRank(index, target);
+                              setMovingTeam(null);
+                            }}
+                          >
+                            <label className="picklist-move-label" htmlFor={`picklist-move-${slot.team_key}`}>
+                              Move #{teamNumber(slot.team_key)} to rank
+                            </label>
+                            <input
+                              id={`picklist-move-${slot.team_key}`}
+                              className="center-input picklist-move-input"
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              max={slots.filter((s) => s.tier !== 'dnp').length}
+                              value={moveTarget}
+                              onChange={(event) => setMoveTarget(event.target.value)}
+                              autoFocus
+                            />
+                            <button type="submit" className="center-btn picklist-mini-btn" disabled={!moveTarget}>Move</button>
+                            <button type="button" className="center-btn ghost picklist-mini-btn" onClick={() => setMovingTeam(null)}>
+                              Cancel
+                            </button>
+                          </form>
+                        ) : null}
                         {isExpanded ? (
                           <div className="picklist-detail">
                             <label className="picklist-detail-field">
@@ -656,7 +714,8 @@ function PicklistWorkspacePage() {
             >
               <p className="center-callout muted">
                 “New from ratings” seeds the list with every team at this event, ordered by their
-                FRCMOB rating — then drag teams into your preferred order.
+                FRCMOB rating — then put them in your order: tap a rank number to move a team,
+                use the arrows, or drag on a computer.
               </p>
             </SurfaceCard>
           ) : null}

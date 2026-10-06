@@ -84,3 +84,83 @@
 .allianceSplit {
   border-left: 2px solid var(--color-border);
 }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: var(--space-3);
+}
+
+.actions {
+  margin-top: var(--space-3);
+  align-items: center;
+}
+
+.matchCell {
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* A slot whose scout left the team: it still needs someone. */
+.needsScout {
+  border-color: var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.cellNote,
+.cellError {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+}
+
+.cellNote {
+  color: var(--color-text-muted);
+}
+
+.cellError {
+  color: var(--color-danger-text);
+}
+
+.retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.scoutToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.scoutOut {
+  opacity: 0.55;
+}
+
+.outLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.mobileSlot {
+  flex: 1;
+  min-width: 0;
+}
+
+.cellDone {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-success-text);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}

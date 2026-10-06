@@ -211,9 +211,8 @@ export function FieldCalibration({ onCalibrated }: Props) {
   return (
     <div className="field-calibration">
       <p className="muted">
-        Record a frame of the field, then tap the four field corners in order. This fixes the
-        image→field mapping so the on-device breakdown can place robots in real field coordinates —
-        no AprilTags needed (they aren&apos;t readable from the stands).
+        Take a photo of the field from where you&apos;ll film, then tap its four corners in the
+        order shown. That&apos;s how the app works out where each robot is on the field.
       </p>
 
       <div className="odr-actions">

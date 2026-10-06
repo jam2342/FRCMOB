@@ -9,6 +9,8 @@
 
 /* ── step indicator ─────────────────────────────────────────────────── */
 .odr-steps {
+  /* clears the app header when a new step scrolls the list into view */
+  scroll-margin-top: 72px;
   display: flex;
   align-items: flex-start;
   gap: var(--space-1);
@@ -35,6 +37,12 @@
   color: var(--color-text-dim);
   font: inherit;
   cursor: default;
+}
+/* Five 56px steps overflowed a 250px phone and scrolled out of sight. */
+@media (max-width: 359px) {
+  .odr-step {
+    min-width: 32px;
+  }
 }
 .odr-step.is-clickable {
   cursor: pointer;
@@ -446,6 +454,13 @@
 .odr-file-btn:focus-within {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+.odr-file-btn[aria-disabled='true'] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.odr-file-name {
+  overflow-wrap: anywhere;
 }
 .odr-file-input {
   position: absolute;

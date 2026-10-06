@@ -199,7 +199,9 @@ def update_my_profile(body: ProfileUpdateRequest, request: Request, db: Session 
     ensure_display_name_free(db, actor.workspace_id, display_name, except_member_id=actor.member.id)
     # Rooms name scouts by display name (ownership, assignments, entries), so the
     # rename follows the member through the team's rooms.
-    rename_scout_in_workspace_rooms(db, actor.workspace_id, actor.member.display_name, display_name)
+    rename_scout_in_workspace_rooms(
+        db, actor.workspace_id, actor.member.display_name, display_name, member_id=actor.member.id,
+    )
     actor.member.display_name = display_name
     db.commit()
     return _session_payload(actor, db)

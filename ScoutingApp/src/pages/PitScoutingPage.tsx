@@ -212,6 +212,10 @@ function PitScoutingWorkspacePage() {
         // Not an error: kept on this phone and replayed on reconnect.
         setStatusText(`Saved #${teamNumber(selectedTeam)} on this phone. It will sync to your team when you're back online.`);
         queuedSaveRef.current = { workspaceId, eventKey, team: selectedTeam, form: savedForm, editVersion: savedEditVersion };
+        // The queue holds this save now, so nothing is unsaved; the draft note
+        // ("Save entry shares it") contradicted the save the scout just made.
+        // The stored draft stays as a backup until the queue confirms.
+        if (contextRef.current.selectedTeam === selectedTeam && editVersionRef.current === savedEditVersion) setFormDirty(false);
         setWaitingForSync(true);
       } else setErrorText((err as Error).message || 'Failed to save pit entry.');
     } finally {

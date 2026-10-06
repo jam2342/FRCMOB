@@ -1,1143 +1,469 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  createOrJoinScoutingRoom,
-  getEventSchedule,
-  getScoutingRoomAssignments,
-  getStoredRoomAccessToken,
-  replaceScoutingRoomAssignments,
-  setStoredRoomAccessToken,
-  upsertScoutingRoomAssignment,
-} from '../api';
-import type {
-  EventScheduleItem,
-  ScoutingRoomAssignmentRecord,
-  ScoutingRoomPresenceMember,
-} from '../api';
+import { useMemo, useState } from 'react';
+import type { EventScheduleItem, TeamRoomAssignment, TeamRoomAssignmentChange, TeamRoomMember } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { Button, Chip, FieldCheckbox, Modal, Stat } from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
-import { Chip } from '../components/ui/primitives';
-import styles from './ScoutingAssignPage.module.css';
-import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
+import { NextAssignment } from '../features/workspace/NextAssignment';
+import {
+  assignmentIndex,
+  clearUpcomingChanges,
+  coverageSummary,
+  matchSlots,
+  myAssignments,
+  planAutoAssign,
+  slotKey,
+  sortSchedule,
+  teamNumber,
+  workloadByMember,
+  type AutoAssignMode,
+} from '../features/workspace/teamAssignments';
+import { useTeamRoom } from '../features/workspace/useTeamRoom';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
-import { getWorkspaceSession } from '../features/workspace/workspaceSession';
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
+import styles from './ScoutingAssignPage.module.css';
 
 const STORAGE_KEY_EVENT = 'scouting_center_event_key';
-const STORAGE_KEY_SCOUTS = 'scouting_assign_scouts_v1';
-const STORAGE_KEY_ASSIGNMENTS = 'scouting_assign_map_v1';
-const STORAGE_KEY_SCOUT_PROFILE = 'scouting_manual_profile_v1';
-const STORAGE_KEY_ACTIVE_ROOM = 'scouting_room_active_key_v1';
-
-type MatchAssignmentKey = string; // format: matchKey:teamKey
-type AssignmentMap = Record<MatchAssignmentKey, string>; // → scout name
-
-type CompactMatch = {
-  match_key: string;
-  display_name: string;
-  comp_level: string;
-  set_number: number;
-  match_number: number;
-  red: string[]; // team keys
-  blue: string[];
-  is_completed: boolean;
-};
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-const COMP_LEVEL_ORDER: Record<string, number> = { qm: 0, ef: 1, qf: 2, sf: 3, f: 4 };
-
-function matchSortKey(m: CompactMatch): number {
-  const level = COMP_LEVEL_ORDER[m.comp_level] ?? 9;
-  return level * 1_000_000 + m.set_number * 1_000 + m.match_number;
-}
-
-function teamNum(teamKey: string): string {
-  const match = /^frc(\d+)$/i.exec(teamKey);
-  return match ? match[1] : teamKey;
-}
-
-function assignKey(matchKey: string, teamKey: string): MatchAssignmentKey {
-  return `${matchKey}:${teamKey}`;
-}
-
-function normalizeScoutProfile(raw: string): string {
-  return String(raw || '').trim().replace(/\s+/g, ' ');
-}
-
-function normalizeScoutProfileLookup(raw: string): string {
-  return normalizeScoutProfile(raw).toLowerCase();
-}
-
-function assignmentMapFromRows(rows: ScoutingRoomAssignmentRecord[]): AssignmentMap {
-  const map: AssignmentMap = {};
-  for (const row of rows) {
-    const matchKey = String(row.match_key || '').trim().toLowerCase();
-    const teamKey = String(row.team_key || '').trim().toLowerCase();
-    const assigned = normalizeScoutProfile(row.assigned_scout_profile);
-    if (!matchKey || !teamKey || !assigned) continue;
-    map[assignKey(matchKey, teamKey)] = assigned;
-  }
-  return map;
-}
-
-function presenceProfiles(members: ScoutingRoomPresenceMember[] | undefined): string[] {
-  if (!Array.isArray(members) || members.length === 0) return [];
-  const byLookup = new Map<string, string>();
-  for (const member of members) {
-    const profile = normalizeScoutProfile(member.scout_profile);
-    const lookup = normalizeScoutProfileLookup(profile);
-    if (!lookup || byLookup.has(lookup)) continue;
-    byLookup.set(lookup, profile);
-  }
-  return Array.from(byLookup.values()).sort((a, b) => a.localeCompare(b));
-}
-
-function normalizeSecondaryLeaderProfiles(raw: unknown): string[] {
-  if (!Array.isArray(raw) || raw.length === 0) return [];
-  const byLookup = new Map<string, string>();
-  for (const value of raw) {
-    const profile = normalizeScoutProfile(String(value || ''));
-    const lookup = normalizeScoutProfileLookup(profile);
-    if (!lookup || byLookup.has(lookup)) continue;
-    byLookup.set(lookup, profile);
-  }
-  return Array.from(byLookup.values()).sort((a, b) => a.localeCompare(b));
-}
-
-// The planner's scouts and assignments belong to the team that made them.
-function workspaceKey(base: string): string {
-  return `${base}:w${getWorkspaceSession()?.workspace.id ?? 0}`;
-}
-
-function loadScouts(): string[] {
-  try {
-    const raw = localStorage.getItem(workspaceKey(STORAGE_KEY_SCOUTS));
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveScouts(scouts: string[]) {
-  localStorage.setItem(workspaceKey(STORAGE_KEY_SCOUTS), JSON.stringify(scouts));
-}
-
-function loadAssignments(): AssignmentMap {
-  try {
-    const raw = localStorage.getItem(workspaceKey(STORAGE_KEY_ASSIGNMENTS));
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveAssignments(map: AssignmentMap) {
-  localStorage.setItem(workspaceKey(STORAGE_KEY_ASSIGNMENTS), JSON.stringify(map));
-}
-
-function roomSyncErrorMessage(message: string, action: string): string {
-  const detail = String(message || '').trim();
-  if (!detail) return `${action} failed.`;
-  const lookup = detail.toLowerCase();
-  if (
-    lookup.includes('aborterror')
-    || lookup.includes('signal is aborted')
-    || lookup.includes('operation was aborted')
-    || lookup.includes('request timeout')
-    || lookup.includes('timed out')
-    || lookup.includes('without reason')
-  ) {
-    return `${action} timed out on a slow connection. Try again in a moment.`;
-  }
-  return detail;
-}
-
-/**
- * Auto-assign scouts to matches using round-robin across 6 stations.
- */
-function autoAssign(
-  matches: CompactMatch[],
-  scouts: string[],
-): AssignmentMap {
-  if (scouts.length === 0) return {};
-  const map: AssignmentMap = {};
-  const upcoming = matches.filter((m) => !m.is_completed);
-  let scoutIdx = 0;
-  for (const match of upcoming) {
-    const allTeams = [...match.red, ...match.blue];
-    for (const teamKey of allTeams) {
-      map[assignKey(match.match_key, teamKey)] = scouts[scoutIdx % scouts.length];
-      scoutIdx++;
-    }
-  }
-  return map;
-}
-
-/* Ten identity colours, cycled by index, as classes rather than an inline
-   background. The fill and the ink that goes on it are decided together in the
-   stylesheet — which is the fix: the old code set the fill from JS and left the
-   ink to whichever view you were in, so the phone forced white on all ten
-   (1.92:1 on the yellow) while the table left it inherited. */
 const SCOUT_COLOR_COUNT = 10;
 
-function scoutColorClass(scout: string, scouts: string[]): string {
-  const idx = scouts.indexOf(scout);
+type CellState = { saving: boolean; target: number | null; error?: string };
+
+type Pending =
+  | { kind: 'auto'; mode: AutoAssignMode }
+  | { kind: 'clear' };
+
+/* Ten identity colours, cycled by roster position, as classes so the fill and
+   the ink on it are decided together in the stylesheet. */
+function scoutColorClass(memberId: number, members: TeamRoomMember[]): string {
+  const idx = members.findIndex((member) => member.member_id === memberId);
   const slot = (idx < 0 ? 0 : idx % SCOUT_COLOR_COUNT) + 1;
   return styles[`scout${slot}`];
 }
 
-/* One assignment control. The table cell and the phone card each had their own
-   copy of this select, and they had already drifted apart on the thing that
-   matters most: the phone forced white text onto the scout colour while the
-   table left it inherited, so the same assignment was unreadable in one view
-   or the other depending on which scout drew which colour. */
-function ScoutSelect({
-  matchKey,
+function SlotSelect({
+  match,
   teamKey,
-  scouts,
-  assignments,
-  onAssign,
-  onClear,
-  disabled,
-  className,
+  row,
+  members,
+  busyInMatch,
+  workload,
+  state,
+  editable,
+  onChange,
 }: {
-  matchKey: string;
+  match: EventScheduleItem;
   teamKey: string;
-  scouts: string[];
-  assignments: AssignmentMap;
-  onAssign: (matchKey: string, teamKey: string, scout: string) => void;
-  onClear: (matchKey: string, teamKey: string) => void;
-  disabled: boolean;
-  className?: string;
+  row: TeamRoomAssignment | undefined;
+  members: TeamRoomMember[];
+  busyInMatch: Set<number>;
+  workload: Map<number, number>;
+  state: CellState | undefined;
+  editable: boolean;
+  onChange: (memberId: number | null) => void;
 }) {
-  const assigned = assignments[assignKey(matchKey, teamKey)] || '';
+  const removed = row && !row.member_active ? row : null;
+  const serverValue = row && row.member_active && row.assigned_member_id !== null ? row.assigned_member_id : null;
+  const shown = state?.saving ? state.target : serverValue;
+  const value = shown !== null ? String(shown) : removed ? 'removed' : '';
+  const label = `Scout for team ${teamNumber(teamKey)} in ${match.display_name || match.match_key}`;
   return (
     <select
-      className={[className, assigned && 'assigned', assigned && scoutColorClass(assigned, scouts)]
-        .filter(Boolean)
-        .join(' ')}
-      value={assigned}
+      className={[
+        'assign-cell-select',
+        shown !== null ? 'assigned' : '',
+        shown !== null ? scoutColorClass(shown, members) : '',
+        removed && shown === null ? styles.needsScout : '',
+      ].filter(Boolean).join(' ')}
+      value={value}
+      disabled={!editable || Boolean(state?.saving)}
+      aria-label={label}
+      aria-busy={state?.saving ? true : undefined}
       onChange={(event) => {
-        const value = event.target.value;
-        if (value) onAssign(matchKey, teamKey, value);
-        else onClear(matchKey, teamKey);
+        const next = event.target.value;
+        if (next === 'removed') return;
+        onChange(next ? Number(next) : null);
       }}
-      disabled={disabled}
-      aria-label={`Scout for ${teamNum(teamKey)}`}
     >
       <option value="">—</option>
-      {scouts.map((scout) => (
-        <option key={scout} value={scout}>
-          {scout}
-        </option>
-      ))}
+      {removed ? <option value="removed" disabled>Needs a scout ({removed.assigned_display_name} left)</option> : null}
+      {members.map((member) => {
+        // Someone already on another team in this match can't take a second one.
+        const busy = busyInMatch.has(member.member_id) && member.member_id !== shown;
+        return (
+          <option key={member.member_id} value={member.member_id} disabled={busy}>
+            {member.display_name} · {workload.get(member.member_id) ?? 0}{busy ? ' (busy this match)' : ''}
+          </option>
+        );
+      })}
     </select>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
+function CellStatus({ state, onRetry }: { state: CellState | undefined; onRetry: () => void }) {
+  if (!state) return null;
+  if (state.saving) return <span className={styles.cellNote} role="status">Saving…</span>;
+  if (state.error) {
+    return (
+      <span className={styles.cellError} role="alert">
+        Not saved.{' '}
+        <button type="button" className={styles.retry} onClick={onRetry}>Try again</button>
+      </span>
+    );
+  }
+  return null;
+}
 
 function ScoutingAssignWorkspacePage() {
   const isMobile = useMobileLayout();
-
-  const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY_EVENT);
-  const [eventName, setEventName] = useState('');
-  const [schedule, setSchedule] = useState<EventScheduleItem[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [errorText, setErrorText] = useState('');
-
-  const [scouts, setScouts] = useState<string[]>(() => loadScouts());
-  const [scoutInput, setScoutInput] = useState('');
-  const [assignments, setAssignments] = useState<AssignmentMap>(() => loadAssignments());
+  const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY_EVENT);
+  const room = useTeamRoom(eventKey);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [myAssignmentsOnly, setMyAssignmentsOnly] = useState(false);
-  // Rooms know a scout by their workspace name, so that is who "my assignments" means.
-  const [scoutProfile] = useState<string>(() =>
-    normalizeScoutProfile(getWorkspaceSession()?.me.display_name || localStorage.getItem(STORAGE_KEY_SCOUT_PROFILE) || ''),
+  const [skipped, setSkipped] = useState<Set<number>>(() => new Set());
+  const [cells, setCells] = useState<Record<string, CellState>>({});
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'muted' | 'warning'; text: string } | null>(null);
+
+  const snapshot = room.snapshot;
+  const members = useMemo(() => snapshot?.members ?? [], [snapshot]);
+  const assignments = useMemo(() => snapshot?.assignments ?? [], [snapshot]);
+  const schedule = useMemo(() => sortSchedule(room.schedule ?? []), [room.schedule]);
+  const index = useMemo(() => assignmentIndex(assignments), [assignments]);
+  const workload = useMemo(() => workloadByMember(assignments, schedule), [assignments, schedule]);
+  const coverage = useMemo(() => coverageSummary(assignments, schedule), [assignments, schedule]);
+  const visibleMatches = useMemo(
+    () => (showCompleted ? schedule : schedule.filter((match) => !match.is_completed)),
+    [schedule, showCompleted],
   );
-  const [activeRoomKey] = useState<string>(() => String(sessionStorage.getItem(STORAGE_KEY_ACTIVE_ROOM) || '').trim().toLowerCase());
-  const [roomClientId] = useState<string>(() => getOrCreateScoutingRoomClientId());
-  const [roomMemberProfiles, setRoomMemberProfiles] = useState<string[]>([]);
-  const [roomLeaderProfile, setRoomLeaderProfile] = useState<string>('');
-  const [roomLeaderSource, setRoomLeaderSource] = useState<string>('');
-  const [roomRole, setRoomRole] = useState<string>('');
-  const [roomCreatorProfile, setRoomCreatorProfile] = useState<string>('');
-  const [roomSecondaryLeaders, setRoomSecondaryLeaders] = useState<string[]>([]);
-  const [roomSyncStatus, setRoomSyncStatus] = useState<string>('');
-  const [roomSyncError, setRoomSyncError] = useState<string>('');
-  const [roomAccessToken, setRoomAccessToken] = useState<string>(() => (
-    activeRoomKey ? getStoredRoomAccessToken(activeRoomKey) : ''
-  ));
-  const roomAccessRefreshPromiseRef = useRef<Promise<string> | null>(null);
-  const roomSyncEnabled = Boolean(activeRoomKey && scoutProfile);
-  const isRoomLeader = useMemo(() => {
-    if (!roomSyncEnabled) return false;
-    const scoutLookup = normalizeScoutProfileLookup(scoutProfile);
-    if (!scoutLookup) return false;
-    if (String(roomRole || '').trim().toLowerCase() === 'owner') return true;
-    if (normalizeScoutProfileLookup(roomCreatorProfile) === scoutLookup) return true;
-    if (roomSecondaryLeaders.some((profile) => normalizeScoutProfileLookup(profile) === scoutLookup)) return true;
-    return normalizeScoutProfileLookup(roomLeaderProfile) === scoutLookup;
-  }, [roomCreatorProfile, roomLeaderProfile, roomRole, roomSecondaryLeaders, roomSyncEnabled, scoutProfile]);
-  const canEditAssignments = !roomSyncEnabled || isRoomLeader;
+  const mine = useMemo(
+    () => (snapshot ? myAssignments(snapshot.me.member_id, assignments, schedule) : []),
+    [assignments, schedule, snapshot],
+  );
+  const canEdit = room.isLeader && room.online;
+  const autoMembers = members.filter((member) => !skipped.has(member.member_id)).map((member) => member.member_id);
+  const pendingChanges = useMemo<TeamRoomAssignmentChange[]>(() => {
+    if (!pending) return [];
+    if (pending.kind === 'clear') return clearUpcomingChanges(schedule, assignments);
+    return planAutoAssign(schedule, assignments, autoMembers, pending.mode);
+    // autoMembers is derived from members + skipped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, schedule, assignments, members, skipped]);
 
-  /* Save scouts and assignments to localStorage */
-  useEffect(() => saveScouts(scouts), [scouts]);
-  useEffect(() => saveAssignments(assignments), [assignments]);
-
-  /* Fetch schedule */
-  const fetchSchedule = useCallback(async (key: string) => {
-    if (!key) return;
-    setLoading(true);
-    setErrorText('');
-    try {
-      const result = await getEventSchedule(key);
-      setSchedule(result.matches);
-      setEventName(result.event_name || key);
-    } catch (err) {
-      setErrorText((err as Error).message || 'Failed to load schedule.');
-      setSchedule(null);
-    } finally {
-      setLoading(false);
+  const busyByMatch = (match: EventScheduleItem): Set<number> => {
+    const busy = new Set<number>();
+    for (const slot of matchSlots(match)) {
+      const key = slotKey(slot.match_key, slot.team_key);
+      const pendingCell = cells[key];
+      const row = index.get(key);
+      const id = pendingCell?.saving ? pendingCell.target : row?.member_active ? row.assigned_member_id : null;
+      if (id !== null && id !== undefined) busy.add(id);
     }
-  }, []);
+    return busy;
+  };
 
-  useEffect(() => {
-    if (eventKey) void fetchSchedule(eventKey);
-  }, [eventKey, fetchSchedule, fetchTrigger]);
-
-  useEffect(() => {
-    if (!roomSyncEnabled) return;
-    setMyAssignmentsOnly(true);
-  }, [roomSyncEnabled]);
-
-  useEffect(() => {
-    if (!roomSyncEnabled) {
-      setRoomMemberProfiles([]);
-      setRoomLeaderProfile('');
-      setRoomLeaderSource('');
-      setRoomRole('');
-      setRoomCreatorProfile('');
-      setRoomSecondaryLeaders([]);
-      setRoomSyncStatus('');
-      setRoomSyncError('');
-      return;
-    }
-    let cancelled = false;
-    const loadFromRoom = async () => {
-      try {
-        const existingRoomAccessToken = getStoredRoomAccessToken(activeRoomKey);
-        const joined = await createOrJoinScoutingRoom({
-          room_key: activeRoomKey,
-          event_key: eventKey || undefined,
-          scout_profile: scoutProfile,
-          client_id: roomClientId,
-          title: eventKey ? `Scouting ${eventKey}` : undefined,
-          create_if_missing: false,
-          room_access_token: existingRoomAccessToken || undefined,
-          timeoutMs: 25000,
-        });
-        if (cancelled) return;
-        setRoomLeaderProfile(String(joined.room?.leader_scout_profile || ''));
-        setRoomLeaderSource(String(joined.room?.leader_source || ''));
-        setRoomRole(String(joined.access?.room_role || joined.room?.room_role || ''));
-        setRoomCreatorProfile(normalizeScoutProfile(String(joined.room?.created_by || '')));
-        setRoomSecondaryLeaders(normalizeSecondaryLeaderProfiles(joined.room?.secondary_leader_scout_profiles));
-        setRoomMemberProfiles(presenceProfiles(joined.room?.presence));
-        if (joined.access?.room_access_token) {
-          setStoredRoomAccessToken(activeRoomKey, joined.access.room_access_token, joined.access.expires_at_unix);
-          setRoomAccessToken(joined.access.room_access_token);
-        } else {
-          const fallback = getStoredRoomAccessToken(activeRoomKey);
-          setRoomAccessToken(fallback);
-        }
-        const roomRows = Array.isArray(joined.assignments) ? joined.assignments : [];
-        const scopedRows = eventKey
-          ? roomRows.filter((row) => String(row.event_key || '').trim().toLowerCase() === eventKey.toLowerCase())
-          : roomRows;
-        setAssignments(assignmentMapFromRows(scopedRows));
-        setScouts((previous) => {
-          const next = new Set(previous.map((item) => normalizeScoutProfile(item)).filter(Boolean));
-          for (const member of joined.room?.presence || []) {
-            const profile = normalizeScoutProfile(member.scout_profile);
-            if (profile) next.add(profile);
-          }
-          for (const row of scopedRows) {
-            const profile = normalizeScoutProfile(row.assigned_scout_profile);
-            if (profile) next.add(profile);
-          }
-          return Array.from(next).sort((a, b) => a.localeCompare(b));
-        });
-        setRoomSyncStatus(`Synced with room ${activeRoomKey}.`);
-        setRoomSyncError('');
-      } catch (error) {
-        if (cancelled) return;
-        setRoomSyncError(
-          roomSyncErrorMessage(
-            (error as Error).message || 'Unable to sync assignments from room.',
-            'Syncing assignments from the scouting room',
-          ),
-        );
-      }
-    };
-    void loadFromRoom();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeRoomKey, eventKey, roomClientId, roomSyncEnabled, scoutProfile]);
-
-  const refreshRoomAccessSession = useCallback(async (options?: { silent?: boolean }): Promise<string> => {
-    if (!roomSyncEnabled) return '';
-    const inFlight = roomAccessRefreshPromiseRef.current;
-    if (inFlight) return inFlight;
-    const run = (async () => {
-      try {
-        const existing = getStoredRoomAccessToken(activeRoomKey) || roomAccessToken;
-        const joined = await createOrJoinScoutingRoom({
-          room_key: activeRoomKey,
-          event_key: eventKey || undefined,
-          scout_profile: scoutProfile,
-          client_id: roomClientId,
-          title: eventKey ? `Scouting ${eventKey}` : undefined,
-          create_if_missing: false,
-          room_access_token: existing || undefined,
-          timeoutMs: 25000,
-        });
-        const nextToken = String(joined.access?.room_access_token || '').trim();
-        if (nextToken) {
-          setStoredRoomAccessToken(activeRoomKey, nextToken, joined.access?.expires_at_unix);
-          setRoomAccessToken(nextToken);
-          setRoomSyncError('');
-          if (!options?.silent) setRoomSyncStatus(`Room session refreshed for ${activeRoomKey}.`);
-          return nextToken;
-        }
-      } catch (error) {
-        if (!options?.silent) {
-          setRoomSyncError(
-            roomSyncErrorMessage(
-              errorMessage(error) || 'Unable to refresh room session.',
-              'Refreshing the scouting room session',
-            ),
-          );
-        }
-      } finally {
-        roomAccessRefreshPromiseRef.current = null;
-      }
-      return '';
-    })();
-    roomAccessRefreshPromiseRef.current = run;
-    return run;
-  }, [activeRoomKey, eventKey, roomAccessToken, roomClientId, roomSyncEnabled, scoutProfile]);
-
-  useEffect(() => {
-    if (!roomSyncEnabled || !eventKey) return;
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const heartbeatToken = getStoredRoomAccessToken(activeRoomKey) || roomAccessToken;
-        const response = await getScoutingRoomAssignments(activeRoomKey, {
-          event_key: eventKey,
-          for_scout_profile: scoutProfile,
-          client_id: roomClientId,
-          presence_heartbeat: true,
-          room_access_token: heartbeatToken || undefined,
-          timeoutMs: 30000,
-        });
-        if (cancelled) return;
-        setRoomLeaderProfile(String(response.leader_scout_profile || ''));
-        setRoomLeaderSource(String(response.leader_source || ''));
-        setRoomRole(String(response.room_role || ''));
-        setRoomSecondaryLeaders(normalizeSecondaryLeaderProfiles(response.secondary_leader_scout_profiles));
-        setRoomMemberProfiles(presenceProfiles(response.presence));
-        const rows = Array.isArray(response.assignments) ? response.assignments : [];
-        setAssignments(assignmentMapFromRows(rows));
-        setScouts((previous) => {
-          const next = new Set(previous.map((item) => normalizeScoutProfile(item)).filter(Boolean));
-          for (const member of response.presence || []) {
-            const profile = normalizeScoutProfile(member.scout_profile);
-            if (profile) next.add(profile);
-          }
-          for (const row of rows) {
-            const assigned = normalizeScoutProfile(row.assigned_scout_profile);
-            if (assigned) next.add(assigned);
-          }
-          return Array.from(next).sort((a, b) => a.localeCompare(b));
-        });
-      } catch (error) {
-        const detail = errorMessage(error);
-        if (isRoomAccessAuthError(detail)) {
-          void refreshRoomAccessSession({ silent: true });
-        }
-        // keep local assignment state if polling fails
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => { void poll(); }, 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [activeRoomKey, eventKey, refreshRoomAccessSession, roomAccessToken, roomClientId, roomSyncEnabled, scoutProfile]);
-
-  /* Derive match list */
-  const matches = useMemo<CompactMatch[]>(() => {
-    if (!schedule) return [];
-    return schedule
-      .map((m): CompactMatch => ({
-        match_key: m.match_key,
-        display_name: m.display_name || m.match_key,
-        comp_level: m.comp_level,
-        set_number: m.set_number,
-        match_number: m.match_number,
-        red: m.red.map((t) => t.team_key),
-        blue: m.blue.map((t) => t.team_key),
-        is_completed: m.is_completed ?? false,
-      }))
-      .sort((a, b) => matchSortKey(a) - matchSortKey(b));
-  }, [schedule]);
-
-  const visibleMatches = useMemo(() => {
-    const base = showCompleted ? matches : matches.filter((m) => !m.is_completed);
-    if (!myAssignmentsOnly || !scoutProfile) return base;
-    const myLookup = normalizeScoutProfileLookup(scoutProfile);
-    if (!myLookup) return base;
-    return base.filter((match) => {
-      const teams = [...match.red, ...match.blue];
-      return teams.some((teamKey) => normalizeScoutProfileLookup(assignments[assignKey(match.match_key, teamKey)] || '') === myLookup);
-    });
-  }, [assignments, matches, myAssignmentsOnly, scoutProfile, showCompleted]);
-
-  /* Coverage stats */
-  const coverageStats = useMemo(() => {
-    const upcoming = matches.filter((m) => !m.is_completed);
-    let totalSlots = 0;
-    let filledSlots = 0;
-    for (const m of upcoming) {
-      const allTeams = [...m.red, ...m.blue];
-      totalSlots += allTeams.length;
-      for (const t of allTeams) {
-        if (assignments[assignKey(m.match_key, t)]) filledSlots++;
-      }
-    }
-    return { totalSlots, filledSlots, coverage: totalSlots > 0 ? filledSlots / totalSlots : 0 };
-  }, [matches, assignments]);
-
-  /* Scout workload */
-  const scoutWorkload = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const scout of scouts) counts[scout] = 0;
-    for (const scout of Object.values(assignments)) {
-      counts[scout] = (counts[scout] || 0) + 1;
-    }
-    return counts;
-  }, [scouts, assignments]);
-
-  /* Actions */
-
-  function resolveRoomAccessToken(): string {
-    if (!roomSyncEnabled) return '';
-    if (roomAccessToken) return roomAccessToken;
-    return getStoredRoomAccessToken(activeRoomKey);
-  }
-
-  function errorMessage(error: unknown): string {
-    if (error instanceof Error && error.message) return error.message;
-    return String(error || '').trim();
-  }
-
-  function isAbortLikeError(message: string): boolean {
-    const lookup = String(message || '').trim().toLowerCase();
-    if (!lookup) return false;
-    return (
-      lookup.includes('aborterror')
-      || lookup.includes('signal is aborted')
-      || lookup.includes('operation was aborted')
-      || lookup.includes('request timeout')
-      || lookup.includes('timed out')
-    );
-  }
-
-  function isRoomAccessAuthError(message: string): boolean {
-    const lookup = String(message || '').trim().toLowerCase();
-    if (!lookup) return false;
-    return (
-      lookup.includes('x-room-access-token')
-      || lookup.includes('room access token')
-      || lookup.includes('authorization failed')
-      || lookup.includes('requires a valid')
-    );
-  }
-
-  async function ensureRoomAccessToken(): Promise<string> {
-    const token = resolveRoomAccessToken();
-    if (token) return token;
-    return refreshRoomAccessSession({ silent: true });
-  }
-
-  async function syncSingleAssignmentToRoom(
-    matchKey: string,
-    teamKey: string,
-    assignedScoutProfile?: string | null,
-  ): Promise<boolean> {
-    if (!roomSyncEnabled) return true;
-    let token = await ensureRoomAccessToken();
-    if (!token) {
-      setRoomSyncError('Room access token missing. Rejoin the scouting room from Live Scouting.');
-      return false;
-    }
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await upsertScoutingRoomAssignment(activeRoomKey, {
-          event_key: eventKey || undefined,
-          match_key: matchKey,
-          team_key: teamKey,
-          assigned_scout_profile: assignedScoutProfile ?? null,
-          room_access_token: token,
-          timeoutMs: 45000,
-        });
-        setRoomSyncError('');
-        return true;
-      } catch (error) {
-        const detail = errorMessage(error) || 'Failed to sync assignment to room.';
-        if (isRoomAccessAuthError(detail) && attempt < 3) {
-          token = await refreshRoomAccessSession({ silent: true });
-          if (token) continue;
-        }
-        if (isAbortLikeError(detail)) {
-          if (attempt < 3) {
-            await new Promise((resolve) => window.setTimeout(resolve, 250 * attempt));
-            continue;
-          }
-          // Keep local assignment to avoid data loss when network times out.
-          setRoomSyncError('Room sync delayed by network timeout. Assignment kept locally.');
-          return true;
-        }
-        setRoomSyncError(detail);
-        return false;
-      }
-    }
-    return false;
-  }
-
-  async function syncAssignmentMapToRoom(map: AssignmentMap): Promise<boolean> {
-    if (!roomSyncEnabled) return true;
-    if (!eventKey) {
-      setRoomSyncError('Select an event before syncing room assignments.');
-      return false;
-    }
-    let token = await ensureRoomAccessToken();
-    if (!token) {
-      setRoomSyncError('Room access token missing. Rejoin the scouting room from Live Scouting.');
-      return false;
-    }
-    const rows = Object.entries(map).map(([key, assignedScout]) => {
-      const [matchKey, teamKey] = key.split(':');
-      return {
-        match_key: matchKey,
-        team_key: teamKey,
-        assigned_scout_profile: assignedScout,
-      };
-    });
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await replaceScoutingRoomAssignments(activeRoomKey, {
-          event_key: eventKey,
-          assignments: rows,
-          room_access_token: token,
-          timeoutMs: 60000,
-        });
-        setRoomSyncError('');
-        return true;
-      } catch (error) {
-        const detail = errorMessage(error) || 'Failed to sync room assignments.';
-        if (isRoomAccessAuthError(detail) && attempt < 3) {
-          token = await refreshRoomAccessSession({ silent: true });
-          if (token) continue;
-        }
-        if (isAbortLikeError(detail)) {
-          if (attempt < 3) {
-            await new Promise((resolve) => window.setTimeout(resolve, 250 * attempt));
-            continue;
-          }
-          setRoomSyncError('Room sync delayed by network timeout. Assignments were kept locally.');
-          return true;
-        }
-        setRoomSyncError(detail);
-        return false;
-      }
-    }
-    return false;
-  }
-
-  function addScout() {
-    if (!canEditAssignments) return;
-    const name = normalizeScoutProfile(scoutInput);
-    if (!name) return;
-    if (scouts.some((item) => normalizeScoutProfileLookup(item) === normalizeScoutProfileLookup(name))) {
-      setScoutInput('');
-      return;
-    }
-    setScouts((current) => [...current, name].sort((a, b) => a.localeCompare(b)));
-    setScoutInput('');
-  }
-
-  function addScoutFromRoom(profile: string) {
-    if (!canEditAssignments) return;
-    const name = normalizeScoutProfile(profile);
-    if (!name) return;
-    setScouts((current) => {
-      if (current.some((item) => normalizeScoutProfileLookup(item) === normalizeScoutProfileLookup(name))) {
-        return current;
-      }
-      return [...current, name].sort((a, b) => a.localeCompare(b));
-    });
-  }
-
-  function removeScout(name: string) {
-    if (!canEditAssignments) return;
-    setScouts(scouts.filter((s) => s !== name));
-    // Remove all their assignments
-    const next: AssignmentMap = {};
-    for (const [key, val] of Object.entries(assignments)) {
-      if (val !== name) next[key] = val;
-    }
-    setAssignments(next);
-    void (async () => {
-      if (!roomSyncEnabled || !eventKey) return;
-      await syncAssignmentMapToRoom(next);
-    })();
-  }
-
-  function assignScout(matchKey: string, teamKey: string, scout: string) {
-    if (!canEditAssignments) return;
-    const key = assignKey(matchKey, teamKey);
-    const prior = assignments[key] || '';
-    setAssignments((prev) => ({ ...prev, [key]: scout }));
-    void (async () => {
-      const ok = await syncSingleAssignmentToRoom(matchKey, teamKey, scout);
-      if (!ok) {
-        setAssignments((prev) => {
-          const next = { ...prev };
-          if (prior) next[key] = prior;
-          else delete next[key];
-          return next;
-        });
-      }
-    })();
-  }
-
-  function clearAssignment(matchKey: string, teamKey: string) {
-    if (!canEditAssignments) return;
-    const key = assignKey(matchKey, teamKey);
-    const prior = assignments[key] || '';
-    setAssignments((prev) => {
-      const next = { ...prev };
-      delete next[key];
+  const saveSlot = async (matchKey: string, teamKey: string, memberId: number | null) => {
+    const key = slotKey(matchKey, teamKey);
+    setCells((current) => ({ ...current, [key]: { saving: true, target: memberId } }));
+    const result = await room.saveChanges([{ match_key: matchKey, team_key: teamKey, assigned_member_id: memberId }]);
+    setCells((current) => {
+      const next = { ...current };
+      if (result.ok) delete next[key];
+      else next[key] = { saving: false, target: memberId, error: result.error };
       return next;
     });
-    void (async () => {
-      const ok = await syncSingleAssignmentToRoom(matchKey, teamKey, null);
-      if (!ok && prior) {
-        setAssignments((prev) => ({ ...prev, [key]: prior }));
-      }
-    })();
-  }
+    if (!result.ok) setNotice({ tone: 'warning', text: result.error });
+  };
 
-  function runAutoAssign() {
-    if (!canEditAssignments) return;
-    const map = autoAssign(matches, scouts);
-    setAssignments(map);
-    void (async () => {
-      if (!roomSyncEnabled) return;
-      if (!eventKey) {
-        setRoomSyncError('Select an event before syncing auto-assignments to room.');
-        return;
-      }
-      await syncAssignmentMapToRoom(map);
-    })();
-  }
+  const runPending = async () => {
+    if (!pending || !pendingChanges.length) { setPending(null); return; }
+    setBulkBusy(true);
+    const result = await room.saveChanges(pendingChanges);
+    setBulkBusy(false);
+    if (result.ok) {
+      setNotice({
+        tone: 'muted',
+        text: pending.kind === 'clear'
+          ? `Cleared ${pendingChanges.length} upcoming slot${pendingChanges.length === 1 ? '' : 's'}.`
+          : `Saved ${pendingChanges.length} assignment${pendingChanges.length === 1 ? '' : 's'}. Everyone sees them now.`,
+      });
+      setPending(null);
+    } else {
+      setNotice({ tone: 'warning', text: `Nothing was changed: ${result.error}` });
+    }
+  };
 
-  function clearAllAssignments() {
-    if (!canEditAssignments) return;
-    setAssignments({});
-    void (async () => {
-      if (!roomSyncEnabled) return;
-      if (!eventKey) {
-        setRoomSyncError('Select an event before clearing room assignments.');
-        return;
-      }
-      await syncAssignmentMapToRoom({});
-    })();
-  }
-
-  const surfaceGroupId = 'scouting-assignments';
-
-  return (
-    <>
-    <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
-    <div className="scouting-layout-grid">
-    <div className="center-page-container">
-      <SurfaceCardGroup groupId={surfaceGroupId}>
-        {/* ---- Event Selection ---- */}
-        <SurfaceCard
-          title="Scouting Assignments"
-        >
-          <EventPicker
-            value={eventKey}
-            onSelect={selectEvent}
-            inputValue={eventInput}
-            onInputChange={setEventInput}
-            onSubmit={commitInput}
-            loading={loading}
-          />
-
-          {eventName && schedule ? (
-            <p className="center-event-status">
-              <strong>{eventName}</strong> — {matches.length} match{matches.length === 1 ? '' : 'es'}
-            </p>
-          ) : null}
-
-          {roomSyncEnabled ? (
-            <p className="center-callout muted">
-              Room sync active: <strong>{activeRoomKey}</strong> as <strong>{scoutProfile}</strong>.
-              {' '}
-              Leader: <strong>{roomLeaderProfile || 'unknown'}</strong>
-              {roomLeaderSource ? ` (${roomLeaderSource.replace(/_/g, ' ')})` : ''}.
-              {roomSecondaryLeaders.length > 0 ? ` Secondary leaders: ${roomSecondaryLeaders.join(', ')}.` : ''}
-            </p>
-          ) : (
-            <p className="center-callout muted">
-              Room sync is off. Set a scout profile and join a room in Live Scouting to share assignments.
-            </p>
-          )}
-          {roomSyncStatus ? <p className="center-callout muted">{roomSyncStatus}</p> : null}
-          {roomSyncError ? <p className="center-callout warning">{roomSyncError}</p> : null}
-          {roomSyncEnabled && !canEditAssignments ? (
-            <p className="center-callout muted">
-              You are not a room leader, so this page is read-only.
-            </p>
-          ) : null}
-
-          {errorText ? <p className="center-callout warning">{errorText}</p> : null}
-        </SurfaceCard>
-
-        {/* ---- Scout Roster ---- */}
-        <SurfaceCard
-          title="Scout Roster"
-          right={<span className="center-chip">{scouts.length} scouts</span>}
-        >
-          <div className="center-input-row" style={{ marginBottom: '0.5rem' }}>
-            <input
-              className="center-input"
-              value={scoutInput}
-              onChange={(e) => setScoutInput(e.target.value)}
-              placeholder="Scout name"
-              onKeyDown={(e) => e.key === 'Enter' && addScout()}
-              style={{ flex: 1 }}
-              disabled={!canEditAssignments}
-            />
-            <button type="button" className="center-btn" onClick={addScout} disabled={!canEditAssignments}>
-              Add Scout
-            </button>
-          </div>
-
-          {roomSyncEnabled && roomMemberProfiles.length > 0 ? (
-            <div style={{ marginBottom: '0.6rem' }}>
-              <p className="center-event-status text-muted">Tap a room member to add to roster:</p>
-              <div className="center-actions-row compact">
-                {roomMemberProfiles.map((profile) => {
-                  const alreadyAdded = scouts.some(
-                    (item) => normalizeScoutProfileLookup(item) === normalizeScoutProfileLookup(profile),
-                  );
-                  return (
-                    <button
-                      key={`room-member-add-${profile}`}
-                      type="button"
-                      className="center-btn ghost"
-                      onClick={() => addScoutFromRoom(profile)}
-                      disabled={!canEditAssignments || alreadyAdded}
-                      title={alreadyAdded ? `${profile} already in roster` : `Add ${profile} to roster`}
-                    >
-                      {profile}{alreadyAdded ? ' (added)' : ''}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {scouts.length > 0 ? (
-            <div className={styles.scoutLegend}>
-              {scouts.map((scout) => (
-                <Chip
-                  key={scout}
-                  /* The scout's identity colour, carrying the ink that passes
-                     on it — the same pair the assignment select uses. */
-                  className={`${styles.scoutChip} ${scoutColorClass(scout, scouts)}`}
-                  onRemove={canEditAssignments ? () => removeScout(scout) : undefined}
-                  removeLabel={`Remove ${scout}`}
-                >
-                  {scout} <span className={styles.workload}>({scoutWorkload[scout] || 0})</span>
-                </Chip>
-              ))}
-            </div>
-          ) : (
-            <p className="center-event-status text-muted">
-              Add scouts above to begin.
-            </p>
-          )}
-        </SurfaceCard>
-
-        {/* ---- Coverage Overview ---- */}
-        {matches.length > 0 && scouts.length > 0 ? (
-          <SurfaceCard title="Coverage">
-            <div className="center-kpi-grid">
-              <div className={`center-kpi-card ${coverageStats.coverage >= 0.9 ? 'tone-green' : coverageStats.coverage >= 0.5 ? 'tone-yellow' : 'tone-red'}`}>
-                <span>Coverage</span>
-                <strong>
-                  {(coverageStats.coverage * 100).toFixed(0)}%
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Assigned</span>
-                <strong>
-                  {coverageStats.filledSlots} / {coverageStats.totalSlots}
-                </strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Scouts</span>
-                <strong>{scouts.length}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Matches</span>
-                <strong>{matches.filter((m) => !m.is_completed).length}</strong>
-              </div>
-            </div>
-
-            {/* Progress bar */}
-            <div className="center-progress-track">
-              <div
-                className={`center-progress-fill ${coverageStats.coverage >= 0.9 ? 'tone-green' : coverageStats.coverage >= 0.5 ? 'tone-yellow' : 'tone-red'}`}
-                style={{ width: `${coverageStats.coverage * 100}%` }}
-              />
-            </div>
-
-            <div className="center-actions-row" style={{ marginTop: '0.75rem' }}>
-              <button
-                type="button"
-                className="center-btn"
-                onClick={runAutoAssign}
-                disabled={scouts.length === 0 || !canEditAssignments}
-              >
-                Auto-Assign All
-              </button>
-              <button type="button" className="center-btn ghost" onClick={clearAllAssignments} disabled={!canEditAssignments}>
-                Clear All
-              </button>
-              <label className="center-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={showCompleted}
-                  onChange={(e) => setShowCompleted(e.target.checked)}
-                />
-                Show completed
-              </label>
-              <label className="center-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={myAssignmentsOnly}
-                  onChange={(e) => setMyAssignmentsOnly(e.target.checked)}
-                  disabled={!scoutProfile}
-                />
-                Only my assignments
-              </label>
-            </div>
-          </SurfaceCard>
-        ) : null}
-
-        {/* ---- Match Assignments ---- */}
-        {visibleMatches.length > 0 && scouts.length > 0 ? (
-          <SurfaceCard
-            title="Match Assignments"
-            subtitle={`${visibleMatches.length} match${visibleMatches.length === 1 ? '' : 'es'}. ${!canEditAssignments ? 'Read-only view.' : isMobile ? 'Tap to assign scouts.' : 'Click a cell to assign a scout.'}`}
-          >
-            {/* One list in the DOM, not two. These were split with
-                .desktop-only / .mobile-only, which is CSS — so an 80-match
-                schedule mounted 960 <select> elements to show 480. */}
-            {!isMobile ? (
-            <div className="center-table-wrap">
-              <table className="center-table">
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: 80 }}>Match</th>
-                    <th colSpan={3} className="text-red" style={{ textAlign: 'center' }}>
-                      Red Alliance
-                    </th>
-                    <th colSpan={3} className="text-blue" style={{ textAlign: 'center' }}>
-                      Blue Alliance
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleMatches.map((match) => (
-                    <MatchAssignmentRow
-                      key={match.match_key}
-                      match={match}
-                      scouts={scouts}
-                      assignments={assignments}
-                      onAssign={assignScout}
-                      onClear={clearAssignment}
-                      editable={canEditAssignments}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            ) : (
-            <div className="assign-mobile-list">
-              {visibleMatches.map((match) => (
-                <MobileAssignmentCard
-                  key={`m-${match.match_key}`}
-                  match={match}
-                  scouts={scouts}
-                  assignments={assignments}
-                  onAssign={assignScout}
-                  onClear={clearAssignment}
-                  editable={canEditAssignments}
-                />
-              ))}
-            </div>
-            )}
-          </SurfaceCard>
-        ) : null}
-      </SurfaceCardGroup>
-    </div>
-    </div>
-    </>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Match Assignment Row                                                */
-/* ------------------------------------------------------------------ */
-
-function MatchAssignmentRow({
-  match,
-  scouts,
-  assignments,
-  onAssign,
-  onClear,
-  editable,
-}: {
-  match: CompactMatch;
-  scouts: string[];
-  assignments: AssignmentMap;
-  onAssign: (matchKey: string, teamKey: string, scout: string) => void;
-  onClear: (matchKey: string, teamKey: string) => void;
-  editable: boolean;
-}) {
-  const allTeams = [...match.red, ...match.blue];
-
-  return (
-    <tr className={match.is_completed ? 'assign-row-completed' : undefined}>
-      <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: '0.85rem' }}>
-        {match.display_name}
-      </td>
-      {allTeams.map((teamKey, idx) => {
-        return (
-          <td key={teamKey} className={idx === 3 ? `${styles.cell} ${styles.allianceSplit}` : styles.cell}>
-            <div className="assign-cell-team-num">
-              {teamNum(teamKey)}
-            </div>
-            <ScoutSelect
-              matchKey={match.match_key}
-              teamKey={teamKey}
-              scouts={scouts}
-              assignments={assignments}
-              onAssign={onAssign}
-              onClear={onClear}
-              disabled={match.is_completed || !editable}
-              className="assign-cell-select"
-            />
-          </td>
-        );
-      })}
-    </tr>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Mobile Assignment Card                                             */
-/* ------------------------------------------------------------------ */
-
-function MobileAssignmentCard({
-  match,
-  scouts,
-  assignments,
-  onAssign,
-  onClear,
-  editable,
-}: {
-  match: CompactMatch;
-  scouts: string[];
-  assignments: AssignmentMap;
-  onAssign: (matchKey: string, teamKey: string, scout: string) => void;
-  onClear: (matchKey: string, teamKey: string) => void;
-  editable: boolean;
-}) {
-  function renderTeamRow(teamKey: string) {
+  const renderSlot = (match: EventScheduleItem, teamKey: string, busy: Set<number>) => {
+    const key = slotKey(match.match_key, teamKey);
+    const state = cells[key];
     return (
-      <div className="assign-mobile-team-row" key={teamKey}>
-        <span className="assign-mobile-team-num">{teamNum(teamKey)}</span>
-        <ScoutSelect
-          matchKey={match.match_key}
+      <>
+        <SlotSelect
+          match={match}
           teamKey={teamKey}
-          scouts={scouts}
-          assignments={assignments}
-          onAssign={onAssign}
-          onClear={onClear}
-          disabled={match.is_completed || !editable}
+          row={index.get(key)}
+          members={members}
+          busyInMatch={busy}
+          workload={workload}
+          state={state}
+          editable={canEdit && !match.is_completed}
+          onChange={(memberId) => { void saveSlot(match.match_key, teamKey, memberId); }}
         />
-      </div>
+        <CellStatus state={state} onRetry={() => { void saveSlot(match.match_key, teamKey, state?.target ?? null); }} />
+        {!state && index.get(key)?.covered ? <span className={styles.cellDone}>Scouted</span> : null}
+      </>
+    );
+  };
+
+  const eventCard = (
+    <SurfaceCard title="Assignments">
+      <EventPicker
+        value={eventKey}
+        onSelect={selectEvent}
+        inputValue={eventInput}
+        onInputChange={setEventInput}
+        onSubmit={commitInput}
+        loading={room.status === 'loading' && !snapshot}
+      />
+      {eventKey && room.eventName ? (
+        <p className="center-event-status">
+          <strong>{room.eventName}</strong> — {schedule.length} match{schedule.length === 1 ? '' : 'es'}
+        </p>
+      ) : null}
+      {!eventKey ? <p className="center-callout muted">Pick your event to see and hand out matches.</p> : null}
+      {room.error && !snapshot ? <p className="center-callout warning" role="alert">{room.error}</p> : null}
+      {!room.online ? (
+        <p className="center-callout warning">
+          You're offline. {room.isLeader ? 'Assignments can be changed once you reconnect; ' : ''}this is the last copy this device saw.
+        </p>
+      ) : null}
+      {notice ? (
+        <p className={`center-callout ${notice.tone}`} role={notice.tone === 'warning' ? 'alert' : 'status'}>{notice.text}</p>
+      ) : null}
+    </SurfaceCard>
+  );
+
+  if (!eventKey || !snapshot) {
+    return <SurfaceCardGroup groupId="scouting-assignments">{eventCard}</SurfaceCardGroup>;
+  }
+
+  if (!room.isLeader) {
+    return (
+      <SurfaceCardGroup groupId="scouting-assignments">
+        {eventCard}
+        <SurfaceCard title="Your assignments" subtitle="Your team lead hands these out. They update on their own.">
+          <NextAssignment eventKey={eventKey} list={mine} />
+        </SurfaceCard>
+      </SurfaceCardGroup>
     );
   }
 
   return (
-    <div className={`assign-mobile-card${match.is_completed ? ' assign-mobile-completed' : ''}`}>
-      <div className="assign-mobile-card-head">
-        <span>{match.display_name}</span>
-        {match.is_completed && <span className="text-muted" style={{ fontSize: '0.75rem' }}>Completed</span>}
-      </div>
-      <div className="assign-mobile-alliance">
-        <div className="assign-mobile-alliance-label red">Red Alliance</div>
-        {match.red.map(renderTeamRow)}
-      </div>
-      <div className="assign-mobile-divider" />
-      <div className="assign-mobile-alliance">
-        <div className="assign-mobile-alliance-label blue">Blue Alliance</div>
-        {match.blue.map(renderTeamRow)}
-      </div>
-    </div>
+    <SurfaceCardGroup groupId="scouting-assignments">
+      {eventCard}
+
+      <SurfaceCard
+        title={`Scouts (${members.length})`}
+        subtitle="Everyone on your team. Tap a name to leave them out of auto-assign."
+      >
+        <div className={styles.scoutLegend}>
+          {members.map((member) => {
+            const out = skipped.has(member.member_id);
+            return (
+              <button
+                key={member.member_id}
+                type="button"
+                className={`${styles.scoutToggle} ${out ? styles.scoutOut : ''}`.trim()}
+                aria-pressed={!out}
+                onClick={() => setSkipped((current) => {
+                  const next = new Set(current);
+                  if (next.has(member.member_id)) next.delete(member.member_id);
+                  else next.add(member.member_id);
+                  return next;
+                })}
+              >
+                <Chip size="sm" className={`${styles.scoutChip} ${scoutColorClass(member.member_id, members)}`}>
+                  {member.display_name}
+                  {member.member_id === snapshot.me.member_id ? ' (you)' : ''}{' '}
+                  <span className={styles.workload}>{workload.get(member.member_id) ?? 0}</span>
+                </Chip>
+                {out ? <span className={styles.outLabel}>skipped</span> : null}
+              </button>
+            );
+          })}
+        </div>
+        {members.length < 2 ? (
+          <p className="center-callout muted">
+            Only you so far. Share your join code on My Team so scouts can join; they show up here on their own.
+          </p>
+        ) : null}
+      </SurfaceCard>
+
+      <SurfaceCard title="Coverage">
+        <div className={styles.stats}>
+          <Stat
+            label="Slots assigned"
+            value={`${coverage.assignedSlots} / ${coverage.upcomingSlots}`}
+            tone={coverage.upcomingSlots > 0 && coverage.assignedSlots >= coverage.upcomingSlots ? 'success' : 'default'}
+            size="sm"
+          />
+          <Stat label="Upcoming matches" value={schedule.filter((match) => !match.is_completed).length} size="sm" />
+          {coverage.needsReassignment > 0 ? (
+            <Stat label="Need a new scout" value={coverage.needsReassignment} tone="warning" size="sm" />
+          ) : null}
+        </div>
+        <div className={`center-actions-row ${styles.actions}`}>
+          <Button
+            variant="primary"
+            onClick={() => setPending({ kind: 'auto', mode: 'fill' })}
+            disabled={!canEdit || autoMembers.length === 0 || coverage.upcomingSlots === 0}
+          >
+            Auto-assign
+          </Button>
+          <Button
+            variant="quiet"
+            onClick={() => setPending({ kind: 'clear' })}
+            disabled={!canEdit || coverage.assignedSlots + coverage.needsReassignment === 0}
+          >
+            Clear upcoming
+          </Button>
+          <FieldCheckbox
+            label="Show played matches"
+            checked={showCompleted}
+            onChange={(event) => setShowCompleted(event.target.checked)}
+          />
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        title="Match Assignments"
+        subtitle={`${visibleMatches.length} match${visibleMatches.length === 1 ? '' : 'es'}. Each change saves straight away.`}
+      >
+        {visibleMatches.length === 0 ? (
+          <p className="center-callout muted">
+            {schedule.length === 0 ? 'No schedule published for this event yet.' : 'Every match here has been played.'}
+          </p>
+        ) : !isMobile ? (
+          <div className="center-table-wrap">
+            <table className="center-table">
+              <thead>
+                <tr>
+                  <th scope="col">Match</th>
+                  <th scope="col" colSpan={3} className="text-red" style={{ textAlign: 'center' }}>Red Alliance</th>
+                  <th scope="col" colSpan={3} className="text-blue" style={{ textAlign: 'center' }}>Blue Alliance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleMatches.map((match) => {
+                  const busy = busyByMatch(match);
+                  return (
+                    <tr key={match.match_key} className={match.is_completed ? 'assign-row-completed' : undefined}>
+                      <th scope="row" className={styles.matchCell}>{match.display_name || match.match_key}</th>
+                      {matchSlots(match).map((slot, idx) => (
+                        <td key={slot.team_key} className={idx === 3 ? `${styles.cell} ${styles.allianceSplit}` : styles.cell}>
+                          <div className="assign-cell-team-num">{teamNumber(slot.team_key)}</div>
+                          {renderSlot(match, slot.team_key, busy)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="assign-mobile-list">
+            {visibleMatches.map((match) => {
+              const busy = busyByMatch(match);
+              const slots = matchSlots(match);
+              return (
+                <div key={match.match_key} className={`assign-mobile-card${match.is_completed ? ' assign-mobile-completed' : ''}`}>
+                  <div className="assign-mobile-card-head">
+                    <span>{match.display_name || match.match_key}</span>
+                    {match.is_completed ? <span className="text-muted">Played</span> : null}
+                  </div>
+                  {(['red', 'blue'] as const).map((alliance) => (
+                    <div className="assign-mobile-alliance" key={alliance}>
+                      <div className={`assign-mobile-alliance-label ${alliance}`}>{alliance === 'red' ? 'Red' : 'Blue'} Alliance</div>
+                      {slots.filter((slot) => slot.alliance === alliance).map((slot) => (
+                        <div className="assign-mobile-team-row" key={slot.team_key}>
+                          <span className="assign-mobile-team-num">{teamNumber(slot.team_key)}</span>
+                          <div className={styles.mobileSlot}>{renderSlot(match, slot.team_key, busy)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SurfaceCard>
+
+      {mine.length > 0 ? (
+        <SurfaceCard title="Your own assignments">
+          <NextAssignment eventKey={eventKey} list={mine} />
+        </SurfaceCard>
+      ) : null}
+
+      <Modal
+        open={pending !== null}
+        onClose={() => { if (!bulkBusy) setPending(null); }}
+        dismissible={!bulkBusy}
+        title={pending?.kind === 'clear' ? 'Clear upcoming assignments?' : 'Auto-assign scouts?'}
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setPending(null)} disabled={bulkBusy}>Cancel</Button>
+            <Button
+              variant={pending?.kind === 'clear' ? 'danger' : 'primary'}
+              loading={bulkBusy}
+              disabled={pendingChanges.length === 0}
+              onClick={() => { void runPending(); }}
+            >
+              {pending?.kind === 'clear' ? 'Clear them' : `Save ${pendingChanges.length}`}
+            </Button>
+          </>
+        }
+      >
+        {pending?.kind === 'clear' ? (
+          <p>This removes {pendingChanges.length} upcoming assignment{pendingChanges.length === 1 ? '' : 's'}. Played matches stay as they are.</p>
+        ) : (
+          <>
+            <p>
+              {pendingChanges.length === 0
+                ? 'Nothing to change: every upcoming slot already has a scout.'
+                : `${pendingChanges.length} slot${pendingChanges.length === 1 ? '' : 's'} will be filled from ${autoMembers.length} scout${autoMembers.length === 1 ? '' : 's'}, spreading the work evenly. Nobody gets two teams in the same match.`}
+            </p>
+            {autoMembers.length < 6 ? (
+              <p className="center-callout muted">
+                With {autoMembers.length} scout{autoMembers.length === 1 ? '' : 's'}, some teams in each match stay unassigned.
+              </p>
+            ) : null}
+            <FieldCheckbox
+              label="Redo everything, not just the empty slots"
+              checked={pending?.kind === 'auto' && pending.mode === 'redo'}
+              onChange={(event) => setPending({ kind: 'auto', mode: event.target.checked ? 'redo' : 'fill' })}
+            />
+          </>
+        )}
+      </Modal>
+    </SurfaceCardGroup>
   );
 }
 
 // Team-only: scouting assignments are private to a workspace, so nothing loads until
 // the device has joined one.
 export function ScoutingAssignPage() {
+  const viewBar = <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />;
   return (
-    <WorkspaceGate feature="Scouting assignments" viewBar={<PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />}>
-      <ScoutingAssignWorkspacePage />
+    <WorkspaceGate feature="Scouting assignments" viewBar={viewBar}>
+      {viewBar}
+      <div className="scouting-layout-grid">
+        <div className="center-page-container">
+          <ScoutingAssignWorkspacePage />
+        </div>
+      </div>
     </WorkspaceGate>
   );
 }

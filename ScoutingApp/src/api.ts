@@ -4,6 +4,7 @@ import { resolveApiBaseUrl, resolveWebSocketBaseUrl } from './platform/runtime';
 const API = resolveApiBaseUrl();
 const WS_API = resolveWebSocketBaseUrl(API);
 const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 12000);
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 import { enqueue as enqueueOffline } from "./utils/offlineQueue";
 import { getStoredResponse, putStoredResponse } from "./utils/apiResponseStore";
 
@@ -225,6 +226,9 @@ type ApiFetchInit = RequestInit & {
   staleWhileRevalidateMs?: number;
   bypassCache?: boolean;
   timeoutMs?: number;
+  // Never answer with (or save) a stored copy. For reads whose caller keeps
+  // its own offline copy, where an old answer could undo a newer one.
+  liveOnly?: boolean;
 };
 
 type ApiRequestOptions = Pick<ApiFetchInit, "cacheTtlMs" | "staleWhileRevalidateMs" | "bypassCache" | "timeoutMs">;
@@ -1243,6 +1247,7 @@ function _cacheRequestOptions(
 
 type TimeoutState = {
   didTimeout: boolean;
+  clear?: () => void;
 };
 
 // Writes a replay can't duplicate: room entries carry client_entry_id, pit
@@ -1354,6 +1359,7 @@ function withTimeout(
     },
     { once: true },
   );
+  if (timeoutState) timeoutState.clear = () => globalThis.clearTimeout(timeout);
   return controller.signal;
 }
 
@@ -1717,14 +1723,25 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     const requestSignal = withTimeout(forBackground ? undefined : init?.signal, timeoutMs, timeoutState);
     let response: Response;
     try {
-      response = await fetch(url, {
+      const fetched = await fetch(url, {
         ...init,
         method,
         headers,
         signal: requestSignal,
       });
+      // The timeout covers the whole download. Once it is in, the timer must not
+      // fire: in Chrome its abort breaks every unread clone, including the copy
+      // kept in the cache, so a cache hit after 12 s failed with "timed out".
+      const body = NULL_BODY_STATUSES.has(fetched.status) ? null : await fetched.arrayBuffer();
+      response = new Response(body, {
+        status: fetched.status,
+        statusText: fetched.statusText,
+        headers: fetched.headers,
+      });
     } catch (error) {
       throw normalizeApiFetchError(error, timeoutMs, timeoutState, requestSignal);
+    } finally {
+      timeoutState.clear?.();
     }
     if (ENABLE_REQUEST_LOGS) {
       const tookMs = Math.round(performance.now() - start);
@@ -1746,13 +1763,17 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
         expiresAtMs: Date.now() + cacheTtlMs,
       });
       void writePersistentGetCache(requestKey, response.clone(), cacheTtlMs);
-    } else if (method === "GET" && response.ok && !url.includes("refresh=true")) {
+    } else if (method === "GET" && response.ok && !url.includes("refresh=true") && !init?.liveOnly) {
       // Live reads skip the cache on purpose, but at an event with no signal the last
       // copy beats an error. Saved as never-fresh (1 ms), so it only serves offline.
       void writePersistentGetCache(requestKey, response.clone(), 1);
     }
     return response;
   };
+
+  if (!shouldUseCache && method === "GET" && init?.liveOnly) {
+    return run();
+  }
 
   if (!shouldUseCache && method === "GET") {
     // Uncached (live) reads still fall back to the last saved copy: offline, on a weak
@@ -2914,6 +2935,91 @@ export async function replaceScoutingRoomAssignments(
   });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as ScoutingRoomAssignmentsReplaceResponse;
+}
+
+// ── Team rooms: one room per workspace and event, found without a key ──
+
+export type TeamRoomMember = {
+  member_id: number;
+  display_name: string;
+  role: "leader" | "member";
+};
+
+export type TeamRoomAssignment = {
+  match_key: string;
+  team_key: string;
+  assigned_member_id: number | null;
+  assigned_display_name: string;
+  member_active: boolean;
+  covered: boolean;
+  covered_by_me: boolean;
+};
+
+export type TeamRoomSnapshot = {
+  ok: boolean;
+  room_key: string;
+  event_key: string;
+  me: TeamRoomMember;
+  members: TeamRoomMember[];
+  assignments: TeamRoomAssignment[];
+};
+
+export type TeamRoomEnsureResponse = TeamRoomSnapshot & {
+  created: boolean;
+  access?: ScoutingRoomAccess;
+};
+
+export type TeamRoomAssignmentChange = {
+  match_key: string;
+  team_key: string;
+  assigned_member_id: number | null;
+};
+
+export async function ensureTeamRoom(eventKey: string, clientId?: string): Promise<TeamRoomEnsureResponse> {
+  const res = await apiFetch(`${API}/scouting/rooms/team`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_key: eventKey.trim().toLowerCase(), client_id: clientId || undefined }),
+    bypassCache: true,
+    cacheTtlMs: 0,
+    timeoutMs: 20000,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const payload = (await res.json()) as TeamRoomEnsureResponse;
+  // The keyed room code (socket, entries) still needs the room token.
+  if (payload.access?.room_access_token && payload.room_key) {
+    setStoredRoomAccessToken(payload.room_key, payload.access.room_access_token, payload.access.expires_at_unix);
+  }
+  return payload;
+}
+
+// null means the team hasn't opened this event yet; ensureTeamRoom creates it.
+export async function getTeamRoom(eventKey: string): Promise<TeamRoomSnapshot | null> {
+  const res = await apiFetch(`${API}/scouting/rooms/team/${encodeURIComponent(eventKey.trim().toLowerCase())}`, {
+    bypassCache: true,
+    cacheTtlMs: 0,
+    liveOnly: true,
+    timeoutMs: 15000,
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as TeamRoomSnapshot;
+}
+
+export async function saveTeamRoomAssignments(
+  eventKey: string,
+  changes: TeamRoomAssignmentChange[],
+): Promise<TeamRoomSnapshot> {
+  const res = await apiFetch(`${API}/scouting/rooms/team/${encodeURIComponent(eventKey.trim().toLowerCase())}/assignments`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes }),
+    bypassCache: true,
+    cacheTtlMs: 0,
+    timeoutMs: 30000,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as TeamRoomSnapshot;
 }
 
 export async function kickScoutingRoomMember(

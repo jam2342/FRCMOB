@@ -3,6 +3,21 @@
 /*  Global touch interaction improvements for mobile UX                */
 /* ================================================================== */
 
+/* ─── Fast taps everywhere ─────────────────────────────────────────── */
+/* Scouts hammer +3 counters. Without this, two quick taps on iOS read as a
+   double-tap zoom and the page jumps mid-match. Pinch zoom still works. */
+button,
+[role="button"],
+[role="tab"],
+a,
+label,
+summary,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
 /* ─── Global touch improvements ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Smoother scrolling */

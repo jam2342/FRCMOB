@@ -2134,3 +2134,22 @@ button.ps-context-chip:disabled {
   color: inherit;
   text-decoration: underline;
 }
+
+/* Small header controls keep their size but get a ~44px tap area, so a thumb
+   doesn't have to land on a 24x20 chevron or a 28px icon. */
+.ps-mobile-search-trigger,
+.ps-context-strip.collapsed .ps-context-toggle-btn {
+  position: relative;
+}
+
+.ps-mobile-search-trigger::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.ps-context-strip.collapsed .ps-context-toggle-btn::after {
+  content: '';
+  position: absolute;
+  inset: -12px -10px;
+}

@@ -153,11 +153,17 @@ import {
 import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
 import { useWorkspace } from '../features/workspace/useWorkspace';
+import { isTeamRoomKey, useTeamRoom } from '../features/workspace/useTeamRoom';
+import { myAssignments as teamAssignmentsFor } from '../features/workspace/teamAssignments';
+import { NextAssignment } from '../features/workspace/NextAssignment';
 import { clearWorkspaceSession, getWorkspaceSession, getWorkspaceToken } from '../features/workspace/workspaceSession';
 import { MY_TEAM_STORAGE_KEY, workspaceTeamKey } from '../features/workspace/myTeam';
 
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
 const SCOUTING_ROOM_KEY_STORAGE = 'scouting_room_active_key_v1';
+const ROOM_JOIN_SUPERSEDED = 'superseded';
+const SAVED_ON_PHONE_NOTICE = "Saved on this phone; it will sync to your team when you're back online.";
+const TEAM_ROOM_JOIN_MAX_RETRIES = 6;
 const SCOUT_MY_TEAM_STORAGE = MY_TEAM_STORAGE_KEY;
 const SCOUTING_TIMER_FLOAT_STORAGE = 'scouting_timer_float_pos_v1';
 const SCOUTING_MOBILE_COMPACT_STORAGE = 'scouting_mobile_compact_mode_v1';
@@ -400,7 +406,9 @@ export function ScoutingPage() {
   // A scout who joined their team already told us their name there.
   const [scoutProfile, setScoutProfile] = useState(() =>
     normalizeScoutProfile(
-      window.localStorage.getItem(SCOUT_PROFILE_STORAGE) || workspace?.me.display_name || '',
+      // The server knows a team member only by their workspace name, so that wins
+      // over a name typed on this device before joining.
+      workspace?.me.display_name || window.localStorage.getItem(SCOUT_PROFILE_STORAGE) || '',
     ),
   );
   const [roomKeyInput, setRoomKeyInput] = useState(() =>
@@ -415,6 +423,10 @@ export function ScoutingPage() {
   const [roomDemotePendingProfile, setRoomDemotePendingProfile] = useState('');
   const [roomConnectionState, setRoomConnectionState] = useState<RoomConnectionState>('disconnected');
   const [roomErrorText, setRoomErrorText] = useState('');
+  // Leader actions report here, not in roomErrorText: a socket reconnect clears
+  // that one, which could wipe "Promotion rejected" before the leader saw it.
+  const [roomLeaderActionError, setRoomLeaderActionError] = useState('');
+  useEffect(() => { setRoomLeaderActionError(''); }, [activeRoom?.room_key]);
   const [roomHttpFallbackActive, setRoomHttpFallbackActive] = useState(false);
   const [roomClientId] = useState(() => getOrCreateScoutingRoomClientId());
   const [roomSocketNonce, setRoomSocketNonce] = useState(0);
@@ -422,7 +434,11 @@ export function ScoutingPage() {
   const [apiSnapshotCache, setApiSnapshotCache] = useState<Record<string, ApiTeamSnapshot | null>>({});
   const [showTeamSummaries, setShowTeamSummaries] = useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>('setup');
-  const [mobileFinderOpen, setMobileFinderOpen] = useState<boolean>(() => mobilePanelPrefs.finderOpen);
+  // A link to one match and team ("Scout team 254") means scout it now, so a
+  // phone opens on the board instead of the setup finder.
+  const [mobileFinderOpen, setMobileFinderOpen] = useState<boolean>(() =>
+    searchParams.get('match') && searchParams.get('team') ? false : mobilePanelPrefs.finderOpen,
+  );
   const [mobileScoutSection, setMobileScoutSection] = useState<MobileScoutSection>(() => mobilePanelPrefs.section);
   const [mobileCapturePanel, setMobileCapturePanel] = useState<MobileCapturePanel>(() => mobilePanelPrefs.capture);
   const [mobileScorePanel, setMobileScorePanel] = useState<MobileScorePanel>(() => mobilePanelPrefs.score);
@@ -435,6 +451,7 @@ export function ScoutingPage() {
   const roomSectionRef = useRef<HTMLDivElement | null>(null);
   const dataSectionRef = useRef<HTMLDivElement | null>(null);
   const restoredRoomRef = useRef(false);
+  const roomJoinGenRef = useRef(0);
   const roomReconnectAttemptsRef = useRef(0);
   const roomReconnectTimerRef = useRef<number | null>(null);
   const roomAccessRefreshPromiseRef = useRef<Promise<string> | null>(null);
@@ -484,6 +501,7 @@ export function ScoutingPage() {
     if (!normalizedRoomKey || !normalizedScoutProfile) return '';
     const inFlight = roomAccessRefreshPromiseRef.current;
     if (inFlight) return inFlight;
+    const generation = roomJoinGenRef.current;
     const run = (async () => {
       try {
         const response = await createOrJoinScoutingRoom({
@@ -498,6 +516,10 @@ export function ScoutingPage() {
         });
         const room = response.room;
         const joinedRoomKey = normalizeRoomKey(room.room_key) || normalizedRoomKey;
+        if (generation !== roomJoinGenRef.current) {
+          // The scout moved rooms meanwhile; keep the token, leave the page alone.
+          return String(response.access?.room_access_token || '').trim();
+        }
         setActiveRoom(room);
         applyRoomAccess(joinedRoomKey, response.access || null);
         setRoomPresence(Array.isArray(room.presence) ? room.presence : []);
@@ -1527,6 +1549,7 @@ export function ScoutingPage() {
     }
     if (urlMatch) setSelectedMatchKey(urlMatch);
     if (urlTeam) setSelectedTeamKey(urlTeam);
+    if (urlMatch && urlTeam) setMobileFinderOpen(false);
     if (urlMyTeam) setMyTeamKey(urlMyTeam);
   });
 
@@ -1578,6 +1601,8 @@ export function ScoutingPage() {
     }
     restoredRoomRef.current = true;
     let cancelled = false;
+    roomJoinGenRef.current += 1;
+    const generation = roomJoinGenRef.current;
     setRoomKeyInput(storedRoomKey);
     setRoomErrorText('');
     void (async () => {
@@ -1593,7 +1618,7 @@ export function ScoutingPage() {
           room_access_token: storedAccessToken || undefined,
           timeoutMs: 25000,
         });
-        if (cancelled) return;
+        if (cancelled || generation !== roomJoinGenRef.current) return;
         const room = response.room;
         const joinedRoomKey = normalizeRoomKey(room.room_key);
         setActiveRoom(room);
@@ -1607,7 +1632,7 @@ export function ScoutingPage() {
         setRoomSocketNonce((current) => current + 1);
         setStatusText(`Restored room ${room.room_key}.`);
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled || generation !== roomJoinGenRef.current) return;
         const detail = roomRequestErrorMessage(
           (error as Error).message || 'Unable to restore scouting room.',
           'Restoring the scouting room',
@@ -2319,6 +2344,10 @@ export function ScoutingPage() {
       setRoomErrorText(detail);
       return { ok: false, error: detail };
     }
+    // Only the latest join may change the page: an older one (another event's
+    // team room, or a room the scout has since picked by key) is dropped.
+    roomJoinGenRef.current += 1;
+    const generation = roomJoinGenRef.current;
     const requestedRoomKey = normalizeRoomKey(options?.overrideRoomKey ?? roomKeyInput);
     const activeRoomKey = normalizeRoomKey(activeRoom?.room_key || '');
     const resolvedRoomKey = requestedRoomKey || activeRoomKey;
@@ -2336,6 +2365,7 @@ export function ScoutingPage() {
         room_access_token: roomAccessToken || undefined,
         timeoutMs: 25000,
       });
+      if (generation !== roomJoinGenRef.current) return { ok: false, error: ROOM_JOIN_SUPERSEDED };
       const room = response.room;
       const joinedRoomKey = normalizeRoomKey(room.room_key);
       const switchedRooms = Boolean(activeRoomKey) && Boolean(joinedRoomKey) && activeRoomKey !== joinedRoomKey;
@@ -2376,6 +2406,7 @@ export function ScoutingPage() {
       }
       return { ok: true };
     } catch (error) {
+      if (generation !== roomJoinGenRef.current) return { ok: false, error: ROOM_JOIN_SUPERSEDED };
       const rawDetail = (error as Error).message || 'Unable to join scouting room.';
       const detail = (
         !createIfMissing
@@ -2389,7 +2420,136 @@ export function ScoutingPage() {
     }
   }
 
+  // Team mode: a workspace member scouting an event is in their team's room for
+  // it, with no key to type. A room picked by key stays put.
+  const teamRoom = useTeamRoom(workspace ? selectedEventKey : null);
+  const teamRoomKey = normalizeRoomKey(teamRoom.snapshot?.room_key || '');
+  const teamRoomJoinRef = useRef('');
+  const [teamJoinNonce, setTeamJoinNonce] = useState(0);
+  const teamJoinAttemptsRef = useRef(0);
+  const teamJoinRetryTimerRef = useRef<number | null>(null);
+  const teamAutoJoinSuspendedRef = useRef(false);
+  const teamRoomKeyRef = useRef(teamRoomKey);
+  teamRoomKeyRef.current = teamRoomKey;
+  const clearTeamJoinRetry = () => {
+    if (teamJoinRetryTimerRef.current !== null) window.clearTimeout(teamJoinRetryTimerRef.current);
+    teamJoinRetryTimerRef.current = null;
+  };
+  // A room the scout picked or left by hand stays their choice for this event.
+  function suspendTeamAutoJoin() {
+    teamAutoJoinSuspendedRef.current = true;
+    // Whatever automatic attempt was pending no longer owns the marker.
+    teamRoomJoinRef.current = '';
+    clearTeamJoinRetry();
+  }
+  // A new event or workspace: joins still in flight for the old one are dropped,
+  // and the scout's team room for the new event is fair game again.
+  const joinScope = `${workspace?.workspace.id ?? ''}:${selectedEventKey}`;
+  const joinScopeRef = useRef(joinScope);
+  useEffect(() => {
+    if (joinScopeRef.current === joinScope) return;
+    joinScopeRef.current = joinScope;
+    roomJoinGenRef.current += 1;
+    teamAutoJoinSuspendedRef.current = false;
+    teamRoomJoinRef.current = '';
+  }, [joinScope]);
+  const workspaceDisplayName = workspace?.me.display_name ?? '';
+  useEffect(() => {
+    if (workspaceDisplayName) setScoutProfile(normalizeScoutProfile(workspaceDisplayName));
+  }, [workspaceDisplayName]);
+  useEffect(() => {
+    teamJoinAttemptsRef.current = 0;
+    if (!teamRoomKey) return;
+    // Coming back online or to the tab is a good moment to try again.
+    const retry = () => setTeamJoinNonce((current) => current + 1);
+    window.addEventListener('online', retry);
+    window.addEventListener('focus', retry);
+    return () => {
+      window.removeEventListener('online', retry);
+      window.removeEventListener('focus', retry);
+      clearTeamJoinRetry();
+    };
+  }, [teamRoomKey]);
+  useEffect(() => {
+    if (!teamRoomKey || !hasScoutProfile || teamAutoJoinSuspendedRef.current) return;
+    const current = normalizeRoomKey(activeRoom?.room_key || '');
+    if (current === teamRoomKey) {
+      teamRoomJoinRef.current = teamRoomKey;
+      teamJoinAttemptsRef.current = 0;
+      return;
+    }
+    if (current && !isTeamRoomKey(current)) return;
+    let restoring: string;
+    try {
+      restoring = normalizeRoomKey(window.sessionStorage.getItem(SCOUTING_ROOM_KEY_STORAGE) || '');
+    } catch {
+      restoring = '';
+    }
+    // A keyed room is still being restored from this tab; let that win.
+    if (!current && restoring && restoring !== teamRoomKey && !isTeamRoomKey(restoring)) return;
+    if (teamRoomJoinRef.current === teamRoomKey) return;
+    teamRoomJoinRef.current = teamRoomKey;
+    const eventLabel = selectedEventKey;
+    void createOrJoinRoom({ overrideRoomKey: teamRoomKey, restoring: true }).then((result) => {
+      if (result.ok) {
+        teamJoinAttemptsRef.current = 0;
+        setStatusText(`You're in your team's room for ${eventLabel}.`);
+        return;
+      }
+      // Free the key so the next attempt (timer, focus, reconnect) can run.
+      if (teamRoomJoinRef.current === teamRoomKey) teamRoomJoinRef.current = '';
+      if (result.error === ROOM_JOIN_SUPERSEDED) return;
+      // Nothing to retry for once the scout chose a room or the event moved on.
+      if (teamAutoJoinSuspendedRef.current || teamRoomKeyRef.current !== teamRoomKey) return;
+      teamJoinAttemptsRef.current += 1;
+      if (teamJoinAttemptsRef.current > TEAM_ROOM_JOIN_MAX_RETRIES) return;
+      clearTeamJoinRetry();
+      const delay = Math.min(30_000, 2_000 * 2 ** (teamJoinAttemptsRef.current - 1));
+      teamJoinRetryTimerRef.current = window.setTimeout(() => {
+        teamJoinRetryTimerRef.current = null;
+        setTeamJoinNonce((value) => value + 1);
+      }, delay);
+    });
+    // createOrJoinRoom reads the latest state when it runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamRoomKey, activeRoom?.room_key, hasScoutProfile, teamJoinNonce]);
+  const myTeamAssignments = useMemo(
+    () => (teamRoom.snapshot
+      ? teamAssignmentsFor(teamRoom.snapshot.me.member_id, teamRoom.snapshot.assignments, teamRoom.schedule ?? scheduleRows)
+      : []),
+    [scheduleRows, teamRoom.schedule, teamRoom.snapshot],
+  );
+  const inTeamRoom = Boolean(teamRoomKey) && normalizeRoomKey(activeRoom?.room_key || '') === teamRoomKey;
+
+  // An offline save says it will sync later. Once the queue has delivered
+  // everything, say so, or a scout keeps wondering whether it's safe.
+  useEffect(() => {
+    let dropped = false;
+    const onDropped = () => { dropped = true; };
+    const onChange = (event: Event) => {
+      const count = (event as CustomEvent<{ count?: number }>).detail?.count ?? 0;
+      if (count > 0) return;
+      const outcome = dropped
+        ? "Couldn't sync it; the banner at the top shows how to recover it."
+        : 'Synced with your team.';
+      dropped = false;
+      setStatusText((current) => (current.includes(SAVED_ON_PHONE_NOTICE) ? current.replace(SAVED_ON_PHONE_NOTICE, outcome) : current));
+    };
+    window.addEventListener('offlinequeue:change', onChange);
+    window.addEventListener('offlinequeue:dropped', onDropped);
+    return () => {
+      window.removeEventListener('offlinequeue:change', onChange);
+      window.removeEventListener('offlinequeue:dropped', onDropped);
+    };
+  }, []);
+
+  // Team rooms have no key the scout ever saw, so don't show them one.
+  function roomSyncedLabel(roomKey: string): string {
+    return isTeamRoomKey(roomKey) ? 'Synced with your team.' : `Synced to room ${roomKey}.`;
+  }
+
   function leaveRoom() {
+    roomJoinGenRef.current += 1;
     const leavingRoomKey = normalizeRoomKey(activeRoom?.room_key || roomKeyInput || '');
     setEntries((current) => stripEntriesForRoom(current, leavingRoomKey));
     if (leavingRoomKey) clearStoredRoomAccessToken(leavingRoomKey);
@@ -2451,22 +2611,22 @@ export function ScoutingPage() {
   async function kickRoomMember(targetScoutProfile: string) {
     const activeRoomKey = normalizeRoomKey(activeRoom?.room_key || '');
     if (!activeRoomKey) {
-      setRoomErrorText('Join a room before kicking members.');
+      setRoomLeaderActionError('Join a room before kicking members.');
       return;
     }
     if (!hasRoomOwnerAuthority) {
-      setRoomErrorText('Only room leaders can kick members.');
+      setRoomLeaderActionError('Only room leaders can kick members.');
       return;
     }
     const targetProfile = normalizeScoutProfile(targetScoutProfile);
     if (!targetProfile) return;
     if (targetProfile.toLowerCase() === normalizeScoutProfile(scoutProfile).toLowerCase()) {
-      setRoomErrorText('Use Leave Room to remove yourself.');
+      setRoomLeaderActionError('Use Leave Room to remove yourself.');
       return;
     }
     const roomAccessToken = await ensureRoomAccessToken(activeRoomKey);
     if (!roomAccessToken) {
-      setRoomErrorText('Room access token missing or expired. Re-join room to continue.');
+      setRoomLeaderActionError('Room access token missing or expired. Re-join room to continue.');
       return;
     }
     setRoomKickPendingProfile(targetProfile);
@@ -2480,9 +2640,9 @@ export function ScoutingPage() {
       } else {
         setStatusText(`${targetProfile} is not currently connected.`);
       }
-      setRoomErrorText('');
+      setRoomLeaderActionError('');
     } catch (error) {
-      setRoomErrorText((error as Error).message || 'Unable to remove member from room.');
+      setRoomLeaderActionError((error as Error).message || 'Unable to remove member from room.');
     } finally {
       setRoomKickPendingProfile('');
     }
@@ -2492,18 +2652,18 @@ export function ScoutingPage() {
     const promote = action === 'promote';
     const activeRoomKey = normalizeRoomKey(activeRoom?.room_key || '');
     if (!activeRoomKey) {
-      setRoomErrorText(`Join a room before ${promote ? 'promoting' : 'removing'} leaders.`);
+      setRoomLeaderActionError(`Join a room before ${promote ? 'promoting' : 'removing'} leaders.`);
       return;
     }
     if (!hasRoomOwnerAuthority) {
-      setRoomErrorText(`Only room leaders can ${promote ? 'promote' : 'remove'} secondary leaders.`);
+      setRoomLeaderActionError(`Only room leaders can ${promote ? 'promote' : 'remove'} secondary leaders.`);
       return;
     }
     const targetProfile = normalizeScoutProfile(targetScoutProfile);
     if (!targetProfile) return;
     const roomAccessToken = await ensureRoomAccessToken(activeRoomKey);
     if (!roomAccessToken) {
-      setRoomErrorText('Room access token missing or expired. Re-join room to continue.');
+      setRoomLeaderActionError('Room access token missing or expired. Re-join room to continue.');
       return;
     }
     const setPending = promote ? setRoomPromotePendingProfile : setRoomDemotePendingProfile;
@@ -2524,14 +2684,14 @@ export function ScoutingPage() {
           }
           : current
       ));
-      setRoomErrorText('');
+      setRoomLeaderActionError('');
       setStatusText(promote
         ? `Promoted ${response.target_scout_profile} to secondary leader.`
         : ('removed' in response && response.removed
           ? `Removed ${response.target_scout_profile} from secondary leaders.`
           : `${response.target_scout_profile} is not a secondary leader.`));
     } catch (error) {
-      setRoomErrorText((error as Error).message || `Unable to ${promote ? 'promote' : 'remove'} secondary leader.`);
+      setRoomLeaderActionError((error as Error).message || `Unable to ${promote ? 'promote' : 'remove'} secondary leader.`);
     } finally {
       setPending('');
     }
@@ -2763,13 +2923,13 @@ export function ScoutingPage() {
       };
       try {
         await syncOnce(roomAccessToken);
-        syncSuffix = `Synced to room ${roomKey}.`;
+        syncSuffix = roomSyncedLabel(roomKey);
         setRoomErrorText('');
       } catch (error) {
         if (error instanceof QueuedForSyncError) {
           // Queued, not failed: the offline queue replays it on reconnect.
           setRoomErrorText('');
-          setStatusText(`${context.label} Saved on this phone; it will sync to your team when you're back online.`);
+          setStatusText(`${context.label} ${SAVED_ON_PHONE_NOTICE}`);
           return;
         }
         const detail = (error as Error).message || 'Room sync failed.';
@@ -2780,12 +2940,12 @@ export function ScoutingPage() {
             try {
               await syncOnce(roomAccessToken);
               setRoomErrorText('');
-              setStatusText(`${context.label} Synced to room ${roomKey}.`);
+              setStatusText(`${context.label} ${roomSyncedLabel(roomKey)}`);
               return;
             } catch (retryError) {
               if (retryError instanceof QueuedForSyncError) {
                 setRoomErrorText('');
-                setStatusText(`${context.label} Saved on this phone; it will sync to your team when you're back online.`);
+                setStatusText(`${context.label} ${SAVED_ON_PHONE_NOTICE}`);
                 return;
               }
               nextDetail = roomRequestErrorMessage((retryError as Error).message || detail, 'Saving to the scouting room');
@@ -3359,7 +3519,7 @@ export function ScoutingPage() {
           ) : null}
         <SurfaceCard title="Scouting Mode" subtitle="Tap-first scouting with direct number entry." collapsible>
           <SegmentedTabs
-            className="center-tabs"
+            className={`center-tabs ${styles.modeTabs}`}
             itemClassName="center-tab-btn"
             ariaLabel="Scouting mode"
             value={scoutingMode}
@@ -3703,6 +3863,34 @@ export function ScoutingPage() {
             </div>
           ) : (
           <div className="scout-profile-grid">
+            {inTeamRoom ? (
+              <p className="center-callout muted">
+                You're in your team's room for <strong>{selectedEventKey}</strong>. Your entries reach your team on
+                their own; no key needed.
+              </p>
+            ) : workspace && teamRoomKey && !activeRoom?.room_key && roomErrorText ? (
+              <div className="center-callout warning" role="alert">
+                <p>Couldn't reach your team's room yet. Your entries stay on this phone until it connects.</p>
+                <button
+                  type="button"
+                  className="center-btn ghost"
+                  onClick={() => {
+                    teamAutoJoinSuspendedRef.current = false;
+                    teamRoomJoinRef.current = '';
+                    teamJoinAttemptsRef.current = 0;
+                    setTeamJoinNonce((current) => current + 1);
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : workspace && selectedEventKey && teamRoom.status === 'loading' ? (
+              <p className="center-callout muted">Opening your team's room…</p>
+            ) : workspace && !selectedEventKey ? (
+              <p className="center-callout muted">Pick an event in Setup and you'll join your team's room for it.</p>
+            ) : null}
+            <details className={styles.otherRooms} open={!workspace || (!inTeamRoom && Boolean(activeRoom?.room_key))}>
+            <summary>{inTeamRoom || !activeRoom?.room_key ? 'Use a room key instead' : 'Room key'}</summary>
             <label className="center-label" htmlFor="scout-room-key">
               Room Key
             </label>
@@ -3718,7 +3906,10 @@ export function ScoutingPage() {
               <button
                 type="button"
                 className="center-btn"
-                onClick={() => { void createOrJoinRoom(); }}
+                onClick={() => {
+                  suspendTeamAutoJoin();
+                  void createOrJoinRoom();
+                }}
                 disabled={!hasScoutProfile}
               >
                 {activeRoom?.room_key
@@ -3746,6 +3937,7 @@ export function ScoutingPage() {
                 <QrCodeIcon className="icon-inline" /> {activeRoom?.room_key ? 'QR Code' : 'Scan QR Code'}
               </button>
             </div>
+            </details>
             {activeRoom?.room_key ? (
               <>
                 <div className="center-status-row compact scout-status-row">
@@ -3828,9 +4020,12 @@ export function ScoutingPage() {
                         ))}
                       </div>
                     ) : null}
+                    {roomLeaderActionError ? (
+                      <p className="center-callout warning" role="alert">{roomLeaderActionError}</p>
+                    ) : null}
                   </div>
                 ) : null}
-                {myRoomAssignments.length > 0 ? (
+                {inTeamRoom ? null : myRoomAssignments.length > 0 ? (
                   <div className="scout-profile-grid" style={{ marginTop: '0.55rem' }}>
                     <p className="center-callout muted" style={{ marginBottom: '0.25rem' }}>
                       Assigned to you: {myRoomAssignments.length} slot{myRoomAssignments.length === 1 ? '' : 's'}.
@@ -3865,7 +4060,14 @@ export function ScoutingPage() {
                   <button type="button" className="center-btn ghost" onClick={reconnectRoomSocket}>
                     <RefreshIcon className="icon-inline" /> Reconnect
                   </button>
-                  <button type="button" className="center-btn ghost" onClick={leaveRoom}>
+                  <button
+                    type="button"
+                    className="center-btn ghost"
+                    onClick={() => {
+                      suspendTeamAutoJoin();
+                      leaveRoom();
+                    }}
+                  >
                     <LogOutIcon className="icon-inline" /> Leave Room
                   </button>
                 </div>
@@ -4008,13 +4210,28 @@ export function ScoutingPage() {
       </aside>
 
       <section className="center-main">
+        {workspace && selectedEventKey && teamRoom.snapshot && (!teamRoom.isLeader || myTeamAssignments.length > 0) ? (
+          <SurfaceCard title="Your assignments">
+            <NextAssignment
+              eventKey={selectedEventKey}
+              list={myTeamAssignments}
+              current={selectedMatchKey && selectedTeamKey ? { match_key: selectedMatchKey, team_key: selectedTeamKey } : null}
+              onScout={(item) => {
+                setSelectedMatchKey(item.match_key);
+                setSelectedTeamKey(item.team_key);
+                setStatusText(`Loaded ${item.match_label}, team ${item.team_number}.`);
+                if (isMobileLayout) setMobileFinderOpen(false);
+              }}
+            />
+          </SurfaceCard>
+        ) : null}
         {isMobileLayout ? (
           <>
             <div className="fm-scout-hero" role="region" aria-label="Mobile scouting quick context">
               <div className="fm-scout-hero-actions">
                 <button
                   type="button"
-                  className="center-btn"
+                  className={`center-btn ${styles.heroSave}`}
                   onClick={() => {
                     void saveScoutingEntry();
                   }}
@@ -4022,12 +4239,7 @@ export function ScoutingPage() {
                 >
                   {savingEntry ? 'Saving...' : <><SaveIcon className="icon-inline" /> Save</>}
                 </button>
-                {saveBlockedReason ? <span className={styles.saveHint}>{saveBlockedReason}</span> : null}
               </div>
-              {/* The save result, here and not only on the Data tab: scouts on the Board
-                  had no sign their report was kept and saved it again. */}
-              {errorText ? <p className="center-callout danger" role="alert">{errorText}</p> : null}
-              {!errorText && statusText ? <p className={styles.saveHint} role="status">{statusText}</p> : null}
               <div className="fm-scout-hero-context" role="list" aria-label="Core scouting context">
                 <span className="fm-scout-hero-chip match" role="listitem"><strong>{selectedMatch?.display_name || 'N/A'}</strong></span>
                 <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? selectedTeamKey.toUpperCase() : 'N/A'}</strong></span>
@@ -4037,6 +4249,14 @@ export function ScoutingPage() {
                   {timerClockLabel} · {timerPhase}
                 </span>
               </div>
+              {/* The save result, here and not only on the Data tab: scouts on the Board
+                  had no sign their report was kept and saved it again. It sits under the
+                  chips, clamped, so it can never push them out of the header. */}
+              {/* One message slot. Why Save is disabled used to sit beside the button and
+                  wrap into a 100px column on small phones, pushing the chips out. */}
+              {errorText ? <p className={`center-callout danger ${styles.heroError}`} role="alert">{errorText}</p> : null}
+              {!errorText && saveBlockedReason ? <p className={styles.heroStatus}>{saveBlockedReason}</p> : null}
+              {!errorText && !saveBlockedReason && statusText ? <p className={styles.heroStatus} role="status" title={statusText}>{statusText}</p> : null}
             </div>
             {!mobileFinderOpen ? (
               <div className="fm-scout-cards">
@@ -4801,6 +5021,7 @@ export function ScoutingPage() {
         }}
         onRoomJoin={async (roomKey) => {
           setRoomKeyInput(roomKey);
+          suspendTeamAutoJoin();
           const joined = await createOrJoinRoom({ overrideRoomKey: roomKey });
           if (!joined.ok) {
             throw new Error(joined.error || `Unable to join room ${roomKey}.`);
