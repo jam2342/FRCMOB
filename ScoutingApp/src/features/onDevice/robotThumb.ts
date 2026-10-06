@@ -27,7 +27,7 @@ export function thumbRect(
 
 // JPEG of one box from `frame` (the canvas still holding the sampled frame). Resolves to
 // null when the box is too small or the browser can't encode.
-export function captureRobotThumb(
+function captureRobotThumb(
   frame: HTMLCanvasElement,
   bbox: [number, number, number, number],
 ): Promise<Blob | null> {

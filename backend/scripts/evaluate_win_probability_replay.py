@@ -156,7 +156,6 @@ def _install_cutoff(state: dict, strip: set[str]) -> None:
 
     ratings_model.load_event_rating_data = load_with_cutoff
     # Statbotics is fetched live and only holds season-end values: leave it out.
-    ratings_model._load_statbotics_epa_by_team = lambda team_rows: {}
     data_loader._load_statbotics_epa_by_team = lambda team_rows: {}
 
 

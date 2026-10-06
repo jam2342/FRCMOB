@@ -7,9 +7,6 @@
 @import './productshell/shell-overrides.css' layer(shell-overrides);
 
 /* Search button spinner */
-@keyframes ps-spin {
-  to { transform: rotate(360deg); }
-}
 
 .ps-topbar-search-btn svg {
   display: block;
@@ -261,10 +258,6 @@
     letter-spacing: 0.03em;
   }
 
-  .product-shell .ps-topbar-signature {
-    display: none;
-  }
-
   .product-shell .ps-network-pill {
     min-height: 18px;
     padding: 0 6px;
@@ -476,15 +469,6 @@
   padding: 4px 10px;
 }
 
-.ps-context-strip.collapsed .ps-context-strip-head {
-  flex: 0 0 auto;
-  gap: 0;
-}
-
-.ps-context-strip.collapsed .ps-context-strip-title {
-  display: none;
-}
-
 .ps-context-strip.collapsed .ps-context-toggle-btn {
   min-height: 22px;
   padding: 0 7px;
@@ -498,21 +482,6 @@
 .ps-context-strip.collapsed .ps-context-toggle-icon {
   width: 11px;
   height: 11px;
-}
-
-.ps-context-strip-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.ps-context-strip-title {
-  font-size: var(--font-size-2xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-dim);
 }
 
 .ps-context-toggle-btn {
@@ -748,10 +717,6 @@ button.ps-context-chip:disabled {
   .ps-context-strip {
     gap: 5px;
     padding: 7px 10px 8px;
-  }
-
-  .ps-context-strip-title {
-    font-size: var(--font-size-legacy-10);
   }
 
   .ps-context-toggle-btn {
@@ -2124,16 +2089,6 @@ button.ps-context-chip:disabled {
 
 /* Author credit in the sidebar byline. Inherits the muted signature color so it
    reads as part of the byline, not as a call to action. */
-.product-shell .ps-brand-signature-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.product-shell .ps-brand-signature-link:hover,
-.product-shell .ps-brand-signature-link:focus-visible {
-  color: inherit;
-  text-decoration: underline;
-}
 
 /* Small header controls keep their size but get a ~44px tap area, so a thumb
    doesn't have to land on a 24x20 chevron or a 28px icon. */

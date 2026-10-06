@@ -1,10 +1,8 @@
+import { cx } from '../ui/primitives/cx';
 import { NavLink } from 'react-router-dom';
 import { useHideOnScroll } from '../../hooks/useHideOnScroll';
 import './BottomTabBar.css';
 
-function cx(...args: (string | false | null | undefined | 0)[]): string {
-  return args.filter(Boolean).join(' ');
-}
 
 /* ── Icon components (outlined inactive / filled active) ──────── */
 

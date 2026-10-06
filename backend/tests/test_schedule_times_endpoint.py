@@ -76,3 +76,28 @@ class ScheduleEventKeyTests(ScheduleTimesEndpointTests):
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(resp.json()["count"], 0)
         self.assertFalse(resp.json()["published"])
+
+
+class SchedulePaginationTests(ScheduleTimesEndpointTests):
+    def test_a_page_has_the_right_matches_and_their_teams(self):
+        with self.SessionLocal() as db:
+            for number in range(2, 6):
+                db.add(models.Match(
+                    match_key=f"{EVENT}_qm{number}", event_key=EVENT, comp_level="qm",
+                    set_number=1, match_number=number, time=1_700_000_000 + number,
+                ))
+                team_key = f"frc{number}"
+                db.add(models.Team(team_key=team_key, team_number=number, nickname=f"Team {number}"))
+                db.add(models.MatchTeam(
+                    match_key=f"{EVENT}_qm{number}", team_key=team_key, event_key=EVENT, alliance="red", station="r1",
+                ))
+            db.commit()
+        resp = self.client.get(
+            f"/matches/event/{EVENT}/schedule",
+            params={"includeLiveResults": "false", "limit": 2, "offset": 2},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertEqual(body["total_count"], 5)
+        self.assertEqual([row["match_key"] for row in body["matches"]], [f"{EVENT}_qm3", f"{EVENT}_qm4"])
+        self.assertEqual([row["red"][0]["team_key"] for row in body["matches"]], ["frc3", "frc4"])

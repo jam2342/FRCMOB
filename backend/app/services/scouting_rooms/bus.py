@@ -32,9 +32,6 @@ class ScoutingRoomRedisBus:
         self._instance_id = f"{os.getpid()}-{secrets.token_hex(4)}"
         self._warned_unavailable = False
 
-    @property
-    def instance_id(self) -> str:
-        return self._instance_id
 
     async def start(self, *, on_message: RoomBusHandler) -> None:
         if self._started:

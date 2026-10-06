@@ -104,7 +104,6 @@ class ModelSelectionTests(DBTestCase):
 @pytest.mark.parametrize("train, model_key, extra", [
     (shadow.train_team_strength_shadow_model, "team_strength", {}),
     (shadow.train_match_outcome_shadow_model, "match_outcome", {}),
-    (shadow.train_auto_scout_field_shadow_model, "auto_scout_field:offense_level_1_5", {"field_name": "offense_level_1_5"}),
     (shadow.train_synergy_pair_shadow_model, "synergy_pair", {}),
     (shadow.train_role_signal_shadow_model, "role_signal:defender", {"signal_name": "defender"}),
 ])

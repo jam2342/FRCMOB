@@ -6,7 +6,7 @@ from unittest.mock import patch
 from app.api import routes_events, routes_tracks
 from app.db import models
 from app.services.events.ingest import upsert_score_breakdown_truth
-from app.services.events.fuel_win_probability import fuel_margins_by_match
+from app.services.events.fuel_win_probability import fuel_margin_details
 from app.services.ml.synergy import SYNERGY_MODEL_VERSION
 from app.services.auto_scout.scouting import generate_auto_scout_draft, summarize_team_auto_scout_profile
 from app.services.auto_scout.shift_play import analyze_run_shift_play
@@ -55,7 +55,8 @@ class QAPipelineRegressionTests(DBTestCase):
 
     def test_zero_fuel_history_still_enables_fuel_prediction(self):
         self._ingest([self._official_match(1, 0, 90)])
-        margins = fuel_margins_by_match(self.db, "2026qa", [("2026qa_qm1", RED, BLUE), ("2026qa_qm3", RED, BLUE)], event_start=10000)
+        details = fuel_margin_details(self.db, "2026qa", [("2026qa_qm1", RED, BLUE), ("2026qa_qm3", RED, BLUE)], event_start=10000)
+        margins = {key: margin for key, (margin, _seen) in details.items()}
         self.assertIn("2026qa_qm3", margins)
         self.assertLess(margins["2026qa_qm3"], 0.0)
 

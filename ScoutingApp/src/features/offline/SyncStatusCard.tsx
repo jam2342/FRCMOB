@@ -1,3 +1,4 @@
+import { coalesceRefresh } from '../onDevice/sessionChanges';
 import { exportTextFile } from '../../platform/exportFile';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
@@ -17,6 +18,7 @@ export function SyncStatusCard() {
   const [workspaceId, setWorkspaceId] = useState(() => getWorkspaceSession()?.workspace.id ?? null);
   const [readError, setReadError] = useState('');
   const refreshSequence = useRef(0);
+  const flushRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const [lastSync, setLastSync] = useState(lastConfirmedSync);
   const [issue, setIssue] = useState(lastSyncIssue);
   const [failedChanges, setFailedChanges] = useState(0);
@@ -46,17 +48,21 @@ export function SyncStatusCard() {
   const invalidateRefresh = useCallback(() => { refreshSequence.current++; }, []);
 
   useEffect(() => {
-    void refresh();
-    const unsubscribeWorkspace = subscribeWorkspaceSession(() => { void refresh(); });
-    window.addEventListener('offlinequeue:change', refresh);
-    window.addEventListener('frcmob:session-change', refresh);
-    window.addEventListener('frcmob:sync-receipt', refresh);
+    const { schedule: changed, cancel, flush: refreshNow } = coalesceRefresh(refresh);
+    flushRefreshRef.current = refreshNow;
+    void refreshNow();
+    const unsubscribeWorkspace = subscribeWorkspaceSession(changed);
+    window.addEventListener('offlinequeue:change', changed);
+    window.addEventListener('frcmob:session-change', changed);
+    window.addEventListener('frcmob:sync-receipt', changed);
     return () => {
+      cancel();
+      flushRefreshRef.current = null;
       invalidateRefresh();
       unsubscribeWorkspace();
-      window.removeEventListener('offlinequeue:change', refresh);
-      window.removeEventListener('frcmob:session-change', refresh);
-      window.removeEventListener('frcmob:sync-receipt', refresh);
+      window.removeEventListener('offlinequeue:change', changed);
+      window.removeEventListener('frcmob:session-change', changed);
+      window.removeEventListener('frcmob:sync-receipt', changed);
     };
   }, [refresh, invalidateRefresh]);
 
@@ -67,7 +73,7 @@ export function SyncStatusCard() {
       const [, result] = await Promise.all([flush(), flushPendingOnDeviceSessions({ retryRejected: true })]);
       if (result.failed > 0) setError(`${result.failed} recording${result.failed === 1 ? '' : 's'} could not sync. They are still saved on this phone. Check their status below.`);
     } catch (err) { setError(err instanceof Error ? err.message : 'Sync failed. Try again when connected.'); }
-    finally { await refresh(); setBusy(false); }
+    finally { await (flushRefreshRef.current?.() ?? refresh()); setBusy(false); }
   };
 
   const downloadRecovery = async () => {

@@ -162,7 +162,6 @@ def build_details_json(
     gate_config: dict[str, Any],
     raw_findings_count: int,
     excluded_findings_count: int,
-    elite_dimensions: dict[str, Any],
     role_classification: dict[str, Any],
     now: Any,
 ) -> dict[str, Any]:
@@ -401,7 +400,6 @@ def build_details_json(
             "signal_trend_matches": SIGNAL_TREND_MATCHES,
             "signal_trend_coverage": SIGNAL_TREND_COVERAGE,
         },
-        "elite_dimensions": elite_dimensions,
         "role_classification": role_classification,
         "match_count": findings_count,
         "quality_gate": {
@@ -412,6 +410,25 @@ def build_details_json(
         },
         "computed_at": now.isoformat(),
     }
+
+def rating_subscores(row: Any) -> dict[str, Any]:
+    # Column subscores plus the ones kept in details_json, as every rating API shows them.
+    stored = (row.details_json or {}).get("subscores") or {}
+    return {
+        "results_anchor": row.results_anchor,
+        "throughput": row.throughput,
+        "shift_productivity": row.shift_productivity,
+        "capacity_utilization": row.capacity_utilization,
+        "endgame": row.endgame,
+        "auto_contribution": stored.get("auto_contribution"),
+        "anti_defense": stored.get("anti_defense"),
+        "manual_points_impact": stored.get("manual_points_impact"),
+        "rp_contribution": stored.get("rp_contribution"),
+        "defense_presence": stored.get("defense_presence"),
+        "consistency": row.consistency,
+        "penalty_discipline": stored.get("penalty_discipline"),
+    }
+
 
 def build_response_payload(
     persisted_rows: list[Any],
@@ -430,32 +447,7 @@ def build_response_payload(
                 "confidence_0_1": row.confidence_0_1,
                 "robot_level_0_100": row.robot_level_0_100,
                 "driver_skill_0_100": row.driver_skill_0_100,
-                "subscores": {
-                    "results_anchor": row.results_anchor,
-                    "throughput": row.throughput,
-                    "shift_productivity": row.shift_productivity,
-                    "capacity_utilization": row.capacity_utilization,
-                    "endgame": row.endgame,
-                    "auto_contribution": ((row.details_json or {}).get("subscores") or {}).get(
-                        "auto_contribution"
-                    ),
-                    "anti_defense": ((row.details_json or {}).get("subscores") or {}).get(
-                        "anti_defense"
-                    ),
-                    "manual_points_impact": ((row.details_json or {}).get("subscores") or {}).get(
-                        "manual_points_impact"
-                    ),
-                    "rp_contribution": ((row.details_json or {}).get("subscores") or {}).get(
-                        "rp_contribution"
-                    ),
-                    "defense_presence": ((row.details_json or {}).get("subscores") or {}).get(
-                        "defense_presence"
-                    ),
-                    "consistency": row.consistency,
-                    "penalty_discipline": ((row.details_json or {}).get("subscores") or {}).get(
-                        "penalty_discipline"
-                    ),
-                },
+                "subscores": rating_subscores(row),
                 "pros": row.pros_json or [],
                 "cons": row.cons_json or [],
                 "evidence": row.evidence_json or [],

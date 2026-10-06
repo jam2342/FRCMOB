@@ -3,12 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
-from app.services.ratings import model as rating_model
+from app.services.ratings import game_context, helpers
 
 
 class RatingModelGameContextTests(unittest.TestCase):
     def test_rebuilt_active_hub_duration_formula_matches_manual_schedule(self):
-        duration = rating_model._rebuilt_active_hub_duration_sec(
+        duration = game_context._rebuilt_active_hub_duration_sec(
             auto_sec=20.0,
             teleop_sec=140.0,
             endgame_sec=30.0,
@@ -17,7 +17,7 @@ class RatingModelGameContextTests(unittest.TestCase):
         self.assertAlmostEqual(float(duration), 99.0, places=3)
 
     def test_manual_context_exposes_active_hub_duration(self):
-        context = rating_model._manual_game_context()
+        context = game_context._manual_game_context()
         phases = context.get("phases") if isinstance(context.get("phases"), dict) else {}
         self.assertIn("teleop_active_hub_sec", phases)
         if int(context.get("season_year") or 0) >= 2026:
@@ -45,10 +45,10 @@ class RatingModelGameContextTests(unittest.TestCase):
             meta={"hub_active_window": True},
         )
 
-        self.assertTrue(rating_model._is_active_hub_attempt_event(active_event))
-        self.assertFalse(rating_model._is_active_hub_attempt_event(inactive_event))
-        self.assertTrue(rating_model._is_active_hub_attempt_event(legacy_event))
-        self.assertFalse(rating_model._is_active_hub_attempt_event(other_event))
+        self.assertTrue(helpers._is_active_hub_attempt_event(active_event))
+        self.assertFalse(helpers._is_active_hub_attempt_event(inactive_event))
+        self.assertTrue(helpers._is_active_hub_attempt_event(legacy_event))
+        self.assertFalse(helpers._is_active_hub_attempt_event(other_event))
 
 
 if __name__ == "__main__":

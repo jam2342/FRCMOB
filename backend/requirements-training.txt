@@ -5,3 +5,6 @@ ultralytics>=8.2.0,<9.0.0
 lap>=0.5.13
 # Label review and audit tools (scripts/audit_labels.py).
 pillow>=10
+# tests/on_device_cv_reference.py (the Python twin of the in-browser optical-flow
+# stabiliser) and scripts/on_device_benchmark_detections.py.
+opencv-python-headless>=5.0.0.93,<6.0

@@ -17,12 +17,6 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import models
 from app.services.utils import BACKEND_ROOT
-from app.services.auto_scout.ml import (
-    AUTO_SCOUT_FIELD_FEATURE_ORDER,
-    AUTO_SCOUT_FIELD_MODEL_PREFIX,
-    auto_scout_field_model_key,
-)
-from app.services.auto_scout.training import auto_scout_training_source_version
 from app.services.ml.role_ml import (
     ROLE_SIGNAL_FEATURE_ORDER,
     ROLE_SIGNAL_MODEL_PREFIX,
@@ -49,12 +43,10 @@ from app.services.ml.model_eval import (
     time_split,
 )
 
-try:
-    import torch
-    from torch import nn
-except Exception:  # pragma: no cover - exercised when torch isn't available
-    torch = None
-    nn = None
+# PyTorch loads on first use (see _torch_available): with ML off, importing it at
+# startup cost every worker a few seconds and a few hundred MB for nothing.
+torch: Any = None
+nn: Any = None
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +56,6 @@ TEAM_STRENGTH_MODEL_KEY = "team_strength"
 MATCH_OUTCOME_MODEL_KEY = "match_outcome"
 FEATURE_SCOPE_TEAM_STRENGTH = "team_strength"
 FEATURE_SCOPE_MATCH_OUTCOME = "match_outcome"
-FEATURE_SCOPE_AUTO_SCOUT_FIELD_PREFIX = AUTO_SCOUT_FIELD_MODEL_PREFIX
 
 TEAM_STRENGTH_FEATURE_ORDER = [
     "rating_0_100",
@@ -123,7 +114,15 @@ MATCH_OUTCOME_FEATURE_ORDER = [
 
 
 def _torch_available() -> bool:
-    return torch is not None and nn is not None
+    global torch, nn
+    if torch is None or nn is None:
+        try:
+            import torch as _torch
+            from torch import nn as _nn
+        except Exception:  # pragma: no cover - exercised when torch isn't available
+            return False
+        torch, nn = _torch, _nn
+    return True
 
 
 def _require_torch() -> None:
@@ -868,56 +867,57 @@ def _prepare_dataset(
     )
 
 
-if nn is not None:
-    class _ShadowNet(nn.Module):  # type: ignore[misc]
-        def __init__(
-            self,
-            input_dim: int,
-            hidden_dim: int = 64,
-            dropout: float = 0.15,
-            use_batch_norm: bool = True,
-        ):
-            super().__init__()
-            layers: list[nn.Module] = []
+_SHADOW_NET_CLASS: Any = None
 
-            # Layer 1
-            layers.append(nn.Linear(input_dim, hidden_dim))
-            if use_batch_norm:
-                layers.append(nn.BatchNorm1d(hidden_dim))
-            layers.append(nn.ReLU())
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
 
-            # Layer 2
-            layers.append(nn.Linear(hidden_dim, hidden_dim))
-            if use_batch_norm:
-                layers.append(nn.BatchNorm1d(hidden_dim))
-            layers.append(nn.ReLU())
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
+def _ShadowNet(**kwargs: Any) -> Any:
+    # The network class needs torch.nn, which now loads on first use, so the class
+    # is built then rather than at import.
+    global _SHADOW_NET_CLASS
+    _require_torch()
+    if _SHADOW_NET_CLASS is None:
+        class _Net(nn.Module):  # type: ignore[misc]
+            def __init__(
+                self,
+                input_dim: int,
+                hidden_dim: int = 64,
+                dropout: float = 0.15,
+                use_batch_norm: bool = True,
+            ):
+                super().__init__()
+                layers: list[nn.Module] = []
 
-            # Layer 3 (narrowing)
-            narrow_dim = max(8, hidden_dim // 2)
-            layers.append(nn.Linear(hidden_dim, narrow_dim))
-            layers.append(nn.ReLU())
+                # Layer 1
+                layers.append(nn.Linear(input_dim, hidden_dim))
+                if use_batch_norm:
+                    layers.append(nn.BatchNorm1d(hidden_dim))
+                layers.append(nn.ReLU())
+                if dropout > 0.0:
+                    layers.append(nn.Dropout(dropout))
 
-            # Output
-            layers.append(nn.Linear(narrow_dim, 1))
+                # Layer 2
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                if use_batch_norm:
+                    layers.append(nn.BatchNorm1d(hidden_dim))
+                layers.append(nn.ReLU())
+                if dropout > 0.0:
+                    layers.append(nn.Dropout(dropout))
 
-            self.layers = nn.Sequential(*layers)
+                # Layer 3 (narrowing)
+                narrow_dim = max(8, hidden_dim // 2)
+                layers.append(nn.Linear(hidden_dim, narrow_dim))
+                layers.append(nn.ReLU())
 
-        def forward(self, x: "torch.Tensor") -> "torch.Tensor":
-            return self.layers(x)
-else:  # pragma: no cover - only active when torch is missing
-    class _ShadowNet:  # type: ignore[no-redef]
-        def __init__(
-            self,
-            input_dim: int,
-            hidden_dim: int = 64,
-            dropout: float = 0.15,
-            use_batch_norm: bool = True,
-        ):
-            _require_torch()
+                # Output
+                layers.append(nn.Linear(narrow_dim, 1))
+
+                self.layers = nn.Sequential(*layers)
+
+            def forward(self, x: "torch.Tensor") -> "torch.Tensor":
+                return self.layers(x)
+
+        _SHADOW_NET_CLASS = _Net
+    return _SHADOW_NET_CLASS(**kwargs)
 
 
 _EARLY_STOPPING_PATIENCE = 30
@@ -1355,127 +1355,6 @@ def train_match_outcome_shadow_model(
     return {
         "ok": True,
         "model_key": MATCH_OUTCOME_MODEL_KEY,
-        "model_version": record.model_version,
-        "artifact_path": record.artifact_path,
-        "is_active": bool(record.is_active),
-        "train_count": dataset.train_count,
-        "val_count": dataset.val_count,
-        "metrics": record.metrics,
-    }
-
-
-def _normalize_auto_scout_field_name(field_name: object) -> str:
-    return str(field_name or "").strip().lower()
-
-
-def _auto_scout_field_scope(field_name: object) -> str:
-    normalized = _normalize_auto_scout_field_name(field_name)
-    return f"{FEATURE_SCOPE_AUTO_SCOUT_FIELD_PREFIX}:{normalized}"
-
-
-def train_auto_scout_field_shadow_model(
-    db: Session,
-    *,
-    field_name: str,
-    model_version: str | None = None,
-    source_version: str | None = None,
-    activate: bool = False,
-    train_ratio: float = 0.8,
-    epochs: int = 260,
-    learning_rate: float = 0.003,
-) -> dict[str, Any]:
-    _require_torch()
-    normalized_field = _normalize_auto_scout_field_name(field_name)
-    if not normalized_field:
-        raise RuntimeError("field_name is required for auto_scout_field training")
-
-    model_key = auto_scout_field_model_key(normalized_field)
-    scope = _auto_scout_field_scope(normalized_field)
-    resolved_source_version = (
-        str(source_version or auto_scout_training_source_version()).strip()
-        or auto_scout_training_source_version()
-    )
-    resolved_version = str(model_version or _default_model_version(model_key)).strip()
-
-    snapshots = (
-        db.query(models.MLFeatureSnapshot)
-        .filter(
-            models.MLFeatureSnapshot.scope == scope,
-            models.MLFeatureSnapshot.source_version == resolved_source_version,
-        )
-        .all()
-    )
-
-    dataset = _prepare_dataset(
-        snapshots,
-        feature_order=AUTO_SCOUT_FIELD_FEATURE_ORDER,
-        target_key="field_value",
-        train_ratio=train_ratio,
-    )
-
-    model, metrics = _train_regression_model(
-        dataset,
-        epochs=epochs,
-        learning_rate=learning_rate,
-    )
-    all_targets = dataset.train_y.detach().cpu().tolist() + dataset.val_y.detach().cpu().tolist()
-    target_min = min(float(value) for value in all_targets) if all_targets else 0.0
-    target_max = max(float(value) for value in all_targets) if all_targets else 0.0
-    target_mean = (sum(float(value) for value in all_targets) / float(len(all_targets))) if all_targets else 0.0
-    artifact_path = _save_model_artifact(
-        model=model,
-        model_key=model_key,
-        model_version=resolved_version,
-        feature_order=AUTO_SCOUT_FIELD_FEATURE_ORDER,
-        dataset=dataset,
-        task="regression",
-        train_metrics=metrics,
-        params={
-            "train_ratio": float(train_ratio),
-            "source_version": resolved_source_version,
-            "field_name": normalized_field,
-            "target_min": target_min,
-            "target_max": target_max,
-            "target_mean": target_mean,
-            "epochs": int(epochs),
-            "learning_rate": float(learning_rate),
-        },
-    )
-
-    record = _register_model_version(
-        db,
-        model_key=model_key,
-        model_version=resolved_version,
-        artifact_path=artifact_path,
-        input_schema={
-            "feature_order": AUTO_SCOUT_FIELD_FEATURE_ORDER,
-            "field_name": normalized_field,
-        },
-        metrics={
-            **metrics,
-            "train_count": dataset.train_count,
-            "val_count": dataset.val_count,
-            "target_min": target_min,
-            "target_max": target_max,
-            "target_mean": target_mean,
-        },
-        params={
-            "train_ratio": float(train_ratio),
-            "source_version": resolved_source_version,
-            "field_name": normalized_field,
-            "target_min": target_min,
-            "target_max": target_max,
-            "target_mean": target_mean,
-            "epochs": int(epochs),
-            "learning_rate": float(learning_rate),
-        },
-        activate=activate,
-    )
-
-    return {
-        "ok": True,
-        "model_key": model_key,
-        "field_name": normalized_field,
         "model_version": record.model_version,
         "artifact_path": record.artifact_path,
         "is_active": bool(record.is_active),
@@ -2119,112 +1998,6 @@ def _confidence_from_regression_metrics(
     throughput_coverage = max(0.0, min(1.0, float(_safe_float(feature_vector.get("throughput_coverage_0_1")) or 0.0)))
     row_quality = (0.55 * track_coverage) + (0.45 * throughput_coverage)
     return max(0.0, min(1.0, (0.62 * model_quality) + (0.38 * row_quality)))
-
-
-def infer_auto_scout_field_shadow_from_rows(
-    db: Session,
-    *,
-    field_name: str,
-    rows: list[dict[str, Any]],
-    model_version: str | None = None,
-) -> dict[str, Any]:
-    normalized_field = _normalize_auto_scout_field_name(field_name)
-    if not normalized_field:
-        return {
-            "ok": False,
-            "model_key": None,
-            "field_name": "",
-            "model_version": None,
-            "reason": "invalid_field_name",
-            "prediction_count": 0,
-            "predictions": [],
-        }
-
-    normalized_rows: list[dict[str, Any]] = [row for row in rows if isinstance(row, dict)]
-    if not normalized_rows:
-        return {
-            "ok": True,
-            "model_key": auto_scout_field_model_key(normalized_field),
-            "field_name": normalized_field,
-            "model_version": None,
-            "prediction_count": 0,
-            "predictions": [],
-        }
-
-    model_key = auto_scout_field_model_key(normalized_field)
-    record = _load_model_registry_row(
-        db,
-        model_key=model_key,
-        model_version=model_version,
-    )
-    if record is None:
-        return {
-            "ok": False,
-            "model_key": model_key,
-            "field_name": normalized_field,
-            "model_version": None,
-            "reason": "model_not_found",
-            "prediction_count": 0,
-            "predictions": [],
-        }
-
-    try:
-        runtime = _load_model_runtime_cached(record)
-    except Exception as exc:
-        return {
-            "ok": False,
-            "model_key": model_key,
-            "field_name": normalized_field,
-            "model_version": record.model_version,
-            "reason": "runtime_unavailable",
-            "detail": str(exc),
-            "prediction_count": 0,
-            "predictions": [],
-        }
-
-    feature_vectors: list[dict[str, Any]] = []
-    for row in normalized_rows:
-        raw_feature_vector = row.get("feature_vector")
-        feature_vector = raw_feature_vector if isinstance(raw_feature_vector, dict) else row
-        feature_vectors.append(
-            {
-                name: float(_safe_float(feature_vector.get(name)) or 0.0)
-                for name in AUTO_SCOUT_FIELD_FEATURE_ORDER
-            }
-        )
-
-    feature_rows = [_FeatureVectorRow(feature_vector=vector) for vector in feature_vectors]
-    predictions = _predict_batch(runtime=runtime, rows=feature_rows)
-    metrics = record.metrics if isinstance(record.metrics, dict) else {}
-    params = record.params if isinstance(record.params, dict) else {}
-
-    output_rows: list[dict[str, Any]] = []
-    for source_row, feature_vector, value in zip(normalized_rows, feature_vectors, predictions):
-        numeric_prediction = _safe_float(value)
-        confidence = _confidence_from_regression_metrics(
-            metrics=metrics,
-            params=params,
-            feature_vector=feature_vector,
-        )
-        output_rows.append(
-            {
-                "event_key": str(source_row.get("event_key") or "").strip().lower() or None,
-                "match_key": str(source_row.get("match_key") or "").strip().lower() or None,
-                "team_key": str(source_row.get("team_key") or "").strip().lower() or None,
-                "field_name": normalized_field,
-                "field_value_pred": float(numeric_prediction) if numeric_prediction is not None else None,
-                "confidence_0_1": float(confidence),
-            }
-        )
-
-    return {
-        "ok": True,
-        "model_key": model_key,
-        "field_name": normalized_field,
-        "model_version": record.model_version,
-        "prediction_count": len(output_rows),
-        "predictions": output_rows,
-    }
 
 
 def materialize_shadow_predictions_for_event(

@@ -160,8 +160,6 @@ class Settings(BaseSettings):
     push_subscription_max_failures: int = 8
     fuel_scoring_rate_max_per_min: float = 16.0
     events_ingest_run_post_compute: bool = True
-    events_ingest_backfill_match_videos: bool = True
-    events_ingest_backfill_match_videos_max_calls: int = 24
     automation_regional_enabled: bool = True
     automation_regional_interval_minutes: int = 45
     automation_regional_max_events: int = 300
@@ -230,11 +228,6 @@ class Settings(BaseSettings):
     climb_official_backfill_enabled: bool = True
     climb_official_backfill_interval_minutes: int = 180
     climb_official_backfill_max_events_per_run: int = 6
-    climb_integrity_audit_enabled: bool = True
-    climb_integrity_audit_interval_minutes: int = 360
-    climb_integrity_audit_lookback_days: int = 14
-    climb_integrity_audit_sample_limit: int = 30000
-    climb_integrity_audit_diff_threshold: float = 0.45
     ops_metrics_sample_days: int = 14
     ops_smoke_check_enabled: bool = True
     ops_smoke_check_interval_minutes: int = 30
@@ -269,11 +262,6 @@ class Settings(BaseSettings):
     ml_shadow_auto_train_activate: bool = False
     ml_shadow_auto_train_recompute_ratings: bool = True
     ml_shadow_auto_train_current_season_only: bool = True
-    ml_auto_scout_feature_source_version: str = "auto_scout_field_features_v1"
-    ml_auto_scout_training_export_enabled: bool = True
-    ml_auto_scout_training_export_interval_hours: int = 24
-    ml_auto_scout_training_export_replace_existing: bool = False
-    ml_auto_scout_training_export_max_drafts: int = 4000
     # Scheduler-backed catch-up for matches analyzed before the hook shipped or when the hook fails.
     auto_scout_backfill_enabled: bool = True
     auto_scout_backfill_interval_minutes: int = 30

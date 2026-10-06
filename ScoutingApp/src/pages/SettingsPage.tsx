@@ -654,27 +654,6 @@ export function SettingsPage() {
                   unit={typeof opsDashboard.media_usage.disk_free_gb === 'number' ? 'GB' : undefined}
                 />
                 <Stat
-                  label="Climb Audit"
-                  value={
-                    opsDashboard.climb_integrity.last_result?.severity
-                      ? String(opsDashboard.climb_integrity.last_result.severity).toUpperCase()
-                      : 'N/A'
-                  }
-                />
-                <Stat
-                  label="Climb Mismatch"
-                  value={
-                    typeof opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate === 'number'
-                      ? Math.round((opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate || 0) * 100)
-                      : 'N/A'
-                  }
-                  unit={
-                    typeof opsDashboard.climb_integrity.last_result?.totals?.mismatch_rate === 'number'
-                      ? '%'
-                      : undefined
-                  }
-                />
-                <Stat
                   label="Climb Signal Coverage"
                   value={
                     typeof opsDashboard.climb_signal_coverage?.summary?.coverage_any_pct === 'number'

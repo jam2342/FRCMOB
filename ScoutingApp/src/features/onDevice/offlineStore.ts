@@ -4,6 +4,7 @@
 // so it unit-tests under fake-indexeddb.
 
 import { classifyRecordingSyncFailure, type RecordingSyncFailure } from './recordingSyncStatus';
+import { beginSessionChangeBatch, notifySessionChange } from './sessionChanges';
 import type { TrackPoint } from './trackProduction';
 import type { OnDeviceSessionSyncResponse } from '../../api';
 
@@ -109,7 +110,7 @@ export async function getCalibration(db: IDBDatabase, id: string): Promise<Store
 
 export async function saveSession(db: IDBDatabase, session: StoredSession): Promise<void> {
   await withStore(db, SESSIONS, 'readwrite', (s) => req(s.put(session)));
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('frcmob:session-change'));
+  notifySessionChange();
 }
 
 export async function listSessions(db: IDBDatabase): Promise<StoredSession[]> {
@@ -141,20 +142,23 @@ export async function syncPendingSessions(
   shouldSync: (session: StoredSession) => boolean = () => true,
   shouldContinue: () => boolean = () => true,
 ): Promise<{ synced: number; failed: number }> {
-  let synced = 0;
-  let failed = 0;
-  for (const session of (await listPendingSessions(db)).filter(shouldSync)) {
-    if (!shouldContinue()) break;
-    let syncResult: OnDeviceSessionSyncResponse | void;
-    try {
-      syncResult = await post(session);
-    } catch (error) {
-      await markSessionSyncFailed(db, session.id, error);
-      failed += 1;
-      continue;
+  const finishBatch = beginSessionChangeBatch();
+  try {
+    let synced = 0;
+    let failed = 0;
+    for (const session of (await listPendingSessions(db)).filter(shouldSync)) {
+      if (!shouldContinue()) break;
+      let syncResult: OnDeviceSessionSyncResponse | void;
+      try {
+        syncResult = await post(session);
+      } catch (error) {
+        await markSessionSyncFailed(db, session.id, error);
+        failed += 1;
+        continue;
+      }
+      await markSessionSynced(db, session.id, syncResult || undefined);
+      synced += 1;
     }
-    await markSessionSynced(db, session.id, syncResult || undefined);
-    synced += 1;
-  }
-  return { synced, failed };
+    return { synced, failed };
+  } finally { finishBatch(); }
 }

@@ -139,15 +139,6 @@ def list_pit_entries(
         "entries": [_serialize_entry(row) for row in rows],
     }
 
-@router.get("/{event_key}/{team_key}")
-def get_pit_entry(event_key: str, team_key: str, request: Request, db: Session = Depends(get_db)):
-    actor = require_workspace_actor(request, db)
-    normalized_event = _normalize_event_key(event_key)
-    normalized_team = _normalize_team_key(team_key)
-    row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
-    if row is None:
-        return {"ok": True, "entry": None}
-    return {"ok": True, "entry": _serialize_entry(row)}
 
 @router.post("")
 def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Session = Depends(get_db)):

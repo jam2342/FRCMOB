@@ -1,3 +1,4 @@
+import { cx } from '../ui/primitives/cx';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { TutorialScope } from '../../layout/userSettings';
 import {
@@ -26,9 +27,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function cx(...parts: (string | false | null | undefined)[]): string {
-  return parts.filter(Boolean).join(' ');
-}
 
 function resolveSelector(step: TutorialWalkthroughStep, isMobile: boolean): string | undefined {
   if (isMobile) return step.mobileSelector || step.selector;

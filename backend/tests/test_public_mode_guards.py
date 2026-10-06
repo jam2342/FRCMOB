@@ -2,7 +2,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app.api.routes_automation import _ensure_automation_write_enabled, refresh_event_data
+from app.api.routes_automation import _ensure_automation_write_enabled, automate_regional_post_event_breakdowns_tick
 from app.core.config import settings
 
 
@@ -24,10 +24,10 @@ class PublicModeGuardTests(unittest.TestCase):
         settings.public_readonly_mode = False
         _ensure_automation_write_enabled()
 
-    def test_event_refresh_route_blocks_before_db_access(self):
+    def test_tick_route_blocks_before_db_access(self):
         settings.public_readonly_mode = True
         with self.assertRaises(HTTPException) as context:
-            refresh_event_data("2026test", db=None)  # type: ignore[arg-type]
+            automate_regional_post_event_breakdowns_tick(2026, db=None)  # type: ignore[arg-type]
         self.assertEqual(context.exception.status_code, 403)
 
 

@@ -95,13 +95,6 @@ class Zone(BaseModel):
     description: str | None = None
 
 
-class EventLabel(BaseModel):
-    key: str
-    phase: Literal["auto", "teleop", "endgame", "any"]
-    description: str
-    metric_bucket: Literal["scoring", "cycle", "defense", "reliability", "penalty", "custom"]
-
-
 class ScoringAction(BaseModel):
     key: str
     label: str
@@ -113,21 +106,6 @@ class ScoringAction(BaseModel):
 class RankingPointCondition(BaseModel):
     key: str
     label: str
-    description: str
-
-
-class PenaltyRule(BaseModel):
-    key: str
-    label: str
-    severity: Literal["foul", "tech_foul", "yellow_card", "red_card", "other"]
-    description: str
-
-
-class CoreMetric(BaseModel):
-    key: str
-    label: str
-    phase: Literal["auto", "teleop", "endgame", "any"]
-    category: Literal["scoring", "cycle", "defense", "reliability", "mobility", "custom"]
     description: str
 
 
@@ -180,11 +158,8 @@ class GameConfig(BaseModel):
     phases: MatchPhases
     shift_schedule: ShiftSchedule | None = None
     zones: list[Zone]
-    event_labels: list[EventLabel]
     scoring_actions: list[ScoringAction]
     ranking_point_conditions: list[RankingPointCondition]
-    penalty_rules: list[PenaltyRule]
-    core_metrics: list[CoreMetric]
     field_layout: FieldLayout | None = None
 
     @model_validator(mode="after")
@@ -194,11 +169,8 @@ class GameConfig(BaseModel):
                 raise ValueError(f"Duplicate keys in {label}")
 
         unique([zone.key for zone in self.zones], "zones")
-        unique([event.key for event in self.event_labels], "event_labels")
         unique([score.key for score in self.scoring_actions], "scoring_actions")
         unique([rp.key for rp in self.ranking_point_conditions], "ranking_point_conditions")
-        unique([penalty.key for penalty in self.penalty_rules], "penalty_rules")
-        unique([metric.key for metric in self.core_metrics], "core_metrics")
 
         if self.shift_schedule is not None:
             zone_keys = {zone.key for zone in self.zones}

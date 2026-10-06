@@ -14,7 +14,7 @@ import type {
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { Table, type TableColumn } from '../components/ui/primitives';
@@ -75,7 +75,6 @@ export function ExportPage() {
 
 function ExportPageContent() {
   const workspace = useWorkspace();
-  const isMobile = useMobileLayout();
 
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
 
@@ -135,12 +134,12 @@ function ExportPageContent() {
   }, []);
 
   useEffect(() => {
-    if (isMobile || !eventKey) return;
+    if (!eventKey) return;
     const timer = window.setTimeout(() => {
       void fetchData(eventKey);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [eventKey, fetchData, fetchTrigger, isMobile]);
+  }, [eventKey, fetchData, fetchTrigger]);
 
   /* ---- Export functions ---- */
 
@@ -358,14 +357,13 @@ function ExportPageContent() {
     }
   }
 
-  const surfaceGroupId = 'data-export';
   const hasAnyData = (ratings?.length ?? 0) > 0 || (schedule?.length ?? 0) > 0 || (rankings?.length ?? 0) > 0;
 
   return (
     <>
     <PageViewBar items={EVENTS_VIEWS} />
     <div className="center-page-container narrow">
-      <SurfaceCardGroup groupId={surfaceGroupId}>
+
         {/* ---- Event Selection ---- */}
         <SurfaceCard
           title="Data Export"
@@ -465,7 +463,7 @@ function ExportPageContent() {
             />
           </SurfaceCard>
         ) : null}
-      </SurfaceCardGroup>
+
     </div>
     </>
   );

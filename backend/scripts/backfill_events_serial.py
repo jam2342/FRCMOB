@@ -15,18 +15,15 @@ import signal
 
 
 def missing_records(matches: list[dict], stored_matches: set[str],
-                    stored_teams: set[tuple], stored_videos: set[tuple]) -> dict[str, int]:
-    missing_matches = missing_teams = missing_videos = 0
+                    stored_teams: set[tuple]) -> dict[str, int]:
+    missing_matches = missing_teams = 0
     for match in matches:
         key = match["key"]
         missing_matches += key not in stored_matches
         for alliance, roster in match.get("alliances", {}).items():
             for team in roster.get("team_keys", []):
                 missing_teams += (key, team, alliance) not in stored_teams
-        for video in match.get("videos", []):
-            if video.get("type") and video.get("key"):
-                missing_videos += (key, video["type"], video["key"]) not in stored_videos
-    return {"matches": missing_matches, "team_links": missing_teams, "videos": missing_videos}
+    return {"matches": missing_matches, "team_links": missing_teams}
 
 
 def main():
@@ -72,10 +69,7 @@ def main():
                 def check():
                     return missing_records(matches,
                         {row[0] for row in db.query(models.Match.match_key).filter_by(event_key=event_key)},
-                        set(db.query(models.MatchTeam.match_key, models.MatchTeam.team_key, models.MatchTeam.alliance).filter_by(event_key=event_key)),
-                        set(db.query(models.MatchVideo.match_key, models.MatchVideo.video_type, models.MatchVideo.video_key)
-                            .join(models.Match, models.Match.match_key == models.MatchVideo.match_key)
-                            .filter(models.Match.event_key == event_key)))
+                        set(db.query(models.MatchTeam.match_key, models.MatchTeam.team_key, models.MatchTeam.alliance).filter_by(event_key=event_key)))
                 before = check()
                 db.rollback()
                 if not any(before.values()):

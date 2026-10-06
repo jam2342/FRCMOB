@@ -19,8 +19,7 @@ export type EndgameMode = 'none' | 'kept_scoring' | 'parked' | 'climb_level_1' |
 export type ScoutingMode = 'match' | 'rapid';
 export type MobileScoutSection = 'capture' | 'score' | 'history';
 export type MobileCapturePanel = 'auto' | 'teleop' | 'endgame' | 'mobility' | 'strategy' | 'notes' | 'auto-paths';
-export type MobileScorePanel = 'driver' | 'points' | 'live' | 'saved';
-export type MobileHistoryPanel = 'team_matches' | 'team_rollups' | 'entries' | 'summaries';
+export type MobileScorePanel = 'points' | 'live';
 
 export type ScoutFormState = {
   auto_mobility: boolean;

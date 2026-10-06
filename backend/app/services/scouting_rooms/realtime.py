@@ -16,6 +16,31 @@ from redis import asyncio as redis_async
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _presence_rows(
+    counts: dict[str, int],
+    first_connected_by_profile: dict[str, datetime],
+    last_connected_by_profile: dict[str, datetime],
+    last_seen_by_profile: dict[str, datetime],
+) -> list[dict[str, Any]]:
+    # Shared by the in-process and Redis presence snapshots.
+    def iso(value: datetime | None) -> str | None:
+        return value.isoformat() if value is not None else None
+
+    return [
+        {
+            "scout_profile": scout_profile,
+            "connections": int(count),
+            "first_connected_at": iso(first_connected_by_profile.get(scout_profile)),
+            "last_connected_at": iso(last_connected_by_profile.get(scout_profile)),
+            "last_seen_at": iso(last_seen_by_profile.get(scout_profile)),
+        }
+        for scout_profile, count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], str(last_seen_by_profile.get(item[0]) or ""), item[0]),
+        )
+    ]
 _REDIS_IO_TIMEOUT_SEC = 1.5
 
 @dataclass
@@ -395,35 +420,7 @@ class ScoutingRoomRealtimeHub:
             last_seen = last_seen_by_profile.get(profile)
             if last_seen is None or meta.seen_at > last_seen:
                 last_seen_by_profile[profile] = meta.seen_at
-        return [
-            {
-                "scout_profile": scout_profile,
-                "connections": int(count),
-                "first_connected_at": (
-                    first_connected_by_profile.get(scout_profile).isoformat()
-                    if first_connected_by_profile.get(scout_profile) is not None
-                    else None
-                ),
-                "last_connected_at": (
-                    last_connected_by_profile.get(scout_profile).isoformat()
-                    if last_connected_by_profile.get(scout_profile) is not None
-                    else None
-                ),
-                "last_seen_at": (
-                    last_seen_by_profile.get(scout_profile).isoformat()
-                    if last_seen_by_profile.get(scout_profile) is not None
-                    else None
-                ),
-            }
-            for scout_profile, count in sorted(
-                counts.items(),
-                key=lambda item: (
-                    -item[1],
-                    str(last_seen_by_profile.get(item[0]) or ""),
-                    item[0],
-                ),
-            )
-        ]
+        return _presence_rows(counts, first_connected_by_profile, last_connected_by_profile, last_seen_by_profile)
 
     def _presence_key(self, room_key: str, connection_id: str) -> str:
         return f"{self._presence_prefix}{room_key}:{connection_id}"
@@ -596,35 +593,7 @@ class ScoutingRoomRealtimeHub:
                         prior_seen = last_seen_by_profile.get(scout_profile)
                         if prior_seen is None or seen_at > prior_seen:
                             last_seen_by_profile[scout_profile] = seen_at
-            return [
-                {
-                    "scout_profile": scout_profile,
-                    "connections": int(count),
-                    "first_connected_at": (
-                        first_connected_by_profile.get(scout_profile).isoformat()
-                        if first_connected_by_profile.get(scout_profile) is not None
-                        else None
-                    ),
-                    "last_connected_at": (
-                        last_connected_by_profile.get(scout_profile).isoformat()
-                        if last_connected_by_profile.get(scout_profile) is not None
-                        else None
-                    ),
-                    "last_seen_at": (
-                        last_seen_by_profile.get(scout_profile).isoformat()
-                        if last_seen_by_profile.get(scout_profile) is not None
-                        else None
-                    ),
-                }
-                for scout_profile, count in sorted(
-                    counts.items(),
-                    key=lambda item: (
-                        -item[1],
-                        str(last_seen_by_profile.get(item[0]) or ""),
-                        item[0],
-                    ),
-                )
-            ], True
+            return _presence_rows(counts, first_connected_by_profile, last_connected_by_profile, last_seen_by_profile), True
         except Exception as exc:
             logger.warning(
                 "Failed to read room presence snapshot for room %s: %s",

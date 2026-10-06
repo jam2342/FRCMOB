@@ -328,10 +328,6 @@
   }
 
   /* Progress track more visible on mobile */
-  .center-progress-track {
-    height: 8px;
-    border-radius: 4px;
-  }
 
   /* Compact callouts on mobile — less vertical space */
   .product-shell .center-callout {
@@ -441,11 +437,6 @@
   font-weight: 600;
 }
 
-.assign-mobile-divider {
-  height: 1px;
-  background: var(--color-surface-muted);
-}
-
 /* Prediction cards (MatchPredictionPage) */
 
 /* Light theme overrides for mobile card layouts */
@@ -462,10 +453,6 @@
 .product-shell.theme-light .assign-mobile-team-row select {
   background: var(--color-surface);
   border-color: var(--color-border);
-}
-
-.product-shell.theme-light .assign-mobile-divider {
-  background: var(--color-surface-muted);
 }
 
 .product-shell.theme-light .assign-mobile-team-row + .assign-mobile-team-row {
@@ -1090,19 +1077,6 @@
   /* ── Compact Actions Row ────────────────────────────────────────────────
      Horizontal button row under score hero.
      ──────────────────────────────────────────────────────────────────────── */
-
-  .fm-actions-row {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .fm-actions-row .center-btn {
-    justify-content: center;
-    font-size: var(--font-size-2xs);
-    padding: 8px 6px;
-    border-radius: 10px;
-  }
 
   /* ── Alliance Card (FotMob style) ──────────────────────────────────────
      Clean card for displaying team lineups on mobile.

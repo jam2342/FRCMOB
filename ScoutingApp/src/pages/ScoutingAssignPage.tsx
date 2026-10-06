@@ -3,7 +3,7 @@ import type { EventScheduleItem, TeamRoomAssignment, TeamRoomAssignmentChange, T
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, Modal, Stat } from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -245,22 +245,23 @@ function ScoutingAssignWorkspacePage() {
   );
 
   if (!eventKey || !snapshot) {
-    return <SurfaceCardGroup groupId="scouting-assignments">{eventCard}</SurfaceCardGroup>;
+    return eventCard;
   }
 
   if (!room.isLeader) {
     return (
-      <SurfaceCardGroup groupId="scouting-assignments">
+      <>
         {eventCard}
         <SurfaceCard title="Your assignments" subtitle="Your team lead hands these out. They update on their own.">
           <NextAssignment eventKey={eventKey} list={mine} />
         </SurfaceCard>
-      </SurfaceCardGroup>
+      </>
     );
   }
 
   return (
-    <SurfaceCardGroup groupId="scouting-assignments">
+
+    <>
       {eventCard}
 
       <SurfaceCard
@@ -448,7 +449,7 @@ function ScoutingAssignWorkspacePage() {
           </>
         )}
       </Modal>
-    </SurfaceCardGroup>
+    </>
   );
 }
 

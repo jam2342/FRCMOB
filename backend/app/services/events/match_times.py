@@ -26,11 +26,6 @@ def match_times_from_payload(payload: dict[str, Any]) -> dict[str, int | None]:
     }
 
 
-def effective_start_time(match: models.Match) -> int | None:
-    # When the match actually starts, or is now expected to.
-    return match.actual_time or match.predicted_time or match.time
-
-
 def refresh_match_times(db: Session, *, event_key: str, tba_matches: Any) -> int:
     # Writes only rows whose predicted/actual time moved. The scheduled time is left
     # alone here; ingest owns it.

@@ -1,27 +1,28 @@
 # Auto Scout Service
 
-This service automatically generates scouting form drafts for teams using a combination of on-device match recordings and ML predictions. The goal is to reduce the manual workload for human scouts — instead of filling out a form from scratch, they review and approve a pre-filled draft.
+This service generates scouting form drafts from operator-accepted phone recordings. The goal is to reduce the manual workload for human scouts — instead of filling out a form from scratch, they review and approve a pre-filled draft.
 
 ## What It Does
 
-Once an operator accepts a phone recording of a match, this service reads its tracks and metrics and translates them into structured scouting form fields. It attaches a confidence score to each field so reviewers know which fields are high-confidence predictions and which ones need closer attention.
+Once an operator accepts a phone recording of a match, this service reads the robot's positions and fills what positions can honestly tell: offense and defense levels (from `shift_play.py`), a possible disabled period and zone dwell. Everything else (scoring, misses, fouls, intake, endgame) stays blank for the scout, because a phone recording carries positions only.
 
-Human scouts can then approve the draft as-is, make selective overrides, or reject it entirely. Approved drafts also feed back into the ML training pipeline.
+Human scouts approve the draft as-is, change fields, or reject it.
+
+The per-field scoring predictors, their ML models and the approved-draft training export were removed on 2026-10-05: phone recordings never carry the findings or match events they needed, so they never ran.
 
 ## Files
 
 **`scouting.py`**
 The main orchestrator. Handles draft generation, approval, and rejection.
 
-- `generate_auto_scout_draft()` — Checks if analysis is complete, builds the feature vector, runs field predictors, and stores the draft with per-field confidence scores. Fields are flagged as either `ready` (high confidence) or `low_confidence` (needs human review).
-- `generate_auto_scout_drafts_for_match()` — Batch helper: generates one draft per assigned team for a match. Per-team failures are isolated into an `errors[]` list so one bad team never blocks the other five; returns structured counts (`created_count`, `ready_count`, `low_confidence_count`, `failed_count`, `skipped_existing_count`, etc.). Preserves approved drafts and current ready drafts unless `force_regenerate=True`.
+- `generate_auto_scout_draft()` — Picks the best accepted recording of the match, fills offense/defense from shift play plus the track-based insights, and stores the draft with per-field confidence. A draft is `ready` or `low_confidence` (an insight below 0.72 confidence).
+- `generate_auto_scout_drafts_for_match()` — Batch helper: generates one draft per assigned team for a match. Per-team failures are isolated into an `errors[]` list so one bad team never blocks the other five; returns structured counts (`created_count`, `ready_count`, `low_confidence_count`, `failed_count`, `skipped_existing_count`, etc.). Analyses each recording once for all six robots. Preserves approved drafts and current ready drafts unless `force_regenerate=True`.
 - `approve_auto_scout_draft()` — Records approval, tracks any field-level overrides the scout made, and marks the draft as approved.
 - `reject_auto_scout_draft()` — Logs the rejection with a reason for downstream review.
 - `summarize_team_auto_scout_profile()` — Rolls up a team's non-superseded drafts into the "Robot Profile" shown in Team Center (per field: typical value, range, trend, sample size, average confidence).
-- `summarize_auto_scout_confidence_calibration()` — Turns approval telemetry into per-field calibration metrics (override rates, worst confidence bucket, a `watch`/`lower_confidence`/`eligible_for_threshold_raise` recommendation) so confidence formulas can be tuned on evidence.
 
 **`backfill.py`**
-The reliability net. `backfill_missing_auto_scout_drafts()` finds recent completed analysis runs, skips stale analysis versions, and generates only the missing drafts — bounded by `max_runs` / `max_drafts`. Runs on a scheduler job so matches analyzed before the post-analysis hook shipped (or any run where the hook failed) still get drafts.
+The reliability net. `backfill_missing_auto_scout_drafts()` finds recently accepted phone recordings, skips stale analysis versions, and generates only the missing drafts — bounded by `max_runs` / `max_drafts`. Runs on a scheduler job so matches analyzed before the post-analysis hook shipped (or any run where the hook failed) still get drafts.
 
 **`shift_play.py`**
 The offense/defense analysis engine. The 2026 REBUILT match alternates which alliance's hub is active, so the game itself defines when a robot should attack vs. defend. This engine reads that intent out of positional tracking — per robot, per shift it scores offense and defense and produces two heat maps (attack pattern on own shifts, defense pattern on opponent shifts). ORM-free (operates on plain `TrackPoint` lists) so the same logic runs server-side and, later, on-device.
@@ -29,37 +30,23 @@ The offense/defense analysis engine. The 2026 REBUILT match alternates which all
 **`on_device.py`**
 The device-free core math for the on-device (offline PWA) match breakdown — Part B. Turns per-frame robot detections + a per-frame field homography into the same `TrackPoint` stream `shift_play.py` consumes, with robustness layers (low-confidence filtering, last-good-pose fallback, velocity-spike rejection, median smoothing). Also handles field-corner tap calibration (`calibrate_from_taps`), pose carry through camera motion (`carry_pose`), and closed-set-of-6 bumper-OCR temporal voting for track identity. Deliberately OpenCV-free so the PWA can mirror it in-browser; fully unit-tested.
 
-**`on_device_cv.py`**
+**`tests/on_device_cv_reference.py`** (moved out of the app: nothing on the server runs it)
 The OpenCV counterpart to `on_device.py`, kept separate so the core stays cv2-free. Provides Lucas-Kanade optical-flow camera stabilization (`StabilizedPose`): real-footage testing showed the field's AprilTags are unresolvable from stands distance, so instead of re-detecting tags every frame a scout taps the 4 field corners once and this module carries that base pose frame-to-frame via optical flow.
 
-**`ml.py`**
-Feature engineering for the ML predictions. Builds a 35-element feature vector from recorded match metrics (tracking data, event counts, zone dwell times, etc.). Also defines which form fields have ML predictors attached.
-
 **`specs.py`**
-Configuration for the scouting form itself — field definitions, valid value ranges, and season-specific priors. The 2026 season supports predictions for:
-
-- `auto_mobility`, `auto_scored`, `auto_missed`
-- `teleop_scored`, `teleop_under_defense_scored`, `teleop_cycles`
-- `offense_level`, `defense_level`, `awareness_level`
-- `intake_failures`, `foul_count`, `endgame_mode`
-
-**`training.py`**
-Exports approved drafts as ML training snapshots. Each approved draft (with any human overrides noted) becomes a labeled example that can be used to retrain field predictors.
+Configuration for the scouting form itself — the form fields a draft can carry, valid value ranges, and season-specific priors for the derived insights.
 
 ## How It Runs
 
 1. A scout records a match with the on-device recorder and it syncs to `POST /tracks/on-device-session`. An operator reviews the session and accepts it.
 2. The scheduled `backfill.py` job (or an on-demand generate) finds accepted recordings with missing draft slots and calls `generate_auto_scout_drafts_for_match()` for the assigned teams. Without an accepted recording a draft fails with `no_on_device_recording`.
-3. A feature vector is built from that recording's tracks (and any findings or events tied to the run).
-4. Each supported form field runs through its predictor to get a value + confidence score.
-5. Additional signals are estimated — disabled periods, defensive engagement, cycle pace.
-6. The draft is stored with fields marked `ready` or `low_confidence`.
-7. A human scout reviews the draft, approves (with optional overrides), or rejects it.
-8. Approved drafts are exported as training data for the next ML cycle.
+3. Offense and defense come from the shift-play analysis of that recording (defense only when it could be assessed).
+4. Track-based insights are estimated — disabled period, zone dwell.
+5. The draft is stored as `ready` or `low_confidence`.
+6. A human scout reviews the draft, approves (with optional overrides), or rejects it.
 
 ## Dependencies
 
 - `AnalysisRun` + `OnDeviceSession` — the accepted phone recording a draft is based on
 - `game_config` — match timing parameters + the `shift_schedule` block used by `shift_play.py`
 - `services/scheduler.py` — runs the backfill catch-up job
-- ML model artifacts — stored predictors for supported form fields (see `ml.py`, `shadow.py`)

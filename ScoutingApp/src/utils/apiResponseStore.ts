@@ -82,7 +82,7 @@ export async function getStoredResponse(requestKey: string): Promise<StoredRespo
 let lastPruneAtMs = 0;
 
 // Drop expired entries, then the oldest beyond MAX_ENTRIES.
-export async function pruneStoredResponses(): Promise<void> {
+async function pruneStoredResponses(): Promise<void> {
   if (Date.now() - lastPruneAtMs < PRUNE_EVERY_MS) return;
   lastPruneAtMs = Date.now();
   await pruneDatabaseResponses(MAX_ENTRIES);

@@ -48,13 +48,16 @@ at Neon, drop `&channel_binding=require`.
 ## 4. ML
 
 The shadow models (team strength, match outcome, synergy, roles) train on official
-data. Without the blend knobs, ratings and predictions ship deterministic-only.
+data. **ML is off in production** (since 2026-10-02; the evaluations in
+`docs/PRODUCTION_ML_RUNBOOK.md` found no gain), and since 2026-10-05 it doesn't train or
+run inference either: both switches below are `false`. Turn them back on (with the blend
+knobs) only when a reviewed model is ready to be evaluated. PyTorch loads on first use.
 
 | Key | Value |
 |---|---|
-| `ML_SHADOW_ENABLED` | `true` |
+| `ML_SHADOW_ENABLED` | `false` (production) — `true` runs shadow inference |
 | `ML_SHADOW_ROLLOUT_RATIO` | `1.0` |
-| `ML_SHADOW_AUTO_TRAIN_ON_EVENT_BREAKDOWN` | `true` — trains once per regional-automation tick |
+| `ML_SHADOW_AUTO_TRAIN_ON_EVENT_BREAKDOWN` | `false` (production) — `true` trains once per regional-automation tick |
 | `ML_SHADOW_AUTO_TRAIN_LIMIT_EVENTS` | `250` |
 | `ML_SHADOW_AUTO_TRAIN_ACTIVATE` | `false` — startup refuses `true` in production; promote reviewed models explicitly |
 | `ML_SHADOW_AUTO_TRAIN_RECOMPUTE_RATINGS` | `true` |

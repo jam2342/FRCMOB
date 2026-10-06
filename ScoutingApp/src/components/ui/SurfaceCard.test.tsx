@@ -29,6 +29,19 @@ describe('SurfaceCard collapse contract', () => {
     vi.restoreAllMocks();
   });
 
+  it('shares one viewport listener across cards and releases it when they unmount', () => {
+    const addEventListener = vi.fn();
+    const removeEventListener = vi.fn();
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener, removeEventListener });
+    const first = render(<SurfaceCard title="First">First</SurfaceCard>);
+    const second = render(<SurfaceCard title="Second" mobileCollapsible={false}>Second</SurfaceCard>);
+    expect(addEventListener).toHaveBeenCalledTimes(1);
+    first.unmount();
+    expect(removeEventListener).not.toHaveBeenCalled();
+    second.unmount();
+    expect(removeEventListener).toHaveBeenCalledTimes(1);
+  });
+
   it('does not expose desktop collapse controls for mobile-only cards', () => {
     render(
       <SurfaceCard title="Mobile Only Card" mobileCollapsible>

@@ -847,7 +847,7 @@
    and wrong for a warning, which is a message — centred wrapped prose has a
    ragged left edge and is measurably harder to scan, and a one-line warning
    does not want 32px of padding.
-   
+
    A stripe rather than a border: guard-boxes counted the first attempt, which
    kept the full outline, as a new container on /home — and it was right to. A
    message is not a thing you can act on, so it should not look like one. */
@@ -1250,54 +1250,6 @@
 /* ================================================================== */
 /*  Compare Page — Mobile Summary Cards                                */
 /* ================================================================== */
-
-.compare-mobile-summary-list {
-  display: grid;
-  gap: 10px;
-}
-
-.compare-mobile-summary-card {
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-bg-elevated);
-  padding: 10px 12px;
-  display: grid;
-  gap: 8px;
-}
-
-.compare-mobile-summary-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.compare-mobile-summary-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 4px;
-  font-size: var(--font-size-2xs);
-}
-
-.compare-mobile-summary-metrics span {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.compare-mobile-summary-metrics strong {
-  color: var(--color-text);
-}
-
-.product-shell.theme-light .compare-mobile-summary-card {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-}
-
-.product-shell.theme-light .compare-mobile-summary-metrics span {
-  border-color: var(--color-surface-soft);
-}
 
 
 /* ================================================================== */

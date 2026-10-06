@@ -1,9 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { cx } from './primitives/cx';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-function cx(...args: (string | false | null | undefined | 0)[]): string {
-  return args.filter(Boolean).join(' ');
-}
 
 type SurfaceCardProps = {
   title: string;
@@ -15,11 +13,6 @@ type SurfaceCardProps = {
   mobileCollapsible?: boolean;
   collapsible?: boolean;
   compactable?: boolean;
-};
-
-type SurfaceCardGroupProps = {
-  groupId?: string;
-  children: ReactNode;
 };
 
 const MOBILE_COLLAPSE_MEDIA_QUERY = '(max-width: 900px)';
@@ -76,9 +69,26 @@ function viewportIsMobile(): boolean {
   return window.matchMedia(MOBILE_COLLAPSE_MEDIA_QUERY).matches;
 }
 
-/** No-op wrapper kept for backward-compat with call sites that still pass groupId. */
-export function SurfaceCardGroup({ children }: SurfaceCardGroupProps) {
-  return <>{children}</>;
+const viewportListeners = new Set<() => void>();
+let viewportQuery: MediaQueryList | null = null;
+const notifyViewport = () => { for (const listener of viewportListeners) listener(); };
+
+// Cards share one viewport listener, including cards that only use mobile styling.
+function subscribeViewport(listener: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => {};
+  if (!viewportQuery) {
+    viewportQuery = window.matchMedia(MOBILE_COLLAPSE_MEDIA_QUERY);
+    if (typeof viewportQuery.addEventListener === 'function') viewportQuery.addEventListener('change', notifyViewport);
+    else viewportQuery.addListener(notifyViewport);
+  }
+  viewportListeners.add(listener);
+  return () => {
+    viewportListeners.delete(listener);
+    if (viewportListeners.size || !viewportQuery) return;
+    if (typeof viewportQuery.removeEventListener === 'function') viewportQuery.removeEventListener('change', notifyViewport);
+    else viewportQuery.removeListener(notifyViewport);
+    viewportQuery = null;
+  };
 }
 
 export function SurfaceCard({
@@ -93,7 +103,7 @@ export function SurfaceCard({
   compactable = false,
 }: SurfaceCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(viewportIsMobile);
+  const isMobileViewport = useSyncExternalStore(subscribeViewport, viewportIsMobile, () => false);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -110,18 +120,7 @@ export function SurfaceCard({
     return () => document.body.classList.remove('surface-card-modal-open');
   }, [expanded]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
-    const mediaQuery = window.matchMedia(MOBILE_COLLAPSE_MEDIA_QUERY);
-    const update = () => setIsMobileViewport(mediaQuery.matches);
-    update();
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', update);
-      return () => mediaQuery.removeEventListener('change', update);
-    }
-    mediaQuery.addListener(update);
-    return () => mediaQuery.removeListener(update);
-  }, []);
+
 
   const canExpand = Boolean(expandable);
   const canCollapse = Boolean((collapsible || (mobileCollapsible && isMobileViewport)) && !expanded);

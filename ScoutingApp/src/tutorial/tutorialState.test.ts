@@ -6,7 +6,6 @@ import {
   hasSeenTutorial,
   markAllTutorialsSeen,
   markTutorialSeen,
-  readTutorialSeenMap,
 } from './tutorialState';
 
 describe('tutorialState', () => {
@@ -16,17 +15,17 @@ describe('tutorialState', () => {
 
   it('tracks seen tutorials by scope', () => {
     expect(hasSeenTutorial('home')).toBe(false);
-    markTutorialSeen('home', 12345);
+    const seen = markTutorialSeen('home', 12345);
     expect(hasSeenTutorial('home')).toBe(true);
-    expect(readTutorialSeenMap().home).toBe(12345);
+    expect(seen.home).toBe(12345);
     expect(countSeenTutorials()).toBe(1);
   });
 
   it('marks every tutorial seen at once', () => {
-    markAllTutorialsSeen(54321);
+    const seen = markAllTutorialsSeen(54321);
     expect(countSeenTutorials()).toBeGreaterThan(1);
-    expect(readTutorialSeenMap().home).toBe(54321);
-    expect(readTutorialSeenMap().settings).toBe(54321);
+    expect(seen.home).toBe(54321);
+    expect(seen.settings).toBe(54321);
   });
 
   it('clears one scope or all scopes', () => {

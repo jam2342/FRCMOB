@@ -62,7 +62,7 @@ import {
   PlayIcon, PauseIcon, ResetIcon, SettingsIcon, ClipboardIcon,
   ClipboardCheckIcon, ZapIcon, CameraIcon, StarIcon, ClockIcon,
   RobotIcon, GamepadIcon, FlagIcon, MapPinIcon, PenIcon,
-  SteeringWheelIcon, TargetIcon, LiveDotIcon, SaveIcon,
+  TargetIcon, LiveDotIcon, SaveIcon,
   WifiIcon, WifiOffIcon, CopyIcon, RefreshIcon, LogOutIcon,
   TrashIcon, DownloadIcon, QrCodeIcon,
   CalendarIcon, ScoreboardIcon,
@@ -93,7 +93,6 @@ import type {
   Level1To5,
   MatchTeamOption,
   MobileCapturePanel,
-  MobileHistoryPanel,
   MobileScorePanel,
   MobileScoutSection,
   RoomConnectionState,
@@ -125,7 +124,6 @@ import {
   manualScoutingRating,
   mergeEntry,
   MOBILE_CAPTURE_PANEL_TABS,
-  MOBILE_HISTORY_PANEL_TABS,
   MOBILE_SCORE_PANEL_TABS,
   normalizeEntry,
   normalizeEventKeyInput,
@@ -213,7 +211,6 @@ type StoredMobilePanelPrefs = {
   section: MobileScoutSection;
   capture: MobileCapturePanel;
   score: MobileScorePanel;
-  history: MobileHistoryPanel;
 };
 
 const DEFAULT_MOBILE_PANEL_PREFS: StoredMobilePanelPrefs = {
@@ -221,7 +218,6 @@ const DEFAULT_MOBILE_PANEL_PREFS: StoredMobilePanelPrefs = {
   section: 'capture',
   capture: 'teleop',
   score: 'live',
-  history: 'team_matches',
 };
 
 function readStoredMobilePanelPrefs(): StoredMobilePanelPrefs {
@@ -238,18 +234,16 @@ function readStoredMobilePanelPrefs(): StoredMobilePanelPrefs {
     const capture = MOBILE_CAPTURE_PANEL_TABS.some((panel) => panel.id === parsed.capture)
       ? (parsed.capture as MobileCapturePanel)
       : DEFAULT_MOBILE_PANEL_PREFS.capture;
-    const score = MOBILE_SCORE_PANEL_TABS.some((panel) => panel.id === parsed.score)
-      ? (parsed.score as MobileScorePanel)
-      : DEFAULT_MOBILE_PANEL_PREFS.score;
-    const history = MOBILE_HISTORY_PANEL_TABS.some((panel) => panel.id === parsed.history)
-      ? (parsed.history as MobileHistoryPanel)
-      : DEFAULT_MOBILE_PANEL_PREFS.history;
+    const score = parsed.score === 'driver' || parsed.score === 'saved'
+      ? 'points'
+      : MOBILE_SCORE_PANEL_TABS.some((panel) => panel.id === parsed.score)
+        ? (parsed.score as MobileScorePanel)
+        : DEFAULT_MOBILE_PANEL_PREFS.score;
     return {
       finderOpen,
       section,
       capture,
       score,
-      history,
     };
   } catch {
     return DEFAULT_MOBILE_PANEL_PREFS;
@@ -442,7 +436,6 @@ export function ScoutingPage() {
   const [mobileScoutSection, setMobileScoutSection] = useState<MobileScoutSection>(() => mobilePanelPrefs.section);
   const [mobileCapturePanel, setMobileCapturePanel] = useState<MobileCapturePanel>(() => mobilePanelPrefs.capture);
   const [mobileScorePanel, setMobileScorePanel] = useState<MobileScorePanel>(() => mobilePanelPrefs.score);
-  const [mobileHistoryPanel] = useState<MobileHistoryPanel>(() => mobilePanelPrefs.history);
   const [mobileCompactMode, setMobileCompactMode] = useState<boolean>(() => readStoredMobileCompactMode());
   const [scoutingTopCondensed, setScoutingTopCondensed] = useState(false);
   const [scoutingTopHidden, setScoutingTopHidden] = useState(false);
@@ -826,10 +819,7 @@ export function ScoutingPage() {
   const showScorePointsCard = !isMobileLayout || mobileScorePanel === 'points';
   const showScoreLiveCard = !isMobileLayout || mobileScorePanel === 'live';
   const showScoreSavedCard = !isMobileLayout;
-  const showHistoryTeamMatchesCard = !isMobileLayout || mobileHistoryPanel === 'team_matches';
-  const showHistoryTeamRollupsCard = !isMobileLayout || mobileHistoryPanel === 'team_rollups';
-  const showHistoryEntriesCard = !isMobileLayout || mobileHistoryPanel === 'entries';
-  const showHistorySummariesCard = !isMobileLayout ? showTeamSummaries : mobileHistoryPanel === 'summaries';
+  const showHistorySummariesCard = showTeamSummaries;
   const supportsPointerEvents = typeof window !== 'undefined' && typeof window.PointerEvent !== 'undefined';
   const floatingTimerStyle = useMemo(
     () => ({
@@ -971,11 +961,11 @@ export function ScoutingPage() {
       team_display: string;
       match_order: number;
     }>;
-    const scheduleIndexByMatch = new Map<string, number>();
+    const scheduleIndexByMatch = new Map<string, { row: EventScheduleItem; index: number }>();
     scheduleRows.forEach((row, index) => {
       const key = String(row.match_key || '').trim().toLowerCase();
       if (!key || scheduleIndexByMatch.has(key)) return;
-      scheduleIndexByMatch.set(key, index);
+      scheduleIndexByMatch.set(key, { row, index });
     });
     const scoped = roomAssignments.filter((row) => {
       const assignedLookup = normalizeScoutProfile(String(row.assigned_scout_profile || '')).toLowerCase();
@@ -989,7 +979,7 @@ export function ScoutingPage() {
       .map((row) => {
         const matchKey = String(row.match_key || '').trim().toLowerCase();
         const teamKey = String(row.team_key || '').trim().toLowerCase();
-        const scheduleRow = scheduleRows.find((item) => item.match_key.toLowerCase() === matchKey) || null;
+        const scheduleRow = scheduleIndexByMatch.get(matchKey)?.row || null;
         const matchDisplay = scheduleRow?.display_name || matchKey.toUpperCase();
         const teamNumber = teamNumberFromTeamKey(teamKey);
         return {
@@ -998,7 +988,7 @@ export function ScoutingPage() {
           team_key: teamKey,
           match_display: matchDisplay,
           team_display: teamNumber !== null ? `#${teamNumber}` : teamKey.toUpperCase(),
-          match_order: scheduleIndexByMatch.get(matchKey) ?? Number.MAX_SAFE_INTEGER,
+          match_order: scheduleIndexByMatch.get(matchKey)?.index ?? Number.MAX_SAFE_INTEGER,
         };
       })
       .sort((a, b) => {
@@ -1400,23 +1390,19 @@ export function ScoutingPage() {
           section: mobileScoutSection,
           capture: mobileCapturePanel,
           score: mobileScorePanel,
-          history: mobileHistoryPanel,
         } satisfies StoredMobilePanelPrefs),
       );
     } catch {
       // ignore storage failures
     }
-  }, [mobileCapturePanel, mobileFinderOpen, mobileHistoryPanel, mobileScoutSection, mobileScorePanel]);
+  }, [mobileCapturePanel, mobileFinderOpen, mobileScoutSection, mobileScorePanel]);
 
   useEffect(() => {
     if (!isMobileLayout) return;
     if (mobileScoutSection === 'history') {
       setMobileScoutSection('capture');
     }
-    if (mobileScorePanel === 'driver' || mobileScorePanel === 'saved') {
-      setMobileScorePanel('points');
-    }
-  }, [isMobileLayout, mobileScoutSection, mobileScorePanel]);
+  }, [isMobileLayout, mobileScoutSection]);
 
   useEffect(() => {
     if (!pageVisible) return;
@@ -3584,7 +3570,6 @@ export function ScoutingPage() {
               setSelectedEventKey(next);
               setEventFetchCtr((c) => c + 1);
             }}
-            disabled={!eventInput.trim() && false}
             placeholder={'Search events — try "houston district" or "2026txhou"'}
           />
 
@@ -4305,14 +4290,11 @@ export function ScoutingPage() {
                     ariaLabel="Score panels"
                     value={mobileScorePanel}
                     onChange={setMobileScorePanel}
-                    items={MOBILE_SCORE_PANEL_TABS.filter((panel) => panel.id === 'points' || panel.id === 'live').map((panel) => ({
+                    items={MOBILE_SCORE_PANEL_TABS.map((panel) => ({
                       value: panel.id,
                       label: panel.label,
                       icon:
-                        panel.id === 'driver' ? <SteeringWheelIcon className="icon-inline" />
-                          : panel.id === 'points' ? <StarIcon className="icon-inline" />
-                            : panel.id === 'live' ? <LiveDotIcon className="icon-inline" />
-                              : <SaveIcon className="icon-inline" />,
+                        panel.id === 'points' ? <StarIcon className="icon-inline" /> : <LiveDotIcon className="icon-inline" />,
                     }))}
                   />
                 ) : null}
@@ -4585,7 +4567,7 @@ export function ScoutingPage() {
           </div>
         ) : null}
 
-        {showHistorySection && showHistoryTeamMatchesCard ? (
+        {showHistorySection ? (
           <SurfaceCard
             title="Selected Team Match Performance"
           >
@@ -4729,7 +4711,7 @@ export function ScoutingPage() {
           </SurfaceCard>
         ) : null}
 
-        {showHistorySection && showHistoryTeamRollupsCard ? (
+        {showHistorySection ? (
           <SurfaceCard
             title="Scouted Teams Quick Access"
             right={
@@ -4906,7 +4888,7 @@ export function ScoutingPage() {
           </SurfaceCard>
         ) : null}
 
-        {showHistorySection && showHistoryEntriesCard ? (
+        {showHistorySection ? (
           <SurfaceCard
             title="Scouted Matches"
             right={<Chip tone={activeRoom?.room_key ? 'accent' : 'neutral'} dot>

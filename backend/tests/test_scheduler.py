@@ -15,13 +15,11 @@ class SchedulerContextTests(unittest.TestCase):
             "app_env": scheduler.settings.app_env,
             "strict_startup_env_validation": scheduler.settings.strict_startup_env_validation,
             "intel_snapshot_refresh_enabled": scheduler.settings.intel_snapshot_refresh_enabled,
-            "climb_integrity_audit_enabled": scheduler.settings.climb_integrity_audit_enabled,
             "climb_official_backfill_enabled": scheduler.settings.climb_official_backfill_enabled,
             "automation_regional_enabled": scheduler.settings.automation_regional_enabled,
             "automation_regional_halfday_scheduler_enabled": scheduler.settings.automation_regional_halfday_scheduler_enabled,
             "ops_smoke_check_enabled": scheduler.settings.ops_smoke_check_enabled,
             "scouting_rooms_cleanup_enabled": scheduler.settings.scouting_rooms_cleanup_enabled,
-            "ml_auto_scout_training_export_enabled": scheduler.settings.ml_auto_scout_training_export_enabled,
             "auto_scout_backfill_enabled": scheduler.settings.auto_scout_backfill_enabled,
         }
 
@@ -60,25 +58,6 @@ class SchedulerContextTests(unittest.TestCase):
         state = scheduler._JOB_RUNTIME_STATE_FALLBACK.get("demo") or {}
         self.assertEqual(state.get("last_status"), "ok")
         self.assertEqual(state.get("last_details"), {"processed": 3})
-
-    def test_auto_scout_export_job_calls_export_service(self):
-        @contextmanager
-        def _fake_job(*_args, **_kwargs):
-            yield {"_db": object()}
-
-        with patch.object(scheduler, "_scheduled_job", _fake_job), patch.object(
-            scheduler,
-            "export_auto_scout_training_snapshots",
-            return_value={
-                "approved_drafts": 2,
-                "rows_written": 12,
-                "skipped_missing_context": 0,
-                "skipped_missing_target": 0,
-            },
-        ) as export:
-            scheduler._scheduled_export_auto_scout_training_data()
-
-        export.assert_called_once()
 
     def test_auto_scout_backfill_job_calls_helper(self):
         @contextmanager
@@ -144,13 +123,11 @@ class SchedulerContextTests(unittest.TestCase):
         scheduler.settings.app_env = "production"
         scheduler.settings.strict_startup_env_validation = False
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.climb_integrity_audit_enabled = False
         scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = False
         scheduler.settings.automation_regional_halfday_scheduler_enabled = False
         scheduler.settings.ops_smoke_check_enabled = False
         scheduler.settings.scouting_rooms_cleanup_enabled = True
-        scheduler.settings.ml_auto_scout_training_export_enabled = False
 
         fake_scheduler = SimpleNamespace(
             running=False,
@@ -166,13 +143,11 @@ class SchedulerContextTests(unittest.TestCase):
         scheduler.settings.app_env = "development"
         scheduler.settings.strict_startup_env_validation = False
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.climb_integrity_audit_enabled = False
         scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = False
         scheduler.settings.automation_regional_halfday_scheduler_enabled = False
         scheduler.settings.ops_smoke_check_enabled = False
         scheduler.settings.scouting_rooms_cleanup_enabled = True
-        scheduler.settings.ml_auto_scout_training_export_enabled = False
 
         fake_scheduler = SimpleNamespace(
             running=False,

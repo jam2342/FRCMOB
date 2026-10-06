@@ -1,9 +1,8 @@
+import { cx } from './cx';
 import { useEffect, useState, type ReactNode } from 'react';
 import styles from './Table.module.css';
-import { cx } from './cx';
 import { renderCell, type TableColumn } from './tableCell';
 
-export type { TableColumn };
 
 export type SortDirection = 'asc' | 'desc';
 

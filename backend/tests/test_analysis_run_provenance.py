@@ -4,10 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.db import models
 from app.services.analysis.runs import (
-    RUN_KIND_OFFICIAL_TRUTH,
     RUN_KIND_ON_DEVICE,
     RUN_KIND_VIDEO,
-    latest_completed_run,
 )
 from app.services.ratings.data_loader import load_event_rating_data
 from tests.conftest import DBTestCase
@@ -82,41 +80,6 @@ class AnalysisRunProvenanceTests(DBTestCase):
                 source=source,
             )
         )
-
-    def test_newer_non_video_run_cannot_shadow_canonical_video(self):
-        event_key, match_key = self._seed()
-        now = datetime.now(timezone.utc)
-        video = self._run(
-            event_key=event_key,
-            match_key=match_key,
-            version="video_v3_tracks",
-            run_kind=RUN_KIND_VIDEO,
-            created_at=now - timedelta(minutes=3),
-        )
-        self._run(
-            event_key=event_key,
-            match_key=match_key,
-            version="tba_score_breakdown_v1",
-            run_kind=RUN_KIND_OFFICIAL_TRUTH,
-            created_at=now - timedelta(minutes=2),
-        )
-        self._run(
-            event_key=event_key,
-            match_key=match_key,
-            version="on_device_pwa_v1",
-            run_kind=RUN_KIND_ON_DEVICE,
-            created_at=now - timedelta(minutes=1),
-        )
-        self.db.commit()
-
-        selected = latest_completed_run(
-            self.db,
-            match_key=match_key,
-            run_kind=RUN_KIND_VIDEO,
-            analysis_version="video_v3_tracks",
-        )
-        self.assertIsNotNone(selected)
-        self.assertEqual(selected[0].id, video.id)
 
     def test_ratings_loader_quarantines_on_device_findings(self):
         event_key, match_key = self._seed()

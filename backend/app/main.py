@@ -18,7 +18,6 @@ from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from app.api.routes_automation import router as automation_router
 from app.api.routes_auto_scouting import router as auto_scouting_router
 from app.api.routes_events import router as events_router
-from app.api.routes_game_config import router as game_config_router
 from app.api.routes_maintenance import router as maintenance_router
 from app.api.routes_matches import router as matches_router
 from app.api.routes_picklists import router as picklists_router
@@ -28,11 +27,9 @@ from app.api.routes_scouting import router as scouting_router
 from app.api.routes_scouting_insights import router as scouting_insights_router
 from app.api.routes_scouting_rooms import router as scouting_rooms_router
 from app.api.routes_synergy import router as synergy_router
-from app.api.routes_statbotics import router as statbotics_router
 from app.api.routes_teams import router as teams_router
 from app.api.routes_tracks import router as tracks_router
 from app.api.routes_workspaces import router as workspaces_router
-from app.api.tba import router as tba_router
 from app.core.config import (
     LOCAL_DATABASE_URL_FALLBACK,
     assert_no_legacy_texas_settings,
@@ -430,7 +427,6 @@ app.include_router(events_router)
 app.include_router(matches_router)
 app.include_router(automation_router)
 app.include_router(auto_scouting_router)
-app.include_router(game_config_router)
 app.include_router(maintenance_router)
 app.include_router(picklists_router)
 app.include_router(pit_scouting_router)
@@ -439,11 +435,9 @@ app.include_router(scouting_router)
 app.include_router(scouting_insights_router)
 app.include_router(scouting_rooms_router)
 app.include_router(synergy_router)
-app.include_router(statbotics_router)
 app.include_router(teams_router)
 app.include_router(tracks_router)
 app.include_router(workspaces_router)
-app.include_router(tba_router)
 app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 
 async def _handle_scouting_room_bus_message(room_key: str, payload: dict) -> None:

@@ -1,8 +1,8 @@
+import { cx } from './cx';
 import type { ReactNode } from 'react';
 import styles from './Stat.module.css';
-import { cx } from './cx';
 
-export type StatTone = 'default' | 'accent' | 'success' | 'warning' | 'danger';
+type StatTone = 'default' | 'accent' | 'success' | 'warning' | 'danger';
 
 export type StatProps = {
   label: string;

@@ -5,8 +5,8 @@ import { useEffect, useState } from 'react';
    the same way the hook does instead of repeating the number. */
 export const MOBILE_LAYOUT_BREAKPOINT = 1120;
 
-export function useMobileLayout(maxWidth = MOBILE_LAYOUT_BREAKPOINT) {
-  const query = `(max-width: ${maxWidth}px)`;
+export function useMobileLayout() {
+  const query = `(max-width: ${MOBILE_LAYOUT_BREAKPOINT}px)`;
   const [isMobileLayout, setIsMobileLayout] = useState<boolean>(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
     return window.matchMedia(query).matches;

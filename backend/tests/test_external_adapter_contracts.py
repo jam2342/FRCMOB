@@ -113,16 +113,6 @@ class TBAContractTests(unittest.TestCase):
             self.assertIsInstance(match["alliances"][alliance]["team_keys"], list)
             self.assertEqual(len(match["alliances"][alliance]["team_keys"]), 3)
 
-    def test_match_videos_contract(self):
-        client = self._make_client_with_mock(TBA_MATCH_FIXTURE)
-        result = client.match("2026txhou_qm1")
-        self.assertIn("videos", result)
-        self.assertIsInstance(result["videos"], list)
-        if result["videos"]:
-            video = result["videos"][0]
-            self.assertIn("type", video)
-            self.assertIn("key", video)
-
     def test_match_score_breakdown_contract(self):
         client = self._make_client_with_mock(TBA_MATCH_FIXTURE)
         result = client.match("2026txhou_qm1")

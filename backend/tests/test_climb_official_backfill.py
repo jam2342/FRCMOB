@@ -84,7 +84,6 @@ class ClimbOfficialBackfillTests(DBTestCase):
                     event_key="2025txhou",
                     analysis_version="video_v3_tracks",
                     params_hash="test",
-                    calibration_id=None,
                 )
             )
             existing = models.TeamMatchFinding(

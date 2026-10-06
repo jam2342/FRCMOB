@@ -13,7 +13,7 @@ import type {
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
   CardBody,
@@ -277,7 +277,6 @@ export function AllianceAdvisorPage() {
         picks: teams.slice(1),
       }));
   }, [selectionModel]);
-  const surfaceGroupId = 'alliance-advisor';
 
   const [desirabilitySort, setDesirabilitySort] = useState<{ key: string; direction: SortDirection }>({
     key: 'selection_desirability',
@@ -384,7 +383,7 @@ export function AllianceAdvisorPage() {
     <>
     <PageViewBar items={COMPARE_VIEWS} />
     <div className={styles.layout}>
-      <SurfaceCardGroup groupId={surfaceGroupId}>
+
         {/* ---- Event Selection ---- */}
         <SurfaceCard
           title="Alliance Selection Advisor"
@@ -748,7 +747,7 @@ export function AllianceAdvisorPage() {
             </CardBody>
           </SurfaceCard>
         ) : null}
-      </SurfaceCardGroup>
+
     </div>
     </>
   );

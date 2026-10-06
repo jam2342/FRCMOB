@@ -1,8 +1,6 @@
+import { cx } from './primitives/cx';
 import { type KeyboardEvent, type ReactNode } from 'react';
 
-function cx(...args: (string | false | null | undefined | 0)[]): string {
-  return args.filter(Boolean).join(' ');
-}
 
 function nextEnabledIndex<T extends string>(
   items: readonly SegmentedTabItem<T>[],

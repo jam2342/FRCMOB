@@ -121,7 +121,7 @@ export async function createDeviceDetector(): Promise<Detector> {
   return createDetector(CPU_MODEL, ['wasm']);
 }
 
-export async function createDetector(
+async function createDetector(
   model: OnDeviceModel,
   executionProviders: string[] = ['webgpu', 'wasm'],
 ): Promise<Detector> {

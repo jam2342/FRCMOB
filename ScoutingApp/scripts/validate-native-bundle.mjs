@@ -3,6 +3,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadEnv } from 'vite';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = join(root, 'dist-native');
@@ -14,7 +15,13 @@ for (const name of required.filter(name => name.endsWith('.onnx'))) {
 }
 const assets = await readdir(join(dir, 'assets'));
 assert.ok(assets.some(name => /^ort-wasm.*\.wasm$/.test(name)), 'Missing offline detector runtime');
-assert.ok(assets.some(name => /^opencv-.*\.js$/.test(name)), 'Missing offline field tracker');
+const env = loadEnv('native', root, 'VITE_');
+const useLocalOpticalFlow = String(process.env.VITE_ONDEVICE_LOCAL_OPTICAL_FLOW || env.VITE_ONDEVICE_LOCAL_OPTICAL_FLOW || 'true').toLowerCase() !== 'false';
+if (!useLocalOpticalFlow) {
+  // The dynamic URL import also emits a tiny shim; require the engine itself.
+  const trackerSizes = await Promise.all(assets.filter(name => /^opencv-.*\.js$/.test(name)).map(async name => (await stat(join(dir, 'assets', name))).size));
+  assert.ok(trackerSizes.some(size => size > 1024 * 1024), 'Missing offline field tracker');
+}
 assert.ok(assets.some(name => /^OnDeviceRunPage-.*\.js$/.test(name)), 'Missing recorder route');
 const html = await readFile(join(dir, 'index.html'), 'utf8');
 assert.ok(html.includes('viewport-fit=cover'), 'Missing safe-area viewport');

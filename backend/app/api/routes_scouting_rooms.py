@@ -123,32 +123,17 @@ def _is_table_unavailable_error(exc: Exception, *table_names: str) -> bool:
 def _is_missing_room_leaders_table_error(exc: Exception) -> bool:
     return _is_table_unavailable_error(exc, "scouting_room_leaders")
 
-def _bootstrap_missing_room_table(
-    db: Session,
-    table_name: str,
-    *,
-    trigger_exc: Exception | None = None,
-) -> bool:
-    # Check whether a missing scouting-room table should be retried.
-    #
-    # Previously this auto-created tables at runtime via ``table.create()``.
-    # That hid migration gaps and could cause schema drift between
-    # environments.  Now it always logs an actionable error and returns
-    # ``False`` — callers fall through to their graceful-degradation path
-    # (empty list / 503).  Run ``alembic upgrade head`` to fix.
-    normalized = str(table_name or "").strip().lower()
-    if not normalized:
-        return False
-
+def _report_missing_room_table(db: Session, table_name: str, trigger_exc: Exception) -> None:
+    # Tables are never created at runtime (that hid migration gaps); say how to
+    # fix it and let the caller degrade (empty list / 503).
     logger.error(
         "Scouting-room table '%s' is missing. "
         "Run `alembic upgrade head` to apply migrations. (trigger=%s)",
-        normalized,
+        table_name,
         trigger_exc,
     )
     with suppress(Exception):
         db.rollback()
-    return False
 
 def _is_database_transfer_quota_error(exc: Exception) -> bool:
     # Neon surfaces the quota breach as a connection-time message, not a SQLSTATE.
@@ -517,7 +502,6 @@ def _load_room_assignments(
     *,
     event_key: str | None = None,
     limit: int = 1500,
-    _allow_bootstrap_retry: bool = True,
 ) -> list[models.ScoutingRoomAssignment]:
     try:
         query = db.query(models.ScoutingRoomAssignment).filter(
@@ -535,22 +519,8 @@ def _load_room_assignments(
             .all()
         )
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_assignments")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_assignments",
-                trigger_exc=exc,
-            )
-        ):
-            return _load_room_assignments(
-                db,
-                room_key,
-                event_key=event_key,
-                limit=limit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_assignments"):
+            _report_missing_room_table(db, "scouting_room_assignments", exc)
         if _is_table_unavailable_error(exc, "scouting_room_assignments"):
             return []
         raise
@@ -573,7 +543,6 @@ def _load_room_secondary_leader_rows(
     room_key: str,
     *,
     limit: int = 300,
-    _allow_bootstrap_retry: bool = True,
 ) -> list[models.ScoutingRoomLeader]:
     try:
         return (
@@ -587,21 +556,8 @@ def _load_room_secondary_leader_rows(
             .all()
         )
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_leaders")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_leaders",
-                trigger_exc=exc,
-            )
-        ):
-            return _load_room_secondary_leader_rows(
-                db,
-                room_key,
-                limit=limit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_leaders"):
+            _report_missing_room_table(db, "scouting_room_leaders", exc)
         if _is_missing_room_leaders_table_error(exc):
             return []
         raise
@@ -639,7 +595,6 @@ def _upsert_room_secondary_leader(
     scout_profile: str,
     added_by_scout_profile: str,
     commit: bool = True,
-    _allow_bootstrap_retry: bool = True,
 ) -> tuple[models.ScoutingRoomLeader, bool]:
     normalized_profile = _normalize_scout_profile(scout_profile)
     normalized_lookup = _normalize_scout_profile_lookup(normalized_profile)
@@ -659,23 +614,8 @@ def _upsert_room_secondary_leader(
             .first()
         )
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_leaders")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_leaders",
-                trigger_exc=exc,
-            )
-        ):
-            return _upsert_room_secondary_leader(
-                db,
-                room=room,
-                scout_profile=scout_profile,
-                added_by_scout_profile=added_by_scout_profile,
-                commit=commit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_leaders"):
+            _report_missing_room_table(db, "scouting_room_leaders", exc)
         if _is_missing_room_leaders_table_error(exc):
             raise HTTPException(
                 status_code=503,
@@ -718,23 +658,8 @@ def _upsert_room_secondary_leader(
         else:
             db.flush()
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_leaders")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_leaders",
-                trigger_exc=exc,
-            )
-        ):
-            return _upsert_room_secondary_leader(
-                db,
-                room=room,
-                scout_profile=scout_profile,
-                added_by_scout_profile=added_by_scout_profile,
-                commit=commit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_leaders"):
+            _report_missing_room_table(db, "scouting_room_leaders", exc)
         if _is_missing_room_leaders_table_error(exc):
             db.rollback()
             raise HTTPException(
@@ -754,7 +679,6 @@ def _remove_room_secondary_leader(
     room: models.ScoutingRoom,
     scout_profile: str,
     commit: bool = True,
-    _allow_bootstrap_retry: bool = True,
 ) -> bool:
     normalized_lookup = _normalize_scout_profile_lookup(scout_profile)
     if not normalized_lookup:
@@ -769,22 +693,8 @@ def _remove_room_secondary_leader(
             .first()
         )
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_leaders")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_leaders",
-                trigger_exc=exc,
-            )
-        ):
-            return _remove_room_secondary_leader(
-                db,
-                room=room,
-                scout_profile=scout_profile,
-                commit=commit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_leaders"):
+            _report_missing_room_table(db, "scouting_room_leaders", exc)
         if _is_missing_room_leaders_table_error(exc):
             raise HTTPException(
                 status_code=503,
@@ -807,22 +717,8 @@ def _remove_room_secondary_leader(
         else:
             db.flush()
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_leaders")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_leaders",
-                trigger_exc=exc,
-            )
-        ):
-            return _remove_room_secondary_leader(
-                db,
-                room=room,
-                scout_profile=scout_profile,
-                commit=commit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_leaders"):
+            _report_missing_room_table(db, "scouting_room_leaders", exc)
         if _is_missing_room_leaders_table_error(exc):
             db.rollback()
             raise HTTPException(
@@ -869,7 +765,6 @@ def _upsert_room_assignment(
     assigned_by_scout_profile: str,
     event_key: str | None,
     commit: bool = True,
-    _allow_bootstrap_retry: bool = True,
     _allow_stale_retry: bool = True,
 ) -> models.ScoutingRoomAssignment:
     normalized_match_key = _normalize_match_key(match_key)
@@ -940,26 +835,8 @@ def _upsert_room_assignment(
             db.flush()
         return row
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_assignments")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_assignments",
-                trigger_exc=exc,
-            )
-        ):
-            return _upsert_room_assignment(
-                db,
-                room=room,
-                match_key=match_key,
-                team_key=team_key,
-                assigned_scout_profile=assigned_scout_profile,
-                assigned_by_scout_profile=assigned_by_scout_profile,
-                event_key=event_key,
-                commit=commit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_assignments"):
+            _report_missing_room_table(db, "scouting_room_assignments", exc)
         if _is_table_unavailable_error(exc, "scouting_room_assignments"):
             if commit:
                 db.rollback()
@@ -987,7 +864,6 @@ def _upsert_room_assignment(
                 assigned_by_scout_profile=assigned_by_scout_profile,
                 event_key=event_key,
                 commit=commit,
-                _allow_bootstrap_retry=False,
                 _allow_stale_retry=False,
             )
         if commit:
@@ -1007,7 +883,6 @@ def _clear_room_assignment(
     match_key: str,
     team_key: str,
     commit: bool = True,
-    _allow_bootstrap_retry: bool = True,
 ) -> models.ScoutingRoomAssignment | None:
     normalized_match_key = _normalize_match_key(match_key)
     normalized_team_key = _normalize_team_key(team_key)
@@ -1034,23 +909,8 @@ def _clear_room_assignment(
             db.flush()
         return row
     except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if (
-            _allow_bootstrap_retry
-            and _is_missing_table_error(exc, "scouting_room_assignments")
-            and _bootstrap_missing_room_table(
-                db,
-                "scouting_room_assignments",
-                trigger_exc=exc,
-            )
-        ):
-            return _clear_room_assignment(
-                db,
-                room=room,
-                match_key=match_key,
-                team_key=team_key,
-                commit=commit,
-                _allow_bootstrap_retry=False,
-            )
+        if _is_missing_table_error(exc, "scouting_room_assignments"):
+            _report_missing_room_table(db, "scouting_room_assignments", exc)
         if _is_table_unavailable_error(exc, "scouting_room_assignments"):
             if commit:
                 db.rollback()
@@ -2165,7 +2025,7 @@ async def replace_room_assignments(
 
     normalized_event = _normalize_event_key(request.event_key) or room.event_key
 
-    def _replace_rows(*, allow_bootstrap_retry: bool) -> None:
+    def _replace_rows() -> None:
         try:
             if normalized_event:
                 (
@@ -2185,22 +2045,12 @@ async def replace_room_assignments(
                     assigned_by_scout_profile=actor_profile,
                     event_key=normalized_event,
                     commit=False,
-                    _allow_bootstrap_retry=allow_bootstrap_retry,
                 )
             db.commit()
             db.refresh(room)
         except (ProgrammingError, OperationalError, DatabaseError) as exc:
-            if (
-                allow_bootstrap_retry
-                and _is_missing_table_error(exc, "scouting_room_assignments")
-                and _bootstrap_missing_room_table(
-                    db,
-                    "scouting_room_assignments",
-                    trigger_exc=exc,
-                )
-            ):
-                _replace_rows(allow_bootstrap_retry=False)
-                return
+            if _is_missing_table_error(exc, "scouting_room_assignments"):
+                _report_missing_room_table(db, "scouting_room_assignments", exc)
             if _is_table_unavailable_error(exc, "scouting_room_assignments"):
                 db.rollback()
                 raise HTTPException(
@@ -2213,7 +2063,7 @@ async def replace_room_assignments(
                 ) from exc
             raise
 
-    _replace_rows(allow_bootstrap_retry=True)
+    _replace_rows()
 
     rows = _load_room_assignments(db, normalized, event_key=normalized_event, limit=2000)
     serialized_rows = [_serialize_assignment(row) for row in rows]

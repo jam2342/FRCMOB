@@ -34,7 +34,6 @@ def _seed_pipeline_rows(db: Session) -> None:
             event_key=event_key,
             analysis_version="video_v3_tracks",
             params_hash="params-smoke",
-            calibration_id=1,
         )
     )
     finding = models.TeamMatchFinding(
@@ -81,7 +80,6 @@ def _seed_pipeline_rows(db: Session) -> None:
             run_id=run.id,
             match_key=match_key,
             event_key=event_key,
-            calibration_quality_score=0.77,
             tracking_quality_score=0.8,
             identity_quality_score=0.78,
             overall_quality_score=0.79,

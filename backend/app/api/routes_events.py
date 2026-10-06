@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 # Speed-first defaults for local/private operation.
 # Set to >0 only when you intentionally want slower remote enrichment.
 SUGGESTED_EVENTS_REMOTE_TEAM_COUNT_FETCH_LIMIT = 0
-EVENT_SEARCH_AUTOBACKFILL_ENABLED = False
 EVENT_SEARCH_REMOTE_FALLBACK_ENABLED = bool(
     getattr(settings, "events_search_remote_fallback_enabled", True)
 )
@@ -309,66 +308,6 @@ def _deterministic_red_win_prob(
     if z < -30.0:
         return 0.0
     return 1.0 / (1.0 + math.exp(-z))
-
-def _has_profile_data(event_profile: models.EventProfile | None) -> bool:
-    if event_profile is None:
-        return False
-    return any(
-        bool((value or "").strip())
-        for value in (event_profile.city, event_profile.state_prov, event_profile.country)
-    )
-
-def _backfill_event_profiles_for_year(
-    db: Session,
-    tba: TBAClient,
-    year: int,
-    target_event_keys: set[str] | None = None,
-) -> bool:
-    try:
-        payload = tba.events(year)
-    except Exception:
-        return False
-
-    if not isinstance(payload, list):
-        return False
-
-    changed = False
-    seen_event_keys: set[str] = set()
-    for event in payload:
-        event_key = event.get("key")
-        if not event_key:
-            continue
-        if event_key in seen_event_keys:
-            continue
-        seen_event_keys.add(event_key)
-        if target_event_keys is not None and event_key not in target_event_keys:
-            continue
-        db.merge(
-            models.Event(
-                event_key=event_key,
-                name=event.get("name") or event_key,
-                year=int(event.get("year") or year),
-            )
-        )
-        db.merge(
-            models.EventProfile(
-                event_key=event_key,
-                city=event.get("city"),
-                state_prov=event.get("state_prov"),
-                country=event.get("country"),
-            )
-        )
-        changed = True
-
-    if changed:
-        try:
-            db.commit()
-        except IntegrityError:
-            # Concurrent request may have inserted the same rows first.
-            # Roll back this transaction and continue with fresh query results.
-            db.rollback()
-            return True
-    return changed
 
 def _get_tba_client_or_503() -> TBAClient:
     if not settings.tba_auth_key.strip():
@@ -844,64 +783,7 @@ def search_events(q: str, limit: int = 20, db: Session = Depends(get_db)):
             .all()
         )
 
-    if year_query is not None:
-        local_year_event_count = (
-            db.query(func.count(models.Event.event_key))
-            .filter(models.Event.year == year_query)
-            .scalar()
-            or 0
-        )
-        if (
-            EVENT_SEARCH_AUTOBACKFILL_ENABLED
-            and local_year_event_count < 40
-            and not settings.public_readonly_mode
-        ):
-            tba = TBAClient()
-            _backfill_event_profiles_for_year(db, tba, year_query)
-
-    if state_codes:
-        local_state_event_count = (
-            db.query(func.count(models.Event.event_key))
-            .join(models.EventProfile, models.EventProfile.event_key == models.Event.event_key)
-            .filter(
-                models.Event.year.in_((CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR)),
-                func.upper(func.coalesce(models.EventProfile.state_prov, "")).in_(state_codes),
-            )
-            .scalar()
-            or 0
-        )
-        if (
-            EVENT_SEARCH_AUTOBACKFILL_ENABLED
-            and local_state_event_count < 8
-            and not settings.public_readonly_mode
-        ):
-            tba = TBAClient()
-            for year in (CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR):
-                _backfill_event_profiles_for_year(db, tba, year)
-
     rows = _query_rows()
-
-    missing_by_year: dict[int, set[str]] = {}
-    for event_row, event_profile in rows:
-        if _has_profile_data(event_profile):
-            continue
-        missing_by_year.setdefault(int(event_row.year), set()).add(event_row.event_key)
-
-    if missing_by_year and EVENT_SEARCH_AUTOBACKFILL_ENABLED and not settings.public_readonly_mode:
-        tba = TBAClient()
-        did_backfill = False
-        for year, event_keys in missing_by_year.items():
-            did_backfill = _backfill_event_profiles_for_year(db, tba, year, event_keys) or did_backfill
-        if did_backfill:
-            rows = _query_rows()
-
-    if not rows and state_codes and EVENT_SEARCH_AUTOBACKFILL_ENABLED and not settings.public_readonly_mode:
-        tba = TBAClient()
-        did_backfill = False
-        for year in (CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR):
-            did_backfill = _backfill_event_profiles_for_year(db, tba, year) or did_backfill
-        if did_backfill:
-            rows = _query_rows()
 
     events = _serialize_events(rows)
 
@@ -1024,51 +906,6 @@ def ingest_event(
         run_post_compute=run_post_compute,
     )
 
-@router.get("/{event_key}/stats")
-def get_event_team_stats(
-    event_key: str,
-    request: Request,
-    refresh: bool = False,
-    db: Session = Depends(get_db),
-):
-    source = "local"
-    upserted = 0
-    if refresh:
-        require_admin_access(request, "Event stats refresh")
-        require_write_access("Event stats refresh")
-        tba = _get_tba_client_or_503()
-        from app.services.events.ingest import upsert_event_team_stats_from_tba
-        upserted, source = upsert_event_team_stats_from_tba(db, tba, event_key)
-
-    rows = (
-        db.query(models.EventTeamStat, models.Team)
-        .outerjoin(models.Team, models.Team.team_key == models.EventTeamStat.team_key)
-        .filter(models.EventTeamStat.event_key == event_key)
-        .order_by(models.EventTeamStat.opr.desc().nullslast(), models.EventTeamStat.team_key.asc())
-        .all()
-    )
-    if not refresh and not rows:
-        source = "local_missing"
-
-    return {
-        "ok": True,
-        "event_key": event_key,
-        "source": source,
-        "upserted": upserted,
-        "count": len(rows),
-        "stats": [
-            {
-                "team_key": stat.team_key,
-                "team_number": team.team_number if team is not None else None,
-                "nickname": team.nickname if team is not None else None,
-                "opr": stat.opr,
-                "dpr": stat.dpr,
-                "ccwm": stat.ccwm,
-                "updated_at": stat.updated_at.isoformat() if stat.updated_at else None,
-            }
-            for stat, team in rows
-        ],
-    }
 
 @router.get("/{event_key}/schedule-with-synergy", response_model=ScheduleWithSynergyResponse)
 def get_event_schedule_with_synergy(
@@ -1182,6 +1019,8 @@ def get_event_schedule_with_synergy(
     )
     fuel_margin_by_match = {key: margin for key, (margin, _seen) in fuel_details.items()}
 
+    # Shadow-model features are only worth building when the model will run.
+    run_ml = include_ml_predictions and bool(getattr(settings, "ml_shadow_enabled", False))
     ml_feature_rows: list[dict[str, float | str]] = []
     deterministic_prob_by_match: dict[str, float] = {}
     rating_prob_by_match: dict[str, float] = {}
@@ -1261,7 +1100,7 @@ def get_event_schedule_with_synergy(
             blue_ratings.append(rating_value)
             blue_confidences.append(confidence_value)
 
-        if include_ml_predictions and red_ratings and blue_ratings:
+        if red_ratings and blue_ratings:
             red_rating_mean = sum(red_ratings) / float(len(red_ratings))
             blue_rating_mean = sum(blue_ratings) / float(len(blue_ratings))
             red_conf_mean = sum(red_confidences) / float(len(red_confidences)) if red_confidences else 0.0
@@ -1273,8 +1112,8 @@ def get_event_schedule_with_synergy(
             rating_margin = red_rating_mean - blue_rating_mean
             synergy_margin = red_synergy_points - blue_synergy_points
             projected_margin = red_projected - blue_projected
-            ml_feature_rows.append(
-                {
+            if run_ml:
+                ml_feature_rows.append({
                     "event_key": event_key,
                     "match_key": match.match_key,
                     "red_rating_mean": red_rating_mean,
@@ -1289,8 +1128,7 @@ def get_event_schedule_with_synergy(
                     "red_projected_throughput": red_projected,
                     "blue_projected_throughput": blue_projected,
                     "projected_margin": projected_margin,
-                }
-            )
+                })
             rating_prob_by_match[str(match.match_key or "").strip().lower()] = (
                 _deterministic_red_win_prob(rating_margin, synergy_margin, projected_margin)
             )
@@ -1307,7 +1145,7 @@ def get_event_schedule_with_synergy(
 
     ml_prediction_by_match: dict[str, float] = {}
     ml_prediction_model_version: str | None = None
-    if include_ml_predictions and bool(getattr(settings, "ml_shadow_enabled", False)):
+    if run_ml:
         try:
             ml_payload = infer_match_outcome_shadow_from_rows(db, rows=ml_feature_rows)
         except Exception as exc:
@@ -1411,33 +1249,6 @@ def get_event_rankings(event_key: str):
         "rankings": payload,
     }
 
-@router.get("/{event_key}/team-statuses")
-def get_event_team_statuses(event_key: str):
-    tba = _get_tba_client_or_503()
-    try:
-        payload = tba.event_team_statuses(event_key)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Unable to fetch TBA team statuses for {event_key}") from exc
-    return {
-        "ok": True,
-        "event_key": event_key,
-        "source": "tba",
-        "team_statuses": payload,
-    }
-
-@router.get("/{event_key}/insights")
-def get_event_insights(event_key: str):
-    tba = _get_tba_client_or_503()
-    try:
-        payload = tba.event_insights(event_key)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Unable to fetch TBA insights for {event_key}") from exc
-    return {
-        "ok": True,
-        "event_key": event_key,
-        "source": "tba",
-        "insights": payload,
-    }
 
 @router.get("/{event_key}/predictions")
 def get_event_predictions(event_key: str):

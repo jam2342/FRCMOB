@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func
+from sqlalchemy import func, true
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -987,43 +987,6 @@ def _refresh_event_schedule_from_first(
     return len(schedule), last_modified, False
 
 
-@router.get("/{match_key}")
-def get_match(match_key: str, db: Session = Depends(get_db)):
-    match = db.get(models.Match, match_key)
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
-
-    videos = (
-        db.query(models.MatchVideo)
-        .filter(models.MatchVideo.match_key == match_key)
-        .all()
-    )
-    teams = (
-        db.query(models.MatchTeam)
-        .filter(models.MatchTeam.match_key == match_key)
-        .order_by(models.MatchTeam.alliance, models.MatchTeam.station)
-        .all()
-    )
-
-    return {
-        "match_key": match.match_key,
-        "event_key": match.event_key,
-        "comp_level": match.comp_level,
-        "set_number": match.set_number,
-        "match_number": match.match_number,
-        "time": match.time,
-        "videos": [{"type": v.video_type, "key": v.video_key, "url": v.url} for v in videos],
-        "teams": [
-            {
-                "team_key": t.team_key,
-                "alliance": t.alliance,
-                "station": t.station,
-            }
-            for t in teams
-        ],
-    }
-
-
 @router.get("/{match_key}/phases")
 def get_match_phases(
     match_key: str,
@@ -1050,85 +1013,6 @@ def get_match_phases(
         "event_key": match.event_key,
         "time": match.time,
         **phase_data,
-    }
-
-
-@router.get("/{match_key}/zebra-motionworks")
-def get_match_zebra_motionworks(match_key: str):
-    tba = _get_tba_client_or_503()
-    try:
-        payload = tba.match_zebra_motionworks(match_key)
-    except (TBAClientError, RuntimeError, ValueError, TypeError) as exc:
-        response = getattr(exc, "response", None)
-        status_code = getattr(response, "status_code", None)
-        if status_code == 404:
-            return {
-                "ok": True,
-                "match_key": match_key,
-                "source": "tba",
-                "available": False,
-                "zebra": None,
-            }
-        raise HTTPException(
-            status_code=502,
-            detail=f"Unable to fetch Zebra MotionWorks data from TBA for {match_key}",
-        ) from exc
-
-    return {
-        "ok": True,
-        "match_key": match_key,
-        "source": "tba",
-        "available": payload is not None and (not isinstance(payload, dict) or len(payload) > 0),
-        "zebra": payload,
-    }
-
-
-@router.get("/event/{event_key}")
-def list_matches_for_event(
-    event_key: str,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    db: Session = Depends(get_db),
-):
-    total_count = (
-        db.query(func.count(models.Match.match_key))
-        .filter(models.Match.event_key == event_key)
-        .scalar()
-        or 0
-    )
-    matches = (
-        db.query(
-            models.Match.match_key,
-            models.Match.comp_level,
-            models.Match.set_number,
-            models.Match.match_number,
-            models.Match.time,
-        )
-        .filter(models.Match.event_key == event_key)
-        .order_by(models.Match.comp_level, models.Match.set_number, models.Match.match_number)
-    )
-    if offset > 0:
-        matches = matches.offset(offset)
-    if limit is not None:
-        matches = matches.limit(limit)
-    rows = matches.all()
-
-    return {
-        "event_key": event_key,
-        "count": len(rows),
-        "total_count": int(total_count),
-        "limit": int(limit) if isinstance(limit, int) else None,
-        "offset": int(offset),
-        "matches": [
-            {
-                "match_key": match_key,
-                "comp_level": comp_level,
-                "set_number": set_number,
-                "match_number": match_number,
-                "time": match_time,
-            }
-            for match_key, comp_level, set_number, match_number, match_time in rows
-        ],
     }
 
 
@@ -1369,6 +1253,13 @@ def get_event_schedule(
             row[3],
         )
     )
+    # Page before loading team slots, so a small page doesn't build the whole event.
+    total_count = len(match_rows)
+    paginated = offset > 0 or limit is not None
+    if paginated:
+        start_idx = max(0, int(offset))
+        match_rows = match_rows[start_idx:] if limit is None else match_rows[start_idx : start_idx + int(limit)]
+    page_match_keys = [str(row[0]) for row in match_rows]
 
     teams_by_match: dict[str, dict[str, list[dict]]] = defaultdict(lambda: {"red": [], "blue": []})
     if include_teams:
@@ -1384,6 +1275,7 @@ def get_event_schedule(
                 )
                 .outerjoin(models.Team, models.Team.team_key == models.MatchTeam.team_key)
                 .filter(models.MatchTeam.event_key == event_key)
+                .filter(models.MatchTeam.match_key.in_(page_match_keys) if paginated else true())
                 .all()
             )
             missing_team_keys: set[str] = set()
@@ -1432,6 +1324,7 @@ def get_event_schedule(
                     models.MatchTeam.station,
                 )
                 .filter(models.MatchTeam.event_key == event_key)
+                .filter(models.MatchTeam.match_key.in_(page_match_keys) if paginated else true())
                 .all()
             )
             for match_key, team_key, alliance_raw, station in team_rows:
@@ -1483,14 +1376,6 @@ def get_event_schedule(
                 "blue": blue,
             }
         )
-
-    total_count = len(schedule_rows)
-    if offset > 0 or limit is not None:
-        start_idx = max(0, int(offset))
-        if limit is None:
-            schedule_rows = schedule_rows[start_idx:]
-        else:
-            schedule_rows = schedule_rows[start_idx : start_idx + int(limit)]
 
     if refresh:
         response.headers["Cache-Control"] = "no-store"

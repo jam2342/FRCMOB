@@ -16,7 +16,6 @@ import type {
   ManualScoutingRating,
   MatchTeamOption,
   MobileCapturePanel,
-  MobileHistoryPanel,
   MobileScorePanel,
   OverallScoutRating,
   RpState,
@@ -44,7 +43,7 @@ import {
 import { SCOUT_POINTS_SCALE, SEASON } from '../config/season';
 import { inferMatchCompleted, matchHasScores } from './matchStatus';
 
-export { inferMatchCompleted, matchHasScores };
+export { inferMatchCompleted };
 
 const SCOUTING_ENTRIES_STORAGE = 'scouting_manual_entries_v2';
 const SCOUTING_ENTRIES_STORAGE_LEGACY = 'scouting_manual_entries_v1';
@@ -102,18 +101,10 @@ export const MOBILE_CAPTURE_PANEL_TABS: Array<{ id: MobileCapturePanel; label: s
 ];
 
 export const MOBILE_SCORE_PANEL_TABS: Array<{ id: MobileScorePanel; label: string }> = [
-  { id: 'driver', label: 'Driver' },
   { id: 'points', label: 'Points' },
   { id: 'live', label: 'Live' },
-  { id: 'saved', label: 'Saved' },
 ];
 
-export const MOBILE_HISTORY_PANEL_TABS: Array<{ id: MobileHistoryPanel; label: string }> = [
-  { id: 'team_matches', label: 'Matches' },
-  { id: 'team_rollups', label: 'Teams' },
-  { id: 'entries', label: 'Logs' },
-  { id: 'summaries', label: 'Summary' },
-];
 
 export const EMPTY_FORM: ScoutFormState = {
   auto_mobility: false,

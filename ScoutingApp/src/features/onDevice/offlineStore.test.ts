@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 
 import {
@@ -79,6 +79,20 @@ describe('offline store', () => {
     await saveSession(db, session('2', true));
     const pending = await listPendingSessions(db);
     expect(pending.map((s) => s.id)).toEqual(['1']);
+  });
+
+  it('notifies listeners once for a sync batch, including failed recordings', async () => {
+    await saveSession(db, session('ok'));
+    await saveSession(db, session('boom'));
+    const changed = vi.fn();
+    window.addEventListener('frcmob:session-change', changed);
+    try {
+      await syncPendingSessions(db, async (saved) => {
+        expect(changed).not.toHaveBeenCalled();
+        if (saved.id === 'boom') throw new Error('offline');
+      });
+      expect(changed).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener('frcmob:session-change', changed); }
   });
 
   it('syncPendingSessions posts pending, marks them synced, counts failures', async () => {

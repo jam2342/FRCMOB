@@ -15,29 +15,6 @@ RUN_KIND_OFFICIAL_TRUTH: RunKind = "official_truth"
 RUN_KIND_ON_DEVICE: RunKind = "on_device"
 
 
-def latest_completed_run(
-    db: Session,
-    *,
-    match_key: str,
-    run_kind: RunKind,
-    analysis_version: str | None = None,
-) -> tuple[models.AnalysisRun, models.AnalysisRunContext] | None:
-    query = (
-        db.query(models.AnalysisRun, models.AnalysisRunContext)
-        .join(models.AnalysisRunContext, models.AnalysisRunContext.run_id == models.AnalysisRun.id)
-        .filter(
-            models.AnalysisRun.match_key == match_key,
-            models.AnalysisRun.run_kind == run_kind,
-            models.AnalysisRun.status == "completed",
-        )
-    )
-    if analysis_version is not None:
-        query = query.filter(models.AnalysisRunContext.analysis_version == analysis_version)
-    return query.order_by(
-        models.AnalysisRun.created_at.desc(), models.AnalysisRun.id.desc()
-    ).first()
-
-
 def best_on_device_run(
     db: Session,
     *,

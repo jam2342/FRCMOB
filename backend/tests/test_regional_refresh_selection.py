@@ -45,3 +45,32 @@ def test_missing_refresh_state_falls_back_to_everything():
     ):
         selected, skipped = ra._events_due_for_refresh(events, TODAY)
     assert selected == events and skipped == 0
+
+
+def test_tick_ingests_all_then_builds_season_synergy_once_then_each_event():
+    events = [
+        {"key": "2026aaa", "end_date": "2026-03-01", "start_date": "2026-02-27"},
+        {"key": "2026bbb", "end_date": "2026-03-08", "start_date": "2026-03-06"},
+    ]
+    order: list[str] = []
+    tba = mock.MagicMock()
+    tba.events.return_value = events
+
+    def refresh(_db, *, event_key, run_post_compute, **_kwargs):
+        order.append(f"ingest:{event_key}")
+        assert run_post_compute is False
+        return {"event_key": event_key, "status": "processed" if event_key == "2026aaa" else "ingest_failed"}
+
+    with (
+        mock.patch.object(ra, "TBAClient", return_value=tba),
+        mock.patch.object(ra, "refresh_event", side_effect=refresh),
+        mock.patch.object(ra, "precompute_season_synergy", side_effect=lambda _db, season, **_k: order.append(f"season:{season}") or {"ok": True}),
+        mock.patch.object(ra, "post_compute_event", side_effect=lambda _db, *, event_key, season_ready, **_k: order.append(f"rebuild:{event_key}:{season_ready}") or {}),
+        mock.patch.object(ra, "_mark_event_refreshed", side_effect=lambda key: order.append(f"mark:{key}")),
+        mock.patch.object(ra, "train_shadow_models_after_refresh", return_value={"triggered": False}),
+    ):
+        ra.run_regional_post_event_breakdowns(
+            season=2026, db=mock.MagicMock(), include_all_events=True, refresh_all=True,
+            synergy_model_version="v", quality_threshold=0.7,
+        )
+    assert order == ["ingest:2026aaa", "ingest:2026bbb", "season:2026", "rebuild:2026aaa:True", "mark:2026aaa"]

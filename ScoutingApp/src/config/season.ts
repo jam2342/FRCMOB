@@ -5,7 +5,6 @@
 export type Season = {
   readonly year: number;
   readonly fallbackYear: number;
-  readonly name: string;
   readonly matchSec: number;
   readonly autoSec: number;
   readonly endgameSec: number;
@@ -17,7 +16,6 @@ export type Season = {
 export const SEASON: Season = {
   year: 2026,
   fallbackYear: 2025,
-  name: 'REBUILT',
   matchSec: 160,
   autoSec: 20,
   endgameSec: 30,

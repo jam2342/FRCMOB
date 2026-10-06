@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import sanitize_external_error
 from app.services.ml.shadow import auto_train_shadow_models_for_event_breakdown
-from app.services.ml.synergy import precompute_event_synergy
+from app.services.ml.synergy import QUALITY_THRESHOLD_DEFAULT, SYNERGY_MODEL_VERSION, precompute_event_synergy
 from app.services.ratings.model import recompute_event_ratings
 
 logger = logging.getLogger(__name__)
@@ -50,13 +50,14 @@ def train_shadow_models_after_refresh(db: Session, *, event_key: str) -> dict[st
     return result
 
 
-def _post_compute(
+def post_compute_event(
     db: Session,
     *,
     event_key: str,
     train_ml: bool,
-    synergy_model_version: str,
-    quality_threshold: float,
+    synergy_model_version: str = SYNERGY_MODEL_VERSION,
+    quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
+    season_ready: bool = False,
 ) -> dict[str, Any]:
     try:
         synergy_result = precompute_event_synergy(
@@ -64,6 +65,7 @@ def _post_compute(
             event_key,
             model_version=synergy_model_version,
             quality_threshold=quality_threshold,
+            season_ready=season_ready,
         )
     except Exception as exc:
         db.rollback()
@@ -99,7 +101,9 @@ def refresh_event(
 
     started = time.perf_counter()
     try:
-        ingest_result = ingest_event_data(event_key=event_key, tba=TBAClient(), db=db)
+        # Ingest skips its own rebuild: it would run synergy and ratings, then the
+        # block below would run them again.
+        ingest_result = ingest_event_data(event_key=event_key, tba=TBAClient(), db=db, run_post_compute=False)
     except Exception as exc:
         db.rollback()
         logger.error("event_refresh.ingest_failed event=%s error=%s", event_key, str(exc)[:200])
@@ -111,7 +115,7 @@ def refresh_event(
 
     post_compute: dict[str, Any] = {"ran": False}
     if run_post_compute:
-        post_compute = {"ran": True, **_post_compute(
+        post_compute = {"ran": True, **post_compute_event(
             db,
             event_key=event_key,
             train_ml=train_ml,

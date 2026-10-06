@@ -771,35 +771,6 @@
     transform: scale(0.92);
   }
 
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
-    top: calc(env(safe-area-inset-top, 0px) + 84px + var(--ps-offline-banner-height, 0px));
-    gap: 4px;
-    padding: 6px 8px;
-    border-radius: 12px;
-    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions {
-    gap: 4px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions .center-btn{
-    min-height: 28px;
-    padding: 0 8px;
-    font-size: var(--font-size-legacy-11);
-    border-radius: 7px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-context {
-    gap: 3px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-chip {
-    padding: 2px 6px;
-    font-size: var(--font-size-legacy-10);
-    border-radius: 5px;
-  }
-
   /* Section switching + Scout Board now live in the merged top toggle
      (Setup·Room·Data·Board), so this header's only mobile contents — the
      Collapse row and the Setup/Room/Data section nav — are redundant. Drop the

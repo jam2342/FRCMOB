@@ -10,11 +10,17 @@ from app.services.utils import _clamp, _mean, _std as _std
 
 class RoleClassifier:
  
-    def __init__(self, db: Session, event_key: str, team_key: str):
+    def __init__(
+        self,
+        db: Session,
+        event_key: str,
+        team_key: str,
+        findings: list[models.TeamMatchFinding] | None = None,
+    ):
         self.db = db
         self.event_key = event_key
         self.team_key = team_key
-        self.findings = self._load_findings()
+        self.findings = findings if findings is not None else self._load_findings()
 
     def _load_findings(self) -> list[models.TeamMatchFinding]:
         return (

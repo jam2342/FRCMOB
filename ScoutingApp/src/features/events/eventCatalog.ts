@@ -1,3 +1,4 @@
+import { mergeEventLists } from '../../utils/mergeEventLists';
 import { getSuggestedEvents, searchEvents, type EventSearchItem } from '../../api';
 
 type EventCatalogOptions = {
@@ -9,31 +10,7 @@ type EventCatalogOptions = {
   remoteTeamCountFetchLimit?: number;
 };
 
-function normalizeCatalogEventKey(value: string | null | undefined): string {
-  return String(value || '').trim().toLowerCase();
-}
 
-function mergeCatalogEventLists(...lists: EventSearchItem[][]): EventSearchItem[] {
-  const byKey = new Map<string, EventSearchItem>();
-  for (const list of lists) {
-    for (const event of list) {
-      const key = normalizeCatalogEventKey(event.event_key);
-      if (!key) continue;
-      const previous = byKey.get(key);
-      if (!previous) {
-        byKey.set(key, event);
-        continue;
-      }
-      byKey.set(key, {
-        ...previous,
-        ...event,
-        start_date: event.start_date || previous.start_date,
-        end_date: event.end_date || previous.end_date,
-      });
-    }
-  }
-  return Array.from(byKey.values());
-}
 
 export async function loadSeasonSearchFallback(options?: EventCatalogOptions): Promise<EventSearchItem[]> {
   const preferredYear = options?.preferredYear ?? new Date().getUTCFullYear();
@@ -45,7 +22,7 @@ export async function loadSeasonSearchFallback(options?: EventCatalogOptions): P
     searchEvents(String(fallbackYear)),
   ]);
 
-  return mergeCatalogEventLists(
+  return mergeEventLists(
     primarySearch.status === 'fulfilled' ? primarySearch.value.events || [] : [],
     fallbackSearch.status === 'fulfilled' ? fallbackSearch.value.events || [] : [],
   ).slice(0, limit);
@@ -76,7 +53,7 @@ export async function loadSeasonEventCatalog(options?: EventCatalogOptions): Pro
 
   if (minTarget > 0 && suggested.length < minTarget) {
     const fallback = await loadSeasonSearchFallback({ preferredYear, fallbackYear, limit });
-    return mergeCatalogEventLists(suggested, fallback).slice(0, limit);
+    return mergeEventLists(suggested, fallback).slice(0, limit);
   }
 
   return suggested.slice(0, limit);

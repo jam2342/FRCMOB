@@ -71,6 +71,27 @@ describe('useTeamRoom', () => {
     expect(result.current.snapshot).toBe(first);
   });
 
+  it('never overlaps a slow poll with another tick or focus refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    signInAs(1, 'leader');
+    api.ensureTeamRoom.mockResolvedValue({ ...snapshot(1, 2), created: false });
+    let finish!: (value: TeamRoomSnapshot) => void;
+    api.getTeamRoom.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { result } = renderHook(() => useTeamRoom('2026week0'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(async () => { vi.advanceTimersByTime(5_100); });
+    expect(api.getTeamRoom).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(api.getTeamRoom).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(snapshot(1, 2)); });
+    await act(async () => { vi.advanceTimersByTime(5_000); });
+    expect(api.getTeamRoom).toHaveBeenCalledTimes(2);
+    await act(async () => { finish(snapshot(1, 2)); });
+  });
+
   it('backs off instead of re-creating the room on every poll when it keeps failing', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     signInAs(1, 'leader');
@@ -134,10 +155,12 @@ describe('useTeamRoom', () => {
     });
     expect(result.current.snapshot?.assignments).toHaveLength(1);
 
-    // The stale poll lands last; the re-read after the save reports the truth.
-    expect(polls.length).toBeGreaterThanOrEqual(2);
-    await act(async () => { polls[1](snapshot(1, 2)); });
+    // The save queues a re-read behind the slow poll, whose old answer is dropped.
+    expect(polls).toHaveLength(1);
     await act(async () => { polls[0](snapshot(1, null)); });
+    expect(result.current.snapshot?.assignments).toHaveLength(1);
+    expect(polls).toHaveLength(2);
+    await act(async () => { polls[1](snapshot(1, 2)); });
     expect(result.current.snapshot?.assignments).toHaveLength(1);
   });
 

@@ -76,10 +76,6 @@ export function myAssignments(
   return result;
 }
 
-export function nextAssignment(list: MyAssignment[]): MyAssignment | null {
-  return list.find((item) => !item.done) ?? null;
-}
-
 export type CoverageSummary = {
   upcomingSlots: number;
   assignedSlots: number;
@@ -134,6 +130,7 @@ export function planAutoAssign(
     });
   }
 
+  const memberOrder = new Map(members.map((id, index) => [id, index]));
   const changes: TeamRoomAssignmentChange[] = [];
   upcoming.forEach((match, matchIndex) => {
     const slots = matchSlots(match);
@@ -145,12 +142,15 @@ export function planAutoAssign(
     for (const slot of slots) {
       const row = index.get(slotKey(slot.match_key, slot.team_key));
       if (keep(row)) continue;
-      const pick = members
-        .filter((id) => !busy.has(id))
-        .sort((a, b) =>
-          (load.get(a) ?? 0) - (load.get(b) ?? 0)
-          || (lastMatch.get(a) ?? -1) - (lastMatch.get(b) ?? -1)
-          || members.indexOf(a) - members.indexOf(b))[0];
+      let pick: number | undefined;
+      for (const id of members) {
+        if (busy.has(id)) continue;
+        if (pick === undefined || (
+          (load.get(id) ?? 0) - (load.get(pick) ?? 0)
+          || (lastMatch.get(id) ?? -1) - (lastMatch.get(pick) ?? -1)
+          || memberOrder.get(id)! - memberOrder.get(pick)!
+        ) < 0) pick = id;
+      }
       const next = pick ?? null;
       if (next !== null) {
         busy.add(next);

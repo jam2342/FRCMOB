@@ -27,22 +27,6 @@
 
 
 /* ── Header signatures: subtle byline in both shell headers */
-.product-shell .ps-brand-signature,
-.product-shell .ps-topbar-signature {
-  font-size: var(--font-size-legacy-10);  /* was 8.96px */
-  line-height: 1.18;
-  letter-spacing: 0.01em;
-  font-weight: 500;
-  opacity: 0.74;
-}
-
-.product-shell .ps-brand-signature {
-  display: block;
-  max-width: 22ch;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .product-shell .ps-topbar-brand-meta {
   display: grid;
@@ -54,16 +38,6 @@
 .product-shell .ps-topbar-brand-name {
   display: block;
   line-height: 1;
-}
-
-.product-shell .ps-topbar-signature {
-  display: block;
-  color: var(--color-text-muted);
-  text-transform: none;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ── Density balance: reduce visual crowding without oversized headlines */
@@ -373,7 +347,7 @@
    EmptyState's own stylesheet gives it no border at all; the rule above adds
    one so a standalone empty state reads as a region. Inside a container that
    is already a region, take it back off. */
-.product-shell :where(.surface-card, .home-fotmob-card, .home-mini-panel, .center-kpi-card, .ps-panel) .es {
+.product-shell :where(.surface-card, .home-fotmob-card, .home-mini-panel, .center-kpi-card) .es {
   border: 0;
   border-radius: 0;
   background: none;
@@ -461,10 +435,6 @@
 @media (max-width: 1120px) {
   .product-shell .ps-topbar-brand-meta {
     max-width: min(44vw, 180px);
-  }
-
-  .product-shell .ps-topbar-signature {
-    font-size: var(--font-size-legacy-10);  /* was 8px */
   }
 
   .product-shell h1 {
@@ -848,10 +818,7 @@
 .product-shell .event-award-card,
 .product-shell .compare-highlight-card,
 .product-shell .compare-deep-card,
-.product-shell .favorites-item-card,
-.product-shell .theoretical-team-grid,
-.product-shell .theoretical-weight-grid,
-.product-shell .theoretical-advanced-grid {
+.product-shell .favorites-item-card {
   border-color: var(--ui-border);
   border-radius: var(--ui-radius-card);
   background: color-mix(in srgb, var(--ui-surface) 88%, var(--ui-surface-soft));
@@ -1899,190 +1866,6 @@
     flex: 0 0 auto;
   }
 
-  .scouting-mobile-save {
-    position: sticky;
-    top: var(--ps-sticky-top-2);
-    z-index: 8;
-    display: grid;
-    gap: 5px;
-    border: 1px solid var(--ui-border);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--ui-surface) 94%, transparent);
-    backdrop-filter: blur(6px);
-    padding: 6px;
-  }
-
-  .scouting-mobile-save-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    align-items: center;
-  }
-
-  .scouting-mobile-save-actions .center-btn,
-  .scouting-mobile-status-toggle {
-    min-height: 32px;
-    font-size: var(--font-size-legacy-11);
-    padding: 0 10px;
-  }
-
-  .scouting-mobile-status-toggle {
-    border: 1px solid var(--ui-border);
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--ui-surface) 92%, transparent);
-    color: var(--color-text);
-    font-weight: 700;
-  }
-
-  .scouting-mobile-status-toggle.active {
-    border-color: var(--ui-accent);
-    color: var(--color-text);
-  }
-
-  .scouting-mobile-status-toggle:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .scouting-mobile-context-row {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 5px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 1px;
-  }
-
-  .scouting-mobile-context-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  .scouting-mobile-context-row .center-chip {
-    flex: 0 0 auto;
-    min-height: 19px;
-    padding: 2px 8px;
-    font-size: var(--font-size-legacy-11);
-  }
-
-  .scouting-mobile-context-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px;
-  }
-
-  .scouting-mobile-context-grid .center-chip {
-    min-width: 0;
-    justify-content: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-height: 19px;
-    font-size: var(--font-size-legacy-11);
-    padding: 2px 7px;
-  }
-
-  .scouting-mobile-section-tabs {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .scouting-mobile-section-btn {
-    min-height: 32px;
-    border: 1px solid var(--ui-border);
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--ui-surface-soft) 94%, transparent);
-    color: var(--color-text);
-    font-size: var(--font-size-2xs);
-    font-weight: 700;
-    letter-spacing: 0.01em;
-  }
-
-  .scouting-mobile-section-btn.active {
-    border-color: var(--ui-accent);
-    background: color-mix(in srgb, var(--ui-accent-soft) 70%, var(--ui-surface));
-    color: var(--color-text);
-  }
-
-  .scouting-mobile-panel-tabs {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .scouting-mobile-panel-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .scouting-mobile-panel-btn {
-    flex: 0 0 auto;
-    min-height: 31px;
-    padding: 0 11px;
-    border: 1px solid color-mix(in srgb, var(--ui-border) 88%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--ui-surface-soft) 94%, transparent);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-legacy-11);
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-  }
-
-  .scouting-mobile-panel-btn.active {
-    border-color: var(--ui-accent);
-    background: color-mix(in srgb, var(--ui-accent-soft) 72%, var(--ui-surface));
-    color: var(--color-text);
-  }
-
-  .scouting-mobile-history-filters {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .scouting-mobile-compact .scouting-mobile-save {
-    gap: 3px;
-    padding: 4px;
-    top: calc(env(safe-area-inset-top, 0px) + 94px + var(--ps-offline-banner-height, 0px));
-  }
-
-  .scouting-mobile-compact .scouting-mobile-save-actions .center-btn,
-  .scouting-mobile-compact .scouting-mobile-status-toggle {
-    min-height: 28px;
-    font-size: var(--font-size-legacy-11);
-    padding: 0 6px;
-  }
-
-  .scouting-mobile-compact .scouting-mobile-context-row .center-chip {
-    min-height: 17px;
-    font-size: var(--font-size-legacy-10);
-    padding: 1px 6px;
-  }
-
-  .scouting-mobile-compact .scouting-mobile-section-tabs {
-    gap: 4px;
-  }
-
-  .scouting-mobile-compact .scouting-mobile-section-btn {
-    min-height: 29px;
-    font-size: var(--font-size-legacy-11);
-  }
-
-  .scouting-mobile-compact .scouting-mobile-panel-tabs {
-    gap: 4px;
-  }
-
-  .scouting-mobile-compact .scouting-mobile-panel-btn {
-    min-height: 28px;
-    font-size: var(--font-size-legacy-11);
-    padding: 0 9px;
-  }
-
   .scouting-mobile-compact .surface-card {
     border-radius: 10px;
   }
@@ -2739,17 +2522,6 @@
   from {
     opacity: 0;
     transform: translate3d(0, 10px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes uiCardRiseIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0) scale(0.992);
   }
   to {
     opacity: 1;

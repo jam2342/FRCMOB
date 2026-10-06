@@ -6,7 +6,7 @@ import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { Stat } from '../components/ui/primitives';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { Table, type TableColumn } from '../components/ui/primitives';
@@ -133,7 +133,7 @@ function ScoutingCoverageWorkspacePage() {
     <>
       <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
       <div className="center-page-container">
-        <SurfaceCardGroup groupId="scouting-coverage">
+
           <SurfaceCard
             title="Scouting Coverage"
             subtitle="Who has scouted what — find the holes before alliance selection does."
@@ -275,7 +275,7 @@ function ScoutingCoverageWorkspacePage() {
               ) : null}
             </SurfaceCard>
           ) : null}
-        </SurfaceCardGroup>
+
       </div>
     </>
   );

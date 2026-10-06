@@ -2,8 +2,8 @@
 // isolated so the detector can use several CPU cores (build/isolateRecorder.ts). The rest
 // of the app stays on index.html, where isolation would block YouTube embeds and outside
 // images. These decide when to hop between the two with a full page load.
-export const RECORDER_ROUTE = '/scouting/record';
-export const RECORDER_DOCUMENT = '/record.html';
+const RECORDER_ROUTE = '/scouting/record';
+const RECORDER_DOCUMENT = '/record.html';
 
 function isRecorderRoute(routePath: string): boolean {
   return routePath === RECORDER_ROUTE || routePath.startsWith(`${RECORDER_ROUTE}/`);

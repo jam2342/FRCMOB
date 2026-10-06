@@ -4,7 +4,7 @@ import { getTeamBreakdown } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
 import { SEASON } from '../config/season';
@@ -599,7 +599,6 @@ export function AutoPathPage() {
     setSelectedPathIds(new Set());
   }
 
-  const surfaceGroupId = 'autopath-main';
 
   /* ── render ─────────────────────────────────── */
   return (
@@ -645,7 +644,7 @@ export function AutoPathPage() {
         <span />
       </div>
 
-      <SurfaceCardGroup groupId={surfaceGroupId}>
+
         {/* Field Canvas — no fullscreen/minimize: those remount the <canvas>
            via portal and wipe the in-progress drawing (same fix as OnDeviceRun
            / FieldCalibration). */}
@@ -768,7 +767,7 @@ export function AutoPathPage() {
             </p>
           </SurfaceCard>
         )}
-      </SurfaceCardGroup>
+
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
   CardBody,
@@ -100,7 +100,7 @@ export function PrimitivesPage() {
 
   return (
     <div className="center-page-container">
-      <SurfaceCardGroup>
+
         <SurfaceCard
           title="Button"
           subtitle="Four variants, two sizes, every state. Replaces 52 button classes."
@@ -264,7 +264,7 @@ export function PrimitivesPage() {
             <Table columns={COLUMNS} rows={[]} rowKey={(row) => row.team} empty="No rankings published yet." />
           </CardBody>
         </SurfaceCard>
-      </SurfaceCardGroup>
+
 
       <Modal
         open={modal === 'plain'}

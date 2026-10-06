@@ -1,3 +1,5 @@
+import { usePageVisibility } from './usePageVisibility';
+import { useSingleFlightPolling } from './useSingleFlightPolling';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -9,7 +11,6 @@ import {
   rejectAutoScoutDraft,
 } from '../api';
 import type {
-  AutoScoutSeasonSupport,
   TeamHeatmapResponse,
 } from '../api';
 import {
@@ -57,7 +58,6 @@ export function useAutoScoutDraft({
   setNotes,
 }: UseAutoScoutDraftArgs) {
   const [draft, setDraft] = useState<AutoScoutDraftRecord | null>(null);
-  const [seasonSupport, setSeasonSupport] = useState<AutoScoutSeasonSupport | null>(null);
   const [loading, setLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState('');
@@ -67,6 +67,8 @@ export function useAutoScoutDraft({
   const [heatmapError, setHeatmapError] = useState('');
   const lastAppliedSignatureRef = useRef<string>('');
 
+  const visible = usePageVisibility();
+  const refreshInFlightRef = useRef(false);
   const ready = Boolean(eventKey && matchKey && teamKey);
   const draftSignature = draft ? `${draft.id}:${draft.draft_version}` : '';
   const managedFormFields = useMemo(
@@ -76,7 +78,6 @@ export function useAutoScoutDraft({
 
   useEffect(() => {
     setDraft(null);
-    setSeasonSupport(null);
     setError('');
     setEvidenceField(null);
     setHeatmapData(null);
@@ -85,14 +86,17 @@ export function useAutoScoutDraft({
   }, [eventKey, matchKey, teamKey]);
 
   const refreshDraft = useCallback(async () => {
-    if (!ready) return;
+    if (!ready || refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     try {
       const payload = await getAutoScoutDraft(eventKey, matchKey, teamKey);
       setDraft(payload.draft);
-      setSeasonSupport(payload.season_support ?? null);
       setError('');
     } catch (nextError) {
       setError(normalizeError(nextError, 'Unable to load auto-scout draft.'));
+      return false;
+    } finally {
+      refreshInFlightRef.current = false;
     }
   }, [eventKey, matchKey, ready, teamKey]);
 
@@ -107,7 +111,6 @@ export function useAutoScoutDraft({
         force_regenerate: forceRegenerate,
       });
       setDraft(payload.draft);
-      setSeasonSupport(payload.season_support ?? null);
       setError('');
     } catch (nextError) {
       setError(normalizeError(nextError, 'Unable to generate auto-scout draft.'));
@@ -117,17 +120,16 @@ export function useAutoScoutDraft({
   }, [eventKey, matchKey, ready, teamKey]);
 
   useEffect(() => {
-    if (!enabled || !ready || draft || loading) return;
+    if (!enabled || !visible || !ready || draft || loading) return;
     void refreshDraft();
-  }, [draft, enabled, loading, ready, refreshDraft]);
+  }, [draft, enabled, loading, ready, refreshDraft, visible]);
 
-  useEffect(() => {
-    if (!ready || !draft || draft.status !== 'generating') return;
-    const timer = window.setInterval(() => {
-      void refreshDraft();
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [draft, ready, refreshDraft]);
+  useSingleFlightPolling({
+    enabled: enabled && ready && draft?.status === 'generating',
+    visible,
+    intervalMs: 3000,
+    run: refreshDraft,
+  });
 
   useEffect(() => {
     if (!enabled || !draft || !draftSignature) return;
@@ -196,7 +198,6 @@ export function useAutoScoutDraft({
   const prepareReviewedAutoSave = useCallback(async (): Promise<{
     autoScoutMeta: AutoScoutMeta;
     fieldOverrides: Record<string, AutoScoutFieldOverride> | null;
-    approvedDraft: AutoScoutDraftRecord;
   } | null> => {
     if (!draft) return null;
     if (draft.status === 'approved') {
@@ -208,7 +209,6 @@ export function useAutoScoutDraft({
           approved_at_ms: draft.approved_at ? Date.parse(draft.approved_at) : null,
         },
         fieldOverrides: draft.field_overrides ?? null,
-        approvedDraft: draft,
       };
     }
     if (draft.status !== 'ready' && draft.status !== 'low_confidence') return null;
@@ -239,7 +239,6 @@ export function useAutoScoutDraft({
           approved_at_ms: response.draft.approved_at ? Date.parse(response.draft.approved_at) : null,
         },
         fieldOverrides: response.field_overrides ?? null,
-        approvedDraft: response.draft,
       };
     } catch (nextError) {
       setError(normalizeError(nextError, 'Unable to approve auto-scout draft.'));
@@ -268,12 +267,10 @@ export function useAutoScoutDraft({
 
   return {
     draft,
-    seasonSupport,
     loading,
     approving,
     error,
     generateDraft,
-    refreshDraft,
     prepareReviewedAutoSave,
     rejectDraft,
     getFieldBadge,
@@ -283,8 +280,6 @@ export function useAutoScoutDraft({
     heatmapData,
     heatmapLoading,
     heatmapError,
-    hasReadyDraft: draft?.status === 'ready' || draft?.status === 'low_confidence' || draft?.status === 'approved',
-    managedFormFields,
     derivedInsights: draft?.draft_payload?.derived_insights || {},
   };
 }

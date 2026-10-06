@@ -132,7 +132,7 @@ try {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const detector = await detectorModule.createDetector(detectorModule.ON_DEVICE_MODEL_URL);
+    const detector = await detectorModule.createDeviceDetector();
     const run = () => detectorModule.detectRobots(detector, canvas, canvas.width, canvas.height);
     const summary = await benchmarkModule.benchmark(run, { iterations: count, warmup: 3 });
     let adapterInfo = null;

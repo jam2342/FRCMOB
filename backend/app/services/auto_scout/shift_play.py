@@ -240,9 +240,6 @@ class _OpponentIndex:
                         best = dist
         return best
 
-    def scoring_present(self, time_sec: float, scoring_zone_points: "_ZonePresence") -> bool:
-        return scoring_zone_points.present(time_sec)
-
 
 class _ZonePresence:
     # Whether any opponent robot is in a given zone at ~a timestamp (for disruption).
@@ -611,7 +608,22 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
     defense_assessable_count = 0
     sample_matches = 0
 
+    # Most matches have no reviewed recording: find the few that do in one query
+    # instead of asking per match.
+    recorded = {
+        str(mk)
+        for (mk,) in db.query(models.OnDeviceSession.match_key)
+        .filter(
+            models.OnDeviceSession.match_key.in_(match_keys),
+            models.OnDeviceSession.status == "accepted",
+        )
+        .distinct()
+        .all()
+    } if match_keys else set()
+
     for match_key in match_keys:
+        if match_key not in recorded:
+            continue
         run_row = best_on_device_run(db, match_key=match_key, team_key=normalized_team_key)
         if run_row is None:
             continue

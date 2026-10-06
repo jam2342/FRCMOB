@@ -13,19 +13,16 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import sanitize_external_error
 from app.db import models
 from app.services.analysis.evidence import evidence_rejection_reason
 from app.services.events.match_times import match_times_from_payload
-from app.services.ml.shadow import auto_train_shadow_models_for_event_breakdown
-from app.services.ratings.model import recompute_event_ratings
 from app.services.scoring.truth import (
     _extract_score_breakdown_truth_rows,
     _rebuilt_active_hub_duration_sec,
     _truth_context,
 )
 from app.services.scoring.official_team_stats import COPR_METRICS_BY_SEASON
-from app.services.ml.synergy import SYNERGY_MODEL_VERSION, precompute_event_synergy
+from app.services.ml.synergy import SYNERGY_MODEL_VERSION
 from app.services.utils import _as_float
 from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH
 from app.services.season_config import REBUILT_SEASON_YEAR, require_known_season_rules
@@ -352,7 +349,6 @@ def upsert_score_breakdown_truth(
                         event_key=event_key,
                         analysis_version=TBA_SCOREBREAKDOWN_RUN_VERSION,
                         params_hash=TBA_SCOREBREAKDOWN_RUN_VERSION,
-                        calibration_id=None,
                     )
                 )
                 inserted_runs += 1
@@ -638,39 +634,6 @@ def ingest_event(
     db.flush()
 
     linked_match_teams = 0
-    inserted_match_videos = 0
-    missing_video_match_keys: list[str] = []
-
-    def _merge_match_video(match_key_value: str, video_payload: dict) -> None:
-        nonlocal inserted_match_videos
-        video_type = str(video_payload.get("type") or "").strip().lower()
-        video_key = str(video_payload.get("key") or "").strip()
-        if not video_type or not video_key:
-            return
-        url = ""
-        if video_type == "youtube":
-            url = f"https://www.youtube.com/watch?v={video_key}"
-        existing_video = (
-            db.query(models.MatchVideo)
-            .filter(
-                models.MatchVideo.match_key == match_key_value,
-                models.MatchVideo.video_type == video_type,
-                models.MatchVideo.video_key == video_key,
-            )
-            .first()
-        )
-        if existing_video is not None:
-            return
-        db.add(
-            models.MatchVideo(
-                match_key=match_key_value,
-                video_type=video_type,
-                video_key=video_key,
-                url=url,
-            )
-        )
-        inserted_match_videos += 1
-
     for match in matches:
         for alliance in ("red", "blue"):
             alliance_payload = (match.get("alliances") or {}).get(alliance) or {}
@@ -687,48 +650,6 @@ def ingest_event(
                 )
                 linked_match_teams += 1
 
-        videos_payload = match.get("videos")
-        normalized_videos = videos_payload if isinstance(videos_payload, list) else []
-        if not normalized_videos:
-            missing_video_match_keys.append(str(match.get("key") or "").strip().lower())
-        for video in normalized_videos:
-            if not isinstance(video, dict):
-                continue
-            _merge_match_video(str(match.get("key") or "").strip().lower(), video)
-
-    video_backfill = {
-        "enabled": bool(settings.events_ingest_backfill_match_videos),
-        "missing_match_count": len([key for key in missing_video_match_keys if key]),
-        "max_calls": max(0, int(settings.events_ingest_backfill_match_videos_max_calls)),
-        "calls_made": 0,
-        "matches_with_new_videos": 0,
-        "errors": 0,
-    }
-    if (
-        bool(settings.events_ingest_backfill_match_videos)
-        and int(settings.events_ingest_backfill_match_videos_max_calls) > 0
-        and missing_video_match_keys
-    ):
-        budget = max(0, min(int(settings.events_ingest_backfill_match_videos_max_calls), 200))
-        for match_key in [key for key in missing_video_match_keys if key][:budget]:
-            video_backfill["calls_made"] += 1
-            try:
-                match_payload = tba.match(match_key)
-            except Exception:
-                video_backfill["errors"] += 1
-                continue
-            if not isinstance(match_payload, dict):
-                continue
-            backfill_videos = match_payload.get("videos")
-            if not isinstance(backfill_videos, list) or not backfill_videos:
-                continue
-            before_count = inserted_match_videos
-            for video in backfill_videos:
-                if not isinstance(video, dict):
-                    continue
-                _merge_match_video(match_key, video)
-            if inserted_match_videos > before_count:
-                video_backfill["matches_with_new_videos"] += 1
 
     score_breakdown_truth = upsert_score_breakdown_truth(
         db,
@@ -761,99 +682,30 @@ def ingest_event(
         else bool(settings.events_ingest_run_post_compute)
     )
     if should_run_post_compute and not settings.public_readonly_mode:
-        try:
-            ratings_payload = recompute_event_ratings(db, event_key)
-            ratings_recompute = {
-                "triggered": True,
-                "ok": bool(ratings_payload.get("ok", False)),
-                "detail": None,
-                "model_version": ratings_payload.get("model_version"),
-                "count": int(ratings_payload.get("count", 0) or 0),
-                "quality_gate": ratings_payload.get("quality_gate"),
-                "ml_shadow": ratings_payload.get("ml_shadow"),
-                "ml_shadow_auto_train": None,
-            }
-        except Exception as exc:
-            ratings_recompute = {
-                "triggered": True,
-                "ok": False,
-                "detail": sanitize_external_error(exc, default="Ratings recompute failed."),
-                "model_version": None,
-                "count": 0,
-                "ml_shadow": None,
-                "ml_shadow_auto_train": None,
-            }
+        # The same rebuild refresh_event runs (synergy, ratings, optional ML training),
+        # so there is one implementation of it.
+        from app.services.events.pipeline import post_compute_event
 
-        if any(match.get("comp_level") == "qm" for match in matches):
-            try:
-                precompute_result = precompute_event_synergy(db, event_key, model_version=SYNERGY_MODEL_VERSION)
-                synergy_precompute = {
-                    "triggered": True,
-                    "ok": True,
-                    "model_version": SYNERGY_MODEL_VERSION,
-                    "projection_count": (
-                        int(precompute_result.get("projections", {}).get("count", 0))
-                        if isinstance(precompute_result, dict)
-                        else 0
-                    ),
-                    "detail": None,
-                }
-            except Exception as exc:
-                synergy_precompute = {
-                    "triggered": True,
-                    "ok": False,
-                    "detail": sanitize_external_error(exc, default="Synergy precompute failed."),
-                }
-
-        ml_shadow_auto_train: dict[str, Any] = {
-            "triggered": False,
-            "ok": False,
-            "detail": "disabled",
+        rebuilt = post_compute_event(db, event_key=event_key, train_ml=True)
+        ratings_payload = rebuilt["ratings"] if isinstance(rebuilt.get("ratings"), dict) else {}
+        synergy_payload = rebuilt["synergy"] if isinstance(rebuilt.get("synergy"), dict) else {}
+        ratings_recompute = {
+            "triggered": True,
+            "ok": bool(ratings_payload.get("ok", False)),
+            "detail": ratings_payload.get("detail"),
+            "model_version": ratings_payload.get("model_version"),
+            "count": int(ratings_payload.get("count", 0) or 0),
+            "quality_gate": ratings_payload.get("quality_gate"),
+            "ml_shadow": ratings_payload.get("ml_shadow"),
+            "ml_shadow_auto_train": rebuilt.get("ml_shadow"),
         }
-        if bool(getattr(settings, "ml_shadow_auto_train_on_event_breakdown", False)):
-            try:
-                ml_shadow_auto_train = auto_train_shadow_models_for_event_breakdown(
-                    db,
-                    event_key=event_key,
-                    limit_events=int(getattr(settings, "ml_shadow_auto_train_limit_events", 40) or 40),
-                    source_version=None,
-                    activate=bool(getattr(settings, "ml_shadow_auto_train_activate", False)),
-                    replace_predictions=True,
-                )
-            except Exception as exc:
-                ml_shadow_auto_train = {
-                    "triggered": True,
-                    "ok": False,
-                    "detail": sanitize_external_error(exc, default="ML shadow auto-train failed."),
-                }
-
-            if bool(ml_shadow_auto_train.get("ok")) and bool(
-                getattr(settings, "ml_shadow_auto_train_recompute_ratings", True)
-            ):
-                try:
-                    ratings_payload = recompute_event_ratings(db, event_key)
-                    ratings_recompute = {
-                        "triggered": True,
-                        "ok": bool(ratings_payload.get("ok", False)),
-                        "detail": None,
-                        "model_version": ratings_payload.get("model_version"),
-                        "count": int(ratings_payload.get("count", 0) or 0),
-                        "quality_gate": ratings_payload.get("quality_gate"),
-                        "ml_shadow": ratings_payload.get("ml_shadow"),
-                        "ml_shadow_auto_train": None,
-                    }
-                    ml_shadow_auto_train["ratings_recomputed_after_train"] = True
-                    ml_shadow_auto_train["ratings_recompute_ok"] = bool(
-                        ratings_recompute.get("ok")
-                    )
-                except Exception as exc:
-                    ml_shadow_auto_train["ratings_recomputed_after_train"] = False
-                    ml_shadow_auto_train["ratings_recompute_ok"] = False
-                    ml_shadow_auto_train["ratings_recompute_error"] = sanitize_external_error(
-                        exc,
-                        default="Ratings recompute after ML auto-train failed.",
-                    )
-        ratings_recompute["ml_shadow_auto_train"] = ml_shadow_auto_train
+        synergy_precompute = {
+            "triggered": True,
+            "ok": bool(synergy_payload.get("ok", True)),
+            "model_version": SYNERGY_MODEL_VERSION,
+            "projection_count": int((synergy_payload.get("projections") or {}).get("count", 0) or 0),
+            "detail": synergy_payload.get("detail"),
+        }
     elif should_run_post_compute and settings.public_readonly_mode:
         ratings_recompute = {
             "triggered": False,
@@ -873,13 +725,12 @@ def ingest_event(
     _ingest_elapsed_ms = round((_time.perf_counter() - _ingest_t0) * 1000, 1)
     logger.info(
         "event_ingest.completed event=%s elapsed_ms=%.1f "
-        "teams=%d matches=%d videos_inserted=%d stats_upserted=%d "
+        "teams=%d matches=%d stats_upserted=%d "
         "ratings_ok=%s synergy_ok=%s",
         event_key,
         _ingest_elapsed_ms,
         len(teams),
         len(matches),
-        inserted_match_videos,
         stats_upserted,
         ratings_recompute.get("ok"),
         synergy_precompute.get("ok"),
@@ -890,8 +741,6 @@ def ingest_event(
         "teams": len(teams),
         "matches": len(matches),
         "match_team_links": linked_match_teams,
-        "match_videos_inserted": int(inserted_match_videos),
-        "video_backfill": video_backfill,
         "event_team_stats_upserted": stats_upserted,
         "event_team_stats_source": stats_source,
         "score_breakdown_truth": score_breakdown_truth,
