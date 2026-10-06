@@ -52,6 +52,14 @@ describe('SurfaceCard collapse contract', () => {
     expect(screen.queryByRole('button', { name: /minimize mobile only card block/i })).not.toBeInTheDocument();
   });
 
+  it('shows no minimize button on a phone unless the card asks for one', () => {
+    stubMatchMedia(true);
+    render(<SurfaceCard title="Plain Card"><div>Body</div></SurfaceCard>);
+    expect(screen.queryByRole('button', { name: /minimize plain card block/i })).not.toBeInTheDocument();
+    render(<SurfaceCard title="Long Card" mobileCollapsible><div>Body</div></SurfaceCard>);
+    expect(screen.getByRole('button', { name: /minimize long card block/i })).toBeInTheDocument();
+  });
+
   it('keeps desktop collapse explicit when collapsible is enabled', () => {
     render(
       <SurfaceCard title="Desktop Card" collapsible mobileCollapsible={false}>

@@ -8,6 +8,7 @@ import {
 } from '../api';
 import type { EventScheduleItem, TeamCompetitionsResponse } from '../api';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
+import { EventPicker } from '../components/EventPicker';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
@@ -16,6 +17,7 @@ import {
   CardGrid,
   Chip,
   FieldSelect,
+  FieldFrame,
   FieldText,
   Stat,
 } from '../components/ui/primitives';
@@ -574,12 +576,11 @@ export function FavoritesPage() {
     return rows;
   }, [eventCards, favoriteEvents]);
 
-  function addFavoriteEvent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const eventKey = normalizeEventKey(eventInput);
+  function addFavoriteEvent(rawKey: string) {
+    const eventKey = normalizeEventKey(rawKey);
     if (!eventKey) return;
     if (!isEventKey(eventKey)) {
-      setErrorText('Enter a valid event key (example: 2026txhou).');
+      setErrorText('Pick an event from the list, or type its code (for example 2026txhou).');
       return;
     }
     if (favoriteEvents.includes(eventKey)) {
@@ -820,17 +821,21 @@ export function FavoritesPage() {
           className="favorites-manager-card"
         >
           <CardBody>
-            <form className={styles.addRow} onSubmit={addFavoriteEvent}>
-              <FieldText
-                label="Add event"
-                value={eventInput}
-                onChange={(event) => setEventInput(event.target.value)}
-                placeholder="Event key, e.g. 2026arc"
+            {/* Same search-by-name picker as every other event box; it was the last one that
+                wanted a raw code. Its button reads "Add event" while typing. */}
+            <FieldFrame label="Add event" htmlFor="favorites-add-event">
+              <EventPicker
+                value=""
+                inputValue={eventInput}
+                onInputChange={setEventInput}
+                onSelect={addFavoriteEvent}
+                onSubmit={() => addFavoriteEvent(eventInput)}
+                placeholder='Search events, e.g. "houston" or "2026txhou"'
+                actionLabel="Add event"
+                clearOnSelect
+                inputId="favorites-add-event"
               />
-              {/* Both buttons sit on the same card, so they need names that tell
-                  them apart — "Add" twice reads as one control repeated. */}
-              <Button type="submit" variant="primary">Add Event</Button>
-            </form>
+            </FieldFrame>
 
             <form className={styles.addRow} onSubmit={addFavoriteTeam}>
               <FieldText
