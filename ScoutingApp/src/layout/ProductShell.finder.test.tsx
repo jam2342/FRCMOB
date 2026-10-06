@@ -23,12 +23,10 @@ vi.mock('../hooks/usePwaInstall', () => ({
 
 vi.mock('./useShellSettingsState', () => ({
   useShellSettingsState: () => ({
-    jumpMode: 'auto',
     jumpRegion: 'all',
     densityMode: 'comfortable',
     themeMode: 'dark',
     tutorialAutoplay: false,
-    setJumpMode: vi.fn(),
     setJumpRegion: vi.fn(),
   }),
 }));
@@ -128,5 +126,16 @@ describe('ProductShell finder collapse', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /collapse finder/i }));
     expect(root).toHaveClass('finder-collapsed');
+  });
+});
+
+describe('typedTeamName', () => {
+  it('matches a team by most of its name, not by a word inside a longer one', async () => {
+    const { typedTeamName } = await import('./quickJump');
+    expect(typedTeamName('cheesy poofs', 'The Cheesy Poofs')).toBe(true);
+    expect(typedTeamName('the cheesy poofs', 'The Cheesy Poofs')).toBe(true);
+    expect(typedTeamName('simbotics', 'Simbotics')).toBe(true);
+    expect(typedTeamName('houston', 'Houston Area Robotics Club')).toBe(false);
+    expect(typedTeamName('bo', 'Bo')).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import contextlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import time
 from typing import Any, Generator
 import uuid
@@ -385,14 +385,22 @@ def start_scheduler() -> None:
 
     if settings.automation_regional_enabled and settings.automation_regional_halfday_scheduler_enabled:
         interval_hours = max(1, int(settings.automation_regional_halfday_interval_hours))
+        # A 12 h in-process timer restarted at zero on every deploy, so each deploy pushed the
+        # refresh 12 h out. The tick itself skips until 12 h after the last run recorded in Redis
+        # (which survives deploys), so check often and let it decide; first check soon after start.
+        check_minutes = min(REGIONAL_DUE_CHECK_MINUTES, interval_hours * 60)
         _register_job(
             job_fn=_scheduled_regional_post_event_breakdowns,
             trigger="interval",
             job_id="regional_post_event_halfday",
             job_name="Regional post-event automation (half-day)",
-            success_log=f"Scheduled regional post-event automation job added (interval: {interval_hours} hours)",
-            hours=interval_hours,
-            misfire_grace_time=max(300, interval_hours * 60 * 60),
+            success_log=(
+                f"Scheduled regional post-event automation job added "
+                f"(runs every {interval_hours} hours, checked every {check_minutes} min)"
+            ),
+            minutes=check_minutes,
+            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=REGIONAL_FIRST_CHECK_DELAY_MINUTES),
+            misfire_grace_time=max(300, check_minutes * 60),
         )
 
     if settings.ops_smoke_check_enabled:
@@ -546,6 +554,10 @@ def _scheduled_climb_official_backfill() -> None:
             totals=totals if isinstance(totals, dict) else {},
         )
 
+REGIONAL_DUE_CHECK_MINUTES = 30
+REGIONAL_FIRST_CHECK_DELAY_MINUTES = 2
+
+
 def _scheduled_regional_post_event_breakdowns() -> None:
     interval_hours = max(1, int(settings.automation_regional_halfday_interval_hours))
     with _scheduled_job("regional_post_event_halfday", lock_ttl_sec=max(600, interval_hours * 2 * 3600), use_db=True) as details:
@@ -568,7 +580,10 @@ def _scheduled_regional_post_event_breakdowns() -> None:
             quality_threshold=QUALITY_THRESHOLD_DEFAULT,
         )
         inner = (result.get("result") or {}) if isinstance(result, dict) else {}
-        logger.info(
+        status = result.get("status") if isinstance(result, dict) else None
+        # Checked every 30 min; most checks find it isn't due yet, which isn't worth an info line.
+        log = logger.debug if status == "skipped_interval" else logger.info
+        log(
             "Regional post-event automation status=%s season=%s processed_events=%s completed_events=%s fallback=%s",
             result.get("status") if isinstance(result, dict) else None, season,
             inner.get("processed_event_count"), inner.get("completed_event_count"),

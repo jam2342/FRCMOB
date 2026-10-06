@@ -15,6 +15,7 @@ export { CardBody, CardEmpty, CardGrid, CardRow } from './Card';
 
 export {
   FieldCheckbox,
+  FieldFrame,
   FieldRadioGroup,
   FieldSelect,
   FieldStepper,

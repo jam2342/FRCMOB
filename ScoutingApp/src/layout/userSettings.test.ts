@@ -17,14 +17,12 @@ describe('userSettings', () => {
     saveStoredSettings({
       theme: 'light',
       density: 'compact',
-      quickJumpMode: 'team',
       quickJumpRegion: 'tx',
       liveRefreshSec: 35,
     });
     const settings = getStoredSettings();
     expect(settings.theme).toBe('light');
     expect(settings.density).toBe('compact');
-    expect(settings.quickJumpMode).toBe('team');
     expect(settings.quickJumpRegion).toBe('tx');
     expect(settings.liveRefreshSec).toBe(35);
   });

@@ -55,6 +55,12 @@ export interface EventPickerProps {
   className?: string;
   /** Whether to disable the input. */
   disabled?: boolean;
+  /** Button text while typing; pages that add rather than load an event say so. */
+  actionLabel?: string;
+  /** Empty the box after a pick (adding to a list) instead of showing the chosen event. */
+  clearOnSelect?: boolean;
+  /** Lets a visible <label> point at the input. */
+  inputId?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -71,6 +77,9 @@ export function EventPicker({
   placeholder = 'Search events — try "houston district" or "2026txhou"',
   className,
   disabled,
+  actionLabel = 'Load event',
+  clearOnSelect = false,
+  inputId,
 }: EventPickerProps) {
   /* ---- Internal state ---- */
   const [suggestions, setSuggestions] = useState<EventSearchItem[]>([]);
@@ -231,10 +240,10 @@ export function EventPicker({
         debounceRef.current = null;
       }
       onSelect(normalized);
-      onInputChange(normalized);
+      onInputChange(clearOnSelect ? '' : normalized);
       setOpen(false);
     },
-    [onSelect, onInputChange],
+    [clearOnSelect, onSelect, onInputChange],
   );
 
   function submitCurrent() {
@@ -352,6 +361,7 @@ export function EventPicker({
       <div className="center-input-row event-picker-input-row">
         <input
           ref={inputRef}
+          id={inputId}
           className="center-input"
           value={committedName || inputValue}
           onChange={(e) => {
@@ -365,7 +375,8 @@ export function EventPicker({
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          aria-label="Search events"
+          // With a visible label (inputId) the label names the box; an aria-label would override it.
+          aria-label={inputId ? undefined : 'Search events'}
           disabled={disabled}
           autoComplete="off"
         />
@@ -378,7 +389,7 @@ export function EventPicker({
           }}
           disabled={loading || disabled}
         >
-          {loading ? 'Loading…' : 'Load event'}
+          {loading ? 'Loading…' : actionLabel}
         </button>
         )}
       </div>

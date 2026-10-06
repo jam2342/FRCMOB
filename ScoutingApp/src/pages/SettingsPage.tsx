@@ -36,7 +36,6 @@ import {
   saveStoredSettings,
   TUTORIAL_SCOPES,
   type DensityMode,
-  type QuickJumpMode,
   type QuickJumpRegion,
   type ThemeMode,
   type UIMode,
@@ -94,7 +93,6 @@ export function SettingsPage() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(initial.theme);
   const [densityMode, setDensityMode] = useState<DensityMode>(initial.density);
   const [uiMode, setUiMode] = useState<UIMode>(initial.uiMode);
-  const [quickJumpMode, setQuickJumpMode] = useState<QuickJumpMode>(initial.quickJumpMode);
   const [quickJumpRegion, setQuickJumpRegion] = useState<QuickJumpRegion>(initial.quickJumpRegion);
   const [liveRefreshSec, setLiveRefreshSec] = useState<number>(initial.liveRefreshSec);
   const [tutorialAutoplay, setTutorialAutoplay] = useState<boolean>(initial.tutorialAutoplay);
@@ -276,7 +274,6 @@ export function SettingsPage() {
     theme?: ThemeMode;
     density?: DensityMode;
     uiMode?: UIMode;
-    quickJumpMode?: QuickJumpMode;
     quickJumpRegion?: QuickJumpRegion;
     liveRefreshSec?: number;
     tutorialAutoplay?: boolean;
@@ -285,7 +282,6 @@ export function SettingsPage() {
       theme: partial?.theme ?? themeMode,
       density: partial?.density ?? densityMode,
       uiMode: partial?.uiMode ?? uiMode,
-      quickJumpMode: partial?.quickJumpMode ?? quickJumpMode,
       quickJumpRegion: partial?.quickJumpRegion ?? quickJumpRegion,
       liveRefreshSec: partial?.liveRefreshSec ?? liveRefreshSec,
       tutorialAutoplay: partial?.tutorialAutoplay ?? tutorialAutoplay,
@@ -303,11 +299,6 @@ export function SettingsPage() {
   function updateDensity(next: DensityMode) {
     setDensityMode(next);
     persistSettings({ density: next });
-  }
-
-  function updateQuickJumpMode(next: QuickJumpMode) {
-    setQuickJumpMode(next);
-    persistSettings({ quickJumpMode: next });
   }
 
   function updateQuickJumpRegion(next: QuickJumpRegion) {
@@ -434,7 +425,6 @@ export function SettingsPage() {
       theme: 'dark',
       density: 'comfortable',
       uiMode: 'full',
-      quickJumpMode: 'auto',
       quickJumpRegion: 'all',
       liveRefreshSec: 60,
       tutorialAutoplay: false,
@@ -442,7 +432,6 @@ export function SettingsPage() {
     setThemeMode(defaults.theme);
     setDensityMode(defaults.density);
     setUiMode(defaults.uiMode);
-    setQuickJumpMode(defaults.quickJumpMode);
     setQuickJumpRegion(defaults.quickJumpRegion);
     setLiveRefreshSec(defaults.liveRefreshSec);
     setTutorialAutoplay(defaults.tutorialAutoplay);
@@ -492,16 +481,6 @@ export function SettingsPage() {
           <div className={styles.optionGrid}>
             {/* "UI Mode" (Full Diagnostics / Simple) was removed: it was saved
                 but nothing in the app ever read it. */}
-            <FieldSelect
-              label="Quick Search Default"
-              value={quickJumpMode}
-              onChange={(event) => updateQuickJumpMode(event.target.value as QuickJumpMode)}
-            >
-              <option value="auto">Auto</option>
-              <option value="team">Team</option>
-              <option value="event">Event</option>
-            </FieldSelect>
-
             <FieldSelect
               label="Region Filter Default"
               value={quickJumpRegion}

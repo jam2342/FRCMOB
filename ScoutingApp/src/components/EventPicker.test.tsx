@@ -69,4 +69,26 @@ describe('EventPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('2026mndu');
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('in add mode, picking adds the event and empties the box', async () => {
+    const added: string[] = [];
+    function AddHarness() {
+      const [input, setInput] = useState('');
+      return (
+        <EventPicker value="" inputValue={input} onInputChange={setInput} onSelect={(key) => added.push(key)} actionLabel="Add event" clearOnSelect />
+      );
+    }
+    render(<AddHarness />);
+    const input = screen.getByLabelText('Search events');
+    fireEvent.change(input, { target: { value: 'superior' } });
+    expect(screen.getByRole('button', { name: 'Add event' })).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(added).toEqual(['2026mndu']);
+    expect(input).toHaveValue('');
+  });
 });

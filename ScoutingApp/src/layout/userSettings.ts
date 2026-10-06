@@ -1,7 +1,6 @@
 export type ThemeMode = 'dark' | 'light';
 export type DensityMode = 'comfortable' | 'compact';
 export type UIMode = 'simple' | 'full';
-export type QuickJumpMode = 'auto' | 'team' | 'event';
 export type QuickJumpRegion = 'all' | 'usa' | 'canada' | 'international' | 'tx' | 'ca' | 'mi' | 'ny';
 export type TutorialScope =
   | 'home'
@@ -32,7 +31,6 @@ const SETTINGS_KEYS = {
   theme: 'scouting_theme_mode',
   density: 'scouting_density_mode',
   uiMode: 'scouting_ui_mode',
-  quickJumpMode: 'scouting_quick_jump_mode',
   quickJumpRegion: 'scouting_quick_jump_region',
   liveRefreshSec: 'scouting_live_refresh_sec',
   tutorialAutoplay: 'scouting_tutorial_autoplay',
@@ -47,7 +45,6 @@ const DEFAULTS = {
   theme: 'dark' as ThemeMode,
   density: 'comfortable' as DensityMode,
   uiMode: 'full' as UIMode,
-  quickJumpMode: 'auto' as QuickJumpMode,
   quickJumpRegion: 'all' as QuickJumpRegion,
   liveRefreshSec: 60,
   // Off: tours opening on their own blocked every section on a first visit.
@@ -64,10 +61,6 @@ function normalizeDensityMode(value: string | null): DensityMode {
 
 function normalizeUiMode(value: string | null): UIMode {
   return value === 'simple' ? 'simple' : 'full';
-}
-
-function normalizeQuickJumpMode(value: string | null): QuickJumpMode {
-  return value === 'team' || value === 'event' ? value : 'auto';
 }
 
 function normalizeQuickJumpRegion(value: string | null): QuickJumpRegion {
@@ -105,7 +98,6 @@ export type ScoutingSettings = {
   theme: ThemeMode;
   density: DensityMode;
   uiMode: UIMode;
-  quickJumpMode: QuickJumpMode;
   quickJumpRegion: QuickJumpRegion;
   liveRefreshSec: number;
   tutorialAutoplay: boolean;
@@ -116,7 +108,6 @@ export function getStoredSettings(): ScoutingSettings {
     theme: normalizeThemeMode(window.localStorage.getItem(SETTINGS_KEYS.theme)),
     density: normalizeDensityMode(window.localStorage.getItem(SETTINGS_KEYS.density)),
     uiMode: normalizeUiMode(window.localStorage.getItem(SETTINGS_KEYS.uiMode)),
-    quickJumpMode: normalizeQuickJumpMode(window.localStorage.getItem(SETTINGS_KEYS.quickJumpMode)),
     quickJumpRegion: normalizeQuickJumpRegion(window.localStorage.getItem(SETTINGS_KEYS.quickJumpRegion)),
     liveRefreshSec: normalizeLiveRefreshSec(window.localStorage.getItem(SETTINGS_KEYS.liveRefreshSec)),
     tutorialAutoplay: normalizeTutorialAutoplay(window.localStorage.getItem(SETTINGS_KEYS.tutorialAutoplay)),
@@ -129,7 +120,6 @@ export function saveStoredSettings(partial: Partial<ScoutingSettings>): Scouting
     theme: partial.theme ?? current.theme ?? DEFAULTS.theme,
     density: partial.density ?? current.density ?? DEFAULTS.density,
     uiMode: partial.uiMode ?? current.uiMode ?? DEFAULTS.uiMode,
-    quickJumpMode: partial.quickJumpMode ?? current.quickJumpMode ?? DEFAULTS.quickJumpMode,
     quickJumpRegion: partial.quickJumpRegion ?? current.quickJumpRegion ?? DEFAULTS.quickJumpRegion,
     liveRefreshSec: partial.liveRefreshSec ?? current.liveRefreshSec ?? DEFAULTS.liveRefreshSec,
     tutorialAutoplay: partial.tutorialAutoplay ?? current.tutorialAutoplay ?? DEFAULTS.tutorialAutoplay,
@@ -138,7 +128,6 @@ export function saveStoredSettings(partial: Partial<ScoutingSettings>): Scouting
   window.localStorage.setItem(SETTINGS_KEYS.theme, next.theme);
   window.localStorage.setItem(SETTINGS_KEYS.density, next.density);
   window.localStorage.setItem(SETTINGS_KEYS.uiMode, next.uiMode);
-  window.localStorage.setItem(SETTINGS_KEYS.quickJumpMode, next.quickJumpMode);
   window.localStorage.setItem(SETTINGS_KEYS.quickJumpRegion, next.quickJumpRegion);
   window.localStorage.setItem(SETTINGS_KEYS.liveRefreshSec, String(next.liveRefreshSec));
   window.localStorage.setItem(SETTINGS_KEYS.tutorialAutoplay, next.tutorialAutoplay ? 'true' : 'false');

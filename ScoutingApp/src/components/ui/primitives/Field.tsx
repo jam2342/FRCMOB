@@ -27,7 +27,8 @@ function useFieldWiring({ hint, error }: { hint?: string; error?: string }) {
   return { id, hintId, errorId, describedBy, invalid: Boolean(error) };
 }
 
-function FieldFrame({
+// Exported for controls that aren't a plain input (the event picker), so their label matches.
+export function FieldFrame({
   label,
   htmlFor,
   hint,

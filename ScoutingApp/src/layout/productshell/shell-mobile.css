@@ -1795,7 +1795,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 700;
-    /* Five stats share 360px; a long label wraps instead of being clipped. */
+    /* Four stats share 360px; a long label wraps instead of being clipped. */
     white-space: normal;
     text-align: center;
     line-height: 1.2;
@@ -3414,7 +3414,7 @@
 @media (max-width: 359px) {
   .fm-team-hero-stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .fm-team-hero-stat.highlight {

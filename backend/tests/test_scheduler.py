@@ -158,6 +158,31 @@ class SchedulerContextTests(unittest.TestCase):
         with patch.object(scheduler, "get_scheduler", return_value=fake_scheduler):
             scheduler.start_scheduler()
 
+    def test_regional_refresh_is_checked_soon_after_start_not_a_full_interval_later(self):
+        # A deploy restarts the scheduler; a 12 h timer would push the refresh 12 h out each time.
+        scheduler.settings.app_env = "development"
+        scheduler.settings.strict_startup_env_validation = False
+        scheduler.settings.intel_snapshot_refresh_enabled = False
+        scheduler.settings.climb_official_backfill_enabled = False
+        scheduler.settings.automation_regional_enabled = True
+        scheduler.settings.automation_regional_halfday_scheduler_enabled = True
+        scheduler.settings.ops_smoke_check_enabled = False
+        scheduler.settings.scouting_rooms_cleanup_enabled = False
+        added: dict[str, dict] = {}
+
+        def add_job(_fn, _trigger, **kwargs):
+            added[kwargs["id"]] = kwargs
+
+        fake_scheduler = SimpleNamespace(running=False, remove_all_jobs=lambda: None, add_job=add_job, start=lambda: None)
+        with patch.object(scheduler, "get_scheduler", return_value=fake_scheduler):
+            scheduler.start_scheduler()
+
+        job = added["regional_post_event_halfday"]
+        self.assertEqual(job["minutes"], 30)
+        self.assertNotIn("hours", job)
+        delay = (job["next_run_time"] - scheduler.datetime.now(scheduler.timezone.utc)).total_seconds()
+        self.assertTrue(0 < delay <= 150, delay)
+
 
 if __name__ == "__main__":
     unittest.main()

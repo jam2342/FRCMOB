@@ -1393,10 +1393,6 @@ export function TeamCenterPage() {
                         <span>Events</span>
                       </div>
                     )}
-                    <div className="fm-team-hero-stat" title="How sure the rating is. It grows with the number of matches behind it.">
-                      <strong>{pct(teamRating?.confidence_0_1 ?? null, 0)}</strong>
-                      <span>Conf</span>
-                    </div>
                     <div className={`fm-team-hero-stat ${freshnessSummary.state === 'stale' ? 'warning' : ''}`}>
                       <strong>{teamBreakdown?.matches_analyzed ?? 0}</strong>
                       <span>Scouted</span>

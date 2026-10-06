@@ -1,6 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { type QuickJumpMode, type QuickJumpRegion } from '../../layout/userSettings';
+import { type QuickJumpRegion } from '../../layout/userSettings';
 import { useRecentSearches } from '../../hooks/useRecentSearches';
 import { Spinner } from '../ui/Spinner';
 import './MobileSearchOverlay.css';
@@ -10,18 +10,11 @@ interface MobileSearchOverlayProps {
   onClose: () => void;
   onSubmit: (query: string) => void;
   busy?: boolean;
-  jumpMode?: QuickJumpMode;
   jumpRegion?: QuickJumpRegion;
 }
 
 const MAX_RECENT = 8;
 const HINTS_DISMISSED_KEY = 'mso_hints_dismissed';
-
-const MODE_LABELS: Record<QuickJumpMode, string> = {
-  auto: 'Auto',
-  team: 'Team',
-  event: 'Event',
-};
 
 const REGION_LABELS: Record<QuickJumpRegion, string> = {
   all: 'All Regions',
@@ -50,7 +43,7 @@ function writeHintsDismissed(): void {
   }
 }
 
-export function MobileSearchOverlay({ open, onClose, onSubmit, busy, jumpMode = 'auto', jumpRegion = 'all' }: MobileSearchOverlayProps) {
+export function MobileSearchOverlay({ open, onClose, onSubmit, busy, jumpRegion = 'all' }: MobileSearchOverlayProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [hintsDismissed, setHintsDismissed] = useState(readHintsDismissed);
@@ -174,9 +167,6 @@ export function MobileSearchOverlay({ open, onClose, onSubmit, busy, jumpMode = 
         </form>
 
         <div className="mso__context-chips">
-          <NavLink to="/settings" className="mso__context-chip mso__context-chip--link" onClick={handleClose} title="Change in Settings">
-            {MODE_LABELS[jumpMode]}
-          </NavLink>
           <NavLink to="/settings" className="mso__context-chip mso__context-chip--link" onClick={handleClose} title="Change in Settings">
             {REGION_LABELS[jumpRegion]}
           </NavLink>
