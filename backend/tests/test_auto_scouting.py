@@ -51,25 +51,6 @@ def _seed_analysis_rows(
     run_version: str = "on_device_pwa_v1",
     created_at: datetime | None = None,
 ) -> models.AnalysisRun:
-    calibration = (
-        db.query(models.FieldCalibration)
-        .filter(models.FieldCalibration.match_key == match_key)
-        .one_or_none()
-    )
-    if calibration is None:
-        calibration = models.FieldCalibration(
-            match_key=match_key,
-            event_key=event_key,
-            frame_time_sec=12.0,
-            image_width=1280,
-            image_height=720,
-            image_points=[{"x": 0.0, "y": 0.0}, {"x": 1279.0, "y": 0.0}, {"x": 1279.0, "y": 719.0}, {"x": 0.0, "y": 719.0}],
-            field_points=[{"x": 0.0, "y": 0.0}, {"x": 16.541, "y": 0.0}, {"x": 16.541, "y": 8.0693}, {"x": 0.0, "y": 8.0693}],
-            homography=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-        )
-        db.add(calibration)
-        db.flush()
-
     run = models.AnalysisRun(
         match_key=match_key,
         version=run_version,
@@ -87,7 +68,6 @@ def _seed_analysis_rows(
             event_key=event_key,
             analysis_version=run_version,
             params_hash=f"params-{run.id}",
-            calibration_id=calibration.id,
             created_at=created_at or datetime.now(timezone.utc),
         )
     )
@@ -131,7 +111,6 @@ def _seed_analysis_rows(
             run_id=run.id,
             match_key=match_key,
             event_key=event_key,
-            calibration_quality_score=0.92,
             tracking_quality_score=0.9,
             identity_quality_score=0.88,
             overall_quality_score=0.9,
@@ -233,29 +212,18 @@ class AutoScoutingServiceTests(DBTestCase):
         self.assertEqual(row.status, "ready")
         self.assertEqual(row.mapper_version, "2026_v2")
         form_patch = (row.draft_payload or {}).get("form_patch", {})
-        self.assertTrue(form_patch.get("auto_mobility"))
-        self.assertEqual(form_patch.get("auto_scored"), 0)
-        self.assertEqual(form_patch.get("auto_missed"), 0)
-        self.assertEqual(form_patch.get("teleop_scored"), 12)
-        self.assertEqual(form_patch.get("teleop_cycles"), 14)
-        self.assertIn("teleop_under_defense_scored", form_patch)
+        # A phone recording carries positions only: offense comes from shift play,
+        # and nothing it can't observe is filled in.
         self.assertIn("offense_level_1_5", form_patch)
         # Only this robot was tracked, so defense can't be assessed and stays blank.
         self.assertNotIn("defense_level_1_5", form_patch)
-        self.assertIn("field_awareness_1_5", form_patch)
-        self.assertIn("decision_quality_1_5", form_patch)
-        self.assertIn("intake_failures", form_patch)
-        self.assertEqual(form_patch.get("foul_count"), 1)
-        self.assertEqual(form_patch.get("endgame_mode"), "parked")
+        for unobserved in ("auto_mobility", "auto_scored", "teleop_scored", "teleop_cycles", "foul_count", "endgame_mode"):
+            self.assertNotIn(unobserved, form_patch)
         self.assertIn("disabled_period", (row.draft_payload or {}).get("derived_insights", {}))
-        self.assertIn("cycle_pace_summary", (row.draft_payload or {}).get("derived_insights", {}))
-        self.assertEqual((row.field_provenance or {}).get("auto_mobility"), "auto")
-        self.assertEqual((row.field_provenance or {}).get("teleop_scored"), "auto")
+        self.assertNotIn("cycle_pace_summary", (row.draft_payload or {}).get("derived_insights", {}))
         self.assertEqual((row.field_provenance or {}).get("offense_level_1_5"), "auto")
         self.assertEqual((row.field_provenance or {}).get("defense_level_1_5"), "needs_review")
-        self.assertEqual((row.field_provenance or {}).get("endgame_mode"), "auto")
-        self.assertGreater(float((row.field_confidence or {}).get("auto_mobility") or 0.0), 0.7)
-        self.assertGreater(float((row.field_confidence or {}).get("teleop_scored") or 0.0), 0.7)
+        self.assertEqual((row.field_provenance or {}).get("teleop_scored"), "needs_review")
         self.assertEqual(row.missing_reasons or [], [])
 
     def test_generate_fails_without_an_accepted_recording(self):
@@ -278,6 +246,8 @@ class AutoScoutingServiceTests(DBTestCase):
             match_key=match_key,
             team_key=team_key,
         )
+        generated_offense = (row.draft_payload or {}).get("form_patch", {}).get("offense_level_1_5")
+        offense_override = 1 if generated_offense != 1 else 5
 
         approved_row, overrides = auto_scouting.approve_auto_scout_draft(
             self.db,
@@ -286,7 +256,7 @@ class AutoScoutingServiceTests(DBTestCase):
             approved_by="Jamal",
             edited_payload={
                 "form_patch": {
-                    "auto_mobility": False,
+                    "offense_level_1_5": offense_override,
                 },
                 "notes_seed": "",
                 "derived_insights": (row.draft_payload or {}).get("derived_insights", {}),
@@ -294,8 +264,8 @@ class AutoScoutingServiceTests(DBTestCase):
         )
 
         self.assertEqual(approved_row.status, "approved")
-        self.assertEqual((approved_row.field_overrides or {}).get("auto_mobility", {}).get("to"), False)
-        self.assertEqual(overrides.get("auto_mobility", {}).get("from"), True)
+        self.assertEqual((approved_row.field_overrides or {}).get("offense_level_1_5", {}).get("to"), offense_override)
+        self.assertEqual(overrides.get("offense_level_1_5", {}).get("from"), generated_offense)
 
     def test_approve_rejects_stale_version(self):
         event_key, match_key, team_key = _seed_core_entities(self.db)
@@ -354,60 +324,6 @@ class AutoScoutingServiceTests(DBTestCase):
         self.assertEqual(first_row.status, "superseded")
         self.assertIsNotNone(first_row.superseded_at)
 
-    def test_approval_telemetry_reports_override_rate_and_time(self):
-        event_key, match_key, team_key = _seed_core_entities(self.db)
-        _seed_analysis_rows(self.db, event_key=event_key, match_key=match_key, team_key=team_key)
-        row, _ = auto_scouting.generate_auto_scout_draft(
-            self.db,
-            event_key=event_key,
-            match_key=match_key,
-            team_key=team_key,
-        )
-        row.generated_at = datetime(2026, 4, 5, 12, 0, tzinfo=timezone.utc)
-        self.db.add(row)
-        self.db.commit()
-        self.db.refresh(row)
-
-        auto_scouting.approve_auto_scout_draft(
-            self.db,
-            draft_id=row.id,
-            draft_version=row.draft_version,
-            approved_by="Jamal",
-            edited_payload={
-                "form_patch": {
-                    **((row.draft_payload or {}).get("form_patch") or {}),
-                    "auto_mobility": False,
-                },
-                "notes_seed": "",
-                "derived_insights": (row.draft_payload or {}).get("derived_insights", {}),
-            },
-        )
-
-        telemetry = auto_scouting.get_auto_scout_approval_telemetry(
-            self.db,
-            event_key=event_key,
-            mapper_version="2026_v2",
-            max_rows=200,
-        )
-        self.assertEqual(int(telemetry.get("approved_draft_count") or 0), 1)
-        override_rate = telemetry.get("override_rate_by_field") or {}
-        self.assertEqual(float(override_rate.get("auto_mobility") or 0.0), 1.0)
-        tta = telemetry.get("time_to_approve_sec") or {}
-        self.assertEqual(int(tta.get("count") or 0), 1)
-        self.assertIsNotNone(tta.get("avg"))
-        calibration = telemetry.get("confidence_calibration_by_field") or {}
-        self.assertIn("auto_mobility", calibration)
-
-
-_ROUND2_ML_FIELDS = (
-    "teleop_under_defense_scored",
-    "offense_level_1_5",
-    "defense_level_1_5",
-    "field_awareness_1_5",
-    "decision_quality_1_5",
-    "intake_failures",
-)
-
 
 def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
     # A 6-team match where 5 teams have analysis data and the 6th has none, so the
@@ -427,18 +343,6 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
         db.add(models.MatchTeam(match_key=match_key, team_key=team_key, event_key=event_key, alliance=alliance, station=station))
     db.commit()
 
-    calibration = models.FieldCalibration(
-        match_key=match_key,
-        event_key=event_key,
-        frame_time_sec=12.0,
-        image_width=1280,
-        image_height=720,
-        image_points=[{"x": 0.0, "y": 0.0}, {"x": 1279.0, "y": 0.0}, {"x": 1279.0, "y": 719.0}, {"x": 0.0, "y": 719.0}],
-        field_points=[{"x": 0.0, "y": 0.0}, {"x": 16.541, "y": 0.0}, {"x": 16.541, "y": 8.0693}, {"x": 0.0, "y": 8.0693}],
-        homography=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-    )
-    db.add(calibration)
-    db.flush()
 
     run = models.AnalysisRun(
         match_key=match_key,
@@ -457,7 +361,6 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
             event_key=event_key,
             analysis_version="on_device_pwa_v1",
             params_hash=f"params-{run.id}",
-            calibration_id=calibration.id,
         )
     )
     db.add(
@@ -465,7 +368,6 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
             run_id=run.id,
             match_key=match_key,
             event_key=event_key,
-            calibration_quality_score=0.92,
             tracking_quality_score=0.9,
             identity_quality_score=0.88,
             overall_quality_score=0.9,
@@ -581,6 +483,15 @@ class AutoScoutBatchGenerationTests(DBTestCase):
         self.assertEqual(summary["failed_count"], 1)
         self.assertEqual(summary["ready_count"] + summary["low_confidence_count"], 5)
 
+    def test_batch_analyses_each_recording_once(self):
+        event_key, match_key, _all_teams = _seed_six_team_match(self.db)
+        with patch.object(auto_scouting, "analyze_run_shift_play", wraps=auto_scouting.analyze_run_shift_play) as analyse:
+            auto_scouting.generate_auto_scout_drafts_for_match(self.db, event_key=event_key, match_key=match_key)
+        run_ids = [call.kwargs["run_id"] for call in analyse.call_args_list]
+        self.assertTrue(run_ids)
+        self.assertEqual(len(run_ids), len(set(run_ids)))
+        self.assertTrue(all("only_team_key" not in call.kwargs for call in analyse.call_args_list))
+
     def test_one_failed_team_does_not_block_others(self):
         event_key, match_key, all_teams = _seed_six_team_match(self.db)
         auto_scouting.generate_auto_scout_drafts_for_match(
@@ -693,66 +604,6 @@ class AutoScoutBackfillTests(DBTestCase):
         self.assertEqual(result["drafts_created"], 0)
 
 
-class AutoScoutPredictorCacheTests(DBTestCase):
-    def test_feature_vector_built_once_per_draft(self):
-        event_key, match_key, team_key = _seed_core_entities(self.db)
-        _seed_analysis_rows(self.db, event_key=event_key, match_key=match_key, team_key=team_key)
-        from app.services.auto_scout.predictors import round2_ml
-
-        real_builder = round2_ml.build_auto_scout_field_feature_vector
-        calls = {"n": 0}
-
-        def _counting(*args, **kwargs):
-            calls["n"] += 1
-            return real_builder(*args, **kwargs)
-
-        with patch.object(round2_ml, "build_auto_scout_field_feature_vector", side_effect=_counting):
-            auto_scouting.generate_auto_scout_draft(
-                self.db, event_key=event_key, match_key=match_key, team_key=team_key
-            )
-        # Six round-2 fields used to each build the vector twice (12 builds); now one.
-        self.assertEqual(calls["n"], 1)
-
-    # Offense/defense on phone recordings come from shift play, so the ML path is
-    # exercised on another round-2 field.
-    def test_ml_high_confidence_prediction_wins(self):
-        event_key, match_key, team_key = _seed_core_entities(self.db)
-        _seed_analysis_rows(self.db, event_key=event_key, match_key=match_key, team_key=team_key)
-        from app.services.auto_scout.predictors import round2_ml
-
-        def _fake_infer(db, *, field_name, rows, model_version=None):
-            return {
-                "ok": True,
-                "model_key": f"auto_scout_field:{field_name}",
-                "model_version": "v9",
-                "predictions": [{"field_value_pred": 4.0, "confidence_0_1": 0.93}],
-            }
-
-        with patch.object(round2_ml, "infer_auto_scout_field_shadow_from_rows", side_effect=_fake_infer):
-            row, _ = auto_scouting.generate_auto_scout_draft(
-                self.db, event_key=event_key, match_key=match_key, team_key=team_key
-            )
-        refs = (row.field_evidence_refs or {}).get("field_awareness_1_5") or []
-        self.assertTrue(any(str(ref.get("ref_id", "")).startswith("ml_model:") for ref in refs))
-
-    def test_ml_missing_falls_back_to_deterministic(self):
-        event_key, match_key, team_key = _seed_core_entities(self.db)
-        _seed_analysis_rows(self.db, event_key=event_key, match_key=match_key, team_key=team_key)
-        from app.services.auto_scout.predictors import round2_ml
-
-        def _no_model(db, *, field_name, rows, model_version=None):
-            return {"ok": False, "reason": "model_not_found", "predictions": []}
-
-        with patch.object(round2_ml, "infer_auto_scout_field_shadow_from_rows", side_effect=_no_model):
-            row, _ = auto_scouting.generate_auto_scout_draft(
-                self.db, event_key=event_key, match_key=match_key, team_key=team_key
-            )
-        refs = (row.field_evidence_refs or {}).get("field_awareness_1_5") or []
-        self.assertTrue(refs)
-        self.assertTrue(all(str(ref.get("ref_id", "")).startswith("auto_scout_rule:") for ref in refs))
-        self.assertEqual((row.field_provenance or {}).get("field_awareness_1_5"), "auto")
-
-
 class AutoScoutTeamProfileTests(DBTestCase):
     def _seed_second_match(self, event_key, team_key, match_key):
         self.db.add(models.Match(match_key=match_key, event_key=event_key, comp_level="qm", set_number=1, match_number=2, time=1700000100))
@@ -783,15 +634,7 @@ class AutoScoutTeamProfileTests(DBTestCase):
         self.assertEqual(len(offense["trend"]), 2)
         self.assertIsNotNone(offense["avg_confidence_0_1"])
 
-        mobility = profile["fields"].get("auto_mobility")
-        self.assertIsNotNone(mobility)
-        self.assertEqual(mobility["type"], "rate")
-        self.assertEqual(mobility["samples"], 2)
-
-        endgame = profile["fields"].get("endgame_mode")
-        if endgame is not None:
-            self.assertEqual(endgame["type"], "categorical")
-            self.assertIn("mode", endgame)
+        self.assertNotIn("auto_mobility", profile["fields"])
 
     def test_profile_unavailable_when_no_drafts(self):
         event_key, match_key, team_key = _seed_core_entities(self.db)

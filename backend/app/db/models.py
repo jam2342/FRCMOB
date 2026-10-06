@@ -85,17 +85,6 @@ class EventTeamStat(Base):
         onupdate=_utc_now,
     )
 
-class TeamStaticCapability(Base):
-    __tablename__ = "team_static_capabilities"
-
-    team_key: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    ball_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-    )
 
 class EventTeamRating(Base):
     __tablename__ = "event_team_ratings"
@@ -170,9 +159,7 @@ class Match(Base):
 
     event: Mapped["Event"] = relationship(back_populates="matches", lazy="select")
     match_teams: Mapped[list["MatchTeam"]] = relationship(back_populates="match", lazy="select")
-    videos: Mapped[list["MatchVideo"]] = relationship(back_populates="match", lazy="select")
     analysis_runs: Mapped[list["AnalysisRun"]] = relationship(back_populates="match", lazy="select")
-    calibration: Mapped["FieldCalibration | None"] = relationship(back_populates="match", uselist=False, lazy="select")
 
     __table_args__ = (
         Index("ix_matches_event_time", "event_key", "time"),
@@ -195,16 +182,6 @@ class MatchTeam(Base):
         Index("ix_match_teams_team_event", "team_key", "event_key"),
     )
 
-class MatchVideo(Base):
-    __tablename__ = "match_videos"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
-    video_type: Mapped[str] = mapped_column(String)
-    video_key: Mapped[str] = mapped_column(String)
-    url: Mapped[str] = mapped_column(String)
-
-    match: Mapped["Match"] = relationship(back_populates="videos", lazy="select")
 
 class AnalysisRun(Base):
     __tablename__ = "analysis_runs"
@@ -219,7 +196,6 @@ class AnalysisRun(Base):
     match: Mapped["Match"] = relationship(back_populates="analysis_runs", lazy="select")
     context: Mapped["AnalysisRunContext | None"] = relationship(back_populates="run", uselist=False, lazy="select")
     findings: Mapped[list["TeamMatchFinding"]] = relationship(back_populates="analysis_run", lazy="select")
-    artifacts: Mapped[list["Artifact"]] = relationship(back_populates="analysis_run", lazy="select")
     quality: Mapped["AnalysisQuality | None"] = relationship(back_populates="run", uselist=False, lazy="select")
     auto_scout_drafts: Mapped[list["AutoScoutDraft"]] = relationship(back_populates="analysis_run", lazy="select")
     on_device_session: Mapped["OnDeviceSession | None"] = relationship(
@@ -305,7 +281,6 @@ class AnalysisRunContext(Base):
     event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
     analysis_version: Mapped[str] = mapped_column(String, default="video_v3_tracks", index=True)
     params_hash: Mapped[str] = mapped_column(String, default="", index=True)
-    calibration_id: Mapped[int | None] = mapped_column(ForeignKey("field_calibrations.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
 
     run: Mapped["AnalysisRun"] = relationship(back_populates="context", lazy="select")
@@ -426,7 +401,6 @@ class AnalysisQuality(Base):
     run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), primary_key=True)
     match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
     event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
-    calibration_quality_score: Mapped[float] = mapped_column(Float, default=0.0)
     tracking_quality_score: Mapped[float] = mapped_column(Float, default=0.0)
     identity_quality_score: Mapped[float] = mapped_column(Float, default=0.0)
     overall_quality_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
@@ -440,39 +414,6 @@ class AnalysisQuality(Base):
 
     run: Mapped["AnalysisRun"] = relationship(back_populates="quality", lazy="select")
 
-class Artifact(Base):
-    __tablename__ = "artifacts"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    analysis_run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), index=True)
-    kind: Mapped[str] = mapped_column(String)
-    path: Mapped[str] = mapped_column(String)
-    meta: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-
-    analysis_run: Mapped["AnalysisRun"] = relationship(back_populates="artifacts", lazy="select")
-
-class FieldCalibration(Base):
-    __tablename__ = "field_calibrations"
-    __table_args__ = (UniqueConstraint("match_key", name="field_calibrations_match_key_key"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
-    frame_time_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
-    image_width: Mapped[int] = mapped_column(Integer)
-    image_height: Mapped[int] = mapped_column(Integer)
-    image_points: Mapped[list[dict]] = mapped_column(JSON)
-    field_points: Mapped[list[dict]] = mapped_column(JSON)
-    homography: Mapped[list[list[float]]] = mapped_column(JSON)
-    calibration_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-    )
-
-    match: Mapped["Match"] = relationship(back_populates="calibration", lazy="select")
 
 class MatchPhaseWindow(Base):
     __tablename__ = "match_phase_windows"

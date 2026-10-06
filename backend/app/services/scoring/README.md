@@ -26,5 +26,5 @@ Uses the parsed breakdown to extract ground truth for specific signals. Where `b
 
 ## Dependencies
 
-- TBA scorebreakdown JSON — the raw input (fetched via `clients.tba`)
+- TBA scorebreakdown JSON — the raw input (fetched via `app.tba.client`)
 - Game-year-specific parsing logic — updated each season

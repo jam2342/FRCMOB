@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import base64
-import binascii
 from datetime import datetime, timezone
 import hashlib
 import hmac
-import json
 import logging
 from pathlib import Path
 import re
@@ -67,7 +64,6 @@ ROOM_ROLE_MEMBER = "member"
 ROOM_ROLE_VIEWER = "viewer"
 _ROOM_WRITE_ROLES = {ROOM_ROLE_OWNER, ROOM_ROLE_EDITOR, ROOM_ROLE_MEMBER}
 _TOKEN_ALGORITHM = "HS256"  # nosec B105
-_LEGACY_TOKEN_VERSION = "v1"  # nosec B105
 
 def _build_stable_dev_ephemeral_token_secret() -> bytes:
     # Build a deterministic fallback secret for local/dev environments.
@@ -147,13 +143,6 @@ def media_signature_valid(path: str, expires: str | None, signature: str | None,
     return bool(expected) and hmac.compare_digest(expected, str(signature or ""))
 
 
-def _b64url_decode(token: str) -> bytes:
-    raw = str(token or "").strip()
-    if not raw:
-        return b""
-    pad = "=" * ((4 - (len(raw) % 4)) % 4)
-    return base64.urlsafe_b64decode(raw + pad)
-
 def _signed_payload_token(payload: dict[str, Any]) -> str:
     secret_bytes = _token_secret_bytes()
     if not secret_bytes:
@@ -162,44 +151,6 @@ def _signed_payload_token(payload: dict[str, Any]) -> str:
         )
     return str(jwt.encode(payload, secret_bytes, algorithm=_TOKEN_ALGORITHM))
 
-def _verify_legacy_signed_payload_token(token: str) -> dict[str, Any] | None:
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    version, payload_b64, signature_b64 = parts
-    if version != _LEGACY_TOKEN_VERSION or not payload_b64 or not signature_b64:
-        return None
-
-    secret_bytes = _token_secret_bytes()
-    if not secret_bytes:
-        return None
-
-    expected_signature = hmac.new(
-        secret_bytes,
-        payload_b64.encode("ascii"),
-        hashlib.sha256,
-    ).digest()
-    try:
-        provided_signature = _b64url_decode(signature_b64)
-    except (binascii.Error, ValueError):
-        return None
-    if not secrets.compare_digest(expected_signature, provided_signature):
-        return None
-    try:
-        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    exp = payload.get("exp")
-    try:
-        exp_value = int(exp) if exp is not None else 0
-    except (TypeError, ValueError):
-        return None
-    now_ts = int(time.time())
-    if exp_value <= now_ts:
-        return None
-    return payload
 
 def _verify_signed_payload_token(token: str | None) -> dict[str, Any] | None:
     secret_bytes = _token_secret_bytes()
@@ -208,8 +159,6 @@ def _verify_signed_payload_token(token: str | None) -> dict[str, Any] | None:
     raw = str(token or "").strip()
     if not raw:
         return None
-    if raw.startswith(f"{_LEGACY_TOKEN_VERSION}."):
-        return _verify_legacy_signed_payload_token(raw)
     try:
         payload = jwt.decode(
             raw,

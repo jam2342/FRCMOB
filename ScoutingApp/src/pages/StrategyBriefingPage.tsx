@@ -18,7 +18,7 @@ import { EventPicker } from '../components/EventPicker';
 import { LiveRatingsPanel } from '../components/LiveRatingsPanel';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { metric, pct, normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
 import { readMyTeamKey, saveMyTeamKey, workspaceTeamKey } from '../features/workspace/myTeam';
@@ -467,13 +467,12 @@ export function StrategyBriefingPage() {
     navigate(`/team-center?${params.toString()}`);
   }
 
-  const surfaceGroupId = 'strategy-briefing';
 
   return (
     <>
     <PageViewBar items={MATCH_HUB_VIEWS} />
     <div className="center-page-container">
-      <SurfaceCardGroup groupId={surfaceGroupId}>
+
         {/* ---- Event + Team Selection ---- */}
         <SurfaceCard
           title="Match Strategy Briefing"
@@ -841,7 +840,7 @@ export function StrategyBriefingPage() {
             </p>
           </SurfaceCard>
         ) : null}
-      </SurfaceCardGroup>
+
     </div>
     </>
   );

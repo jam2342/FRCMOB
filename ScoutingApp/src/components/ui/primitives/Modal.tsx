@@ -1,9 +1,9 @@
+import { cx } from './cx';
 import { useCallback, useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './Modal.module.css';
-import { cx } from './cx';
 
-export type ModalSize = 'sm' | 'md' | 'lg' | 'full';
+type ModalSize = 'sm' | 'md' | 'lg' | 'full';
 
 export type ModalProps = {
   open: boolean;

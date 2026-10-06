@@ -1,9 +1,7 @@
+import { cx } from './primitives/cx';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-function cx(...args: Array<string | false | null | undefined>): string {
-  return args.filter(Boolean).join(' ');
-}
 
 type ActionOverflowItem = {
   label: string;

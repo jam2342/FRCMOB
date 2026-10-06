@@ -8,7 +8,7 @@ import {
 } from '../api';
 import type { EventScheduleItem, TeamCompetitionsResponse } from '../api';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
   CardBody,
@@ -147,6 +147,9 @@ export function FavoritesPage() {
   const [visibleTeamCardCount, setVisibleTeamCardCount] = useState(20);
   const [mobileFinderOpen, setMobileFinderOpen] = useState(false);
   const refreshInFlightRef = useRef(false);
+  const previousTabRef = useRef(activeTab);
+  const tabRefreshPendingRef = useRef(false);
+  const pollTriggerRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!isMobileLayout) setMobileFinderOpen(false);
@@ -192,10 +195,12 @@ export function FavoritesPage() {
     setFavoriteTeams(normalized);
   }
 
-  const refreshFavorites = useCallback(async (options?: { forceNetwork?: boolean }) => {
-    if (refreshInFlightRef.current) return;
+  const refreshFavorites = useCallback(async (options?: { forceNetwork?: boolean }): Promise<boolean> => {
+    if (refreshInFlightRef.current) return true;
     refreshInFlightRef.current = true;
     const forceNetwork = Boolean(options?.forceNetwork);
+    const eventsToRefresh = activeTab === 'teams' ? [] : favoriteEvents;
+    const teamsToRefresh = activeTab === 'events' ? [] : favoriteTeams;
     setErrorText('');
     try {
       if (favoriteEvents.length === 0 && favoriteTeams.length === 0) {
@@ -203,15 +208,15 @@ export function FavoritesPage() {
         setTeamCards({});
         setStatusText('No favorites yet.');
         setLastUpdatedAt(Date.now());
-        return;
+        return true;
       }
 
-      setLoadingEvents(true);
-      setLoadingTeams(true);
+      setLoadingEvents(activeTab !== 'teams');
+      setLoadingTeams(activeTab !== 'events');
       setStatusText('Refreshing...');
 
       const eventResults = await Promise.allSettled(
-        favoriteEvents.map(async (eventKey) => {
+        eventsToRefresh.map(async (eventKey) => {
           const warnings: string[] = [];
           const [scheduleResult, teamsResult, liveFormResult] = await Promise.allSettled([
             getEventSchedule(eventKey, forceNetwork, undefined, { bypassCache: forceNetwork }),
@@ -298,7 +303,7 @@ export function FavoritesPage() {
       );
 
       const teamResults = await Promise.allSettled(
-        favoriteTeams.map(async (teamKey) => {
+        teamsToRefresh.map(async (teamKey) => {
           const warnings: string[] = [];
 
         let error = '';
@@ -440,10 +445,11 @@ export function FavoritesPage() {
 
       for (let index = 0; index < eventResults.length; index += 1) {
         const result = eventResults[index];
-        const key = favoriteEvents[index];
+        const key = eventsToRefresh[index];
         if (!key) continue;
         if (result.status === 'fulfilled') {
           nextEventCards[key] = result.value;
+          errors.push(...result.value.warnings.filter((warning) => warning.includes('unavailable:')));
         } else {
           errors.push(`${key}: ${(result.reason as Error).message || 'event refresh failed'}`);
         }
@@ -451,17 +457,18 @@ export function FavoritesPage() {
 
       for (let index = 0; index < teamResults.length; index += 1) {
         const result = teamResults[index];
-        const key = favoriteTeams[index];
+        const key = teamsToRefresh[index];
         if (!key) continue;
         if (result.status === 'fulfilled') {
           nextTeamCards[key] = result.value;
+          if (result.value.error) errors.push(result.value.error);
         } else {
           errors.push(`${key}: ${(result.reason as Error).message || 'team refresh failed'}`);
         }
       }
 
-      setEventCards(nextEventCards);
-      setTeamCards(nextTeamCards);
+      if (activeTab !== 'teams') setEventCards(nextEventCards);
+      if (activeTab !== 'events') setTeamCards(nextTeamCards);
       setLastUpdatedAt(Date.now());
 
       if (errors.length > 0) {
@@ -470,19 +477,25 @@ export function FavoritesPage() {
       } else {
         setStatusText('Favorites refreshed.');
       }
+      return errors.length === 0;
     } catch (error) {
       setErrorText((error as Error).message || 'Favorites refresh failed.');
       setStatusText('Refresh failed.');
+      return false;
     } finally {
       setLoadingEvents(false);
       setLoadingTeams(false);
       refreshInFlightRef.current = false;
+      if (tabRefreshPendingRef.current) {
+        tabRefreshPendingRef.current = false;
+        window.setTimeout(() => pollTriggerRef.current(), 0);
+      }
     }
-  }, [eventContextKey, favoriteEvents, favoriteTeams]);
+  }, [activeTab, eventContextKey, favoriteEvents, favoriteTeams]);
 
   const pollRunner = useCallback(() => refreshFavorites(), [refreshFavorites]);
 
-  useSingleFlightPolling({
+  const { triggerNow } = useSingleFlightPolling({
     enabled: true,
     visible: pageVisible,
     intervalMs: Math.max(10, liveRefreshSec) * 1000,
@@ -491,6 +504,14 @@ export function FavoritesPage() {
     minBackoffMs: Math.max(10, liveRefreshSec) * 1000,
     maxBackoffMs: 60000,
   });
+
+  pollTriggerRef.current = triggerNow;
+  useEffect(() => {
+    if (previousTabRef.current === activeTab) return;
+    previousTabRef.current = activeTab;
+    if (refreshInFlightRef.current) tabRefreshPendingRef.current = true;
+    else triggerNow();
+  }, [activeTab, triggerNow]);
 
   const orderedEventCards = useMemo(() => {
     return favoriteEvents.map((eventKey) => eventCards[eventKey]).filter((value): value is FavoriteEventCard => Boolean(value));
@@ -927,7 +948,7 @@ export function FavoritesPage() {
             tab and "Events Watchlist" on its own — which is how two names ended
             up describing one list. There is no watchlist in this app: no
             storage key, no endpoint, no type. Only Favorites. */}
-        <SurfaceCardGroup groupId={`favorites-${activeTab}`}>
+
           <div className={activeTab === 'overview' ? styles.overviewGrid : undefined}>
             {activeTab !== 'teams' ? (
               <SurfaceCard
@@ -948,7 +969,7 @@ export function FavoritesPage() {
               </SurfaceCard>
             ) : null}
           </div>
-        </SurfaceCardGroup>
+
       </section>
     </div>
   );

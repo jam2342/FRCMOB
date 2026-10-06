@@ -8,11 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import require_write_access
 from app.db.session import get_db
-from app.services.events.pipeline import refresh_event
 from app.services.events.regional_automation import (
     RegionalAutomationError,
     run_regional_automation_tick,
-    run_regional_post_event_breakdowns,
 )
 from app.services.ml.synergy import QUALITY_THRESHOLD_DEFAULT, SYNERGY_MODEL_VERSION
 from app.services.utils import (
@@ -25,60 +23,6 @@ router = APIRouter(prefix="/automation", tags=["automation"])
 
 def _ensure_automation_write_enabled() -> None:
     require_write_access("Automation write endpoints")
-
-
-@router.post("/event/{event_key}/refresh")
-def refresh_event_data(
-    event_key: str,
-    run_post_compute: bool = True,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    quality_threshold: float = Query(default=QUALITY_THRESHOLD_DEFAULT, ge=0.0, le=1.0),
-    db: Session = Depends(get_db),
-):
-    _ensure_automation_write_enabled()
-    result = refresh_event(
-        db,
-        event_key=event_key.strip().lower(),
-        run_post_compute=run_post_compute,
-        synergy_model_version=synergy_model_version,
-        quality_threshold=quality_threshold,
-    )
-    return {"ok": result.get("status") == "processed", "event_key": event_key, "result": result}
-
-
-@router.post("/regional/season/{season}")
-def automate_regional_post_event_breakdowns(
-    season: int,
-    include_all_events: bool = False,
-    include_out_of_region_events_for_in_region_teams: bool = True,
-    include_ended_today: bool = False,
-    allow_previous_season_fallback: bool | None = None,
-    max_events: int = 300,
-    max_teams: int = 1000,
-    run_post_compute: bool = True,
-    refresh_all: bool = False,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
-    db: Session = Depends(get_db),
-):
-    _ensure_automation_write_enabled()
-    try:
-        return run_regional_post_event_breakdowns(
-            season=season,
-            include_all_events=include_all_events,
-            include_out_of_region_events_for_in_region_teams=include_out_of_region_events_for_in_region_teams,
-            include_ended_today=include_ended_today,
-            allow_previous_season_fallback=allow_previous_season_fallback,
-            max_events=max_events,
-            max_teams=max_teams,
-            run_post_compute=run_post_compute,
-            refresh_all=refresh_all,
-            synergy_model_version=synergy_model_version,
-            quality_threshold=quality_threshold,
-            db=db,
-        )
-    except RegionalAutomationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/regional/season/{season}/tick")

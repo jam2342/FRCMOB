@@ -192,7 +192,8 @@ class TeamWorkspaceTests(unittest.TestCase):
                 headers=headers,
             )
             self.assertEqual(response.status_code, 200, response.text)
-        a_entry = self.client.get(f"/pit-scouting/{EVENT}/frc118", headers=team_a).json()["entry"]
+        a_list = self.client.get("/pit-scouting", params={"event_key": EVENT}, headers=team_a).json()
+        a_entry = next(e for e in a_list["entries"] if e["team_key"] == "frc118")
         b_list = self.client.get("/pit-scouting", params={"event_key": EVENT}, headers=team_b).json()
         self.assertEqual(a_entry["payload"]["drivetrain"], "swerve")
         self.assertEqual(a_entry["scout_profile"], "Ann")

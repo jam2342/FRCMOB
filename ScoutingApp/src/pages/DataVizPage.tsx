@@ -12,7 +12,7 @@ import type {
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { Stat, Table, type TableColumn } from '../components/ui/primitives';
@@ -424,7 +424,6 @@ export function DataVizPage() {
 }
 
 function DataVizPageContent() {
-  const isMobile = useMobileLayout();
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY);
   const [teamInput, setTeamInput] = useState(() => readMyTeamKey().replace(/^frc/, ''));
 
@@ -479,14 +478,12 @@ function DataVizPageContent() {
   }, [teamKey, eventKey]);
 
   useEffect(() => {
-    if (isMobile) return;
     void loadRatings();
-  }, [isMobile, loadRatings]);
+  }, [loadRatings]);
 
   useEffect(() => {
-    if (isMobile) return;
     void loadBreakdown();
-  }, [isMobile, loadBreakdown]);
+  }, [loadBreakdown]);
 
   /* ── derived data ───────────────────────────── */
   /* team rating from event ratings */
@@ -560,7 +557,6 @@ function DataVizPageContent() {
     return Math.max(...ratings.map((r) => r.rating_0_100), 100);
   }, [ratings]);
 
-  const surfaceGroupId = 'dataviz-main';
 
   /* ── render ─────────────────────────────────── */
   return (
@@ -616,7 +612,7 @@ function DataVizPageContent() {
       {loading && <div className="center-status-banner">Loading data...</div>}
       {error && <div className="center-status-banner center-error-banner">{error}</div>}
 
-      <SurfaceCardGroup groupId={surfaceGroupId}>
+
         {/* ── EVENT OVERVIEW PANEL ─────────────────── */}
         {activePanel === 'overview' && (
           <>
@@ -816,7 +812,7 @@ function DataVizPageContent() {
             )}
           </>
         )}
-      </SurfaceCardGroup>
+
     </div>
   );
 }

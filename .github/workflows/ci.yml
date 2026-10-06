@@ -83,6 +83,8 @@ jobs:
       - run: pip install ruff==0.15.4 pytest pip-audit
       # The detector label tools' tests need Pillow (requirements-training.txt).
       - run: pip install "$(grep -E '^pillow' requirements-training.txt)"
+      # The optical-flow reference test needs OpenCV, which the server image no longer ships.
+      - run: pip install "$(grep -E '^opencv' requirements-training.txt)"
       - run: pip-audit -r requirements.txt
       - run: ruff check app tests
       - run: alembic upgrade head

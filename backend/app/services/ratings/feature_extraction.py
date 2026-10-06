@@ -477,15 +477,12 @@ def extract_team_features(
             if bps_median is not None and cycle_median is not None
             else None
         )
-        capability = data.capabilities_by_team.get(team_key)
+        # No declared capacity exists (that table was never filled), so it's estimated
+        # from what the robot was seen carrying per cycle.
         capacity_value = (
-            float(capability.ball_capacity)
-            if capability is not None and capability.ball_capacity is not None and capability.ball_capacity > 0
-            else (
-                (observed_balls_per_cycle * 1.25)
-                if observed_balls_per_cycle is not None and observed_balls_per_cycle > 0
-                else None
-            )
+            (observed_balls_per_cycle * 1.25)
+            if observed_balls_per_cycle is not None and observed_balls_per_cycle > 0
+            else None
         )
         capacity_util_raw = (
             observed_balls_per_cycle / capacity_value

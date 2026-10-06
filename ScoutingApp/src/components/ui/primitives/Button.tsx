@@ -1,9 +1,9 @@
+import { cx } from './cx';
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
 import styles from './Button.module.css';
-import { cx } from './cx';
 
-export type ButtonVariant = 'primary' | 'default' | 'quiet' | 'danger';
-export type ButtonSize = 'sm' | 'md';
+type ButtonVariant = 'primary' | 'default' | 'quiet' | 'danger';
+type ButtonSize = 'sm' | 'md';
 
 type CommonProps = {
   variant?: ButtonVariant;

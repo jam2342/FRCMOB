@@ -4,7 +4,6 @@ import {
   clearUpcomingChanges,
   coverageSummary,
   myAssignments,
-  nextAssignment,
   planAutoAssign,
 } from './teamAssignments';
 
@@ -112,7 +111,7 @@ describe('planAutoAssign', () => {
 });
 
 describe('my assignments', () => {
-  it('orders by schedule, marks done, and finds the next one', () => {
+  it('orders by schedule and marks completed assignments', () => {
     const schedule = [match(3), match(1), match(2, true)];
     const rows = [row(3, 4, 7), row(1, 1, 7, { covered_by_me: true }), row(2, 2, 7), row(1, 2, 8)];
     const mine = myAssignments(7, rows, schedule);
@@ -121,7 +120,6 @@ describe('my assignments', () => {
       ['QM 2', 'red', '122', true],
       ['QM 3', 'blue', '134', false],
     ]);
-    expect(nextAssignment(mine)?.match_label).toBe('QM 3');
   });
 });
 

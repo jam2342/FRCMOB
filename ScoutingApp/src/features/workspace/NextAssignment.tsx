@@ -11,7 +11,7 @@ function timeLabel(startTime: number | null): string {
   return sameDay ? `~${time}` : `${date.toLocaleDateString([], { weekday: 'short' })} ~${time}`;
 }
 
-export function AssignmentLine({ item }: { item: MyAssignment }) {
+function AssignmentLine({ item }: { item: MyAssignment }) {
   const when = timeLabel(item.start_time);
   return (
     <span className={styles.line}>

@@ -1,3 +1,4 @@
+import { breakdownFromIntel, ratingFromIntel, type TeamIntelBreakdown } from './teamIntel';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageViewBar } from '../components/PageViewBar';
@@ -11,10 +12,9 @@ import {
 import type {
   EventTeamsIntelResponse,
   EventTeamRatingItem,
-  TeamBreakdownResponse,
   TeamCompetitionsResponse,
 } from '../api';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
 import styles from './ComparePage.module.css';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
@@ -58,7 +58,7 @@ type CompareTeamBundle = {
   loading: boolean;
   error: string;
   warnings: string[];
-  breakdown: TeamBreakdownResponse | null;
+  breakdown: TeamIntelBreakdown | null;
   rating: EventTeamRatingItem | null;
   competitions: TeamCompetitionsResponse | null;
   tba_event_status: Record<string, unknown> | null;
@@ -96,7 +96,7 @@ function readStoredCompareTeamKeys(): string[] {
   }
 }
 
-function compareTeamLabel(teamKey: string, breakdown: TeamBreakdownResponse | null): string {
+function compareTeamLabel(teamKey: string, breakdown: TeamIntelBreakdown | null): string {
   if (breakdown?.team.team_number) return `#${breakdown.team.team_number}`;
   const teamNumber = teamNumberFromTeamKey(teamKey);
   return teamNumber !== null ? `#${teamNumber}` : teamKey.toUpperCase();
@@ -119,124 +119,7 @@ function emptyBundle(teamKey: string, eventKey: string): CompareTeamBundle {
   };
 }
 
-function breakdownFromIntel(intel: Record<string, unknown>, teamKey: string): TeamBreakdownResponse | null {
-  const analysis = asRecord(intel.analysis);
-  const team = asRecord(intel.team);
-  if (!analysis || !team) return null;
-  const averages = asRecord(analysis.averages);
-  const climbSourcesRaw = asRecord(analysis.climb_sources);
-  const climbVideoRaw = asRecord(climbSourcesRaw?.video_only);
-  const climbOfficialRaw = asRecord(climbSourcesRaw?.official_score_breakdown);
-  const climbSources: TeamBreakdownResponse['climb_sources'] | undefined = climbSourcesRaw
-    ? {
-        overall_climb_success_prob: parseNumber(climbSourcesRaw.overall_climb_success_prob),
-        video_only: {
-          source: typeof climbVideoRaw?.source === 'string' ? climbVideoRaw.source : 'video_analyzed',
-          climb_success_prob: parseNumber(climbVideoRaw?.climb_success_prob),
-          matches_considered: Math.max(0, Math.floor(parseNumber(climbVideoRaw?.matches_considered) ?? 0)),
-          matches_with_signal: Math.max(0, Math.floor(parseNumber(climbVideoRaw?.matches_with_signal) ?? 0)),
-        },
-        official_score_breakdown: {
-          source:
-            typeof climbOfficialRaw?.source === 'string'
-              ? climbOfficialRaw.source
-              : 'official_score_breakdown',
-          climb_success_prob: parseNumber(climbOfficialRaw?.climb_success_prob),
-          matches_considered: Math.max(0, Math.floor(parseNumber(climbOfficialRaw?.matches_considered) ?? 0)),
-          matches_with_signal: Math.max(0, Math.floor(parseNumber(climbOfficialRaw?.matches_with_signal) ?? 0)),
-        },
-      }
-    : undefined;
-  return {
-    ok: true,
-    team: {
-      team_key: String(team.team_key || teamKey).toLowerCase(),
-      team_number: parseNumber(team.team_number) ?? teamNumberFromTeamKey(teamKey) ?? 0,
-      nickname: typeof team.nickname === 'string' ? team.nickname : null,
-    },
-    event_key: typeof intel.event_key === 'string' ? intel.event_key : null,
-    season_scope: asRecord(analysis.season_scope) as TeamBreakdownResponse['season_scope'],
-    data_freshness: asRecord(analysis.data_freshness) as TeamBreakdownResponse['data_freshness'],
-    matches_analyzed: parseNumber(analysis.matches_analyzed) ?? 0,
-    averages: averages
-      ? {
-          fuel_scoring_rate: parseNumber(averages.fuel_scoring_rate),
-          cycle_time_sec: parseNumber(averages.cycle_time_sec),
-          auto_contribution: parseNumber(averages.auto_contribution),
-          climb_success_prob: parseNumber(averages.climb_success_prob),
-          defensive_engagement_sec: parseNumber(averages.defensive_engagement_sec),
-          reliability_score: parseNumber(averages.reliability_score),
-        }
-      : null,
-    climb_sources: climbSources,
-    metric_coverage: (asRecord(analysis.metric_coverage) || {}) as TeamBreakdownResponse['metric_coverage'],
-    active_perimeter_type:
-      analysis.active_perimeter_type === 'welded' || analysis.active_perimeter_type === 'andymark'
-        ? analysis.active_perimeter_type
-        : null,
-    perimeter_types: Array.isArray(analysis.perimeter_types)
-      ? analysis.perimeter_types.filter((value): value is 'welded' | 'andymark' => value === 'welded' || value === 'andymark')
-      : [],
-    perimeter_sources: Array.isArray(analysis.perimeter_sources)
-      ? analysis.perimeter_sources.map((value) => String(value))
-      : [],
-    analysis_versions: Array.isArray(analysis.analysis_versions)
-      ? analysis.analysis_versions.map((value) => String(value))
-      : [],
-    event_type_counts: Array.isArray(analysis.event_type_counts)
-      ? (analysis.event_type_counts as TeamBreakdownResponse['event_type_counts'])
-      : [],
-    zone_time_sec: (asRecord(analysis.zone_time_sec) || {}) as Record<string, number>,
-    recent_matches: Array.isArray(analysis.recent_matches)
-      ? (analysis.recent_matches as TeamBreakdownResponse['recent_matches'])
-      : [],
-    recent_events: [],
-    recent_track_points: [],
-    run_ids: Array.isArray(analysis.run_ids)
-      ? analysis.run_ids.map((value) => parseNumber(value)).filter((value): value is number => value !== null)
-      : [],
-  };
-}
 
-function ratingFromIntel(
-  intel: Record<string, unknown>,
-  teamKey: string,
-  teamNumber: number | null,
-  nickname: string | null,
-): EventTeamRatingItem | null {
-  const rating = asRecord(intel.rating);
-  if (!rating || !rating.available) return null;
-  const subscores = asRecord(rating.subscores) || {};
-  return {
-    event_key: typeof rating.context_event_key === 'string' ? rating.context_event_key : (intel.event_key as string) || '',
-    team_key: teamKey,
-    team_number: teamNumber,
-    nickname,
-    rating_0_100: parseNumber(rating.rating_0_100) ?? 50,
-    confidence_0_1: parseNumber(rating.confidence_0_1) ?? 0,
-    robot_level_0_100: parseNumber(rating.robot_level_0_100) ?? 50,
-    driver_skill_0_100: parseNumber(rating.driver_skill_0_100) ?? 50,
-    subscores: {
-      results_anchor: parseNumber(subscores.results_anchor) ?? 50,
-      throughput: parseNumber(subscores.throughput) ?? 50,
-      shift_productivity: parseNumber(subscores.shift_productivity) ?? 50,
-      capacity_utilization: parseNumber(subscores.capacity_utilization) ?? 50,
-      endgame: parseNumber(subscores.endgame) ?? 50,
-      auto_contribution: parseNumber(subscores.auto_contribution),
-      manual_points_impact: parseNumber(subscores.manual_points_impact),
-      rp_contribution: parseNumber(subscores.rp_contribution),
-      defense_presence: parseNumber(subscores.defense_presence),
-      consistency: parseNumber(subscores.consistency) ?? 50,
-      penalty_discipline: parseNumber(subscores.penalty_discipline),
-    },
-    pros: Array.isArray(rating.pros) ? (rating.pros as EventTeamRatingItem['pros']) : [],
-    cons: Array.isArray(rating.cons) ? (rating.cons as EventTeamRatingItem['cons']) : [],
-    evidence: Array.isArray(rating.evidence) ? (rating.evidence as EventTeamRatingItem['evidence']) : [],
-    details: asRecord(rating.details) || {},
-    model_version: typeof rating.model_version === 'string' ? rating.model_version : 'rating_v5_configured',
-    updated_at: typeof rating.updated_at === 'string' ? rating.updated_at : null,
-  };
-}
 
 function competitionsFromIntel(intel: Record<string, unknown>, teamKey: string): TeamCompetitionsResponse | null {
   const competitions = asRecord(intel.competitions);
@@ -1074,7 +957,6 @@ export function ComparePage() {
         </SurfaceCard>
 
         {activeTab === 'summary' ? (
-          <SurfaceCardGroup groupId="compare-center-summary">
             <SurfaceCard title="Summary" className="compare-summary-card" compactable>
             {metricHighlights.length > 0 ? (
               <div className="compare-highlights-grid">
@@ -1107,11 +989,10 @@ export function ComparePage() {
               empty="Add teams to build compare diagnostics."
             />
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
 
         {activeTab === 'detailed' ? (
-          <SurfaceCardGroup groupId="compare-center-deep">
             <SurfaceCard
               title="Deep Compare"
               className="compare-deep-shell"
@@ -1269,7 +1150,7 @@ export function ComparePage() {
               ))}
             </div>
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
 
       </section>

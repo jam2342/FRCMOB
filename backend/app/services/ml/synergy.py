@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import models
 from app.services.hash_utils import stable_payload_hash
+from app.services.ratings.helpers import _fit_linear_model
 from app.services.utils import (
     _clamp,
     _mean as _mean_or_none,
@@ -34,21 +35,6 @@ def _mean(values: list[float]) -> float:
 def _weighted_mean(pairs: list[tuple[float, float]]) -> float:
     # Synergy-local weighted mean: returns 0.0 instead of None.
     return _weighted_mean_or_none(pairs) or 0.0
-
-def _fit_linear_model(x_values: list[float], y_values: list[float]) -> tuple[float, float]:
-    if len(x_values) != len(y_values) or not x_values:
-        return 0.0, 1.0
-    if len(x_values) == 1:
-        return float(y_values[0]), 0.0
-    x_mean = sum(x_values) / len(x_values)
-    y_mean = sum(y_values) / len(y_values)
-    denom = sum((x - x_mean) ** 2 for x in x_values)
-    if denom <= 1e-9:
-        return y_mean, 0.0
-    numer = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, y_values))
-    slope = numer / denom
-    intercept = y_mean - (slope * x_mean)
-    return intercept, slope
 
 def _canonical_pair(team_a: str, team_b: str) -> tuple[str, str]:
     if team_a <= team_b:
@@ -444,6 +430,13 @@ def compute_team_season_strength(
     )
     now = datetime.now(timezone.utc)
     computed_count = 0
+    # One SELECT for the season's existing rows; otherwise each db.merge() below
+    # looks its row up separately (thousands of queries per season). Keep the
+    # reference; the session only holds loaded rows weakly.
+    _existing_rows = db.query(models.TeamSeasonStrength).filter(
+        models.TeamSeasonStrength.season == season,
+        models.TeamSeasonStrength.model_version == model_version,
+    ).all()
     for team_key in sorted(team_keys):
         values = grouped_values.get(team_key, [])
         matches_used = len(values)
@@ -618,7 +611,7 @@ def _season_expected_model(
         return 0.0, 1.0, 0
     x_values = [float(sample["strength_sum"]) for sample in samples]
     y_values = [float(sample["observed_y"]) for sample in samples]
-    intercept, slope = _fit_linear_model(x_values, y_values)
+    intercept, slope = _fit_linear_model(x_values, y_values, empty_slope=1.0)
     return intercept, slope, len(samples)
 
 def compute_team_pair_synergy_prior(
@@ -628,15 +621,17 @@ def compute_team_pair_synergy_prior(
     model_version: str = SYNERGY_MODEL_VERSION,
     quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
     shrink_k: float = PAIR_PRIOR_SHRINK_K,
+    recompute_dependencies: bool = True,
     commit: bool = True,
 ) -> dict[str, Any]:
-    compute_team_season_strength(
-        db,
-        season,
-        model_version=model_version,
-        quality_threshold=quality_threshold,
-        commit=False,
-    )
+    if recompute_dependencies:
+        compute_team_season_strength(
+            db,
+            season,
+            model_version=model_version,
+            quality_threshold=quality_threshold,
+            commit=False,
+        )
     strengths = _load_season_strength_map(db, season, model_version)
     strength_values = {
         team_key: float(row.strength_active_bps or 0.0)
@@ -659,7 +654,7 @@ def compute_team_pair_synergy_prior(
 
     x_values = [float(sample["strength_sum"]) for sample in samples]
     y_values = [float(sample["observed_y"]) for sample in samples]
-    intercept, slope = _fit_linear_model(x_values, y_values)
+    intercept, slope = _fit_linear_model(x_values, y_values, empty_slope=1.0)
     bucket: dict[tuple[str, str], list[tuple[float, float, float, float]]] = defaultdict(list)
     for sample in samples:
         expected = intercept + (slope * float(sample["strength_sum"]))
@@ -828,19 +823,21 @@ def compute_team_pair_synergy_event(
     model_version: str = SYNERGY_MODEL_VERSION,
     quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
     shrink_k: float = PAIR_EVENT_SHRINK_K,
+    recompute_dependencies: bool = True,
     commit: bool = True,
 ) -> dict[str, Any]:
     season = _season_from_event_key(event_key)
     if season is None:
         raise RuntimeError(f"Unable to infer season from event key {event_key}")
 
-    compute_team_event_throughput_strength(
-        db,
-        event_key,
-        model_version=model_version,
-        quality_threshold=quality_threshold,
-        commit=False,
-    )
+    if recompute_dependencies:
+        compute_team_event_throughput_strength(
+            db,
+            event_key,
+            model_version=model_version,
+            quality_threshold=quality_threshold,
+            commit=False,
+        )
     strengths = _load_event_strength_map(db, event_key, model_version)
     strength_values = {
         team_key: float(row.strength_active_bps or 0.0)
@@ -872,7 +869,7 @@ def compute_team_pair_synergy_event(
 
     x_values = [float(sample["strength_sum"]) for sample in samples]
     y_values = [float(sample["observed_y"]) for sample in samples]
-    intercept, slope = _fit_linear_model(x_values, y_values)
+    intercept, slope = _fit_linear_model(x_values, y_values, empty_slope=1.0)
     bucket: dict[tuple[str, str], list[tuple[float, float, float, float]]] = defaultdict(list)
     for sample in samples:
         expected = intercept + (slope * float(sample["strength_sum"]))
@@ -1103,6 +1100,12 @@ def compute_match_synergy_projections(
 
     projection_rows: list[models.MatchSynergyProjection] = []
     ml_blended_pair_count = 0
+    # Existing projections in one SELECT so each db.merge() below skips its own
+    # lookup (kept referenced: the session only holds loaded rows weakly).
+    _existing_rows = db.query(models.MatchSynergyProjection).filter(
+        models.MatchSynergyProjection.event_key == event_key,
+        models.MatchSynergyProjection.model_version == model_version,
+    ).all()
     for match in matches:
         for alliance in ("red", "blue"):
             team_keys = sorted(teams_by_match_alliance.get((match.match_key, alliance), []))
@@ -1299,17 +1302,15 @@ def compute_match_synergy_projections(
         },
     }
 
-def precompute_event_synergy(
+def precompute_season_synergy(
     db: Session,
-    event_key: str,
+    season: int,
     *,
     model_version: str = SYNERGY_MODEL_VERSION,
     quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
 ) -> dict[str, Any]:
-    season = _season_from_event_key(event_key)
-    if season is None:
-        raise RuntimeError(f"Unable to infer season from event key {event_key}")
-
+    # The season-wide half of precompute_event_synergy. A batch refresh runs it once
+    # after ingesting every event instead of once per event.
     try:
         season_strength = compute_team_season_strength(
             db,
@@ -1323,8 +1324,48 @@ def precompute_event_synergy(
             season,
             model_version=model_version,
             quality_threshold=quality_threshold,
+            recompute_dependencies=False,
             commit=False,
         )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"ok": True, "season": season, "season_strength": season_strength, "pair_prior": prior}
+
+
+def precompute_event_synergy(
+    db: Session,
+    event_key: str,
+    *,
+    model_version: str = SYNERGY_MODEL_VERSION,
+    quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
+    season_ready: bool = False,
+) -> dict[str, Any]:
+    season = _season_from_event_key(event_key)
+    if season is None:
+        raise RuntimeError(f"Unable to infer season from event key {event_key}")
+
+    try:
+        season_strength: dict[str, Any] = {"skipped": "season_ready"}
+        prior: dict[str, Any] = {"skipped": "season_ready"}
+        if not season_ready:
+            season_strength = compute_team_season_strength(
+                db,
+                season,
+                model_version=model_version,
+                quality_threshold=quality_threshold,
+                commit=False,
+            )
+            # Each step below reuses the strengths computed just before it.
+            prior = compute_team_pair_synergy_prior(
+                db,
+                season,
+                model_version=model_version,
+                quality_threshold=quality_threshold,
+                recompute_dependencies=False,
+                commit=False,
+            )
         event_strength = compute_team_event_throughput_strength(
             db,
             event_key,
@@ -1337,6 +1378,7 @@ def precompute_event_synergy(
             event_key,
             model_version=model_version,
             quality_threshold=quality_threshold,
+            recompute_dependencies=False,
             commit=False,
         )
         projections = compute_match_synergy_projections(

@@ -74,7 +74,6 @@ def _upsert_backfill_run(db: Session, *, event_key: str, match_key: str) -> mode
             event_key=event_key,
             analysis_version=BACKFILL_RUN_VERSION,
             params_hash=BACKFILL_RUN_VERSION,
-            calibration_id=None,
         )
     )
     return run

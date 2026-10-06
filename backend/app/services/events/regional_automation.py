@@ -12,7 +12,9 @@ import redis
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.services.events.pipeline import refresh_event, train_shadow_models_after_refresh
+from app.core.security import sanitize_external_error
+from app.services.events.pipeline import post_compute_event, refresh_event, train_shadow_models_after_refresh
+from app.services.ml.synergy import precompute_season_synergy
 from app.services.utils import (
     automation_redis_key as _automation_redis_key,
     decode_redis_float as _decode_redis_float,
@@ -278,6 +280,9 @@ def run_regional_post_event_breakdowns(
         (candidate_events, 0) if refresh_all else _events_due_for_refresh(candidate_events, today_utc)
     )
 
+    # Ingest every event first, then build the season-wide synergy once, then rebuild
+    # each event on top of it. Rebuilding per event recomputed the whole season's
+    # synergy once per event (299 times in a full re-ingest).
     event_results: list[dict] = []
     for event in selected_events:
         event_key = event.get("key")
@@ -286,15 +291,40 @@ def run_regional_post_event_breakdowns(
         event_result = refresh_event(
             db,
             event_key=event_key,
-            run_post_compute=run_post_compute,
+            run_post_compute=False,
             train_ml=False,
             synergy_model_version=synergy_model_version,
             quality_threshold=quality_threshold,
         )
         event_result["in_region"] = _is_in_region_event_payload(event)
         event_results.append(event_result)
-        if event_result.get("status") == "processed":
-            _mark_event_refreshed(event_key)
+
+    processed = [row for row in event_results if row.get("status") == "processed"]
+    season_synergy: dict[int, dict] = {}
+    if run_post_compute:
+        for season_year in sorted({int(str(row["event_key"])[:4]) for row in processed}):
+            try:
+                season_synergy[season_year] = precompute_season_synergy(
+                    db,
+                    season_year,
+                    model_version=synergy_model_version,
+                    quality_threshold=quality_threshold,
+                )
+            except Exception as exc:
+                # Each event then rebuilds its own season data, as before.
+                season_synergy[season_year] = {"ok": False, "detail": sanitize_external_error(exc, default="Season synergy failed.")}
+    for row in processed:
+        event_key = str(row["event_key"])
+        if run_post_compute:
+            row["post_compute"] = {"ran": True, **post_compute_event(
+                db,
+                event_key=event_key,
+                train_ml=False,
+                synergy_model_version=synergy_model_version,
+                quality_threshold=quality_threshold,
+                season_ready=bool(season_synergy.get(int(event_key[:4]), {}).get("ok")),
+            )}
+        _mark_event_refreshed(event_key)
 
     # One training pass per tick: the shadow models learn from the whole season, not one event.
     ml_shadow = (

@@ -18,7 +18,7 @@ import type { CounterField } from '../pages/scoutingPage.types';
 export type MatchFormSection = 'auto' | 'teleop' | 'mobility' | 'strategy';
 
 /** 1-5 qualitative scale fields in ScoutFormState. */
-export type ScaleField =
+type ScaleField =
   | 'auto_path_quality_1_5'
   | 'offense_level_1_5'
   | 'defense_level_1_5'
@@ -44,7 +44,7 @@ export interface MatchScaleDef {
   section: MatchFormSection;
 }
 
-export const MATCH_COUNTER_FIELDS: MatchCounterDef[] = [
+const MATCH_COUNTER_FIELDS: MatchCounterDef[] = [
   // Auto
   { key: 'auto_scored', label: 'Auto fuel scored', section: 'auto', step: 3 },
   { key: 'auto_missed', label: 'Auto misses', section: 'auto', step: 3 },
@@ -64,7 +64,7 @@ export const MATCH_COUNTER_FIELDS: MatchCounterDef[] = [
   { key: 'trench_crosses', label: 'Trench crossings', section: 'mobility' },
 ];
 
-export const MATCH_SCALE_FIELDS: MatchScaleDef[] = [
+const MATCH_SCALE_FIELDS: MatchScaleDef[] = [
   { key: 'auto_path_quality_1_5', label: 'Auto path quality', section: 'auto' },
   { key: 'anti_defense_level_1_5', label: 'Anti-defense level', section: 'mobility' },
   { key: 'escape_level_1_5', label: 'Escape from pin', section: 'mobility' },
@@ -89,7 +89,7 @@ export function scalesFor(section: MatchFormSection): MatchScaleDef[] {
 /*  Pit scouting form schema                                           */
 /* ------------------------------------------------------------------ */
 
-export type PitFieldType = 'select' | 'number' | 'text' | 'textarea' | 'multiselect' | 'toggle';
+type PitFieldType = 'select' | 'number' | 'text' | 'textarea' | 'multiselect' | 'toggle';
 
 export interface PitFieldDef {
   key: string;

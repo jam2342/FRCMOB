@@ -424,7 +424,7 @@ export function findHomographyRansac(
   return refined ?? null;
 }
 
-export const MIN_FLOW_POINTS = 12;
+const MIN_FLOW_POINTS = 12;
 
 // Lighter than the cv.* defaults this replaces, because measurement said we were paying
 // for precision we cannot use. On real Einstein frames at 640x360 with known motion,

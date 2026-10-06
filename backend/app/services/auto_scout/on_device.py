@@ -213,7 +213,7 @@ def estimate_homography_ransac(
 # from stands distance, so per-frame tag pose recovery is not viable there. The
 # workable scheme is instead: tap the 4 field corners ONCE to fix a base pose, then
 # carry it frame-to-frame with optical-flow stabilization (the cv2 side lives in
-# on_device_cv.py to keep this module OpenCV-free / browser-mirrorable).
+# tests/on_device_cv_reference.py to keep this module OpenCV-free / browser-mirrorable).
 
 
 @dataclass(slots=True)

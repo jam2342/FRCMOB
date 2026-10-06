@@ -14,7 +14,7 @@ import {
 const MIN_LIVE_INTERVAL_MS = 8000;
 const DEFAULT_LIVE_INTERVAL_MS = 20000;
 
-export type LiveRatingChange = {
+type LiveRatingChange = {
   teamKey: string;
   previous: number;
   next: number;

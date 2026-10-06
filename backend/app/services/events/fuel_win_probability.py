@@ -76,15 +76,6 @@ def _prior_event_fuel(db: Session, event_key: str, team_keys: set[str], event_st
     return {team_key: rate for team_key, (_t, rate) in latest.items()}
 
 
-def fuel_margins_by_match(
-    db: Session,
-    event_key: str,
-    ordered_matches: Iterable[MatchSides],
-    event_start: int | None,
-) -> dict[str, float]:
-    return {key: margin for key, (margin, _seen) in fuel_margin_details(db, event_key, ordered_matches, event_start).items()}
-
-
 def fuel_margin_details(
     db: Session,
     event_key: str,

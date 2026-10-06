@@ -14,7 +14,7 @@ import type { Picklist, PicklistSlot, PicklistSlotTier } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
@@ -377,7 +377,7 @@ function PicklistWorkspacePage() {
     <>
       <PageViewBar items={COMPARE_VIEWS} />
       <div className="center-page-container">
-        <SurfaceCardGroup groupId="picklist-builder">
+
           <SurfaceCard
             title="Picklist Builder"
             subtitle="Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."
@@ -719,7 +719,7 @@ function PicklistWorkspacePage() {
               </p>
             </SurfaceCard>
           ) : null}
-        </SurfaceCardGroup>
+
       </div>
       {isMobile ? <div className="picklist-mobile-spacer" aria-hidden="true" /> : null}
     </>

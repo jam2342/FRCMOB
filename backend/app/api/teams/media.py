@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
@@ -68,23 +68,31 @@ def _media_image_url(media: dict[str, Any]) -> str | None:
 
     return None
 
-def _select_robot_image(media_rows: list[dict[str, Any]]) -> tuple[str, str | None, str | None] | None:
+def _pick_media(
+    media_rows: list[dict[str, Any]],
+    url_for: Callable[[dict[str, Any]], str | None],
+    default_type: str | None = None,
+) -> tuple[str, str | None, str | None] | None:
+    # TBA's "preferred" media first, then anything usable.
     for preferred_only in (True, False):
         for media in media_rows:
-            if not isinstance(media, dict):
+            if not isinstance(media, dict) or (preferred_only and not bool(media.get("preferred"))):
                 continue
-            if preferred_only and not bool(media.get("preferred")):
-                continue
-            image_url = _media_image_url(media)
-            if image_url:
+            url = url_for(media)
+            if url:
                 media_type = media.get("type")
                 view_url = media.get("view_url")
                 return (
-                    image_url,
-                    media_type if isinstance(media_type, str) else None,
+                    url,
+                    media_type if isinstance(media_type, str) else default_type,
                     view_url if isinstance(view_url, str) else None,
                 )
     return None
+
+
+def _select_robot_image(media_rows: list[dict[str, Any]]) -> tuple[str, str | None, str | None] | None:
+    return _pick_media(media_rows, _media_image_url)
+
 
 def _avatar_logo_url(media: dict[str, Any]) -> str | None:
     if media.get("type") != "avatar":
@@ -105,45 +113,73 @@ def _avatar_logo_url(media: dict[str, Any]) -> str | None:
     return None
 
 def _select_team_logo(media_rows: list[dict[str, Any]]) -> tuple[str, str | None, str | None] | None:
-    for preferred_only in (True, False):
-        for media in media_rows:
-            if not isinstance(media, dict):
-                continue
-            if preferred_only and not bool(media.get("preferred")):
-                continue
+    # The team avatar, else any static image.
+    return _pick_media(media_rows, _avatar_logo_url, "avatar") or _pick_media(media_rows, _media_image_url)
 
-            avatar_logo = _avatar_logo_url(media)
-            if avatar_logo:
-                media_type = media.get("type")
-                view_url = media.get("view_url")
-                return (
-                    avatar_logo,
-                    media_type if isinstance(media_type, str) else "avatar",
-                    view_url if isinstance(view_url, str) else None,
-                )
-
-    # Fallback to any static image media if avatar is unavailable.
-    for preferred_only in (True, False):
-        for media in media_rows:
-            if not isinstance(media, dict):
-                continue
-            if preferred_only and not bool(media.get("preferred")):
-                continue
-            image_url = _media_image_url(media)
-            if image_url:
-                media_type = media.get("type")
-                view_url = media.get("view_url")
-                return (
-                    image_url,
-                    media_type if isinstance(media_type, str) else None,
-                    view_url if isinstance(view_url, str) else None,
-                )
-
-    return None
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+def _team_media_payload(
+    db: Session,
+    *,
+    team_key: str,
+    event_key: str | None,
+    preferred_year: int,
+    fallback_year: int,
+    select: Callable[[list[dict[str, Any]]], tuple[str, str | None, str | None] | None],
+    kind: str,
+    missing_reason: str,
+) -> dict[str, Any]:
+    normalized_team_key = _normalize_team_key(team_key)
+    latest_local_year = db.query(func.max(models.Event.year)).scalar()
+    years = _rt._media_candidate_years(
+        _rt._candidate_years(
+            event_key=event_key,
+            preferred_year=preferred_year,
+            fallback_year=fallback_year,
+            latest_local_year=int(latest_local_year) if latest_local_year is not None else None,
+        )
+    )
+    payload: dict[str, Any] = {
+        "ok": True,
+        "team_key": normalized_team_key,
+        "event_key": event_key,
+        "available": False,
+        "year": years[0] if years else None,
+        "image_url": None,
+        "media_type": None,
+        "view_url": None,
+        "source": "none",
+        "reason": missing_reason,
+    }
+    if not settings.tba_auth_key.strip():
+        return payload
+
+    tba = TBAClient()
+    for year in years:
+        try:
+            team_media = tba.team_media(normalized_team_key, year)
+        except Exception as exc:
+            logger.warning("Failed to fetch TBA %s media for %s in %s: %s", kind, normalized_team_key, year, exc)
+            continue
+        selected = select(team_media) if isinstance(team_media, list) else None
+        if selected is None:
+            continue
+        image_url, media_type, view_url = selected
+        return {
+            **payload,
+            "available": True,
+            "year": year,
+            "image_url": image_url,
+            "media_type": media_type,
+            "view_url": view_url,
+            "source": "tba",
+            "reason": None,
+        }
+    return payload
+
 
 @router.get("/{team_key}/robot-image")
 def get_team_robot_image(
@@ -153,72 +189,17 @@ def get_team_robot_image(
     fallback_year: int = PREVIOUS_SEASON_YEAR,
     db: Session = Depends(get_db),
 ):
-    normalized_team_key = _normalize_team_key(team_key)
-
-    latest_local_year = db.query(func.max(models.Event.year)).scalar()
-    years = _rt._media_candidate_years(
-        _rt._candidate_years(
-            event_key=event_key,
-            preferred_year=preferred_year,
-            fallback_year=fallback_year,
-            latest_local_year=int(latest_local_year) if latest_local_year is not None else None,
-        )
+    return _team_media_payload(
+        db,
+        team_key=team_key,
+        event_key=event_key,
+        preferred_year=preferred_year,
+        fallback_year=fallback_year,
+        select=_select_robot_image,
+        kind="robot",
+        missing_reason="A picture of the robot isn't available.",
     )
 
-    if not settings.tba_auth_key.strip():
-        return {
-            "ok": True,
-            "team_key": normalized_team_key,
-            "event_key": event_key,
-            "available": False,
-            "year": years[0] if years else None,
-            "image_url": None,
-            "media_type": None,
-            "view_url": None,
-            "source": "none",
-            "reason": "A picture of the robot isn't available.",
-        }
-
-    tba = TBAClient()
-    for year in years:
-        try:
-            team_media = tba.team_media(normalized_team_key, year)
-        except Exception as exc:
-            logger.warning("Failed to fetch TBA robot media for %s in %s: %s", normalized_team_key, year, exc)
-            continue
-
-        if not isinstance(team_media, list):
-            continue
-        selected = _select_robot_image(team_media)
-        if selected is None:
-            continue
-
-        image_url, media_type, view_url = selected
-        return {
-            "ok": True,
-            "team_key": normalized_team_key,
-            "event_key": event_key,
-            "available": True,
-            "year": year,
-            "image_url": image_url,
-            "media_type": media_type,
-            "view_url": view_url,
-            "source": "tba",
-            "reason": None,
-        }
-
-    return {
-        "ok": True,
-        "team_key": normalized_team_key,
-        "event_key": event_key,
-        "available": False,
-        "year": years[0] if years else None,
-        "image_url": None,
-        "media_type": None,
-        "view_url": None,
-        "source": "none",
-        "reason": "A picture of the robot isn't available.",
-    }
 
 @router.get("/{team_key}/logo")
 def get_team_logo(
@@ -228,69 +209,13 @@ def get_team_logo(
     fallback_year: int = PREVIOUS_SEASON_YEAR,
     db: Session = Depends(get_db),
 ):
-    normalized_team_key = _normalize_team_key(team_key)
-    latest_local_year = db.query(func.max(models.Event.year)).scalar()
-    years = _rt._media_candidate_years(
-        _rt._candidate_years(
-            event_key=event_key,
-            preferred_year=preferred_year,
-            fallback_year=fallback_year,
-            latest_local_year=int(latest_local_year) if latest_local_year is not None else None,
-        )
+    return _team_media_payload(
+        db,
+        team_key=team_key,
+        event_key=event_key,
+        preferred_year=preferred_year,
+        fallback_year=fallback_year,
+        select=_select_team_logo,
+        kind="logo",
+        missing_reason="Team logo is not available.",
     )
-
-    if not settings.tba_auth_key.strip():
-        return {
-            "ok": True,
-            "team_key": normalized_team_key,
-            "event_key": event_key,
-            "available": False,
-            "year": years[0] if years else None,
-            "image_url": None,
-            "media_type": None,
-            "view_url": None,
-            "source": "none",
-            "reason": "Team logo is not available.",
-        }
-
-    tba = TBAClient()
-    for year in years:
-        try:
-            team_media = tba.team_media(normalized_team_key, year)
-        except Exception as exc:
-            logger.warning("Failed to fetch TBA logo media for %s in %s: %s", normalized_team_key, year, exc)
-            continue
-
-        if not isinstance(team_media, list):
-            continue
-
-        selected = _select_team_logo(team_media)
-        if selected is None:
-            continue
-
-        image_url, media_type, view_url = selected
-        return {
-            "ok": True,
-            "team_key": normalized_team_key,
-            "event_key": event_key,
-            "available": True,
-            "year": year,
-            "image_url": image_url,
-            "media_type": media_type,
-            "view_url": view_url,
-            "source": "tba",
-            "reason": None,
-        }
-
-    return {
-        "ok": True,
-        "team_key": normalized_team_key,
-        "event_key": event_key,
-        "available": False,
-        "year": years[0] if years else None,
-        "image_url": None,
-        "media_type": None,
-        "view_url": None,
-        "source": "none",
-        "reason": "Team logo is not available.",
-    }

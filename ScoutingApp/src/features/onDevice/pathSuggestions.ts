@@ -7,7 +7,7 @@
 // robots at stands-camera resolution (AUC ~0.65), so this is position, time and bumper
 // colour only.
 
-export type Alliance = 'red' | 'blue';
+type Alliance = 'red' | 'blue';
 
 export type SuggestPath = {
   pathId: number;

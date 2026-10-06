@@ -43,7 +43,6 @@ class EventRatingData:
         "stats_by_team",
         "event_strength_by_team",
         "season_strength_by_team",
-        "capabilities_by_team",
         "speeds_by_team",
         "events_by_team_match",
         "alliance_by_match",
@@ -72,7 +71,6 @@ class EventRatingData:
         self.stats_by_team: dict[str, models.EventTeamStat] = {}
         self.event_strength_by_team: dict[str, models.TeamEventThroughputStrength] = {}
         self.season_strength_by_team: dict[str, models.TeamSeasonStrength] = {}
-        self.capabilities_by_team: dict[str, models.TeamStaticCapability] = {}
         self.speeds_by_team: dict[str, list[float]] = defaultdict(list)
         self.events_by_team_match: dict[str, dict[str, list[models.MatchEvent]]] = defaultdict(lambda: defaultdict(list))
         self.alliance_by_match: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"red": [], "blue": []})
@@ -229,14 +227,6 @@ def load_event_rating_data(
         .all()
     )
     data.season_strength_by_team = {row.team_key: row for row in season_strength_rows}
-
-    # ── Capabilities ──────────────────────────────────────────────────
-    capability_rows = (
-        db.query(models.TeamStaticCapability)
-        .filter(models.TeamStaticCapability.team_key.in_(data.team_keys))
-        .all()
-    )
-    data.capabilities_by_team = {row.team_key: row for row in capability_rows}
 
     # ── Robot Tracks ──────────────────────────────────────────────────
     track_rows_query = (

@@ -2,13 +2,13 @@ import unittest
 from types import SimpleNamespace
 
 try:
-    from app.services.ratings.model import (
+    from app.services.ratings.helpers import _trend_delta_ratio
+    from app.services.ratings.signals import (
         _apply_sparse_rating_guard,
         _ensure_minimum_pros_cons_signals,
         _make_signal,
-        _trend_delta_ratio,
-        _weighted_median,
     )
+    from app.services.utils import _weighted_median
     from app.services.ml.synergy import compute_pair_role_adjustment
     _IMPORT_ERROR: Exception | None = None
 except Exception as exc:  # pragma: no cover - dependency-gated test import

@@ -797,7 +797,6 @@ def ingest_on_device_session(
                 event_key=event_key,
                 analysis_version=ON_DEVICE_ANALYSIS_VERSION,
                 params_hash=session_key,
-                calibration_id=None,
             )
         )
         session_row = models.OnDeviceSession(

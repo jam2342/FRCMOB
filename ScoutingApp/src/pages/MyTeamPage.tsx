@@ -14,7 +14,7 @@ import {
 } from '../api';
 import { OfflineReadyCard } from '../components/ui/OfflineReadyCard';
 import { SyncStatusCard } from '../features/offline/SyncStatusCard';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, FieldText, Modal } from '../components/ui/primitives';
 import { TeamScoutingCard } from '../features/workspace/TeamScoutingCard';
 import { useWorkspace } from '../features/workspace/useWorkspace';
@@ -525,11 +525,11 @@ export function MyTeamPage() {
   const session = useWorkspace();
   return (
     <div className="center-page-container my-team">
-      <SurfaceCardGroup groupId="my-team">
+
         {session ? <TeamWorkspaceView key={session.workspace.id} /> : <SetUpTeam />}
         <OfflineReadyCard />
         <SyncStatusCard />
-      </SurfaceCardGroup>
+
     </div>
   );
 }

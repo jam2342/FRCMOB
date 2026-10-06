@@ -7,7 +7,7 @@
 
 export type Alliance = 'red' | 'blue';
 
-export type TrackletPoint = { timeSec: number; x: number; y: number }; // field metres
+type TrackletPoint = { timeSec: number; x: number; y: number }; // field metres
 
 export type Tracklet = {
   id: number;

@@ -19,7 +19,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
@@ -1079,8 +1079,7 @@ export function MatchCenterPage() {
           </SurfaceCard>
         ) : null}
 
-        {selectedMatch && activeTab === 'overview' ? (
-          <SurfaceCardGroup groupId="match-center-overview">
+        {selectedMatch && activeTab === 'overview' ? (<>
             {/* ── Desktop: Match hero card ── */}
             {!isMobileLayout ? (
             <SurfaceCard
@@ -1354,11 +1353,10 @@ export function MatchCenterPage() {
 
             </div>
             ) : null}
-          </SurfaceCardGroup>
+          </>
         ) : null}
 
         {selectedMatch && activeTab === 'breakdown' ? (
-          <SurfaceCardGroup groupId="match-center-breakdown">
             <SurfaceCard title="Match Breakdown" compactable>
             <div className="center-kpi-grid">
               <article className="center-kpi-card">
@@ -1443,11 +1441,10 @@ export function MatchCenterPage() {
               </>
             )}
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
 
         {selectedMatch && activeTab === 'teams' ? (
-          <SurfaceCardGroup groupId="match-center-teams">
             <SurfaceCard title="Team Context" subtitle="Live form for all six teams." compactable>
             <div className="center-team-card-grid">
               {selectedTeams.map((team) => {
@@ -1477,7 +1474,7 @@ export function MatchCenterPage() {
             </div>
             <p className="center-callout muted">Match scheduled: {fmtUnix(selectedMatch.scheduled_time)}</p>
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
       </section>
     </div>
