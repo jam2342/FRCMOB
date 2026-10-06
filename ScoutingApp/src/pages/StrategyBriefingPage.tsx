@@ -19,6 +19,7 @@ import { LiveRatingsPanel } from '../components/LiveRatingsPanel';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { useMobileLayout } from '../hooks/useMobileLayout';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { metric, pct, normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
 import { readMyTeamKey, saveMyTeamKey, workspaceTeamKey } from '../features/workspace/myTeam';
@@ -338,6 +339,7 @@ function buildBriefing(
 
 export function StrategyBriefingPage() {
   const navigate = useNavigate();
+  const isMobile = useMobileLayout();
 
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
   const [eventName, setEventName] = useState('');
@@ -535,21 +537,6 @@ export function StrategyBriefingPage() {
           ) : null}
         </SurfaceCard>
 
-        {/* ---- Live ratings board ---- */}
-        {eventKey ? (
-          <SurfaceCard
-            title="Live Ratings"
-            subtitle="Updates on its own as match results come in."
-            className="no-print"
-          >
-            <LiveRatingsPanel
-              eventKey={eventKey}
-              live={eventHasMatchesLeft}
-              title={eventHasMatchesLeft ? 'Event ratings — live' : 'Event ratings'}
-            />
-          </SurfaceCard>
-        ) : null}
-
         {/* ---- Briefing Overview ---- */}
         {briefings.length > 0 ? (
           <SurfaceCard
@@ -557,6 +544,7 @@ export function StrategyBriefingPage() {
             subtitle={`${briefings.length} match${briefings.length === 1 ? '' : 'es'} with tactical analysis for Team ${teamNum(myTeamKey)}.`}
             right={
               <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                {!isMobile ? (
                 <button
                   type="button"
                   className="center-btn ghost no-print"
@@ -565,6 +553,7 @@ export function StrategyBriefingPage() {
                 >
                   {isNativeApp() ? 'Save report' : 'Print / PDF'}
                 </button>
+                ) : null}
                 <span className="center-chip">
                   {ratings.length > 0 ? `${ratings.length} rated teams` : 'No ratings'}
                 </span>
@@ -834,6 +823,21 @@ export function StrategyBriefingPage() {
             </SurfaceCard>
           );
         })}
+
+        {/* ---- Live ratings board ---- */}
+        {eventKey ? (
+          <SurfaceCard
+            title="Live Ratings"
+            subtitle="Updates on its own as match results come in."
+            className="no-print"
+          >
+            <LiveRatingsPanel
+              eventKey={eventKey}
+              live={eventHasMatchesLeft}
+              title={eventHasMatchesLeft ? 'Event ratings — live' : 'Event ratings'}
+            />
+          </SurfaceCard>
+        ) : null}
 
         {/* Empty state */}
         {myTeamKey && schedule && briefings.length === 0 ? (

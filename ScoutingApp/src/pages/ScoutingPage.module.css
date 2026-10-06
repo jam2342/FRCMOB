@@ -123,8 +123,72 @@
   min-height: 44px;
 }
 
-@media (max-height: 500px) {
-  .heroSave {
-    min-height: 40px;
+/* Phone navigation stays visible without a horizontal scroller. */
+@media (max-width: 1120px) {
+  .phoneNav.phoneNav {
+    min-width: 0;
+    align-items: center;
+  }
+
+  .robotTabs.robotTabs,
+  .phaseTabs.phaseTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex: 1;
+    min-width: 0;
+    overflow: visible;
+    gap: 2px;
+  }
+
+  .phaseTabs.phaseTabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .robotTabs.robotTabs :global(.segmented-tabs__item),
+  .phaseTabs.phaseTabs :global(.segmented-tabs__item) {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 4px 2px;
+  }
+
+  .phaseTabs.phaseTabs :global(.segmented-tabs__label) {
+    font-size: var(--font-size-2xs);
+    white-space: normal;
+  }
+
+  /* Always "⋯", at a fixed width: a native select sizes to its longest option, which cut
+     "Endgame" off beside it at 250px. */
+  .phoneMore.phoneMore {
+    flex: 0 0 52px;
+    min-width: 52px;
+    width: 52px;
+    min-height: 44px;
+    font-size: var(--font-size-md);
+    color: var(--color-text);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+  }
+
+  .phoneCaptureNav {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .assignmentIdentity {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-wrap: anywhere;
+  }
+
+  .assignmentStart.assignmentStart {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    white-space: normal;
   }
 }

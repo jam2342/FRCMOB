@@ -142,7 +142,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Region filtering improves speed when multiple events share names.',
         ],
         selector: '.center-input-row-event-search',
-        mobileSelector: '.events-mobile-view-toggle, .center-input-row-event-search',
+        mobileSelector: '.mobile-view-actions, .center-input-row-event-search',
         placement: 'right',
       },
       {
@@ -180,7 +180,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Calendar mode is for planning, not match analysis.',
         ],
         selector: '.events-calendar-card',
-        mobileSelector: '.events-calendar-card, .events-mobile-view-toggle',
+        mobileSelector: '.events-calendar-card, .mobile-view-actions',
         placement: 'left',
       },
       {
@@ -281,7 +281,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Use scout board mode to keep flow consistent.',
         ],
         selector: '#scout-event-select, #scout-match-select, .scout-team-grid',
-        mobileSelector: '.mobile-view-toggle, .scout-team-grid',
+        mobileSelector: '.mobile-view-toggle, .mobile-view-actions, .scout-team-grid',
         placement: 'left',
       },
       {

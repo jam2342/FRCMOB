@@ -367,6 +367,57 @@ function PicklistWorkspacePage() {
   const availableCount = slots.filter((s) => s.status === 'available' && s.tier !== 'dnp').length;
   const pickedCount = slots.filter((s) => s.status === 'picked' || s.status === 'captain').length;
 
+  const eventPicker = (
+    <EventPicker
+      value={eventKey}
+      onSelect={selectEvent}
+      inputValue={eventInput}
+      onInputChange={setEventInput}
+      onSubmit={commitInput}
+      loading={loading}
+    />
+  );
+
+  const maintenanceActions = (
+    <>
+      <button
+        type="button"
+        className="center-btn"
+        onClick={() => void handleCreate(true)}
+        disabled={loading || deleting || teamPool.length === 0}
+        title="Create a picklist pre-ranked by team ratings"
+      >
+        New from ratings
+      </button>
+      <button
+        type="button"
+        className="center-btn ghost"
+        onClick={() => void handleCreate(false)}
+        disabled={loading || deleting}
+      >
+        New empty
+      </button>
+      {doc ? (
+        <>
+          <button type="button" className="center-btn ghost" disabled={deleting} onClick={addMissingTeams}>
+            Add missing teams
+          </button>
+          <button type="button" className="center-btn ghost" onClick={() => void exportPrintableReport('picklist.html').catch(() => window.alert('The report could not be exported. Please try again.'))}>
+            {isNativeApp() ? 'Save report' : 'Print / PDF'}
+          </button>
+          <button
+            type="button"
+            className="center-btn ghost danger"
+            disabled={saving || deleting}
+            onClick={() => void handleDelete()}
+          >
+            Delete
+          </button>
+        </>
+      ) : null}
+    </>
+  );
+
   /* ---- Render ------------------------------------------------------ */
 
   return (
@@ -375,20 +426,13 @@ function PicklistWorkspacePage() {
       <div className="center-page-container">
 
           <SurfaceCard
-            title="Picklist Builder"
-            subtitle="Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."
+            title={isMobile && doc ? `${eventKey} · ${doc.title}` : "Picklist Builder"}
+            subtitle={isMobile && doc ? "Shared with your team · Saves automatically." : "Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."}
             className="no-print"
             expandable={false}
             mobileCollapsible={false}
           >
-            <EventPicker
-              value={eventKey}
-              onSelect={selectEvent}
-              inputValue={eventInput}
-              onInputChange={setEventInput}
-              onSubmit={commitInput}
-              loading={loading}
-            />
+            {!isMobile || !doc ? eventPicker : null}
 
             {errorText ? <p className="center-callout warning">{errorText}</p> : null}
             {editor.notice ? (
@@ -422,41 +466,12 @@ function PicklistWorkspacePage() {
                     ))}
                   </select>
                 ) : null}
-                <button
-                  type="button"
-                  className="center-btn"
-                  onClick={() => void handleCreate(true)}
-                  disabled={loading || deleting || teamPool.length === 0}
-                  title="Create a picklist pre-ranked by team ratings"
-                >
-                  New from ratings
-                </button>
-                <button
-                  type="button"
-                  className="center-btn ghost"
-                  onClick={() => void handleCreate(false)}
-                  disabled={loading || deleting}
-                >
-                  New empty
-                </button>
-                {doc ? (
-                  <>
-                    <button type="button" className="center-btn ghost" disabled={deleting} onClick={addMissingTeams}>
-                      Add missing teams
-                    </button>
-                    <button type="button" className="center-btn ghost" onClick={() => void exportPrintableReport('picklist.html').catch(() => window.alert('The report could not be exported. Please try again.'))}>
-                      {isNativeApp() ? 'Save report' : 'Print / PDF'}
-                    </button>
-                    <button
-                      type="button"
-                      className="center-btn ghost danger"
-                      disabled={saving || deleting}
-                      onClick={() => void handleDelete()}
-                    >
-                      Delete
-                    </button>
-                  </>
-                ) : null}
+                {isMobile && doc ? (
+                  <details className="picklist-more">
+                    <summary>More</summary>
+                    <div className="picklist-more-actions">{eventPicker}{maintenanceActions}</div>
+                  </details>
+                ) : maintenanceActions}
               </div>
             ) : null}
           </SurfaceCard>

@@ -314,11 +314,10 @@ export function ProductShell() {
 
     const update = () => {
       root.style.setProperty('--ps-topbar-height', `${topbar.offsetHeight}px`);
-      const banner = document.querySelector<HTMLElement>('.offline-banner');
-      root.style.setProperty(
-        '--ps-offline-banner-height',
-        banner ? `${banner.offsetHeight}px` : '0px',
-      );
+      // Offline and stale-data banners can show together; sticky bars must clear both.
+      const bannerHeight = Array.from(document.querySelectorAll<HTMLElement>('.offline-banner'))
+        .reduce((sum, banner) => sum + banner.offsetHeight, 0);
+      root.style.setProperty('--ps-offline-banner-height', `${bannerHeight}px`);
     };
     update();
 
@@ -330,14 +329,12 @@ export function ProductShell() {
     const mutationObserver =
       content && typeof MutationObserver !== 'undefined'
         ? new MutationObserver(() => {
-            const banner = document.querySelector<HTMLElement>('.offline-banner');
-            if (banner) observer.observe(banner);
+            document.querySelectorAll<HTMLElement>('.offline-banner').forEach((banner) => observer.observe(banner));
             update();
           })
         : null;
     mutationObserver?.observe(content as Node, { childList: true, subtree: true });
-    const existingBanner = document.querySelector<HTMLElement>('.offline-banner');
-    if (existingBanner) observer.observe(existingBanner);
+    document.querySelectorAll<HTMLElement>('.offline-banner').forEach((banner) => observer.observe(banner));
 
     return () => {
       observer.disconnect();
@@ -684,7 +681,10 @@ export function ProductShell() {
           ) : null}
         </header>
 
-        {!isMobileLiveScoutingRoute && hasContextStripContent ? (
+        {/* Desktop only. On a phone it stacked Event/Match/Team chips, pins and recents above
+            pages that already show their own event and team: up to ~200 of 450px on a small
+            phone before any content. Search and each page's own picker cover switching there. */}
+        {isDesktopSidebarViewport && hasContextStripContent ? (
         <section
           className={cx('ps-context-strip', contextStripCollapsed && 'collapsed')}
           aria-label="Active context and quick picks"

@@ -9,6 +9,7 @@ import {
 import type { EventScheduleItem, TeamCompetitionsResponse } from '../api';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { EventPicker } from '../components/EventPicker';
+import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
@@ -802,16 +803,13 @@ export function FavoritesPage() {
   return (
     <div className={`favorites-layout-grid mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
       {isMobileLayout ? (
-        <SegmentedTabs
-          className="mobile-view-toggle"
-          itemClassName="mobile-view-toggle-btn"
-          ariaLabel="Favorites mobile view switch"
-          value={mobileFinderOpen ? 'controls' : 'favorites'}
-          onChange={(next) => setMobileFinderOpen(next === 'controls')}
-          items={[
-            { value: 'controls', label: 'Favorite Manager' },
-            { value: 'favorites', label: 'Favorites' },
-          ]}
+        <MobileViewActions
+          label="Favorites views"
+          actions={
+            mobileFinderOpen
+              ? [{ label: 'Back to favorites', onClick: () => setMobileFinderOpen(false), back: true }]
+              : [{ label: 'Add or edit', onClick: () => setMobileFinderOpen(true) }]
+          }
         />
       ) : null}
       <aside className="center-sidebar">

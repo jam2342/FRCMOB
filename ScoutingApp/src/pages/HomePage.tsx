@@ -321,7 +321,6 @@ export function HomePage() {
   const [teamsSortMode, setTeamsSortMode] = useState<HomeTeamsSortMode>('rank');
   const [mobileCollapsedCards, setMobileCollapsedCards] = useState<Record<string, boolean>>({});
   const [desktopCollapsedFeedCards, setDesktopCollapsedFeedCards] = useState<Record<string, boolean>>({});
-  const [mobileExpandedMatches, setMobileExpandedMatches] = useState<Record<string, boolean>>({});
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mobileDrawerClosing, setMobileDrawerClosing] = useState(false);
   const [mobileCalendarOpen, setMobileCalendarOpen] = useState(false);
@@ -1454,35 +1453,6 @@ export function HomePage() {
   }, [feedSections, isMobileLayout]);
 
   useEffect(() => {
-    if (!isMobileLayout) {
-      setMobileExpandedMatches((previous) => (Object.keys(previous).length > 0 ? {} : previous));
-      return;
-    }
-    const available = new Set<string>();
-    for (const section of feedSections) {
-      for (const match of section.matches) {
-        available.add(`${section.event_key}::${match.match_key}`);
-      }
-    }
-    setMobileExpandedMatches((previous) => {
-      const next: Record<string, boolean> = {};
-      let changed = false;
-      for (const [key, expanded] of Object.entries(previous)) {
-        if (!expanded) continue;
-        if (!available.has(key)) {
-          changed = true;
-          continue;
-        }
-        next[key] = true;
-      }
-      if (!changed && Object.keys(next).length === Object.keys(previous).length) {
-        return previous;
-      }
-      return next;
-    });
-  }, [feedSections, isMobileLayout]);
-
-  useEffect(() => {
     setDesktopCollapsedFeedCards((previous) => {
       const next: Record<string, boolean> = {};
       for (const section of feedSections) {
@@ -1590,35 +1560,6 @@ export function HomePage() {
 
   function openMatch(eventKey: string, matchKey: string) {
     navigate(buildMatchCenterPath(eventKey, matchKey));
-  }
-
-  function mobileMatchRowKey(eventKey: string, matchKey: string): string {
-    return `${eventKey}::${matchKey}`;
-  }
-
-  function isMobileMatchExpanded(eventKey: string, matchKey: string): boolean {
-    if (!isMobileLayout) return false;
-    return Boolean(mobileExpandedMatches[mobileMatchRowKey(eventKey, matchKey)]);
-  }
-
-  function expandMobileMatch(eventKey: string, matchKey: string) {
-    if (!isMobileLayout) return;
-    const rowKey = mobileMatchRowKey(eventKey, matchKey);
-    setMobileExpandedMatches((previous) => ({
-      ...previous,
-      [rowKey]: true,
-    }));
-  }
-
-  function collapseMobileMatch(eventKey: string, matchKey: string) {
-    if (!isMobileLayout) return;
-    const rowKey = mobileMatchRowKey(eventKey, matchKey);
-    setMobileExpandedMatches((previous) => {
-      if (!previous[rowKey]) return previous;
-      const next = { ...previous };
-      delete next[rowKey];
-      return next;
-    });
   }
 
   async function copyMatchDeepLink(eventKey: string, matchKey: string) {
@@ -2163,40 +2104,23 @@ export function HomePage() {
                                 : winner === 'tie'
                                   ? 'Match tied'
                                   : null;
-                          const mobileExpanded = isMobileMatchExpanded(section.event_key, match.match_key);
                           const compactRed = compactAllianceLabel(match.red);
                           const compactBlue = compactAllianceLabel(match.blue);
                           return (
                             <article
                               key={`home-match-${section.event_key}-${match.match_key}`}
-                              className={`home-match-row ${winnerClass} ${isMobileLayout ? (mobileExpanded ? 'mobile-expanded' : 'mobile-compact') : ''}`.trim()}
+                              className={`home-match-row ${winnerClass} ${isMobileLayout ? 'mobile-compact' : ''}`.trim()}
                             >
                               <button
                                 type="button"
                                 className="home-match-main"
-                                onClick={() => {
-                                  if (!isMobileLayout) {
-                                    openMatch(section.event_key, match.match_key);
-                                    return;
-                                  }
-                                  if (!mobileExpanded) {
-                                    expandMobileMatch(section.event_key, match.match_key);
-                                    return;
-                                  }
-                                  openMatch(section.event_key, match.match_key);
-                                }}
-                                title={
-                                  isMobileLayout
-                                    ? mobileExpanded
-                                      ? `Open ${match.display_name} in Match Center`
-                                      : `Expand ${match.display_name}`
-                                    : `Open ${match.display_name} details`
-                                }
-                                aria-expanded={isMobileLayout ? mobileExpanded : undefined}
+                                // One tap opens the match on phones too. Rows used to expand first
+                                // and need a second tap; the expanded part only repeated what Match
+                                // Center shows (teams, a share link).
+                                onClick={() => openMatch(section.event_key, match.match_key)}
+                                title={`Open ${match.display_name} in Match Center`}
                               >
                                 {isMobileLayout ? (
-                                  <>
-                                    {!mobileExpanded ? (
                                       <div className="home-match-compact-body">
                                         <div className="home-match-compact-head">
                                           <strong>{match.display_name}</strong>
@@ -2208,37 +2132,6 @@ export function HomePage() {
                                           <span className="home-match-compact-side blue">{compactBlue}</span>
                                         </div>
                                       </div>
-                                    ) : (
-                                      <>
-                                        <div className="fm-match-header-row">
-                                          <div className="home-match-center-col">
-                                            <strong>{match.display_name}</strong>
-                                            <small>{fmtDateShort(matchStartTime(match))}</small>
-                                          </div>
-                                          <div className="fm-match-status-right">
-                                            <span className={`home-match-state ${effectiveState}`}>{stateLabel(effectiveState)}</span>
-                                            <span className="fm-match-score-timer">{headerValue}</span>
-                                          </div>
-                                        </div>
-                                        <div className="home-match-alliances">
-                                          <div className={`home-alliance-line red-line ${winner === 'red' ? 'winner' : ''}`.trim()}>
-                                            <span className="red">Red</span>
-                                            <small>{match.red.map((team) => `#${team.team_number}`).join(' · ') || 'TBD'}</small>
-                                            <strong className="alliance-score">{hasScores ? match.red_score : '-'}</strong>
-                                          </div>
-                                          <div className={`home-alliance-line blue-line ${winner === 'blue' ? 'winner' : ''}`.trim()}>
-                                            <span className="blue">Blue</span>
-                                            <small>{match.blue.map((team) => `#${team.team_number}`).join(' · ') || 'TBD'}</small>
-                                            <strong className="alliance-score">{hasScores ? match.blue_score : '-'}</strong>
-                                          </div>
-                                        </div>
-                                        {winnerText ? (
-                                          <span className="home-winner-chip">{winnerText}</span>
-                                        ) : null}
-                                        <small className="home-match-open-hint">Tap again to open Match Center</small>
-                                      </>
-                                    )}
-                                  </>
                                 ) : (
                                   <>
                                     <span className={`home-match-state ${effectiveState}`}>{stateLabel(effectiveState)}</span>
@@ -2266,7 +2159,7 @@ export function HomePage() {
                                   </>
                                 )}
                               </button>
-                              {!isMobileLayout || mobileExpanded ? (
+                              {!isMobileLayout ? (
                                 <>
                                   <div className="home-match-team-pills" aria-label="Match teams quick links">
                                     {match.red.map((team) => (
@@ -2295,16 +2188,6 @@ export function HomePage() {
                                     ))}
                                   </div>
                                   <div className="home-match-actions">
-                                    {isMobileLayout ? (
-                                      <button
-                                        type="button"
-                                        className="home-match-link-btn"
-                                        onClick={() => collapseMobileMatch(section.event_key, match.match_key)}
-                                        title="Collapse match details"
-                                      >
-                                        <ChevronDownIcon className="icon-inline" /> Collapse
-                                      </button>
-                                    ) : null}
                                     <button
                                       type="button"
                                       className="home-match-link-btn"

@@ -17,7 +17,7 @@
   },
   "src/layout/ProductShell.css": {
     "literals": 0,
-    "legacy": 32
+    "legacy": 31
   },
   "src/layout/productshell/shell-features.css": {
     "literals": 0,
@@ -29,15 +29,15 @@
   },
   "src/layout/productshell/shell-mobile.css": {
     "literals": 0,
-    "legacy": 61
+    "legacy": 58
   },
   "src/layout/productshell/shell-overrides.css": {
     "literals": 0,
-    "legacy": 17
+    "legacy": 15
   },
   "src/layout/productshell/shell-shared.css": {
     "literals": 0,
-    "legacy": 16
+    "legacy": 6
   },
   "src/pages/PitScoutingPage.css": {
     "literals": 0,

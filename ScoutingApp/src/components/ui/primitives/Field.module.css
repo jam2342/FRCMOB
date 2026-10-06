@@ -244,6 +244,13 @@
   transition: background-color var(--motion-fast) var(--motion-ease);
 }
 
+/* The track is drawn 26px tall; a finger gets 44px around it. */
+.toggle::before {
+  content: '';
+  position: absolute;
+  inset: -9px -4px;
+}
+
 .toggle:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
