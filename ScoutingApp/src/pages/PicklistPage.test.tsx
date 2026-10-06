@@ -1,13 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
-vi.mock('../hooks/useMobileLayout', () => ({ MOBILE_LAYOUT_BREAKPOINT: 760, useMobileLayout: () => false }));
 vi.mock('../components/PageViewBar', () => ({ PageViewBar: () => null }));
 vi.mock('../components/EventPicker', () => ({ EventPicker: ({ onSelect, value }: { onSelect: (key: string) => void; value: string }) => <>
   <button onClick={() => onSelect('2026new')}>New event</button>
   <button onClick={() => onSelect(value)}>Load event</button>
 </> }));
-afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 vi.mock('../features/workspace/useWorkspace', () => ({ useWorkspace: () => ({ workspace: { id: 1 }, me: { role: 'leader' } }) }));
 vi.mock('../features/workspace/WorkspaceGate', () => ({ WorkspaceGate: ({ children }: { children: React.ReactNode }) => children }));
 import { useCallback, useState } from 'react';
@@ -33,4 +32,22 @@ it('marks a team Picked without assigning an invented alliance', async () => {
   expect(change.slots[0].picked_by_alliance).toBeNull();
   expect(screen.getByText('Picked')).toBeInTheDocument();
   expect(screen.queryByText('A1')).not.toBeInTheDocument();
+});
+it('puts phone list maintenance in More and keeps live actions, rank and notes accessible', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><PicklistPage /></MemoryRouter>);
+  await screen.findByRole('button', {name:'Picked'});
+  expect(screen.getByText('2026old · Picks')).toBeInTheDocument();
+  const more = screen.getByText('More').closest('details')!;
+  expect(more.open).toBe(false);
+  for (const name of ['New from ratings', 'New empty', 'Add missing teams', 'Print / PDF', 'Delete']) {
+    expect(more.contains(screen.getByRole('button', {name}))).toBe(true);
+  }
+  expect(more.contains(screen.getByRole('button', {name:'New event'}))).toBe(true);
+  expect(screen.getByLabelText('Rank 1')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'#254'}));
+  expect(screen.getByLabelText('Notes')).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Declined'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Picked'}));
+  expect(screen.getByRole('button', {name:/Undo/})).toBeInTheDocument();
 });

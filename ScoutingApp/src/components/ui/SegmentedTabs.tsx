@@ -74,6 +74,11 @@ export function SegmentedTabs<T extends string>({
     focusTab(event, nextIndex);
   };
 
+  // When the current view isn't one of these tabs (a "⋯" panel is open), the first usable tab
+  // stays in the Tab order; otherwise every tab was tabIndex -1 and the list was unreachable.
+  const hasActive = items.some((item) => item.value === value);
+  const fallbackFocusIndex = hasActive ? -1 : edgeEnabledIndex(items, 1);
+
   return (
     <div className={cx('segmented-tabs', className)} role="tablist" aria-label={ariaLabel} aria-orientation="horizontal">
       {items.map((item, index) => {
@@ -85,7 +90,7 @@ export function SegmentedTabs<T extends string>({
             role="tab"
             aria-selected={active}
             aria-controls={item.panelId}
-            tabIndex={active ? 0 : -1}
+            tabIndex={active || index === fallbackFocusIndex ? 0 : -1}
             className={cx('segmented-tabs__item', itemClassName, item.className, active && 'active')}
             onClick={() => onChange(item.value)}
             onKeyDown={(event) => handleKeyDown(event, index)}

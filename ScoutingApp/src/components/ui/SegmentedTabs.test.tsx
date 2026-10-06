@@ -53,3 +53,18 @@ describe('SegmentedTabs', () => {
     expect(overviewTab).toHaveAttribute('aria-selected', 'false');
   });
 });
+
+describe('SegmentedTabs with no matching value', () => {
+  it('keeps the first enabled tab reachable with Tab', () => {
+    render(
+      <SegmentedTabs
+        ariaLabel="Phases"
+        value="notes"
+        onChange={() => undefined}
+        items={[{ value: 'auto', label: 'Auto', disabled: true }, { value: 'teleop', label: 'Teleop' }, { value: 'endgame', label: 'Endgame' }]}
+      />,
+    );
+    expect(screen.getByRole('tab', { name: 'Teleop' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('tab', { name: 'Endgame' })).toHaveAttribute('tabindex', '-1');
+  });
+});

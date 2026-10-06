@@ -26,7 +26,8 @@ textarea {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Ensure all interactive elements meet 44px touch target */
+  /* Interactive elements get at least the compact size here; on touch screens (below) the full
+     44px. The comment used to promise 44px while the rule gave 36px. */
   button,
   [role="button"],
   a,
@@ -58,6 +59,19 @@ textarea {
   select,
   textarea {
     font-size: max(16px, var(--font-size-base));
+  }
+}
+
+/* A finger on a phone, not a mouse in a narrow window: 44px, the platform guideline. Inline text
+   links are unaffected (min-height doesn't apply to inline boxes). */
+@media (max-width: 768px) and (pointer: coarse) {
+  /* Switches keep their drawn 44x26 track; Field.module.css widens their tap area instead. */
+  button:not([role="switch"]),
+  [role="button"],
+  [role="tab"],
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select {
+    min-height: var(--touch-target-min);
   }
 }
 

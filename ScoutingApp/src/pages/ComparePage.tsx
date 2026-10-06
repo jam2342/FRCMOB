@@ -14,6 +14,7 @@ import type {
   EventTeamRatingItem,
   TeamCompetitionsResponse,
 } from '../api';
+import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
 import styles from './ComparePage.module.css';
@@ -779,16 +780,13 @@ export function ComparePage() {
     <PageViewBar items={COMPARE_VIEWS} />
     <div className={`compare-layout-grid mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
       {isMobileLayout ? (
-        <SegmentedTabs
-          className="mobile-view-toggle"
-          itemClassName="mobile-view-toggle-btn"
-          ariaLabel="Compare mobile view switch"
-          value={mobileFinderOpen ? 'controls' : 'compare'}
-          onChange={(next) => setMobileFinderOpen(next === 'controls')}
-          items={[
-            { value: 'controls', label: 'Controls' },
-            { value: 'compare', label: 'Compare View' },
-          ]}
+        <MobileViewActions
+          label="Compare views"
+          actions={
+            mobileFinderOpen
+              ? [{ label: 'Back to comparison', onClick: () => setMobileFinderOpen(false), back: true }]
+              : [{ label: 'Edit teams', onClick: () => setMobileFinderOpen(true) }]
+          }
         />
       ) : null}
       <aside className="center-sidebar">

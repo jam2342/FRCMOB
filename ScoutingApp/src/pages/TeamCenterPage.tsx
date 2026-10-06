@@ -29,6 +29,7 @@ import type {
 import { FieldHeatmap } from '../components/cv/FieldHeatmap';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
+import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
@@ -1253,16 +1254,15 @@ export function TeamCenterPage() {
   return (
     <div className={`center-layout center-layout-team mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
       {isMobileLayout ? (
-        <SegmentedTabs
-          className="mobile-view-toggle"
-          itemClassName="mobile-view-toggle-btn"
-          ariaLabel="Team mobile view switch"
-          value={mobileFinderOpen ? 'finder' : 'center'}
-          onChange={(next) => setMobileFinderOpen(next === 'finder')}
-          items={[
-            { value: 'finder', label: 'Team Finder' },
-            { value: 'center', label: 'Team Center', disabled: !selectedTeamKey },
-          ]}
+        <MobileViewActions
+          label="Team views"
+          actions={
+            mobileFinderOpen
+              ? selectedTeamKey
+                ? [{ label: `Back to Team ${teamNumberFromTeamKey(selectedTeamKey) ?? selectedTeamKey}`, onClick: () => setMobileFinderOpen(false), back: true }]
+                : []
+              : [{ label: 'Change team', onClick: () => setMobileFinderOpen(true) }]
+          }
         />
       ) : null}
       <aside className="center-sidebar">
@@ -1576,7 +1576,7 @@ export function TeamCenterPage() {
                   <SurfaceCard title="Strengths" compactable>
                     {teamRating?.pros?.some((signal) => isRobotSignal(signal.label)) ? (
                       <ul className="center-simple-list">
-                        {teamRating.pros.filter((signal) => isRobotSignal(signal.label)).slice(0, 6).map((signal) => (
+                        {teamRating.pros.filter((signal) => isRobotSignal(signal.label)).slice(0, isMobileLayout ? 3 : 6).map((signal) => (
                           <li key={`pro-${signal.label}`}>
                             <span>{plainSignalLabel(signal.label)}</span>
                             <span title={`${metric(signal.metric_value, 2)} · ${metric(signal.percentile, 1)} percentile`}>
@@ -1593,7 +1593,7 @@ export function TeamCenterPage() {
                   <SurfaceCard title="Risks" compactable>
                     {teamRating?.cons?.some((signal) => isRobotSignal(signal.label)) ? (
                       <ul className="center-simple-list">
-                        {teamRating.cons.filter((signal) => isRobotSignal(signal.label)).slice(0, 6).map((signal) => (
+                        {teamRating.cons.filter((signal) => isRobotSignal(signal.label)).slice(0, isMobileLayout ? 3 : 6).map((signal) => (
                           <li key={`con-${signal.label}`}>
                             <span>{plainSignalLabel(signal.label)}</span>
                             <span title={`${metric(signal.metric_value, 2)} · ${metric(signal.percentile, 1)} percentile`}>
@@ -1607,6 +1607,8 @@ export function TeamCenterPage() {
                     )}
                   </SurfaceCard>
 
+                  {/* Model internals; on a phone the page is long enough without them. */}
+                  {!isMobileLayout ? (
                   <SurfaceCard title="What the Rating Uses" compactable>
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
@@ -1629,6 +1631,7 @@ export function TeamCenterPage() {
                       </article>
                     </div>
                   </SurfaceCard>
+                  ) : null}
 
                   <SurfaceCard title={selectedEventKey ? 'Ranking & Awards' : 'Awards'} compactable>
                     <div className="center-kpi-grid">

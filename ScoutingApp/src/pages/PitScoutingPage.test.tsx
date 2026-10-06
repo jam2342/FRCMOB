@@ -1,13 +1,12 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
-vi.mock('../hooks/useMobileLayout', () => ({ MOBILE_LAYOUT_BREAKPOINT: 760, useMobileLayout: () => false }));
 vi.mock('../components/PageViewBar', () => ({ PageViewBar: () => null }));
 vi.mock('../components/EventPicker', () => ({ EventPicker: ({ onSelect, value }: { onSelect: (key: string) => void; value: string }) => <>
   <button onClick={() => onSelect('2026new')}>New event</button>
   <button onClick={() => onSelect(value)}>Load event</button>
 </> }));
-afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 vi.mock('../features/workspace/useWorkspace', () => ({ useWorkspace: () => ({ workspace: { id: 1 }, me: { role: 'leader' } }) }));
 vi.mock('../features/workspace/WorkspaceGate', () => ({ WorkspaceGate: ({ children }: { children: React.ReactNode }) => children }));
 import { PitScoutingPage } from './PitScoutingPage';
@@ -48,4 +47,20 @@ it('confirms only the specific save even with unrelated items pending', async ()
   await act(async () => { queue.rows = [{id:'other',url:'/other',body:'{}',queuedAt:new Date().toISOString()}]; window.dispatchEvent(new CustomEvent('offlinequeue:change',{detail:{count:1}})); });
   await screen.findByText('Synced with your team.');
   expect(readPitDraft(1,'2026old','frc254')).toBeNull();
+});
+it('collapses the phone team grid and reopens its completion, photo and unscouted controls', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { getEventTeamsIntel, listPitEntries } = await import('../api');
+  vi.mocked(getEventTeamsIntel).mockResolvedValueOnce({ teams: [{team_key:'frc254',team_number:254}, {team_key:'frc118',team_number:118}] } as never);
+  vi.mocked(listPitEntries).mockResolvedValueOnce({ entries: [{team_key:'frc118',payload:{notes:'Done'},photos:[{}]}] } as never);
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', {name:'Team 254'}));
+  expect(screen.queryByRole('button', {name:/Team 118, completed, has photos/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Change team'}));
+  expect(screen.getByRole('button', {name:'Team 118, completed, has photos'})).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('Unscouted only'));
+  expect(screen.queryByRole('button', {name:/Team 118, completed/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Team 254'}));
+  expect(screen.getByRole('button', {name:'Change team'})).toBeInTheDocument();
+  expect(screen.queryByLabelText('Unscouted only')).not.toBeInTheDocument();
 });
