@@ -839,13 +839,19 @@
     margin-top: 4px;
   }
 
+  /* Labelled ("Next match", "Next team"): icon-only squares left scouts guessing. */
   .scout-match-quick-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 8px;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    white-space: nowrap;
     border-radius: 8px;
     border: 1px solid var(--control-border);
     background: var(--control-bg);

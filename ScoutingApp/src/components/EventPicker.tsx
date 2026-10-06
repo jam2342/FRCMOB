@@ -75,6 +75,10 @@ export function EventPicker({
   /* ---- Internal state ---- */
   const [suggestions, setSuggestions] = useState<EventSearchItem[]>([]);
   const [searchResults, setSearchResults] = useState<EventSearchItem[]>([]);
+  // The query the current results answer; Enter must not pick a result for older text.
+  const [resultsQuery, setResultsQuery] = useState('');
+  // Enter pressed before the search for that text answered: pick its top result when it does.
+  const [pendingSubmitQuery, setPendingSubmitQuery] = useState<string | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [open, setOpen] = useState(false);
@@ -133,6 +137,7 @@ export function EventPicker({
     const query = inputValue.trim();
     if (!query || query.length < 2) {
       setSearchResults([]);
+      setResultsQuery(query);
       return;
     }
     const seq = ++searchSeqRef.current;
@@ -156,8 +161,12 @@ export function EventPicker({
         });
         if (seq !== searchSeqRef.current) return;
         setSearchResults(result.events.slice(0, 30));
+        setResultsQuery(query);
       } catch {
-        if (seq === searchSeqRef.current) setSearchResults([]);
+        if (seq === searchSeqRef.current) {
+          setSearchResults([]);
+          setResultsQuery(query);
+        }
       } finally {
         if (seq === searchSeqRef.current) setLoadingSearch(false);
       }
@@ -196,10 +205,20 @@ export function EventPicker({
   }, [open, updateDropdownPos]);
 
   /* ---- Derived lists ---- */
-  const hasQuery = inputValue.trim().length > 0;
-  const displayList = hasQuery ? searchResults : suggestions;
-  const isSearching = hasQuery ? loadingSearch : loadingSuggestions;
-  const showDropdown = open && (displayList.length > 0 || isSearching);
+  const committedKey = value.trim().toLowerCase();
+  // Once an event is chosen, show its name instead of the raw key, and drop the
+  // button until the person types something new.
+  const showingCommitted = committedKey !== '' && inputValue.trim().toLowerCase() === committedKey;
+  const committedName = showingCommitted
+    ? [...searchResults, ...suggestions].find((event) => event.event_key.toLowerCase() === committedKey)?.name
+    : undefined;
+  const hasQuery = inputValue.trim().length > 0 && !showingCommitted;
+  const resultsAreCurrent = resultsQuery === inputValue.trim();
+  const currentResults = resultsAreCurrent ? searchResults : [];
+  const displayList = hasQuery ? currentResults : suggestions;
+  const isSearching = hasQuery ? loadingSearch || !resultsAreCurrent : loadingSuggestions;
+  // Stay open after a finished search with no hits, so "No events found" is actually seen.
+  const showDropdown = open && (displayList.length > 0 || isSearching || hasQuery);
 
   /* ---- Handlers ---- */
   const handleSelect = useCallback(
@@ -218,16 +237,38 @@ export function EventPicker({
     [onSelect, onInputChange],
   );
 
+  function submitCurrent() {
+    const query = inputValue.trim();
+    if (hasQuery && query.length >= 2 && !resultsAreCurrent) {
+      setPendingSubmitQuery(query);
+      return;
+    }
+    if (hasQuery && currentResults.length > 0) {
+      handleSelect(currentResults[0].event_key);
+    } else {
+      onSubmit?.();
+    }
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (pendingSubmitQuery === null) return;
+    if (pendingSubmitQuery !== inputValue.trim()) {
+      setPendingSubmitQuery(null);
+      return;
+    }
+    if (resultsQuery !== pendingSubmitQuery) return;
+    setPendingSubmitQuery(null);
+    if (searchResults.length > 0) handleSelect(searchResults[0].event_key);
+    else onSubmit?.();
+    setOpen(false);
+  }, [handleSelect, inputValue, onSubmit, pendingSubmitQuery, resultsQuery, searchResults]);
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
       // If there's a top search result, select it; otherwise submit raw input
-      if (hasQuery && searchResults.length > 0) {
-        handleSelect(searchResults[0].event_key);
-      } else {
-        onSubmit?.();
-      }
-      setOpen(false);
+      submitCurrent();
     }
     if (e.key === 'Escape') {
       setOpen(false);
@@ -250,10 +291,13 @@ export function EventPicker({
           }}
         >
           {isSearching && displayList.length === 0 ? (
-            <p className="event-picker-dropdown-hint">Searching...</p>
+            <p className="event-picker-dropdown-hint">Searching…</p>
           ) : null}
-          {!isSearching && hasQuery && displayList.length === 0 ? (
-            <p className="event-picker-dropdown-hint">No events found.</p>
+          {!isSearching && hasQuery && displayList.length === 0 && inputValue.trim().length < 2 ? (
+            <p className="event-picker-dropdown-hint">Keep typing to search.</p>
+          ) : null}
+          {!isSearching && hasQuery && displayList.length === 0 && inputValue.trim().length >= 2 ? (
+            <p className="event-picker-dropdown-hint">No events match that. Try the city, the event name or a code like 2026txhou.</p>
           ) : null}
           {!hasQuery && displayList.length === 0 && !isSearching ? (
             <p className="event-picker-dropdown-hint">No suggested events available.</p>
@@ -272,6 +316,10 @@ export function EventPicker({
               onMouseDown={(e) => {
                 e.preventDefault();        // keep focus on input
                 handleSelect(event.event_key);
+              }}
+              // Enter/Space on a focused suggestion fires click, not mousedown.
+              onClick={(e) => {
+                if (e.detail === 0) handleSelect(event.event_key);
               }}
             >
               <div className="event-picker-dropdown-item-main">
@@ -305,14 +353,15 @@ export function EventPicker({
         <input
           ref={inputRef}
           className="center-input"
-          value={inputValue}
+          value={committedName || inputValue}
           onChange={(e) => {
             onInputChange(e.target.value);
             setOpen(true);
           }}
-          onFocus={() => {
+          onFocus={(e) => {
             updateDropdownPos();
             setOpen(true);
+            if (showingCommitted) e.currentTarget.select();
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -320,21 +369,18 @@ export function EventPicker({
           disabled={disabled}
           autoComplete="off"
         />
+        {showingCommitted && !loading ? null : (
         <button
           type="button"
           className="center-btn"
           onClick={() => {
-            if (hasQuery && searchResults.length > 0) {
-              handleSelect(searchResults[0].event_key);
-            } else {
-              onSubmit?.();
-            }
-            setOpen(false);
+            submitCurrent();
           }}
           disabled={loading || disabled}
         >
-          {loading ? 'Loading...' : 'Load Event'}
+          {loading ? 'Loading…' : 'Load event'}
         </button>
+        )}
       </div>
       {dropdownPortal}
     </div>

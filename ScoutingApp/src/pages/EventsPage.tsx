@@ -3,7 +3,7 @@ import { useCalendarExpansion, useEventCalendar } from './useEventCalendar';
 import { mergeEventLists } from '../utils/mergeEventLists';
 import { downloadCsv } from '../utils/csvExport';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   clientAdminKeyAvailable,
   getApiHealth,
@@ -26,7 +26,6 @@ import type {
 } from '../api';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { EmptyState } from '../components/ui/EmptyState';
-import { ActionOverflowMenu } from '../components/ui/ActionOverflowMenu';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Table } from '../components/ui/primitives';
@@ -61,7 +60,7 @@ import { readStoredCenterContext, writeCenterContext } from '../layout/centerCon
 import { type QuickJumpRegion } from '../layout/userSettings';
 import {
   GridIcon, ListIcon, PieChartIcon, TrophyIcon, UsersIcon,
-  LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, GlobeIcon, RefreshIcon, CloudSyncIcon,
+  LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, RefreshIcon, CloudSyncIcon,
   CopyIcon, DownloadIcon,
   ScoreboardIcon, BracketIcon, ChevronDownIcon,
   TargetIcon, DeltaIcon,
@@ -543,6 +542,8 @@ export function EventsPage() {
 
   const breakdownEventRef = useRef<string | null>(defaultEventKey || null);
   const lastEventContextRef = useRef('');
+  const currentEventKeyRef = useRef(selectedEventKey);
+  currentEventKeyRef.current = selectedEventKey;
   const autoAdjustedCalendarMonthRef = useRef(false);
 
   useEffect(() => {
@@ -721,6 +722,9 @@ export function EventsPage() {
   const loadEventData = useCallback(async (reason: SingleFlightPollReason): Promise<boolean> => {
     if (!selectedEventKey) return true;
     const contextChanged = lastEventContextRef.current !== selectedEventKey;
+    // The user can pick another event while this request is out; its answers must not
+    // land under the new event's name. The next run loads the new event straight away.
+    const stillCurrent = () => currentEventKeyRef.current === selectedEventKey;
     if (contextChanged) {
       setEventSchedule([]);
       setEventScheduleName(null);
@@ -771,6 +775,7 @@ export function EventsPage() {
       const scheduleResult = await schedulePromise
         .then((value) => ({ status: 'fulfilled' as const, value }))
         .catch((reason) => ({ status: 'rejected' as const, reason }));
+      if (!stillCurrent()) return true;
 
       if (scheduleResult.status === 'fulfilled') {
         const matches = scheduleResult.value.matches || [];
@@ -783,6 +788,7 @@ export function EventsPage() {
       }
 
       const [formResult, rankingsResult, teamsResult, awardsResult] = await secondaryResults;
+      if (!stillCurrent()) return true;
 
       if (formResult.status === 'fulfilled') {
         setEventLiveForm(formResult.value);
@@ -936,12 +942,6 @@ export function EventsPage() {
       .filter((value): value is string => Boolean(value));
   }, [eventRankings]);
 
-  const topAnalyzedTeams = useMemo(() => {
-    return [...effectiveEventTeams]
-      .sort((a, b) => b.history_count - a.history_count)
-      .slice(0, 5);
-  }, [effectiveEventTeams]);
-
   const topFuelTeams = useMemo(() => {
     return [...effectiveEventTeams]
       .filter((team) => typeof team.averages?.fuel_scoring_rate === 'number')
@@ -952,6 +952,19 @@ export function EventsPage() {
   const liveMatchCount = useMemo(() => {
     return eventSchedule.filter((match) => liveTimerLabel(matchStartTime(match), nowMs).state === 'live').length;
   }, [eventSchedule, nowMs]);
+  const playedMatchCount = useMemo(
+    () => eventSchedule.filter((match) => inferMatchCompleted(match, nowMs)).length,
+    [eventSchedule, nowMs],
+  );
+  // One word for where the event stands, instead of a "0 live" count on finished events.
+  const eventStatusLabel =
+    liveMatchCount > 0
+      ? `${liveMatchCount} live`
+      : eventSchedule.length > 0 && playedMatchCount >= eventSchedule.length
+        ? 'Finished'
+        : playedMatchCount > 0
+          ? 'Under way'
+          : 'Not started';
 
   const hasClientAdminKey = clientAdminKeyAvailable();
   const canSyncEvent = useMemo(() => {
@@ -1972,13 +1985,6 @@ export function EventsPage() {
                       {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync</>}
                     </button>
                   ) : null}
-                  <ActionOverflowMenu
-                    className="compact"
-                    label="More"
-                    items={[
-                      { label: 'Home', to: '/home' },
-                    ]}
-                  />
                 </div>
               </div>
               <div className="fm-event-header-stats">
@@ -1991,11 +1997,10 @@ export function EventsPage() {
                   <span>Teams</span>
                 </div>
                 <div className="fm-event-stat">
-                  <strong>{liveMatchCount}</strong>
-                  <span>Live</span>
+                  <strong>{eventStatusLabel}</strong>
                 </div>
               </div>
-              {eventError ? <p className="fm-event-header-error">{eventError}</p> : null}
+              {eventError ? <p className="fm-event-header-error" title={eventError}>Some of this event's data didn't load. It retries on its own.</p> : null}
               {usingScheduleFallbackTeams ? (
                 <p className="fm-event-header-notice">Using roster from published match schedule.</p>
               ) : null}
@@ -2030,9 +2035,6 @@ export function EventsPage() {
                   {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync Event</>}
                 </button>
               ) : null}
-              <Link className="center-btn ghost" to="/home">
-                Home
-              </Link>
             </div>
           }
         >
@@ -2040,9 +2042,9 @@ export function EventsPage() {
             <span className="center-chip"><TagIcon className="icon-inline icon-muted" /> {statusText}</span>
             <span className="center-chip"><ClockIcon className="icon-inline icon-muted" /> Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
             <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {eventSchedule.length} match{eventSchedule.length === 1 ? '' : 'es'} · {effectiveTeamCount} team{effectiveTeamCount === 1 ? '' : 's'}</span>
-            <span className="center-chip">{liveMatchCount > 0 ? <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> : null} {liveMatchCount} live</span>
-            <span className="center-chip"><RefreshIcon className="icon-inline icon-muted" /> {effectiveEventPollSec}s refresh</span>
-            <span className="center-chip"><GlobeIcon className="icon-inline icon-muted" /> {regionLabel(regionFilter)}</span>
+            {liveMatchCount > 0 ? (
+              <span className="center-chip"><LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> {liveMatchCount} live</span>
+            ) : null}
             {/* Sync is an operator tool: fans and scouts saw "Writes: client admin key
                 missing" and an admin-session notice here. Only admins see it now. */}
             {hasClientAdminKey ? (
@@ -2056,7 +2058,7 @@ export function EventsPage() {
                 : 'Event sync requires an active admin session.'}
             </p>
           ) : null}
-          {eventError ? <EmptyState compact type="offline" title="Connection failed" description={eventError} /> : null}
+          {eventError ? <EmptyState compact type="offline" title="Couldn't load everything" description="Some of this event&apos;s data didn&apos;t load. It retries on its own." /> : null}
           {usingScheduleFallbackTeams ? (
             <p className="center-callout muted helper-text">Team history unavailable, using roster from published match schedule.</p>
           ) : null}
@@ -2115,12 +2117,12 @@ export function EventsPage() {
                     <strong>{effectiveTeamCount}</strong>
                   </article>
                   <article className="fm-kpi-card">
-                    <span><LiveDotIcon className="icon-inline" /> Live</span>
-                    <strong>{liveMatchCount}</strong>
+                    <span><CheckCircleIcon className="icon-inline" /> Played</span>
+                    <strong>{playedMatchCount}</strong>
                   </article>
                   <article className="fm-kpi-card">
-                    <span><TagIcon className="icon-inline" /> Key</span>
-                    <strong style={{ fontSize: '0.72rem' }}>{selectedEventKey}</strong>
+                    <span><LiveDotIcon className="icon-inline" /> Status</span>
+                    <strong>{eventStatusLabel}</strong>
                   </article>
                 </div>
 
@@ -2151,28 +2153,6 @@ export function EventsPage() {
                       </button>
                     </div>
                   ) : null}
-                </div>
-
-                <div className="fm-top-card">
-                  <div className="fm-top-card-header">
-                    <h4>Most Match Data</h4>
-                    <p>Teams with the most matches on record</p>
-                  </div>
-                  {topAnalyzedTeams.length === 0 ? (
-                    <EmptyState compact title="No coverage yet" description="No match data for this event yet." />
-                  ) : (
-                    <ul className="fm-top-list">
-                      {topAnalyzedTeams.map((team, idx) => (
-                        <li key={`fm-analyzed-${team.team_key}`}>
-                          <span className="fm-top-rank">{idx + 1}</span>
-                          <button type="button" className="fm-top-team-btn" onClick={() => openTeamCenter(team.team_key)}>
-                            #{team.team_number} {team.nickname || team.team_key}
-                          </button>
-                          <span className="fm-top-value">{team.history_count} match{team.history_count === 1 ? '' : 'es'}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
 
                 <div className="fm-top-card">
@@ -2210,8 +2190,8 @@ export function EventsPage() {
               ) : null}
               <div className="center-kpi-grid">
                 <article className="center-kpi-card">
-                  <span><TagIcon className="icon-inline icon-muted" /> Event Key</span>
-                  <strong>{selectedEventKey}</strong>
+                  <span><LiveDotIcon className="icon-inline icon-muted" /> Status</span>
+                  <strong>{eventStatusLabel}</strong>
                 </article>
                 <article className="center-kpi-card">
                   <span><ScoreboardIcon className="icon-inline icon-muted" /> Matches Published</span>
@@ -2222,27 +2202,10 @@ export function EventsPage() {
                   <strong>{effectiveTeamCount}</strong>
                 </article>
                 <article className="center-kpi-card">
-                  <span><LiveDotIcon className="icon-inline icon-status-live" /> Live Matches</span>
-                  <strong>{liveMatchCount}</strong>
+                  <span><CheckCircleIcon className="icon-inline icon-muted" /> Matches Played</span>
+                  <strong>{playedMatchCount}</strong>
                 </article>
               </div>
-            </SurfaceCard>
-
-            <SurfaceCard title="Most Match Data" compactable>
-              {topAnalyzedTeams.length === 0 ? (
-                <EmptyState compact title="No coverage yet" description="No match data for this event yet." />
-              ) : (
-                <ul className="center-simple-list">
-                  {topAnalyzedTeams.map((team) => (
-                    <li key={`analyzed-${team.team_key}`}>
-                      <button type="button" className="center-inline-link" onClick={() => openTeamCenter(team.team_key)}>
-                        #{team.team_number} {team.nickname || team.team_key}
-                      </button>
-                      <span>{team.history_count} match{team.history_count === 1 ? '' : 'es'}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </SurfaceCard>
 
             <SurfaceCard title="Top Fuel Rate" compactable>

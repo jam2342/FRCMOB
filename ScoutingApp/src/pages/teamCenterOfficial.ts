@@ -68,3 +68,59 @@ export function signalRankLabel(percentile: number | null | undefined, kind: 'st
 export function isRobotSignal(label: string): boolean {
   return !/\b(clips?|video|footage)\b/i.test(label || '');
 }
+
+// The ratings engine names its signals for analysts ("RP threshold contributor", "External EPA
+// baseline is low"). They're stored with each rating, so they're translated where they're shown.
+const PLAIN_SIGNAL_LABELS: Record<string, string> = {
+  'High external EPA baseline': 'Strong Statbotics rating',
+  'External EPA baseline is low': 'Weak Statbotics rating',
+  'Strong EPA baseline': 'Strong Statbotics rating',
+  'Low EPA baseline': 'Weak Statbotics rating',
+  'Strong OPR projection': 'Scores a lot in official results',
+  'Weak win-margin projection': 'Expected to win by little, or lose',
+  'ML throughput projection is strong': 'Expected to score a lot',
+  'ML throughput projection is below field': 'Expected to score below average',
+  'Throughput elite': 'Elite scorer',
+  'Shift dominance': 'Scores heavily while its hub is active',
+  'Tower threat': 'Climbs well',
+  'Strong autonomous impact': 'Strong autonomous',
+  'Weak autonomous output': 'Weak autonomous',
+  'RP threshold contributor': 'Helps earn bonus ranking points',
+  'Low RP threshold contribution': 'Rarely helps earn bonus ranking points',
+  'High net point impact': 'Adds a lot of points to its alliance',
+  'Low net point impact': 'Adds few points to its alliance',
+  'High driver carry': 'Its drivers lift its scoring',
+  'High ceiling': 'Has big best-case matches',
+  'Pressure-resistant scoring': 'Keeps scoring under defense',
+  'Drops under defensive pressure': 'Struggles against defense',
+  'Output trend accelerating': 'Scoring is trending up',
+  'Output trend cooling': 'Scoring is trending down',
+  'Reliability trend improving': 'Getting more reliable',
+  'Reliability trend declining': 'Getting less reliable',
+  'Underutilizes capacity': 'Could score more than it does',
+  'Execution limiting output': 'Mistakes are costing it points',
+  'Low shooting throughput': 'Scores little fuel',
+  'Endgame missing': 'Rarely climbs',
+  'Inconsistent output': 'Up and down from match to match',
+  'Penalty risk impacts expected points': 'Penalties cost it points',
+  'Penalty pressure worsening': 'Drawing more penalties lately',
+  'Cycle timing regressing': 'Cycles are getting slower',
+  'Disciplined play': 'Few penalties',
+  'Limited current evidence': 'Few matches to judge from',
+  'Autonomous floor is serviceable': 'Reliable autonomous',
+  'Autonomous floor needs work': 'Autonomous needs work',
+  'Teleop baseline is stable': 'Steady teleop scoring',
+  'Teleop baseline is limited': 'Limited teleop scoring',
+  'Endgame baseline is viable': 'Can climb',
+  'Endgame baseline is limited': 'Rarely climbs',
+  'Defense utility baseline': 'Useful on defense',
+  'Defense utility is limited': 'Not much use on defense',
+  'Anti-defense baseline': 'Handles defense well',
+  'Anti-defense risk profile': 'Struggles against defense',
+  'Clean-play baseline': 'Plays clean',
+  'Discipline risk baseline': 'Some penalty risk',
+};
+
+export function plainSignalLabel(label: string): string {
+  return PLAIN_SIGNAL_LABELS[(label || '').trim()] ?? label;
+}

@@ -71,6 +71,8 @@ type Props = {
   confThreshold?: number;
   // Video timestamp where the match starts; only the match itself is processed.
   matchStartSec?: number;
+  // Lets the parent lock the capture-source switch while frames are being captured.
+  onRecordingChange?: (busy: boolean) => void;
 };
 
 type VideoWithRvfc = HTMLVideoElement & {
@@ -276,12 +278,20 @@ export function VideoFileProcessor({
   // Unset: the loaded model's own cutoff (modelArtifact.ts), tuned per model.
   confThreshold,
   matchStartSec = 0,
+  onRecordingChange,
 }: Props) {
   const detectorRef = useRef<Detector | null>(null);
   const mountedRef = useRef(true);
   const activeAbortRef = useRef<AbortController | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'processing' | 'done' | 'error'>('idle');
   const [error, setError] = useState('');
+  const busyForParent = status === 'loading' || status === 'processing';
+  const onRecordingChangeRef = useRef(onRecordingChange);
+  onRecordingChangeRef.current = onRecordingChange;
+  useEffect(() => {
+    onRecordingChangeRef.current?.(busyForParent);
+  }, [busyForParent]);
+  useEffect(() => () => onRecordingChangeRef.current?.(false), []);
   const [fileName, setFileName] = useState('');
   const [progress, setProgress] = useState({
     frames: 0,

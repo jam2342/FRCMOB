@@ -16,6 +16,7 @@ import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { PIT_FORM_SECTIONS } from '../config/gameFields';
 import type { PitFieldDef } from '../config/gameFields';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
+import { listQueuedMutations } from '../utils/offlineQueue';
 import { hapticSuccess, hapticTap } from '../utils/haptics';
 import { asRecord, parseNumber } from './centerUtils';
 import './PitScoutingPage.css';
@@ -91,7 +92,7 @@ function PitScoutingWorkspacePage() {
   const [errorText, setErrorText] = useState('');
   const [statusText, setStatusText] = useState('');
   const [waitingForSync, setWaitingForSync] = useState(false);
-  const queuedSaveRef = useRef<{ workspaceId: number; eventKey: string; team: string; form: Record<string, unknown>; editVersion: number } | null>(null);
+  const queuedSaveRef = useRef<{ id: string; workspaceId: number; eventKey: string; team: string; form: Record<string, unknown>; editVersion: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editVersionRef = useRef(0);
   const formRef = useRef<Record<string,unknown>>({});
@@ -188,6 +189,7 @@ function PitScoutingWorkspacePage() {
     if (invalid) {setErrorText(`${invalid.label} must be zero or a positive number.`); return;}
     setSavingForm(true);
     setErrorText('');
+    const saveStarted = Date.now();
     const savedEditVersion = editVersionRef.current;
     const savedForm = {...formRef.current};
     try {
@@ -211,7 +213,14 @@ function PitScoutingWorkspacePage() {
       if (err instanceof QueuedForSyncError) {
         // Not an error: kept on this phone and replayed on reconnect.
         setStatusText(`Saved #${teamNumber(selectedTeam)} on this phone. It will sync to your team when you're back online.`);
-        queuedSaveRef.current = { workspaceId, eventKey, team: selectedTeam, form: savedForm, editVersion: savedEditVersion };
+        const queued = (await listQueuedMutations()).filter(item => {
+          if (!item.url.endsWith('/pit-scouting') || Date.parse(item.queuedAt) < saveStarted) return false;
+          try {
+            const body = JSON.parse(item.body || '{}');
+            return body.event_key === eventKey && body.team_key === selectedTeam && JSON.stringify(body.payload) === JSON.stringify(savedForm);
+          } catch { return false; }
+        }).at(-1);
+        queuedSaveRef.current = queued ? { id: queued.id, workspaceId, eventKey, team: selectedTeam, form: savedForm, editVersion: savedEditVersion } : null;
         // The queue holds this save now, so nothing is unsaved; the draft note
         // ("Save entry shares it") contradicted the save the scout just made.
         // The stored draft stays as a backup until the queue confirms.
@@ -223,18 +232,38 @@ function PitScoutingWorkspacePage() {
     }
   }
 
-  // The queued message used to stay up after the edit had synced.
+  // Queue counts exclude rejected writes; confirm this save by its own id.
   useEffect(() => {
     if (!waitingForSync) return;
-    const onChange = (event: Event) => {
-      if ((event as CustomEvent<{ count: number }>).detail?.count === 0) {
-        const queued = queuedSaveRef.current;
+    let cancelled = false;
+    const onChange = async () => {
+      const queued = queuedSaveRef.current;
+      const rows = await listQueuedMutations();
+      if (!queued) {
+        // The save couldn't be matched to its queue row; fall back to "everything sent".
+        if (cancelled) return;
+        if (rows.length === 0) {
+          setWaitingForSync(false);
+          setStatusText('Synced with your team.');
+        }
+        return;
+      }
+      const row = rows.find(item => item.id === queued.id);
+      if (cancelled || queuedSaveRef.current !== queued) return;
+      if (row?.failure) {
+        setWaitingForSync(false);
+        setStatusText('');
+        setErrorText("Your team's server didn't accept this save. Your notes are still here; try saving again.");
+        if (contextRef.current.eventKey === queued.eventKey && contextRef.current.selectedTeam === queued.team) setFormDirty(true);
+        return;
+      }
+      if (!row) {
         queuedSaveRef.current = null;
         if (queued) {
           // Same as a save that reached the server: the draft is done unless the
           // scout kept editing after saving.
           clearConfirmedPitDraft(queued.workspaceId, queued.eventKey, queued.team, queued.form);
-          if (contextRef.current.selectedTeam === queued.team && editVersionRef.current === queued.editVersion) {
+          if (contextRef.current.eventKey === queued.eventKey && contextRef.current.selectedTeam === queued.team && editVersionRef.current === queued.editVersion) {
             setFormDirty(false);
             setDraftStored(false);
           }
@@ -243,8 +272,15 @@ function PitScoutingWorkspacePage() {
         setStatusText('Synced with your team.');
       }
     };
-    window.addEventListener('offlinequeue:change', onChange);
-    return () => window.removeEventListener('offlinequeue:change', onChange);
+    const check = () => { void onChange(); };
+    window.addEventListener('offlinequeue:change', check);
+    window.addEventListener('offlinequeue:dropped', check);
+    check();
+    return () => {
+      cancelled = true;
+      window.removeEventListener('offlinequeue:change', check);
+      window.removeEventListener('offlinequeue:dropped', check);
+    };
   }, [waitingForSync]);
 
   async function handlePhotoSelected(file: File | null) {

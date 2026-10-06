@@ -169,6 +169,8 @@ export function OnDeviceRun() {
 
   // Capture source: live camera (handheld, optical-flow stabilized) or an uploaded clip
   // (desktop, static calibration — one fixed camera view).
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const captureStateProps = { onRecordingChange: setCaptureBusy };
   const [captureMode, setCaptureMode] = useState<'camera' | 'video'>('camera');
   const mountedRef = useRef(true);
   const [timingAnchorSec, setTimingAnchorSec] = useState(0);
@@ -227,6 +229,7 @@ export function OnDeviceRun() {
   const normalizedEventKey = (eventKey.trim() || normalizedMatchKey.split('_')[0]).toLowerCase();
 
   const resetRunState = useCallback(() => {
+    setCaptureBusy(false);
     capturedRef.current = [];
     cvResolverRef.current?.dispose();
     cvResolverRef.current = null;
@@ -906,8 +909,11 @@ export function OnDeviceRun() {
                 type="button"
                 role="tab"
                 aria-selected={captureMode === mode}
+                disabled={captureBusy}
                 className={`segmented-tabs__item${captureMode === mode ? ' active' : ''}`}
                 onClick={() => {
+                  if (mode === captureMode || captureBusy) return;
+                  if (capturedRef.current.length && !window.confirm('Discard these captured frames and switch source?')) return;
                   capturedRef.current = [];
                   setCapturedCount(0);
                   poseTelemetryRef.current = {
@@ -975,6 +981,7 @@ export function OnDeviceRun() {
                 ) : null}
               </label>
               <MatchRecorder
+                {...captureStateProps}
                 resolvePose={resolvePose}
                 onFrame={onFrame}
                 onTelemetry={onInferenceTelemetry}
@@ -989,6 +996,7 @@ export function OnDeviceRun() {
                 needed.
               </p>
               <VideoFileProcessor
+                {...captureStateProps}
                 matchStartSec={timingAnchorSec}
                 resolvePose={resolvePoseStatic}
                 onFrame={onFrame}
@@ -1058,10 +1066,14 @@ export function OnDeviceRun() {
               className="center-btn"
               onClick={() => {
                 resetRunState();
-                setStage('capture');
+                setMatchKey('');
+                setLoadedContext('');
+                setTeams([]);
+                setShift1ActiveAlliance('');
+                setStage('setup');
               }}
             >
-              Record another
+              Record another match
             </button>
           </div>
         </div>

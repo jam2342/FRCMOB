@@ -72,3 +72,34 @@ describe('favorites polling', () => {
     expect(api.getEventSchedule).toHaveBeenCalledTimes(2);
   });
 });
+
+it('loads an added favorite immediately and shows it while loading', async () => {
+  let finish!: (value: never) => void;
+  api.getTeamIntel.mockImplementation((key: string) => key === 'frc2'
+    ? new Promise(resolve => { finish = resolve; })
+    : Promise.resolve({team:{team_number:1,nickname:'One'},analysis:{}}));
+  render(<MemoryRouter initialEntries={['/favorites?tab=teams']}><FavoritesPage /></MemoryRouter>);
+  await act(async () => {});
+  fireEvent.change(screen.getByPlaceholderText('Team key or number'),{target:{value:'2'}});
+  fireEvent.click(screen.getByRole('button',{name:'Add Team'}));
+  expect(screen.getByText('Loading team 2…')).toBeInTheDocument();
+  await act(async () => {});
+  expect(api.getTeamIntel).toHaveBeenCalledWith('frc2', expect.anything(), expect.anything());
+  await act(async () => { finish({team:{team_number:2,nickname:'Two'},analysis:{}} as never); });
+  expect(screen.queryByText('Loading team 2…')).not.toBeInTheDocument();
+  expect(screen.getByText(/#2 Two/)).toBeInTheDocument();
+});
+
+it('preserves Auto-select and an active event outside the team registrations', async () => {
+  localStorage.setItem('scouting_center_event_key', '2026active');
+  api.getTeamIntel.mockResolvedValue({team:{team_number:1},analysis:{}, competitions:{registered_events_count:1,registered_events:[{event_key:'2026other',name:'Other',start_date:'2026-01-01'}]}});
+  render(<MemoryRouter initialEntries={['/favorites?tab=teams']}><FavoritesPage /></MemoryRouter>);
+  await act(async () => {});
+  const context = screen.getByLabelText('Team Rating Context Event (optional)');
+  fireEvent.change(context,{target:{value:''}});
+  await act(async () => {});
+  expect(context).toHaveValue('');
+  fireEvent.click(screen.getByRole('button',{name:'Use Active'}));
+  await act(async () => {});
+  expect(context).toHaveValue('2026active');
+});

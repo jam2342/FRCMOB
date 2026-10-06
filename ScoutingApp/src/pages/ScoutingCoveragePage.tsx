@@ -78,7 +78,7 @@ function relativeTime(iso: string | null): string {
 }
 
 function ScoutingCoverageWorkspacePage() {
-  const { eventKey, eventInput, setEventInput, commitInput, selectEvent } =
+  const { eventKey, fetchTrigger, eventInput, setEventInput, commitInput, selectEvent } =
     useEventKeyParam(STORAGE_KEY);
   const isMobile = useMobileLayout();
 
@@ -112,7 +112,7 @@ function ScoutingCoverageWorkspacePage() {
     void fetchCoverage(eventKey);
     const interval = window.setInterval(() => void fetchCoverage(eventKey, true), REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [eventKey, fetchCoverage]);
+  }, [eventKey, fetchCoverage, fetchTrigger]);
 
   const summary = data?.summary;
   const coverageTabs = data ? (

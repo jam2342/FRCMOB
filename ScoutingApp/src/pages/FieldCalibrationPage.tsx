@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
@@ -17,6 +18,7 @@ export function FieldCalibrationPage() {
             mobileCollapsible={false}
           >
             <FieldCalibration />
+            <Link to="/scouting/record">Continue to recorder</Link>
           </SurfaceCard>
 
       </div>

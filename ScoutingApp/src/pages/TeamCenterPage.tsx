@@ -35,7 +35,7 @@ import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
 import { Chip, Stat, Table, type TableColumn } from '../components/ui/primitives';
 import { SEASON_BENCHMARKS } from '../config/season';
-import { isRobotSignal, officialMetricsNote, scoreAgainst, signalRankLabel } from './teamCenterOfficial';
+import { isRobotSignal, officialMetricsNote, plainSignalLabel, scoreAgainst, signalRankLabel } from './teamCenterOfficial';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import {
@@ -402,6 +402,8 @@ export function TeamCenterPage() {
   const [scheduleSortMode, setScheduleSortMode] = useState<TeamScheduleSortMode>('time');
   const [mobileFinderOpen, setMobileFinderOpen] = useState(() => !defaultTeamKey);
   const lastContextRef = useRef('');
+  const currentSelectionRef = useRef('');
+  currentSelectionRef.current = `${selectedTeamKey}|${selectedEventKey || ''}`;
   const lastRequestedSelectionRef = useRef('');
   const lastEventDetailsPrefetchRef = useRef('');
   const robotImageFetchContextRef = useRef('');
@@ -560,6 +562,10 @@ export function TeamCenterPage() {
             timeoutMs: 25000,
           })
         : null;
+      // These two are awaited further down; mark them handled now so a fast failure on bad
+      // Wi-Fi isn't reported as an unhandled rejection in the meantime.
+      void scheduleRequest?.catch(() => undefined);
+      void eventTeamsRequest?.catch(() => undefined);
       const [intelResult, logoResult, liveFormResult] =
         await Promise.allSettled([
           shouldRefreshStatic
@@ -582,6 +588,8 @@ export function TeamCenterPage() {
             ? getEventTeamLiveForm(selectedEventKey, { form_window: 5, live_window_sec: 180 })
             : Promise.resolve(null),
         ]);
+      // Another team or event was picked meanwhile; its own load follows right away.
+      if (currentSelectionRef.current !== `${selectedTeamKey}|${selectedEventKey || ''}`) return true;
 
       const errors: string[] = [];
 
@@ -760,20 +768,29 @@ export function TeamCenterPage() {
     if (robotImageFetchContextRef.current === contextKey) return;
     robotImageFetchContextRef.current = contextKey;
     let cancelled = false;
+    let finished = false;
     setTeamRobotImageLoading(true);
     getTeamRobotImage(selectedTeamKey, selectedEventKey || undefined)
       .then((res) => {
         if (cancelled) return;
+        finished = true;
         setTeamRobotImage(res);
       })
       .catch(() => {
         if (cancelled) return;
         setTeamRobotImage(null);
+        // A failed load may be retried by coming back to the tab.
+        robotImageFetchContextRef.current = '';
       })
       .finally(() => {
         if (!cancelled) setTeamRobotImageLoading(false);
       });
     return () => {
+      // Leaving the tab mid-load threw the answer away but kept the "fetched" mark,
+      // so the photo never loaded on return. Clear it unless this load finished.
+      if (!finished && robotImageFetchContextRef.current === contextKey) {
+        robotImageFetchContextRef.current = '';
+      }
       cancelled = true;
       setTeamRobotImageLoading(false);
     };
@@ -792,6 +809,8 @@ export function TeamCenterPage() {
       .filter((row) => row.event_key.length > 0);
   }, [selectedTeamKey, teamCompetitions]);
 
+  const eventNameFor = (eventKey: string) =>
+    registeredEventOptions.find((event) => event.event_key === eventKey)?.name || eventKey;
   const selectedEventInOptions = useMemo(
     () => !selectedEventKey || registeredEventOptions.some((event) => event.event_key === selectedEventKey),
     [registeredEventOptions, selectedEventKey],
@@ -1287,25 +1306,30 @@ export function TeamCenterPage() {
             <span className="center-chip">{statusText}</span>
             <span className="center-chip" title={`Refreshes every ${liveRefreshSec}s`}>Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
           </div>
-          {errorMessages.length === 1 ? (
-            <p className="center-callout warning">{errorMessages[0]}</p>
-          ) : errorMessages.length > 1 ? (
-            <ul className="center-callout warning center-callout-list">
-              {errorMessages.map((message) => <li key={message}>{message}</li>)}
-            </ul>
+          {/* The per-request messages ("Schedule: …", "Event teams: …") stay in the tooltip. */}
+          {errorMessages.length > 0 ? (
+            <p className="center-callout warning" title={errorMessages.join('\n')}>
+              Some of this team's data didn't load. It retries on its own.
+            </p>
           ) : null}
 
           <div className="center-actions-row">
             <Link className="center-btn ghost" to={selectedEventKey ? `/events?event=${selectedEventKey}` : '/events'} title="Go to Events">
               <CalendarIcon className="icon-inline" /> This event
             </Link>
-            <Link
+            {/* This used to open Match Center with no team, landing on an unrelated match.
+                The team's own schedule here lives on the Event history tab. */}
+            <button
+              type="button"
               className="center-btn ghost"
-              to={selectedEventKey ? `/match-center?event=${selectedEventKey}` : '/match-center'}
-              title="Go to Match Center"
+              disabled={!selectedTeamKey}
+              onClick={() => {
+                setActiveTab('events');
+                if (isMobileLayout) setMobileFinderOpen(false);
+              }}
             >
               <ScoreboardIcon className="icon-inline" /> This team’s matches
-            </Link>
+            </button>
           </div>
         </SurfaceCard>
       </aside>
@@ -1342,9 +1366,9 @@ export function TeamCenterPage() {
                       </h2>
                       <span className="fm-team-hero-name">{teamNickname}</span>
                       {selectedEventKey ? (
-                        <span className="fm-team-hero-event">Event {selectedEventKey}</span>
+                        <span className="fm-team-hero-event">{eventNameFor(selectedEventKey)}</span>
                       ) : skippedEventKey ? (
-                        <span className="fm-team-hero-event">Didn't compete at {skippedEventKey}; showing the season</span>
+                        <span className="fm-team-hero-event">Didn't compete at {skippedEventKey}; showing the whole season</span>
                       ) : null}
                     </div>
                   </div>
@@ -1357,11 +1381,19 @@ export function TeamCenterPage() {
                       <strong>{typeof officialStats?.fuel_per_match === 'number' ? Math.round(officialStats.fuel_per_match) : 'N/A'}</strong>
                       <span>Fuel / match</span>
                     </div>
-                    <div className="fm-team-hero-stat">
-                      <strong>{tbaRank !== null ? `#${tbaRank}` : 'N/A'}</strong>
-                      <span>Rank</span>
-                    </div>
-                    <div className="fm-team-hero-stat">
+                    {selectedEventKey ? (
+                      <div className="fm-team-hero-stat" title="Official ranking at this event">
+                        <strong>{tbaRank !== null ? `#${tbaRank}` : 'N/A'}</strong>
+                        <span>Rank</span>
+                      </div>
+                    ) : (
+                      // No event picked: an event rank can't exist, so show how many events the season covers.
+                      <div className="fm-team-hero-stat" title="Events this team is registered for this season">
+                        <strong>{registeredEventOptions.length || 'N/A'}</strong>
+                        <span>Events</span>
+                      </div>
+                    )}
+                    <div className="fm-team-hero-stat" title="How sure the rating is. It grows with the number of matches behind it.">
                       <strong>{pct(teamRating?.confidence_0_1 ?? null, 0)}</strong>
                       <span>Conf</span>
                     </div>
@@ -1387,7 +1419,7 @@ export function TeamCenterPage() {
             ) : (
             <SurfaceCard
               title={`Team ${teamNumber} (${selectedTeamKey})`}
-              subtitle={`${teamNickname}${selectedEventKey ? ` · Event ${selectedEventKey}` : skippedEventKey ? ` · Didn't compete at ${skippedEventKey}; showing the season` : ''}`}
+              subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Didn't compete at ${skippedEventKey}; showing the whole season` : ''}`}
             >
               <div className="center-team-hero">
                 <div className="center-team-identity">
@@ -1550,7 +1582,7 @@ export function TeamCenterPage() {
                       <ul className="center-simple-list">
                         {teamRating.pros.filter((signal) => isRobotSignal(signal.label)).slice(0, 6).map((signal) => (
                           <li key={`pro-${signal.label}`}>
-                            <span>{signal.label}</span>
+                            <span>{plainSignalLabel(signal.label)}</span>
                             <span title={`${metric(signal.metric_value, 2)} · ${metric(signal.percentile, 1)} percentile`}>
                               {signalRankLabel(signal.percentile, 'strength')}
                             </span>
@@ -1567,7 +1599,7 @@ export function TeamCenterPage() {
                       <ul className="center-simple-list">
                         {teamRating.cons.filter((signal) => isRobotSignal(signal.label)).slice(0, 6).map((signal) => (
                           <li key={`con-${signal.label}`}>
-                            <span>{signal.label}</span>
+                            <span>{plainSignalLabel(signal.label)}</span>
                             <span title={`${metric(signal.metric_value, 2)} · ${metric(signal.percentile, 1)} percentile`}>
                               {signalRankLabel(signal.percentile, 'risk')}
                             </span>
@@ -1602,20 +1634,26 @@ export function TeamCenterPage() {
                     </div>
                   </SurfaceCard>
 
-                  <SurfaceCard title="TBA Snapshot" compactable>
+                  <SurfaceCard title={selectedEventKey ? 'Ranking & Awards' : 'Awards'} compactable>
                     <div className="center-kpi-grid">
-                      <article className="center-kpi-card">
-                        <span><HashIcon className="icon-inline icon-muted" /> Event Rank</span>
-                        <strong>{tbaRank !== null ? `#${tbaRank}` : 'N/A'}</strong>
-                      </article>
-                      <article className="center-kpi-card">
-                        <span><CheckCircleIcon className="icon-inline icon-muted" /> Event Record</span>
-                        <strong>{tbaRecord}</strong>
-                      </article>
-                      <article className="center-kpi-card">
-                        <span><AwardIcon className="icon-inline icon-muted" /> Event Awards</span>
-                        <strong>{tbaEventAwardsCount !== null ? tbaEventAwardsCount : 'N/A'}</strong>
-                      </article>
+                      {/* Event cells only mean something when an event is picked; in the season
+                          view they were three N/A boxes. */}
+                      {selectedEventKey ? (
+                        <>
+                          <article className="center-kpi-card">
+                            <span><HashIcon className="icon-inline icon-muted" /> Event Rank</span>
+                            <strong>{tbaRank !== null ? `#${tbaRank}` : 'N/A'}</strong>
+                          </article>
+                          <article className="center-kpi-card">
+                            <span><CheckCircleIcon className="icon-inline icon-muted" /> Event Record</span>
+                            <strong>{tbaRecord}</strong>
+                          </article>
+                          <article className="center-kpi-card">
+                            <span><AwardIcon className="icon-inline icon-muted" /> Event Awards</span>
+                            <strong>{tbaEventAwardsCount !== null ? tbaEventAwardsCount : 'N/A'}</strong>
+                          </article>
+                        </>
+                      ) : null}
                       <article className="center-kpi-card">
                         <span><AwardIcon className="icon-inline icon-muted" /> Season Awards</span>
                         <strong>{tbaSeasonAwardsCount}</strong>

@@ -268,3 +268,18 @@ describe('floating timer placement', () => {
     cleanup();
   });
 });
+
+describe('merging server copies of a report', () => {
+  it("keeps the phone's API snapshot when the server's copy has none", async () => {
+    const { mergeEntry, replaceRoomEntries, normalizeEntry } = await import('./scoutingPage.helpers');
+    const base = normalizeEntry({ id: 'e1', event_key: '2026arc', match_key: '2026arc_qm1', team_key: 'frc254', scout_profile: 'Sam' })!;
+    const local = { ...base, api_snapshot: { team_key: 'frc254' } as never, scouting_api_rating: { rating: 80 } as never };
+    const fromServer = { ...base, room_key: 'room-a', server_synced: true };
+    const merged = mergeEntry([local], fromServer).find((row) => row.id === 'e1')!;
+    expect(merged.api_snapshot).toEqual({ team_key: 'frc254' });
+    expect(merged.scouting_api_rating).toEqual({ rating: 80 });
+    expect(merged.server_synced).toBe(true);
+    const replaced = replaceRoomEntries([local], 'room-a', [fromServer]).find((row) => row.id === 'e1')!;
+    expect(replaced.api_snapshot).toEqual({ team_key: 'frc254' });
+  });
+});

@@ -248,6 +248,9 @@ export function ComparePage() {
     setLoadingEventTeams(false);
   }, [selectedEventKey]);
 
+  const currentEventKeyRef = useRef(selectedEventKey);
+  currentEventKeyRef.current = selectedEventKey;
+
   const refreshEventTeams = useCallback(async (): Promise<boolean> => {
     if (!selectedEventKey) return true;
     setLoadingEventTeams(true);
@@ -260,9 +263,12 @@ export function ComparePage() {
         include_rating_signals: false,
         auto_heal_ratings: true,
       });
+      // Another event was picked meanwhile; don't show this one's teams under it.
+      if (currentEventKeyRef.current !== selectedEventKey) return true;
       setEventTeams(payload);
       return true;
     } catch (error) {
+      if (currentEventKeyRef.current !== selectedEventKey) return true;
       setEventTeams(null);
       setErrorText((error as Error).message || 'Unable to load event teams for compare.');
       return false;
@@ -271,7 +277,7 @@ export function ComparePage() {
     }
   }, [selectedEventKey]);
 
-  useSingleFlightPolling({
+  const { triggerNow: reloadEventTeams } = useSingleFlightPolling({
     enabled: Boolean(selectedEventKey),
     visible: pageVisible,
     intervalMs: Math.max(10, liveRefreshSec) * 1000,
@@ -280,6 +286,16 @@ export function ComparePage() {
     minBackoffMs: Math.max(10, liveRefreshSec) * 1000,
     maxBackoffMs: 60000,
   });
+
+  // The poller keeps its timer when the event changes, so a new event's team pool used to
+  // wait for the next tick (up to a minute) while the old pool stayed on screen.
+  const lastPolledEventRef = useRef(selectedEventKey);
+  useEffect(() => {
+    if (lastPolledEventRef.current === selectedEventKey) return;
+    lastPolledEventRef.current = selectedEventKey;
+    setEventTeams(null);
+    if (selectedEventKey) reloadEventTeams('manual');
+  }, [reloadEventTeams, selectedEventKey]);
 
   const loadCompareBundle = useCallback(
     async (teamKeyInput: string, force = false, forceNetwork = false) => {
@@ -907,7 +923,6 @@ export function ComparePage() {
       <section className="center-main">
         <SurfaceCard
           title="Compare Center"
-          right={<span className="center-chip">Context: {selectedEventKey || 'none'}</span>}
           className="compare-header-card"
         >
           <div className="center-tabs-header">
@@ -947,7 +962,14 @@ export function ComparePage() {
               ))}
             </div>
           ) : (
-            <p className="center-callout muted">Add teams to build compare diagnostics.</p>
+            <div className="center-callout muted">
+              <p>Pick two or more teams to compare them side by side.</p>
+              {isMobileLayout ? (
+                <button type="button" className="center-btn" onClick={() => setMobileFinderOpen(true)}>
+                  Choose teams
+                </button>
+              ) : null}
+            </div>
           )}
           {compareTeamKeys.length >= 2 && selectedEventKey ? (
             <p className="center-callout muted">
@@ -956,7 +978,7 @@ export function ComparePage() {
           ) : null}
         </SurfaceCard>
 
-        {activeTab === 'summary' ? (
+        {activeTab === 'summary' && compareTeamKeys.length > 0 ? (
             <SurfaceCard title="Summary" className="compare-summary-card" compactable>
             {metricHighlights.length > 0 ? (
               <div className="compare-highlights-grid">
@@ -986,7 +1008,7 @@ export function ComparePage() {
               rowKey={(row) => `compare-summary-row-${row.team_key}`}
               cardBreakpoint={COMPARE_CARD_BREAKPOINT}
               renderCards={renderSummaryCards}
-              empty="Add teams to build compare diagnostics."
+              empty="Pick teams to compare."
             />
             </SurfaceCard>
 

@@ -1,13 +1,13 @@
 import { isNativeApp } from '../../platform/runtime';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getPushPublicKey,
   sendPushTest,
   subscribePush,
   unsubscribePush,
 } from '../../api';
-import { readStoredCenterContext } from '../../layout/centerContext';
-import { readFavoriteTeams } from '../../layout/userSettings';
+import { CENTER_CONTEXT_UPDATED_EVENT, readStoredCenterContext } from '../../layout/centerContext';
+import { SCOUTING_SETTINGS_UPDATED_EVENT, readFavoriteTeams } from '../../layout/userSettings';
 import { SurfaceCard } from './SurfaceCard';
 import './PushNotificationsCard.css';
 
@@ -71,7 +71,15 @@ function pushSupported(): boolean {
 
 export function PushNotificationsCard() {
   const supported = pushSupported();
+  const subscriptionQueue = useRef<Promise<void>>(Promise.resolve());
+  // Bumped on disable, so an update already waiting in the queue can't resubscribe afterwards.
+  const subscriptionGeneration = useRef(0);
+  // From the moment Disable starts until alerts are turned on again, nothing may re-register.
+  const disabledRef = useRef(false);
   const [serverConfigured, setServerConfigured] = useState<boolean | null>(null);
+  const [configError, setConfigError] = useState(false);
+  const [configRetry, setConfigRetry] = useState(0);
+  const [scope, setScope] = useState<{ eventKey: string; teams: string[] } | null>(null);
   const [publicKey, setPublicKey] = useState<string>('');
   const [subscribed, setSubscribed] = useState(false);
   const [endpoint, setEndpoint] = useState('');
@@ -87,6 +95,7 @@ export function PushNotificationsCard() {
   useEffect(() => {
     if (!supported) return;
     let cancelled = false;
+    setConfigError(false);
     void (async () => {
       try {
         const config = await getPushPublicKey();
@@ -94,7 +103,7 @@ export function PushNotificationsCard() {
         setServerConfigured(Boolean(config.configured));
         setPublicKey(config.public_key || '');
       } catch {
-        if (!cancelled) setServerConfigured(false);
+        if (!cancelled) { setServerConfigured(null); setConfigError(true); }
       }
       try {
         const registration = await navigator.serviceWorker.ready;
@@ -110,7 +119,7 @@ export function PushNotificationsCard() {
     return () => {
       cancelled = true;
     };
-  }, [supported]);
+  }, [supported, configRetry]);
 
   const updatePrefs = useCallback((update: Partial<LocalPrefs>) => {
     setPrefs((prev) => {
@@ -121,27 +130,67 @@ export function PushNotificationsCard() {
   }, []);
 
   const syncSubscription = useCallback(
-    async (subscription: PushSubscription, currentPrefs: LocalPrefs) => {
+    // `generation` is read by the caller before it looks up the subscription, so an update that
+    // started before Disable can't pick up the generation Disable just moved to.
+    async (subscription: PushSubscription, currentPrefs: LocalPrefs, generation: number) => {
       const json = subscription.toJSON();
       const context = readStoredCenterContext();
-      await subscribePush({
-        endpoint: subscription.endpoint,
-        keys: {
-          p256dh: String(json.keys?.p256dh || ''),
-          auth: String(json.keys?.auth || ''),
-        },
-        event_key: context.eventKey || null,
-        team_keys: readFavoriteTeams(),
-        prefs: {
-          match_lead_minutes: currentPrefs.match_lead_minutes,
-          shift_alerts: currentPrefs.shift_alerts,
-          scout_profile: readScoutProfile(),
-          room_key: currentPrefs.room_key.trim().toLowerCase(),
-        },
+      const teams = readFavoriteTeams();
+      const update = subscriptionQueue.current.catch(() => {}).then(async () => {
+        if (generation !== subscriptionGeneration.current || disabledRef.current) return;
+        await subscribePush({
+          endpoint: subscription.endpoint,
+          keys: {
+            p256dh: String(json.keys?.p256dh || ''),
+            auth: String(json.keys?.auth || ''),
+          },
+          event_key: context.eventKey || null,
+          team_keys: teams,
+          prefs: {
+            match_lead_minutes: currentPrefs.match_lead_minutes,
+            shift_alerts: currentPrefs.shift_alerts,
+            scout_profile: readScoutProfile(),
+            room_key: currentPrefs.room_key.trim().toLowerCase(),
+          },
+        });
+        setScope({ eventKey: context.eventKey, teams });
       });
+      subscriptionQueue.current = update;
+      await update;
     },
     [],
   );
+
+  useEffect(() => {
+    if (!subscribed || !serverConfigured) return;
+    let cancelled = false;
+    let revision = 0;
+    const sync = async () => {
+      const currentRevision = ++revision;
+      const generation = subscriptionGeneration.current;
+      if (disabledRef.current) return;
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription || cancelled || disabledRef.current || generation !== subscriptionGeneration.current) return;
+        await syncSubscription(subscription, prefs, generation);
+        if (!cancelled && currentRevision === revision) setErrorText('');
+      } catch {
+        if (!cancelled) setErrorText('Could not update alert coverage. Use Save preferences to try again.');
+      }
+    };
+    const update = () => { void sync(); };
+    update();
+    window.addEventListener(CENTER_CONTEXT_UPDATED_EVENT, update);
+    window.addEventListener(SCOUTING_SETTINGS_UPDATED_EVENT, update);
+    window.addEventListener('storage', update);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CENTER_CONTEXT_UPDATED_EVENT, update);
+      window.removeEventListener(SCOUTING_SETTINGS_UPDATED_EVENT, update);
+      window.removeEventListener('storage', update);
+    };
+  }, [subscribed, serverConfigured, prefs, syncSubscription]);
 
   async function handleEnable() {
     setBusy(true);
@@ -153,6 +202,8 @@ export function PushNotificationsCard() {
         setErrorText('Notification permission was denied. Enable it in your browser settings.');
         return;
       }
+      disabledRef.current = false;
+      const generation = subscriptionGeneration.current;
       const registration = await navigator.serviceWorker.ready;
       let subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
@@ -161,7 +212,7 @@ export function PushNotificationsCard() {
           applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
         });
       }
-      await syncSubscription(subscription, prefs);
+      await syncSubscription(subscription, prefs, generation);
       setSubscribed(true);
       setEndpoint(subscription.endpoint);
       setStatusText('Match alerts enabled for this device.');
@@ -176,15 +227,23 @@ export function PushNotificationsCard() {
     setBusy(true);
     setErrorText('');
     try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-      const currentEndpoint = subscription?.endpoint || endpoint;
-      if (subscription) await subscription.unsubscribe();
-      if (currentEndpoint) await unsubscribePush(currentEndpoint);
+      subscriptionGeneration.current += 1;
+      disabledRef.current = true;
+      const run = subscriptionQueue.current.catch(() => {}).then(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        const currentEndpoint = subscription?.endpoint || endpoint;
+        if (subscription) await subscription.unsubscribe();
+        if (currentEndpoint) await unsubscribePush(currentEndpoint);
+      });
+      subscriptionQueue.current = run;
+      await run;
       setSubscribed(false);
       setEndpoint('');
       setStatusText('Notifications disabled.');
     } catch (err) {
+      // Still subscribed, so automatic coverage updates may carry on.
+      disabledRef.current = false;
       setErrorText((err as Error).message || 'Failed to disable notifications.');
     } finally {
       setBusy(false);
@@ -196,6 +255,7 @@ export function PushNotificationsCard() {
     setBusy(true);
     setErrorText('');
     try {
+      const generation = subscriptionGeneration.current;
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
@@ -203,7 +263,7 @@ export function PushNotificationsCard() {
         setErrorText('Subscription expired — enable notifications again.');
         return;
       }
-      await syncSubscription(subscription, prefs);
+      await syncSubscription(subscription, prefs, generation);
       setStatusText('Notification preferences updated.');
     } catch (err) {
       setErrorText((err as Error).message || 'Failed to update preferences.');
@@ -235,6 +295,8 @@ export function PushNotificationsCard() {
         <p className="center-callout muted">
           {isNativeApp() ? 'Match alerts are not available in this app build yet.' : 'This browser does not support push notifications. On iPhone/iPad, install the app to your home screen first (Share → Add to Home Screen).'}
         </p>
+      ) : configError ? (
+        <p role="alert">Couldn&apos;t reach the server. <button type="button" className="center-btn ghost" onClick={() => setConfigRetry(value => value + 1)}>Retry</button></p>
       ) : serverConfigured === false ? (
         <p className="center-callout muted">
           Match alerts aren&apos;t switched on for this site yet.
@@ -242,7 +304,9 @@ export function PushNotificationsCard() {
       ) : (
         <>
           <p className="push-alerts-note">
-            Alerts go to this device for the teams on your Favorites list, at your current event.
+            {subscribed && scope
+              ? `Alerts cover ${scope.eventKey || 'no event selected'} and ${scope.teams.length ? scope.teams.map(team => team.replace(/^frc/, '#')).join(', ') : 'no favorite teams'}.`
+              : subscribed ? 'Checking alert coverage…' : 'Enable alerts for your current event and favorite teams.'}
           </p>
           <div className="push-alerts-actions">
             {!subscribed ? (

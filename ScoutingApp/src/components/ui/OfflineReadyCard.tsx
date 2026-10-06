@@ -124,7 +124,7 @@ export function OfflineReadyCard({ compact = false }: { compact?: boolean }) {
           </span>
         </li>
         <li>
-          <span className="offline-ready__item">{eventKey ? `Event data (${eventKey})` : 'Event data'}</span>
+          <span className="offline-ready__item">{eventKey ? `Event data (${eventKey.slice(0, 4)} ${eventKey.slice(4).toUpperCase()})` : 'Event data'}</span>
           <span className={eventReady ? 'offline-ready__ok' : 'offline-ready__todo'}>
             {!eventKey ? 'Pick your event on Events first' : eventReady && eventAt ? `${missing.length ? 'Core verified' : 'Verified'} · oldest data ${ago(eventAt)}` : pack ? 'Partly saved' : 'Not verified yet'}
           </span>

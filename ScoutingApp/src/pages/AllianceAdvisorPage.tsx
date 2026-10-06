@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventTeamsIntel,
@@ -117,6 +117,10 @@ export function AllianceAdvisorPage() {
   const [loadingBuilder, setLoadingBuilder] = useState(false);
   const [builderError, setBuilderError] = useState('');
 
+  const teamsGeneration = useRef(0);
+  const modelGeneration = useRef(0);
+  const builderGeneration = useRef(0);
+
   /* --- Derived --- */
   const teamPool = useMemo<EventTeam[]>(() => {
     const teams = Array.isArray(eventTeams?.teams) ? eventTeams.teams : [];
@@ -137,8 +141,24 @@ export function AllianceAdvisorPage() {
 
   const teamKeySet = useMemo(() => new Set(teamPool.map((t) => t.team_key)), [teamPool]);
 
+  useEffect(() => {
+    modelGeneration.current += 1;
+    setSelectionModel(null);
+    setLoadingModel(false);
+    return () => { modelGeneration.current += 1; };
+  }, [eventKey, teamPool, rankWeight, scale, simulations, fetchTrigger]);
+
+  useEffect(() => {
+    builderGeneration.current += 1;
+    setBuilderResult(null);
+    setLoadingBuilder(false);
+    return () => { builderGeneration.current += 1; };
+  }, [eventKey, teamPool, builderSlots, weights, rankWeight, scale, simulations, fetchTrigger]);
+
   /* --- Fetch event teams --- */
   const fetchTeams = useCallback(async (key: string) => {
+    const generation = ++teamsGeneration.current;
+    setEventTeams(null);
     if (!key) return;
     setLoadingTeams(true);
     setErrorText('');
@@ -150,12 +170,13 @@ export function AllianceAdvisorPage() {
         include_rating_details: false,
         include_rating_signals: true,
       });
-      setEventTeams(payload);
+      if (generation === teamsGeneration.current) setEventTeams(payload);
     } catch (err) {
+      if (generation !== teamsGeneration.current) return;
       setErrorText((err as Error).message || 'Failed to load event teams.');
       setEventTeams(null);
     } finally {
-      setLoadingTeams(false);
+      if (generation === teamsGeneration.current) setLoadingTeams(false);
     }
   }, []);
 
@@ -165,6 +186,7 @@ export function AllianceAdvisorPage() {
       setEventTeams(null);
       setSelectionModel(null);
     }
+    return () => { teamsGeneration.current += 1; };
   }, [eventKey, fetchTeams, fetchTrigger]);
 
   /* --- Run selection model --- */
@@ -173,6 +195,7 @@ export function AllianceAdvisorPage() {
       setErrorText('Need an event with at least 6 teams to run the selection model.');
       return;
     }
+    const generation = ++modelGeneration.current;
     setLoadingModel(true);
     setErrorText('');
     try {
@@ -191,15 +214,17 @@ export function AllianceAdvisorPage() {
         selection_simulations: simulations,
         selection_rank_source: 'auto',
       });
+      if (generation !== modelGeneration.current) return;
       setSelectionModel(result.selection_model ?? null);
       if (!result.selection_model) {
         setErrorText('The selection model was not returned. The event may not have enough data.');
       }
     } catch (err) {
+      if (generation !== modelGeneration.current) return;
       setErrorText((err as Error).message || 'Selection model failed.');
       setSelectionModel(null);
     } finally {
-      setLoadingModel(false);
+      if (generation === modelGeneration.current) setLoadingModel(false);
     }
   }, [eventKey, teamPool, rankWeight, scale, simulations]);
 
@@ -219,6 +244,7 @@ export function AllianceAdvisorPage() {
       setBuilderError(`Teams not in event: ${invalid.join(', ')}`);
       return;
     }
+    const generation = ++builderGeneration.current;
     setLoadingBuilder(true);
     setBuilderError('');
     try {
@@ -234,12 +260,13 @@ export function AllianceAdvisorPage() {
         selection_simulations: simulations,
         selection_rank_source: 'auto',
       });
-      setBuilderResult(result);
+      if (generation === builderGeneration.current) setBuilderResult(result);
     } catch (err) {
+      if (generation !== builderGeneration.current) return;
       setBuilderError((err as Error).message || 'Alliance analysis failed.');
       setBuilderResult(null);
     } finally {
-      setLoadingBuilder(false);
+      if (generation === builderGeneration.current) setLoadingBuilder(false);
     }
   }, [eventKey, builderSlots, teamKeySet, rankWeight, scale, simulations, weightShares]);
 

@@ -264,6 +264,10 @@ async function removeQueuedItem(id: string): Promise<void> {
   lsWrite(lsRead().filter((item) => item.id !== id));
 }
 
+export async function listQueuedMutations(): Promise<QueuedMutation[]> {
+  return readQueue();
+}
+
 /** Original edits remain on this device when the server refuses them. */
 export async function listFailedMutations(): Promise<QueuedMutation[]> {
   return (await readQueue()).filter((item) => item.failure);

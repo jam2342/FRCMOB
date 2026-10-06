@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
   getEventRatings,
@@ -87,9 +87,14 @@ function ExportPageContent() {
   const [errorText, setErrorText] = useState('');
   const [statusText, setStatusText] = useState('');
 
+  const requestGeneration = useRef(0);
+  const [loadedEventKey, setLoadedEventKey] = useState('');
+
   /* Fetch all data */
   const fetchData = useCallback(async (key: string) => {
+    const generation = ++requestGeneration.current;
     if (!key) return;
+    setLoadedEventKey('');
     setLoading(true);
     setErrorText('');
     setStatusText('');
@@ -103,6 +108,9 @@ function ExportPageContent() {
       getEventSchedule(key),
       getEventRankings(key),
     ]);
+
+    if (generation !== requestGeneration.current) return;
+    setLoadedEventKey(key);
 
     if (results[0].status === 'fulfilled') {
       setRatings(results[0].value.ratings ?? []);
@@ -134,18 +142,25 @@ function ExportPageContent() {
   }, []);
 
   useEffect(() => {
+    setRatings(null);
+    setSchedule(null);
+    setRankings(null);
+    setLoadedEventKey('');
     if (!eventKey) return;
     const timer = window.setTimeout(() => {
       void fetchData(eventKey);
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      requestGeneration.current += 1;
+    };
   }, [eventKey, fetchData, fetchTrigger]);
 
   /* ---- Export functions ---- */
 
   async function exportRatings() {
     try {
-      if (!ratings?.length) return;
+      if (!ratings?.length || loadedEventKey !== eventKey) return;
       const headers = [
         'Team', 'Number', 'Nickname', 'Rating', 'Confidence',
         'Robot Level', 'Driver Skill',
@@ -178,7 +193,7 @@ function ExportPageContent() {
         r.model_version,
         r.updated_at || '',
       ]);
-      if (!await downloadCsv(`${eventKey}_team_ratings.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      if (!await downloadCsv(`${loadedEventKey}_team_ratings.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} team ratings.`);
     } catch (error) {
       setStatusText('');
@@ -188,7 +203,7 @@ function ExportPageContent() {
 
   async function exportSchedule() {
     try {
-      if (!schedule?.length) return;
+      if (!schedule?.length || loadedEventKey !== eventKey) return;
       const headers = [
         'Match Key', 'Display Name', 'Comp Level', 'Set', 'Match',
         'Red 1', 'Red 2', 'Red 3', 'Blue 1', 'Blue 2', 'Blue 3',
@@ -211,7 +226,7 @@ function ExportPageContent() {
         m.winner_alliance || '',
         m.is_completed ? 'Yes' : 'No',
       ]);
-      if (!await downloadCsv(`${eventKey}_match_schedule.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      if (!await downloadCsv(`${loadedEventKey}_match_schedule.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} match${rows.length === 1 ? '' : 'es'}.`);
     } catch (error) {
       setStatusText('');
@@ -221,7 +236,7 @@ function ExportPageContent() {
 
   async function exportRankings() {
     try {
-      if (!rankings?.length) return;
+      if (!rankings?.length || loadedEventKey !== eventKey) return;
       // TBA rankings format: each row has team_key, rank, record, etc.
       const firstRow = rankings[0];
       const headers = Object.keys(firstRow).filter(
@@ -248,7 +263,7 @@ function ExportPageContent() {
         }
         return values;
       });
-      if (!await downloadCsv(`${eventKey}_rankings.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      if (!await downloadCsv(`${loadedEventKey}_rankings.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} rankings.`);
     } catch (error) {
       setStatusText('');
@@ -258,9 +273,12 @@ function ExportPageContent() {
 
   async function exportRawScoutingEntries() {
     if (!eventKey) return;
+    const requestedEventKey = eventKey;
+    const generation = requestGeneration.current;
     setStatusText('Fetching scouting entries…');
     try {
-      const result = await exportEventScoutingEntries(eventKey);
+      const result = await exportEventScoutingEntries(requestedEventKey);
+      if (generation !== requestGeneration.current) return;
       const entries = result.entries ?? [];
       if (entries.length === 0) {
         setStatusText('No scouting entries found for this event.');
@@ -315,7 +333,7 @@ function ExportPageContent() {
           ...sortedFormKeys.map((key) => form[key] ?? ''),
         ];
       });
-      if (!await downloadCsv(`${eventKey}_scouting_entries.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      if (!await downloadCsv(`${requestedEventKey}_scouting_entries.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} raw scouting entries.`);
     } catch (error) {
       setStatusText('');
@@ -325,9 +343,12 @@ function ExportPageContent() {
 
   async function exportPitScoutingCsv() {
     if (!eventKey) return;
+    const requestedEventKey = eventKey;
+    const generation = requestGeneration.current;
     setStatusText('Fetching pit scouting data…');
     try {
-      const result = await listPitEntries(eventKey);
+      const result = await listPitEntries(requestedEventKey);
+      if (generation !== requestGeneration.current) return;
       const entries = result.entries ?? [];
       if (entries.length === 0) {
         setStatusText('No pit scouting entries found for this event.');
@@ -349,7 +370,7 @@ function ExportPageContent() {
           return Array.isArray(value) ? value.join('; ') : value ?? '';
         }),
       ]);
-      if (!await downloadCsv(`${eventKey}_pit_scouting.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
+      if (!await downloadCsv(`${requestedEventKey}_pit_scouting.csv`, headers, rows)) { setStatusText('Export cancelled.'); return; }
       setStatusText(`Exported ${rows.length} pit scouting entries.`);
     } catch (error) {
       setStatusText('');

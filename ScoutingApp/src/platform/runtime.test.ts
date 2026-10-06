@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const platform = vi.hoisted(() => ({ native: false }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => platform.native } }));
-import { NATIVE_API_URL, NATIVE_WS_URL, nativeRouteFromUrl, resolveApiBaseUrl, resolveWebSocketBaseUrl } from './runtime';
+import { NATIVE_API_URL, NATIVE_WS_URL, nativeRouteFromUrl, resolveApiBaseUrl, resolveWebSocketBaseUrl, shareableAppUrl } from './runtime';
 afterEach(() => { platform.native = false; vi.unstubAllEnvs(); });
 describe('native service endpoints', () => {
   it('uses public HTTPS endpoints instead of the app-local proxy, even with web build overrides', () => {
@@ -33,5 +33,16 @@ describe('native app links', () => {
   });
   it.each(['https://evil.example/#/my-team', 'javascript:alert(1)', 'frcmob://other#/my-team', 'frcmob://open#//evil.example', 'frcmob://open#not-a-route'])('rejects external or malformed links: %s', url => {
     expect(nativeRouteFromUrl(url)).toBeNull();
+  });
+});
+describe('shareable links', () => {
+  it('puts the route in the hash, where the app routes', () => {
+    expect(shareableAppUrl('/match-center?event=2026arc&match=2026arc_qm60')).toBe(
+      `${window.location.origin}/#/match-center?event=2026arc&match=2026arc_qm60`,
+    );
+  });
+  it('points native-app shares at the public site', () => {
+    platform.native = true;
+    expect(shareableAppUrl('/team-center?team=frc254')).toBe('https://scouting-app-iryg.vercel.app/#/team-center?team=frc254');
   });
 });

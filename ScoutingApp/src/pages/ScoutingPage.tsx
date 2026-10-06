@@ -363,6 +363,8 @@ export function ScoutingPage() {
   const [entries, setEntries] = useState<SavedScoutingEntry[]>(() =>
     readStoredEntries(getWorkspaceSession()?.workspace.id ?? null),
   );
+  const [sharingNotice, setSharingNotice] = useState<{workspaceId: number | null; eventKey: string; text: string} | null>(null);
+  const sharingEntriesRef = useRef(new Set<string>());
   const latestEntriesRef = useRef(entries);
   latestEntriesRef.current = entries;
   // Which workspace `entries` belong to. It moves only when entries are reloaded
@@ -553,6 +555,9 @@ export function ScoutingPage() {
     if (resolved) return resolved;
     return refreshRoomAccessSession(roomKey, { silent: true });
   }, [refreshRoomAccessSession, resolveRoomAccessToken]);
+
+  const ensureSharingAccessRef = useRef(ensureRoomAccessToken);
+  ensureSharingAccessRef.current = ensureRoomAccessToken;
 
   const selectedMatch = useMemo(
     () => scheduleRows.find((row) => row.match_key.toLowerCase() === selectedMatchKey.toLowerCase()) || null,
@@ -2530,6 +2535,79 @@ export function ScoutingPage() {
   }, []);
 
   // Team rooms have no key the scout ever saw, so don't show them one.
+  // What the share loop checks before every send: right after switching events the old
+  // event's room is still active for a moment, and its reports must not go there.
+  const shareTargetRef = useRef({ room: '', event: '' });
+  shareTargetRef.current = { room: normalizeRoomKey(activeRoom?.room_key || ''), event: selectedEventKey };
+  useEffect(() => {
+    const roomKey = activeRoom?.room_key;
+    if (!roomKey || !isTeamRoomKey(roomKey) || !hasScoutProfile || entriesWorkspaceRef.current !== workspaceId) return;
+    if (normalizeRoomKey(roomKey) !== teamRoomKey) return;
+    if ((activeRoom?.event_key || '').toLowerCase() !== selectedEventKey) return;
+    const stillTarget = () =>
+      shareTargetRef.current.room === normalizeRoomKey(roomKey) && shareTargetRef.current.event === selectedEventKey;
+    const pending = latestEntriesRef.current.filter(entry => entry.event_key === selectedEventKey && !entry.server_synced && !entry.room_key);
+    if (!pending.length) return;
+    let cancelled = false;
+    void (async () => {
+      const token = await ensureSharingAccessRef.current(roomKey).catch(() => '');
+      if (cancelled) return;
+      if (!token) {
+        setRoomErrorText('Could not share your saved reports. They are still on this phone; reconnect to your team to try again.');
+        return;
+      }
+      let shared = 0;
+      let queued = 0;
+      for (const entry of pending) {
+        const key = `${workspaceId}|${roomKey}|${entry.id}`;
+        if (sharingEntriesRef.current.has(key)) continue;
+        if (!stillTarget()) break;
+        sharingEntriesRef.current.add(key);
+        try {
+          const response = await saveScoutingRoomEntry(roomKey, {
+            entry,
+            scout_profile: entry.scout_profile || scoutProfile,
+            client_entry_id: entry.id,
+            room_access_token: token,
+            timeoutMs: 30000,
+          });
+          if (cancelled) return;
+          const synced = normalizeEntry(response.entry.entry) || entry;
+          // Keep anything the phone added while this was in flight (the API snapshot).
+          setEntries(current => {
+            const latest = current.find(row => row.id === entry.id);
+            return mergeEntry(current, {
+              ...synced,
+              api_snapshot: latest?.api_snapshot ?? synced.api_snapshot,
+              scouting_api_rating: latest?.scouting_api_rating ?? synced.scouting_api_rating,
+              room_key: roomKey,
+              server_synced: true,
+            });
+          });
+          shared += 1;
+        } catch (error) {
+          if (cancelled) return;
+          if (error instanceof QueuedForSyncError) {
+            setEntries(current => {
+              const latest = current.find(row => row.id === entry.id) ?? entry;
+              return mergeEntry(current, { ...latest, room_key: roomKey, server_synced: false });
+            });
+            queued += 1;
+          } else {
+            setRoomErrorText('Could not share your saved reports. They are still on this phone; reconnect to your team to try again.');
+          }
+        } finally {
+          sharingEntriesRef.current.delete(key);
+        }
+      }
+      if (!cancelled && (shared || queued)) setSharingNotice({workspaceId, eventKey: selectedEventKey, text: [
+        shared ? `Shared ${shared} saved report${shared === 1 ? '' : 's'} with your team.` : '',
+        queued ? `${queued} saved report${queued === 1 ? ' is' : 's are'} queued to share when you reconnect.` : '',
+      ].filter(Boolean).join(' ')});
+    })();
+    return () => { cancelled = true; };
+  }, [activeRoom?.room_key, activeRoom?.event_key, teamRoomKey, selectedEventKey, workspaceId, hasScoutProfile, scoutProfile]);
+
   function roomSyncedLabel(roomKey: string): string {
     return isTeamRoomKey(roomKey) ? 'Synced with your team.' : `Synced to room ${roomKey}.`;
   }
@@ -2869,16 +2947,21 @@ export function ScoutingPage() {
       baseline: (typeof eventApiBaselineByTeam)[string] | null;
     },
   ) {
+    const savedWorkspaceId = entriesWorkspaceRef.current;
     let entry = savedEntry;
     if (context.needsApiSnapshot) {
       const snapshot = await resolveApiSnapshot(context.teamKey, context.eventKey);
+      if (entriesWorkspaceRef.current !== savedWorkspaceId) return;
       if (snapshot) {
         entry = {
           ...entry,
           api_snapshot: snapshot,
           scouting_api_rating: scoutingApiRating(context.manualRating, snapshot, context.baseline),
         };
-        setEntries((current) => mergeEntry(current, entry));
+        setEntries((current) => {
+          const latest = current.find(row => row.id === entry.id);
+          return mergeEntry(current, { ...entry, room_key: latest?.room_key ?? entry.room_key, server_synced: latest?.server_synced ?? entry.server_synced });
+        });
       }
     }
     const roomKey = context.roomKey;
@@ -3603,7 +3686,7 @@ export function ScoutingPage() {
                 title={nextMatchTarget ? `Next match: ${nextMatchTarget.match_display}` : 'No upcoming match'}
                 aria-label="Jump to next match"
               >
-                <ClockIcon size={16} />
+                <ClockIcon size={16} /> Next match
               </button>
               <button
                 type="button"
@@ -3613,7 +3696,7 @@ export function ScoutingPage() {
                 title={nextTeamTarget ? `Next team: ${nextTeamTarget.team_key.toUpperCase()}` : 'No next team'}
                 aria-label="Jump to next team"
               >
-                <UsersIcon size={16} />
+                <UsersIcon size={16} /> Next team
               </button>
             </div>
           ) : (
@@ -3690,7 +3773,7 @@ export function ScoutingPage() {
                 }}
               >
                 <strong>{team.team_key.toUpperCase()}</strong>
-                <small>{team.station || team.alliance.toUpperCase()}</small>
+                <small>{team.alliance === 'red' ? 'Red' : 'Blue'} {team.station?.replace(/^[rb]/i, '')}</small>
               </button>
             ))}
             {teamOptions.length === 0 ? <p className="center-callout muted">Select a match to pick a robot.</p> : null}
@@ -4195,6 +4278,7 @@ export function ScoutingPage() {
       </aside>
 
       <section className="center-main">
+        {sharingNotice?.workspaceId === workspaceId && sharingNotice?.eventKey === selectedEventKey ? <p className="center-callout muted" role="status">{sharingNotice.text}</p> : null}
         {workspace && selectedEventKey && teamRoom.snapshot && (!teamRoom.isLeader || myTeamAssignments.length > 0) ? (
           <SurfaceCard title="Your assignments">
             <NextAssignment

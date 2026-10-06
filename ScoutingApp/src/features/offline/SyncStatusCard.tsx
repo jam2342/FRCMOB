@@ -114,7 +114,10 @@ export function SyncStatusCard() {
       ) : null}
       {readError ? <p role="alert">{readError}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      <Button onClick={() => void sync()} disabled={!online || busy} loading={busy}>Sync now</Button>
+      {/* With nothing waiting, "Sync now" was a button that did nothing. */}
+      {queueSize > 0 || failedChanges > 0 || (recordings?.length ?? 0) > 0 || readError || busy ? (
+        <Button onClick={() => void sync()} disabled={!online || busy} loading={busy}>Sync now</Button>
+      ) : null}
       {!online ? <p>Reconnect to send waiting work. Keep this app installed until waiting work is synced and changes needing attention are recovered.</p> : null}
     </SurfaceCard>
   );

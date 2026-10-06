@@ -316,11 +316,7 @@ function PicklistWorkspacePage() {
 
   function markPicked(index: number) {
     mutateSlots((slots) => {
-      const pickedCount = slots.filter(
-        (slot) => slot.status === 'picked' || slot.status === 'captain',
-      ).length;
-      const alliance = Math.min(8, Math.floor(pickedCount / 3) + 1);
-      slots[index] = { ...slots[index], status: 'picked', picked_by_alliance: alliance };
+      slots[index] = { ...slots[index], status: 'picked', picked_by_alliance: null };
       return slots;
     });
     hapticTap();
@@ -574,8 +570,8 @@ function PicklistWorkspacePage() {
                           {TIER_LABELS[slot.tier]}
                         </button>
 
-                        {slot.status === 'picked' && slot.picked_by_alliance ? (
-                          <span className="picklist-status picked">A{slot.picked_by_alliance}</span>
+                        {slot.status === 'picked' ? (
+                          <span className="picklist-status picked">{slot.picked_by_alliance ? `A${slot.picked_by_alliance}` : 'Picked'}</span>
                         ) : null}
                         {slot.status === 'declined' ? (
                           <span className="picklist-status declined">Declined</span>

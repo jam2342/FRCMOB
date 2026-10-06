@@ -65,3 +65,12 @@ describe('rating signals', () => {
     expect(isRobotSignal('Output trend cooling')).toBe(true);
   });
 });
+
+describe('plainSignalLabel', () => {
+  it('turns analyst signal names into plain words and leaves unknown ones alone', async () => {
+    const { plainSignalLabel } = await import('./teamCenterOfficial');
+    expect(plainSignalLabel('RP threshold contributor')).toBe('Helps earn bonus ranking points');
+    expect(plainSignalLabel('External EPA baseline is low')).toBe('Weak Statbotics rating');
+    expect(plainSignalLabel('Something new')).toBe('Something new');
+  });
+});
