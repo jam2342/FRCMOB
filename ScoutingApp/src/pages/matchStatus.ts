@@ -27,3 +27,18 @@ export function inferMatchCompleted(match: EventScheduleItem | null, nowMs: numb
     (matchHasScores(match) && liveTimerLabel(matchStartTime(match), nowMs).state === 'ended')
   );
 }
+
+// Results land every few minutes while an event is running, so pages that show
+// them refresh only then: an unplayed match due within the window (a running-late
+// schedule keeps "due" matches a few hours in the past).
+const IN_PLAY_PAST_SEC = 3 * 3600;
+const IN_PLAY_AHEAD_SEC = 12 * 3600;
+export function eventHasMatchesInPlay(matches: readonly EventScheduleItem[] | null | undefined, nowMs: number): boolean {
+  if (!matches?.length) return false;
+  const nowSec = nowMs / 1000;
+  return matches.some((match) => {
+    if (inferMatchCompleted(match, nowMs)) return false;
+    const start = matchStartTime(match);
+    return start !== null && start >= nowSec - IN_PLAY_PAST_SEC && start <= nowSec + IN_PLAY_AHEAD_SEC;
+  });
+}

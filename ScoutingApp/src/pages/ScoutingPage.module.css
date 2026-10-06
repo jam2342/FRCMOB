@@ -84,3 +84,71 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
+
+/* The board header's save result: two lines at most, so "synced" or "on this
+   phone" at the end of the message still shows on a 250 px phone. */
+.heroStatus {
+  margin: 0;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.heroError {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Team members join their team's room automatically; a key is the fallback. */
+.otherRooms > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Two modes, always both visible: on a 250 px phone "Rapid Tap" used to sit
+   half off the card. */
+.modeTabs.modeTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+}
+
+.modeTabs :global(.segmented-tabs__item) {
+  min-width: 0;
+  justify-content: center;
+}
+
+.modeTabs :global(.segmented-tabs__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 320px) {
+  .modeTabs :global(.segmented-tabs__icon) {
+    display: none;
+  }
+}
+
+/* The one button a scout taps every match. The shell's layered rules lose to
+   the global 36px button minimum, so the size lives on the button itself. */
+.heroSave {
+  min-height: 44px;
+}
+
+@media (max-height: 500px) {
+  .heroSave {
+    min-height: 40px;
+  }
+}

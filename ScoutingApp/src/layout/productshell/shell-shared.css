@@ -2048,7 +2048,7 @@
   .scouting-mobile-compact .scouting-mobile-save {
     gap: 3px;
     padding: 4px;
-    top: calc(env(safe-area-inset-top, 0px) + 94px);
+    top: calc(env(safe-area-inset-top, 0px) + 94px + var(--ps-offline-banner-height, 0px));
   }
 
   .scouting-mobile-compact .scouting-mobile-save-actions .center-btn,
@@ -2187,9 +2187,15 @@
     gap: 7px;
   }
 
+  /* A card's own item (a count, a status chip, a small control) shares the row
+     with minimize/fullscreen and keeps its own size. Stretching it to the full
+     width turned a "3 teams" chip into a text-box-looking bar and pushed the
+     card buttons onto a third row. Wide controls still wrap onto their own row. */
   .product-shell .surface-card-right {
-    width: 100%;
+    flex: 1 1 140px;
+    width: auto;
     display: grid;
+    justify-items: start;
     gap: 6px;
   }
 

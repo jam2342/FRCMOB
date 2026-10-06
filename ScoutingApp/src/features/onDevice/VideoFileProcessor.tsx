@@ -282,6 +282,7 @@ export function VideoFileProcessor({
   const activeAbortRef = useRef<AbortController | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'processing' | 'done' | 'error'>('idle');
   const [error, setError] = useState('');
+  const [fileName, setFileName] = useState('');
   const [progress, setProgress] = useState({
     frames: 0,
     detections: 0,
@@ -510,19 +511,30 @@ export function VideoFileProcessor({
     };
   }, []);
 
+  const busy = status === 'loading' || status === 'processing';
   return (
     <div className="video-file-processor">
-      <label className="field-calibration__file">
-        <input
-          type="file"
-          accept="video/*"
-          disabled={status === 'loading' || status === 'processing'}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void process(file);
-          }}
-        />
-      </label>
+      {/* The bare file input is wider than a 250px phone and looks unlike the
+          rest of the flow, so the button is the visible control. */}
+      <div className="odr-actions">
+        <label className="center-btn ghost odr-file-btn" aria-disabled={busy || undefined}>
+          {fileName ? 'Choose another video' : 'Choose a video'}
+          <input
+            type="file"
+            accept="video/*"
+            className="odr-file-input"
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setFileName(file.name);
+                void process(file);
+              }
+            }}
+          />
+        </label>
+      </div>
+      {fileName ? <p className="muted odr-file-name">{fileName}</p> : null}
       {status === 'loading' ? <p className="muted">Loading detector model…</p> : null}
       {status === 'processing' ? (
         <p className="muted">

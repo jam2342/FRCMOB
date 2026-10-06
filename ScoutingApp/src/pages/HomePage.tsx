@@ -344,6 +344,9 @@ export function HomePage() {
   const [loadingSelectedContext, setLoadingSelectedContext] = useState(false);
   const [, setStatusText] = useState('Loading Home feed...');
   const [errorText, setErrorText] = useState('');
+  // Rankings and the stream link are extras on top of the schedule. When TBA
+  // hiccups on them, say so quietly; the matches themselves still loaded.
+  const [contextErrorText, setContextErrorText] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [selectedDayMs, setSelectedDayMs] = useState(() => startOfLocalDay(Date.now()));
   const [teamsPanelOpen, setTeamsPanelOpen] = useState(false);
@@ -715,7 +718,7 @@ export function HomePage() {
       }
 
       if (shouldRefreshStatic) {
-        setErrorText(errors.join(' | '));
+        setContextErrorText(errors.join(' | '));
         setLastUpdatedAt(Date.now());
       }
       return errors.length === 0;
@@ -1823,7 +1826,7 @@ export function HomePage() {
       </aside>
       )}
 
-      <main className="home-fotmob-center">
+      <section className="home-fotmob-center" aria-label="Matches">
         <section className="home-fotmob-toolbar">
           <div className="home-fotmob-toolbar-left">
             <div className="home-day-switcher" role="group" aria-label="Change schedule day">
@@ -2154,6 +2157,11 @@ export function HomePage() {
           </section>
         ) : null}
 
+        {!errorText && contextErrorText ? (
+          <p className="center-callout muted" role="status">
+            Rankings or the stream link didn't load just now; matches are still up to date.
+          </p>
+        ) : null}
         {errorText ? (
           <EmptyState
             type="offline"
@@ -2438,7 +2446,7 @@ export function HomePage() {
             );
           })}
         </div>
-      </main>
+      </section>
 
       {/* Desktop right rail */}
       {!isMobileLayout && (

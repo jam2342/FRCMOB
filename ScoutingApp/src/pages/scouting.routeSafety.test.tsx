@@ -70,6 +70,15 @@ vi.mock('../api', () => ({
   })),
   setStoredRoomAccessToken: vi.fn(),
   scoutingRoomWebSocketUrl: vi.fn(() => 'ws://localhost/test-room'),
+  // No team room in these tests: they drive the keyed room path.
+  ensureTeamRoom: vi.fn(async () => { throw new Error('no team room in this test'); }),
+  getTeamRoom: vi.fn(async () => null),
+}));
+
+// The online monitor pings the real API; when that answer lands mid-test it
+// re-renders the page at a random moment. These tests are about rooms.
+vi.mock('../hooks/useOnlineStatus', () => ({
+  useOnlineStatus: () => ({ online: true, queueSize: 0, isShowingOfflineData: false }),
 }));
 
 // ScoutingPage is 4,500 lines and mounts the whole live-scouting workspace, so
@@ -77,6 +86,8 @@ vi.mock('../api', () => ({
 // competing for CPU. Under vitest's 5s default that reads as a failed assertion
 // rather than as "the box was busy", which is what it actually is.
 const HEAVY_RENDER_TIMEOUT_MS = 20_000;
+// Each wait inside a test gets most of that budget too, for the same reason.
+const FIND_TIMEOUT = { timeout: 15_000 };
 
 describe('Scouting route safety', () => {
   beforeEach(() => {
@@ -98,12 +109,26 @@ describe('Scouting route safety', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Scouting Mode', undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText('Scouting Mode', undefined, FIND_TIMEOUT)).toBeInTheDocument();
     expect(screen.getByText('Save + Data')).toBeInTheDocument();
     expect(screen.getByText('Match Timer')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Setup' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Room' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Data' })).toBeInTheDocument();
+  }, HEAVY_RENDER_TIMEOUT_MS);
+
+  it("uses the workspace name even if this device saved an older scout name", async () => {
+    localStorage.setItem('scouting_manual_profile_v1', 'Old Name');
+    render(
+      <MemoryRouter initialEntries={['/scouting']}>
+        <Routes>
+          <Route path="/scouting" element={<ScoutingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const input = await screen.findByLabelText('Scout Name', undefined, FIND_TIMEOUT);
+    expect((input as HTMLInputElement).value).toBe('Test Scout');
   }, HEAVY_RENDER_TIMEOUT_MS);
 
   it('does not clear session room key during page mount', async () => {
@@ -116,7 +141,7 @@ describe('Scouting route safety', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Scouting Mode', undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText('Scouting Mode', undefined, FIND_TIMEOUT)).toBeInTheDocument();
     expect(window.sessionStorage.getItem('scouting_room_active_key_v1')).toBe('room-persist');
   }, HEAVY_RENDER_TIMEOUT_MS);
   it('promotes and removes a secondary leader, restoring controls after failures', async () => {
@@ -128,23 +153,23 @@ describe('Scouting route safety', () => {
     });
     localStorage.setItem('scouting_manual_profile_v1', 'Scout A');
     render(<MemoryRouter><ScoutingPage /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole('tab', { name: 'Room' }, { timeout: 5000 }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Room' }, FIND_TIMEOUT));
     fireEvent.change(screen.getByLabelText('Scouting room key'), { target: { value: 'room-test' } });
     fireEvent.click(screen.getByRole('button', { name: 'Join Room' }));
 
     vi.mocked(addScoutingRoomSecondaryLeader).mockRejectedValueOnce(new Error('Promotion rejected'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Promote Scout B' }, { timeout: 5000 }));
-    expect(await screen.findByText('Promotion rejected', undefined, { timeout: 5000 })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Promote Scout B' }, FIND_TIMEOUT));
+    expect(await screen.findByText('Promotion rejected', undefined, FIND_TIMEOUT)).toBeInTheDocument();
     const promote = screen.getByRole('button', { name: 'Promote Scout B' });
     expect(promote).toBeEnabled();
     fireEvent.click(promote);
-    const remove = await screen.findByRole('button', { name: 'Remove Leader Scout B' }, { timeout: 5000 });
+    const remove = await screen.findByRole('button', { name: 'Remove Leader Scout B' }, FIND_TIMEOUT);
     expect(addScoutingRoomSecondaryLeader).toHaveBeenLastCalledWith('room-test', {
       scout_profile: 'Scout B', room_access_token: 'token-test',
     });
     vi.mocked(removeScoutingRoomSecondaryLeader).mockRejectedValueOnce(new Error('Removal rejected'));
     fireEvent.click(remove);
-    expect(await screen.findByText('Removal rejected', undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText('Removal rejected', undefined, FIND_TIMEOUT)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Leader Scout B' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Leader Scout B' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove Leader Scout B' })).not.toBeInTheDocument());

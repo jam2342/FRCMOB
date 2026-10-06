@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWorkspace, joinWorkspace, getMyWorkspace } from '../api';
+import { createWorkspace, ensureTeamRoom, getEventSchedule, joinWorkspace, getMyWorkspace } from '../api';
 import { MyTeamPage } from './MyTeamPage';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 import {
@@ -49,7 +49,56 @@ vi.mock('../api', () => ({
   rotateWorkspaceJoinCode: vi.fn(),
   setWorkspaceMemberRole: vi.fn(),
   updateMyWorkspace: vi.fn(),
+  ensureTeamRoom: vi.fn(),
+  getTeamRoom: vi.fn(async () => null),
+  getEventSchedule: vi.fn(),
 }));
+
+vi.mock('../hooks/useOnlineStatus', () => ({
+  useOnlineStatus: () => ({ online: true, queueSize: 0, isShowingOfflineData: false }),
+}));
+
+const WEEK0_SCHEDULE = {
+  ok: true,
+  event_key: '2026week0',
+  event_name: 'Week 0',
+  matches: [1, 2].map((n) => ({
+    match_key: `2026week0_qm${n}`,
+    display_name: `QM ${n}`,
+    comp_level: 'qm',
+    set_number: 1,
+    match_number: n,
+    is_completed: false,
+    red: [{ team_key: `frc${n}1` }, { team_key: `frc${n}2` }, { team_key: `frc${n}3` }],
+    blue: [{ team_key: `frc${n}4` }, { team_key: `frc${n}5` }, { team_key: `frc${n}6` }],
+  })),
+};
+
+function teamSnapshot(role: 'leader' | 'member') {
+  const me = role === 'leader'
+    ? { member_id: 1, display_name: 'Test Scout', role: 'leader' as const }
+    : { member_id: 2, display_name: 'Sam', role: 'member' as const };
+  return {
+    ok: true,
+    created: false,
+    room_key: 'team-room-1',
+    event_key: '2026week0',
+    me,
+    members: [
+      { member_id: 1, display_name: 'Test Scout', role: 'leader' as const },
+      { member_id: 2, display_name: 'Sam', role: 'member' as const },
+    ],
+    assignments: [{
+      match_key: '2026week0_qm2',
+      team_key: 'frc25',
+      assigned_member_id: 2,
+      assigned_display_name: 'Sam',
+      member_active: true,
+      covered: false,
+      covered_by_me: false,
+    }],
+  };
+}
 
 function renderPage() {
   return render(
@@ -155,6 +204,41 @@ describe('My Team page', () => {
     });
     fireEvent.focus(window);
     await waitFor(() => expect(getMyWorkspace).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('My Team scouting card', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    localStorage.setItem('scouting_center_event_key', '2026week0');
+    vi.mocked(getEventSchedule).mockResolvedValue(WEEK0_SCHEDULE as never);
+  });
+  afterEach(() => {
+    clearWorkspaceSession('left');
+  });
+
+  it("shows a member their next match with a one-tap way to scout it", async () => {
+    signInTestWorkspace('member', { id: 2, display_name: 'Sam' });
+    vi.mocked(ensureTeamRoom).mockResolvedValue(teamSnapshot('member') as never);
+    renderPage();
+
+    expect(await screen.findByText('Scouting at Week 0')).toBeTruthy();
+    expect(await screen.findByText('Your next match')).toBeTruthy();
+    expect(screen.getByText('QM 2')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Scout team 25' }).getAttribute('href'))
+      .toBe('/scouting?event=2026week0&match=2026week0_qm2&team=frc25');
+    expect(screen.queryByRole('link', { name: 'Assign matches' })).toBeNull();
+  });
+
+  it('shows a leader coverage and the way into assignments', async () => {
+    signInTestWorkspace('leader');
+    vi.mocked(ensureTeamRoom).mockResolvedValue(teamSnapshot('leader') as never);
+    renderPage();
+
+    expect(await screen.findByText('1 / 12')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Assign matches' }).getAttribute('href'))
+      .toBe('/scouting/assignments?event=2026week0');
   });
 });
 

@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getEventSchedule,
   syncOnDeviceSession,
+  type EventScheduleItem,
 } from '../../api';
+import { inferMatchCompleted } from '../../pages/matchStatus';
 import { RunResults } from './RunResults';
 import { useSavedRuns } from './useSavedRuns';
 import { FieldCalibration, type CalibrationCapture } from './FieldCalibration';
@@ -49,7 +51,25 @@ function initialContext(): { eventKey: string; matchKey: string } {
   if (typeof window === 'undefined') return { eventKey: '', matchKey: '' };
   const query = window.location.hash.split('?')[1] || '';
   const context = readCenterContextFromSearch(query ? `?${query}` : '');
-  return context.matchKey ? { eventKey: context.eventKey || '', matchKey: context.matchKey } : { eventKey: '', matchKey: '' };
+  const eventKey = context.eventKey || '';
+  // A remembered match from another event would load the wrong teams.
+  const matchKey = context.matchKey && (!eventKey || context.matchKey.startsWith(`${eventKey}_`)) ? context.matchKey : '';
+  return { eventKey, matchKey };
+}
+
+const MATCH_KEY_PATTERN = /^\d{4}[a-z0-9]+_(?:qm\d+|ef\d+m\d+|qf\d+m\d+|sf\d+m\d+|f\d+m\d+)$/;
+const EVENT_KEY_PATTERN = /^\d{4}[a-z0-9]{2,}$/;
+
+function teamsOf(match: EventScheduleItem): MatchTeam[] {
+  return [
+    ...match.red.map((t) => ({ teamKey: t.team_key, alliance: 'red' as const })),
+    ...match.blue.map((t) => ({ teamKey: t.team_key, alliance: 'blue' as const })),
+  ];
+}
+
+function matchOptionLabel(match: EventScheduleItem, played: boolean): string {
+  const name = match.display_name || match.match_key.split('_')[1]?.toUpperCase() || match.match_key;
+  return played ? `${name} (played)` : name;
 }
 
 // The on-device match-breakdown flow, end to end:
@@ -188,6 +208,18 @@ export function OnDeviceRun() {
     }
   }, [stage]);
 
+  // A phone is usually scrolled to the button that moved it on, which left the
+  // next step's instructions above the screen.
+  const stepsRef = useRef<HTMLDivElement>(null);
+  const shownStage = useRef(stage);
+  useEffect(() => {
+    if (shownStage.current === stage) return;
+    shownStage.current = stage;
+    if (stage === 'result') return;
+    const steps = stepsRef.current;
+    if (steps && steps.getBoundingClientRect().top < 64) steps.scrollIntoView?.({ block: 'start' });
+  }, [stage]);
+
   const candidateTeamKeys = useMemo(() => teams.map((t) => t.teamKey), [teams]);
 
   // ── setup ───────────────────────────────────────────────────────────
@@ -236,7 +268,7 @@ export function OnDeviceRun() {
     setLoadedContext('');
     setTeams([]);
     try {
-      if (!/^\d{4}[a-z0-9]+_(?:qm\d+|ef\d+m\d+|qf\d+m\d+|sf\d+m\d+|f\d+m\d+)$/.test(normalizedMatchKey)) {
+      if (!MATCH_KEY_PATTERN.test(normalizedMatchKey)) {
         throw new Error('Enter a match key such as 2026txhou_qm1.');
       }
       if (normalizedMatchKey.split('_')[0] !== normalizedEventKey) {
@@ -246,10 +278,7 @@ export function OnDeviceRun() {
       if (sequence !== setupSequence.current || currentSetupContext.current !== context) return;
       const match = sched.matches.find((m) => m.match_key === normalizedMatchKey);
       if (!match) throw new Error('Match not found in this event schedule.');
-      const loaded: MatchTeam[] = [
-        ...match.red.map((t) => ({ teamKey: t.team_key, alliance: 'red' as const })),
-        ...match.blue.map((t) => ({ teamKey: t.team_key, alliance: 'blue' as const })),
-      ];
+      const loaded = teamsOf(match);
       if (loaded.length === 0) throw new Error('No teams listed for this match yet.');
       resetRunState();
       setShift1ActiveAlliance('');
@@ -263,6 +292,56 @@ export function OnDeviceRun() {
       if (sequence === setupSequence.current) setSetupBusy(false);
     }
   }, [normalizedEventKey, normalizedMatchKey, resetRunState]);
+
+  // With the event known, pick the match from its schedule instead of typing
+  // "2026txhou_qm1" on a phone; typing stays available for anything else.
+  const [eventSchedule, setEventSchedule] = useState<{ eventKey: string; matches: EventScheduleItem[] } | null>(null);
+  const [typingMatchKey, setTypingMatchKey] = useState(false);
+  const scheduleEventKey = eventKey.trim().toLowerCase();
+  useEffect(() => {
+    if (!EVENT_KEY_PATTERN.test(scheduleEventKey)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      getEventSchedule(scheduleEventKey, false, { includeTeams: true })
+        .then((sched) => {
+          if (cancelled) return;
+          const matches = (sched.matches || []).filter((m) => m.red.length + m.blue.length > 0);
+          setEventSchedule(matches.length ? { eventKey: scheduleEventKey, matches } : null);
+        })
+        .catch(() => { if (!cancelled) setEventSchedule(null); });
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [scheduleEventKey]);
+  const pickerMatches = eventSchedule?.eventKey === scheduleEventKey ? eventSchedule.matches : null;
+  const showMatchPicker = Boolean(pickerMatches) && !typingMatchKey;
+
+  const pickMatch = useCallback((key: string) => {
+    const match = pickerMatches?.find((m) => m.match_key === key);
+    ++setupSequence.current;
+    setSetupBusy(false);
+    setSetupError('');
+    setShift1ActiveAlliance('');
+    setMatchKey(key);
+    if (!match) {
+      setLoadedContext('');
+      setTeams([]);
+      return;
+    }
+    resetRunState();
+    setTeams(teamsOf(match));
+    setLoadedContext(`${scheduleEventKey}:${key}`);
+  }, [pickerMatches, resetRunState, scheduleEventKey]);
+
+  // Start on the match being filmed: the one already picked, else the next unplayed one.
+  useEffect(() => {
+    if (!showMatchPicker || !pickerMatches || stage !== 'setup' || teamsReady) return;
+    const nowMs = Date.now();
+    const current = pickerMatches.find((m) => m.match_key === normalizedMatchKey);
+    const next = current
+      || pickerMatches.find((m) => !inferMatchCompleted(m, nowMs))
+      || pickerMatches[pickerMatches.length - 1];
+    if (next) pickMatch(next.match_key);
+  }, [showMatchPicker, pickerMatches, stage, teamsReady, normalizedMatchKey, pickMatch]);
 
   // ── calibrate ─────────────────────────────────────────────────────────
   const onCalibrated = useCallback((cal: CalibrationCapture) => {
@@ -660,7 +739,7 @@ export function OnDeviceRun() {
 
   return (
     <div className="on-device-run">
-      <div className="odr-steps" role="list">
+      <div className="odr-steps" role="list" ref={stepsRef}>
         {STAGES.map((s, i) => {
           const currentIdx = STAGES.indexOf(stage);
           const done = i < currentIdx;
@@ -689,6 +768,28 @@ export function OnDeviceRun() {
             to tell attack from defense.
           </p>
           <RecorderOfflineStatus />
+          {showMatchPicker && pickerMatches ? (
+          <div className="odr-form">
+            <label className="odr-field">
+              <span className="odr-label">Match at {scheduleEventKey}</span>
+              <select
+                className="odr-select"
+                value={pickerMatches.some((m) => m.match_key === normalizedMatchKey) ? normalizedMatchKey : ''}
+                onChange={(e) => pickMatch(e.target.value)}
+              >
+                {pickerMatches.some((m) => m.match_key === normalizedMatchKey) ? null : <option value="">Pick a match</option>}
+                {pickerMatches.map((m) => (
+                  <option key={m.match_key} value={m.match_key}>
+                    {matchOptionLabel(m, inferMatchCompleted(m, Date.now()))}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="center-btn ghost" onClick={() => setTypingMatchKey(true)}>
+              Type a match key instead
+            </button>
+          </div>
+          ) : (
           <div className="odr-form">
             <label className="odr-field">
               <span className="odr-label">Match key</span>
@@ -714,6 +815,8 @@ export function OnDeviceRun() {
               />
             </label>
           </div>
+          )}
+          {showMatchPicker ? null : (
           <div className="odr-actions">
             <button
               type="button"
@@ -723,7 +826,13 @@ export function OnDeviceRun() {
             >
               {setupBusy ? 'Loading…' : 'Load match teams'}
             </button>
+            {pickerMatches ? (
+              <button type="button" className="center-btn ghost" onClick={() => setTypingMatchKey(false)}>
+                Pick from the schedule
+              </button>
+            ) : null}
           </div>
+          )}
           {setupError ? <p className="odr-error" role="alert">{setupError}</p> : null}
           {teamsReady ? (
             <>
@@ -812,7 +921,7 @@ export function OnDeviceRun() {
                   setTimingAnchorSec(0);
                 }}
               >
-                {mode === 'camera' ? 'Record (camera)' : 'Upload video'}
+                {mode === 'camera' ? 'Record' : 'Upload video'}
               </button>
             ))}
           </div>

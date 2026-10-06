@@ -63,8 +63,9 @@ WORKSPACE_ACCESS_HEADER = "X-Workspace-Access"
 WORKSPACE_ACCESS_QUERY_PARAM = "workspace_access"
 ROOM_ROLE_OWNER = "owner"
 ROOM_ROLE_EDITOR = "editor"
+ROOM_ROLE_MEMBER = "member"
 ROOM_ROLE_VIEWER = "viewer"
-_ROOM_WRITE_ROLES = {ROOM_ROLE_OWNER, ROOM_ROLE_EDITOR}
+_ROOM_WRITE_ROLES = {ROOM_ROLE_OWNER, ROOM_ROLE_EDITOR, ROOM_ROLE_MEMBER}
 _TOKEN_ALGORITHM = "HS256"  # nosec B105
 _LEGACY_TOKEN_VERSION = "v1"  # nosec B105
 
@@ -236,7 +237,7 @@ def read_admin_session_token_from_request(request: Request) -> str:
 
 def normalize_room_role(value: str | None) -> str:
     token = str(value or "").strip().lower()
-    if token in {ROOM_ROLE_OWNER, ROOM_ROLE_EDITOR, ROOM_ROLE_VIEWER}:
+    if token in {ROOM_ROLE_OWNER, ROOM_ROLE_EDITOR, ROOM_ROLE_MEMBER, ROOM_ROLE_VIEWER}:
         return token
     # Unknown/malformed role must fail to the least-privileged role, not write access.
     return ROOM_ROLE_VIEWER

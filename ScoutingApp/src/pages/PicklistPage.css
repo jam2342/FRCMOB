@@ -81,6 +81,34 @@
   font-size: var(--type-caption-size);
 }
 
+button.picklist-rank--button {
+  min-height: var(--touch-target-compact);
+  padding: 0 var(--space-1);
+  border: 1px dashed color-mix(in srgb, var(--color-border-strong) 80%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.picklist-move {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.picklist-move-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.picklist-move-input {
+  width: 5rem;
+}
+
 .picklist-photo {
   width: 38px;
   height: 38px;
@@ -220,27 +248,36 @@
   }
 }
 
+/* Phones: one line per team (rank, team, tier, arrows) so a 75-team list is
+   a list, not three rows of buttons per team. Notes and the move form wrap
+   underneath. */
 @media (max-width: 720px) {
   .picklist-row {
-    align-items: stretch;
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
   }
 
   .picklist-team {
-    flex-basis: calc(100% - 6rem);
+    flex: 1 1 0;
+    align-items: center;
   }
 
   .picklist-nickname {
     display: none;
   }
 
-  .picklist-tier {
-    order: 4;
+  .picklist-photo {
+    width: 32px;
+    height: 32px;
   }
 
   .picklist-actions {
-    flex-basis: 100%;
-    justify-content: flex-start;
-    margin-left: 0;
+    flex-wrap: nowrap;
+  }
+
+  .picklist-tier {
+    padding: 0.15rem 0.45rem;
   }
 }
 

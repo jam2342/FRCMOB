@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 
@@ -151,6 +151,34 @@ describe('OnDeviceRun match lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load match teams' }));
     await screen.findByRole('button', { name: 'Continue to calibration' });
     expect(document.querySelector('.odr-teams')).toHaveTextContent('3');
+  });
+
+  it('offers the event schedule as a picker, starting on the next unplayed match', async () => {
+    const previousHash = window.location.hash;
+    window.location.hash = '#/scouting/record?event=2026test';
+    vi.mocked(getEventSchedule).mockResolvedValue({
+      matches: [
+        { ...matches[0], display_name: 'QM 1', winner_alliance: 'red' },
+        { ...matches[1], display_name: 'QM 2' },
+      ],
+    } as never);
+    try {
+      render(<OnDeviceRun />);
+      const picker = await screen.findByRole('combobox', { name: 'Match at 2026test' }, { timeout: 2000 });
+      await waitFor(() => expect(picker).toHaveValue('2026test_qm2'));
+      expect(screen.getByRole('option', { name: 'QM 1 (played)' })).toBeInTheDocument();
+      expect(document.querySelector('.odr-teams')).toHaveTextContent('RED3BLUE4');
+      expect(screen.getByRole('button', { name: 'Continue to calibration' })).toBeInTheDocument();
+
+      fireEvent.change(picker, { target: { value: '2026test_qm1' } });
+      expect(document.querySelector('.odr-teams')).toHaveTextContent('RED1BLUE2');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Type a match key instead' }));
+      expect(screen.getByPlaceholderText('e.g. 2026txhou_qm1')).toHaveValue('2026test_qm1');
+      expect(screen.getByRole('button', { name: 'Pick from the schedule' })).toBeInTheDocument();
+    } finally {
+      window.location.hash = previousHash;
+    }
   });
 
   it('rejects malformed pasted match keys without requesting a schedule', async () => {

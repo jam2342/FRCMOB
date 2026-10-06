@@ -1,0 +1,132 @@
+/* A scout's next assigned match. Tokens only; stacks on narrow phones. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.empty,
+.now {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.nextText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.kicker {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.match {
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+}
+
+.alliance {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.red {
+  background: var(--color-alliance-red-soft);
+  color: var(--color-alliance-red-text);
+}
+
+.blue {
+  background: var(--color-alliance-blue-soft);
+  color: var(--color-alliance-blue-text);
+}
+
+.when {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.scoutButton {
+  min-height: 44px;
+}
+
+.later summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.laterList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.laterButton {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.allLink {
+  color: var(--color-accent-text);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 420px) {
+  .next {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .scoutButton {
+    width: 100%;
+    justify-content: center;
+  }
+}

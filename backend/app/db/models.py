@@ -736,6 +736,7 @@ class ScoutingRoom(Base):
     event_key: Mapped[str | None] = mapped_column(
         ForeignKey("events.event_key"), nullable=True, index=True
     )
+    team_event_key: Mapped[str | None] = mapped_column(String, nullable=True)
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     created_by: Mapped[str | None] = mapped_column(String, nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
@@ -757,6 +758,10 @@ class ScoutingRoom(Base):
     entries: Mapped[list["ScoutingRoomEntry"]] = relationship(back_populates="room", lazy="select")
     assignments: Mapped[list["ScoutingRoomAssignment"]] = relationship(back_populates="room", lazy="select")
     leaders: Mapped[list["ScoutingRoomLeader"]] = relationship(back_populates="room", lazy="select")
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "team_event_key", name="uq_scouting_room_team_event"),
+    )
 
 class ScoutingRoomLeader(Base):
     __tablename__ = "scouting_room_leaders"
@@ -829,6 +834,9 @@ class ScoutingRoomAssignment(Base):
     )
     match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
     team_key: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), index=True)
+    assigned_member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("team_workspace_members.id", name="fk_scouting_room_assignment_member"), nullable=True
+    )
     assigned_scout_profile: Mapped[str] = mapped_column(String, index=True)
     assigned_scout_profile_norm: Mapped[str] = mapped_column(String, index=True)
     assigned_by_scout_profile: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

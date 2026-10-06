@@ -5,6 +5,17 @@ import { positionHeatmap, rawGridToHeatmap } from './resultHeatmaps';
 import { getWorkspaceSession, subscribeWorkspaceSession } from '../workspace/workspaceSession';
 import './OnDeviceRun.css';
 
+// The server sends a reason code; a scout needs to know what it means for them.
+function shiftPlayMissingText(reason: string): string {
+  if (reason === 'shift1_active_alliance_unavailable' || reason === 'missing_shift1_active_alliance') {
+    return "Offense and defense need the match's official results to know which hub was active first, and they aren't posted yet. The heatmaps are ready now.";
+  }
+  if (reason === 'analysis_failed') {
+    return "Offense and defense couldn't be worked out for this run. The heatmaps are still ready.";
+  }
+  return "Offense and defense aren't available for this run. The heatmaps are still ready.";
+}
+
 // 1–5 segmented level bar for offense/defense.
 function LevelMeter({
   label,
@@ -72,7 +83,7 @@ export function RunResults({ session, syncing = false }: { session: StoredSessio
         </>
       ) : null}
       {!result?.shift_play || Object.keys(result.shift_play).length === 0 ? (
-        <p className="odr-hint">{!session.synced ? 'Offense and defense estimates will appear after sync, when shift timing and enough track data are available.' : result?.shift_play_missing_reason ? `Offense and defense unavailable: ${result.shift_play_missing_reason.replace(/_/g, ' ')}.` : 'No saved offense or defense analysis for this run. The position heatmaps are still available.'}</p>
+        <p className="odr-hint">{!session.synced ? 'Offense and defense estimates will appear after sync, when shift timing and enough track data are available.' : result?.shift_play_missing_reason ? shiftPlayMissingText(result.shift_play_missing_reason) : 'No saved offense or defense analysis for this run. The position heatmaps are still available.'}</p>
       ) : null}
       <div className="odr-robots">
         {teams.map(([teamKey, points]) => {

@@ -131,7 +131,7 @@ describe('saved run results', () => {
     await seed({ ...run, synced: true, syncResult: { ...analysis, shift_play: null, shift_play_missing_reason: 'missing_shift1_active_alliance' } });
     render(<SavedRuns />);
     await openResults();
-    expect(screen.getByText(/Offense and defense unavailable: missing shift1 active alliance/)).toBeInTheDocument();
+    expect(screen.getByText(/need the match's official results/)).toBeInTheDocument();
     expect(screen.queryByText('4/5 · 80%')).toBeNull();
   });
 

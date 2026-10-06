@@ -21,6 +21,7 @@ from app.core.security import (
     ROOM_ACCESS_HEADER,
     ROOM_ROLE_EDITOR,
     ROOM_ROLE_OWNER,
+    ROOM_ROLE_MEMBER,
     issue_room_access_token,
     parse_room_access_token,
     require_write_access,
@@ -28,6 +29,9 @@ from app.core.security import (
 )
 from app.db import models
 from app.db.session import SessionLocal, get_db
+from app.services.scouting_rooms.team import (
+    apply_assignment_changes, load_team_room, room_assignments, team_snapshot,
+)
 from app.services.scouting_rooms.bus import scouting_room_bus
 from app.services.scouting_rooms.realtime import scouting_room_hub
 from app.services.utils import _clamp, pg_sqlstate_code as _pg_sqlstate_shared
@@ -37,6 +41,7 @@ from app.services.workspaces import (
     active_members,
     lock_workspace_row,
     require_workspace_actor,
+    require_workspace_writer,
 )
 
 router = APIRouter(prefix="/scouting/rooms", tags=["scouting-rooms"])
@@ -915,6 +920,7 @@ def _upsert_room_assignment(
             db.add(row)
         else:
             row.event_key = normalized_event
+            row.assigned_member_id = None
             row.assigned_scout_profile = normalized_assigned_scout
             row.assigned_scout_profile_norm = _normalize_scout_profile_lookup(normalized_assigned_scout)
             row.assigned_by_scout_profile = normalized_assigned_by
@@ -1176,6 +1182,8 @@ def _sync_room_metadata_for_join(
     now = datetime.now(timezone.utc)
     changed = False
 
+    if room.team_event_key and normalized_event_key and normalized_event_key != room.team_event_key:
+        raise HTTPException(status_code=422, detail="A team room stays with its event.")
     if normalized_event_key and room.event_key != normalized_event_key:
         room.event_key = normalized_event_key
         changed = True
@@ -1204,6 +1212,8 @@ def _resolve_room_role(
     secondary_leader_profiles: list[str] | None = None,
     workspace_leader: bool = False,
 ) -> str:
+    if room.team_event_key:
+        return ROOM_ROLE_OWNER if workspace_leader else ROOM_ROLE_MEMBER
     # Workspace leaders run every room their team opens.
     if workspace_leader:
         return ROOM_ROLE_OWNER
@@ -1455,10 +1465,12 @@ def release_scout_room_roles(db: Session, workspace_id: int, scout_name: str) ->
         models.ScoutingRoomLeader.scout_profile_norm == norm,
     ).delete(synchronize_session=False)
 
-def rename_scout_in_workspace_rooms(db: Session, workspace_id: int, old_name: str, new_name: str) -> None:
+def rename_scout_in_workspace_rooms(
+    db: Session, workspace_id: int, old_name: str, new_name: str, *, member_id: int | None = None,
+) -> None:
     old_norm = _normalize_scout_profile_lookup(old_name)
     new_profile = _normalize_scout_profile(new_name)
-    if not old_norm or not new_profile or old_norm == new_profile.lower():
+    if not old_norm or not new_profile:
         return
     rooms = db.execute(
         select(models.ScoutingRoom).where(models.ScoutingRoom.workspace_id == workspace_id)
@@ -1485,14 +1497,15 @@ def rename_scout_in_workspace_rooms(db: Session, workspace_id: int, old_name: st
         )
     ).scalars():
         # One leader row per name per room: merge instead of colliding.
-        if leader.room_key in already_leading:
+        if leader.room_key in already_leading and leader.scout_profile_norm != new_norm:
             db.delete(leader)
         else:
             leader.scout_profile, leader.scout_profile_norm = new_profile, new_norm
     for assignment in db.execute(
         select(models.ScoutingRoomAssignment).where(models.ScoutingRoomAssignment.room_key.in_(room_keys))
     ).scalars():
-        if assignment.assigned_scout_profile_norm == old_norm:
+        if (assignment.assigned_member_id == member_id if assignment.assigned_member_id is not None
+                else assignment.assigned_scout_profile_norm == old_norm):
             assignment.assigned_scout_profile = new_profile
             assignment.assigned_scout_profile_norm = new_profile.lower()
         if assignment.assigned_by_scout_profile_norm == old_norm:
@@ -1548,6 +1561,101 @@ class RoomKickRequest(BaseModel):
 
 class RoomLeaderUpdateRequest(BaseModel):
     scout_profile: str = Field(..., min_length=1, max_length=40)
+
+class TeamRoomRequest(BaseModel):
+    event_key: str = Field(min_length=1, max_length=48)
+    client_id: str | None = Field(default=None, max_length=80)
+
+
+class TeamAssignmentChange(BaseModel):
+    match_key: str = Field(min_length=1, max_length=80)
+    team_key: str = Field(min_length=1, max_length=24)
+    assigned_member_id: int | None
+
+
+class TeamAssignmentRequest(BaseModel):
+    changes: list[TeamAssignmentChange] = Field(min_length=1, max_length=2000)
+
+
+@router.post("/team")
+async def create_or_join_team_room(
+    request: TeamRoomRequest, http_request: Request, db: Session = Depends(get_db),
+):
+    require_write_access("Joining your team's scouting room")
+    actor = require_workspace_writer(http_request, db)
+    event_key = _normalize_event_key(request.event_key)
+    if not event_key or db.get(models.Event, event_key) is None:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    created = False
+    try:
+        room = load_team_room(db, actor.workspace_id, event_key)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        room = models.ScoutingRoom(
+            room_key=_generate_room_key(db), workspace_id=actor.workspace_id,
+            event_key=event_key, team_event_key=event_key,
+            created_by=actor.member.display_name if actor.is_leader else None, archived=False,
+        )
+        try:
+            # A savepoint preserves the workspace lock if uniqueness wins a race.
+            with db.begin_nested():
+                db.add(room)
+                db.flush()
+            created = True
+        except IntegrityError:
+            room = load_team_room(db, actor.workspace_id, event_key)
+    now = datetime.now(timezone.utc)
+    room.last_activity_at = now
+    actor.member.last_seen_at = now
+    db.commit()
+    snapshot = team_snapshot(db, actor, room)
+    role = ROOM_ROLE_OWNER if actor.is_leader else ROOM_ROLE_MEMBER
+    access = issue_room_access_token(
+        room_key=room.room_key, scout_profile=actor.member.display_name, role=role,
+    )
+    await _safe_touch_http_presence(
+        room.room_key, scout_profile=actor.member.display_name,
+        client_id=request.client_id, context="join team room",
+    )
+    return {
+        **snapshot, "created": created,
+        "access": {
+            "room_role": role, "room_access_token": access["token"],
+            "expires_at": access["expires_at"], "expires_at_unix": access["expires_at_unix"],
+            "ttl_sec": access["ttl_sec"], "header": ROOM_ACCESS_HEADER,
+        },
+    }
+
+
+@router.get("/team/{event_key}")
+def get_team_room(event_key: str, http_request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_actor(http_request, db)
+    room = load_team_room(db, actor.workspace_id, _normalize_event_key(event_key))
+    return team_snapshot(db, actor, room)
+
+
+@router.put("/team/{event_key}/assignments")
+async def update_team_assignments(
+    event_key: str, request: TeamAssignmentRequest, http_request: Request,
+    db: Session = Depends(get_db),
+):
+    require_write_access("Updating your team's assignments")
+    actor = require_workspace_writer(http_request, db)
+    if not actor.is_leader:
+        raise HTTPException(status_code=403, detail="Only workspace leaders can do that.")
+    room = load_team_room(db, actor.workspace_id, _normalize_event_key(event_key))
+    apply_assignment_changes(db, actor, room, request.changes)
+    snapshot = team_snapshot(db, actor, room)
+    await _broadcast_room_message(room.room_key, {
+        "type": "assignments_replaced", "room_key": room.room_key,
+        "event_key": room.event_key,
+        "assignments": [_serialize_assignment(row) for row in room_assignments(db, room)],
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "assigned_by": actor.member.display_name,
+    })
+    return snapshot
+
 
 @router.post("")
 async def create_or_join_room(
