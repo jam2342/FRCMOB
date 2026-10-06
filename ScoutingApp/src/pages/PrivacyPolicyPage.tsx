@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   AUTHOR_NAME,
   AUTHOR_SITE_URL,
@@ -12,7 +12,7 @@ import './LegalPage.css';
 export function PrivacyPolicyPage() {
   return (
     <div className="center-page-container narrow legal-page">
-      <SurfaceCardGroup>
+
         <SurfaceCard
           title="Privacy Policy"
           subtitle="What FRCMOB collects, why, and what it never collects."
@@ -235,7 +235,7 @@ export function PrivacyPolicyPage() {
             </p>
           </section>
         </SurfaceCard>
-      </SurfaceCardGroup>
+
     </div>
   );
 }

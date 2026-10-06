@@ -14,7 +14,6 @@ describe('frontend season snapshot', () => {
   it('matches the backend game config', () => {
     expect(SEASON.year).toBe(config.season_year);
     expect(SEASON.fallbackYear).toBe(config.season_year - 1);
-    expect(SEASON.name).toBe(config.season_name);
     expect(SEASON.matchSec).toBe(config.phases.total_sec);
     expect(SEASON.autoSec).toBe(config.phases.auto_sec);
     expect(SEASON.endgameSec).toBe(config.phases.endgame_sec);

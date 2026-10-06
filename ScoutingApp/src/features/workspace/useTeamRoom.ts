@@ -155,7 +155,12 @@ export function useTeamRoom(eventKey: string | null | undefined) {
     setStatus('loading');
 
     let cancelled = false;
+    let scheduleInFlight = false;
+    let pollInFlight = false;
+    let refreshQueued = false;
     const loadSchedule = async () => {
+      if (cancelled || document.visibilityState !== 'visible' || scheduleInFlight) return;
+      scheduleInFlight = true;
       try {
         const result = await getEventSchedule(event);
         if (cancelled || scopeRef.current !== scope) return;
@@ -168,6 +173,8 @@ export function useTeamRoom(eventKey: string | null | undefined) {
         if (cancelled || scopeRef.current !== scope) return;
         setSchedule((current) => current ?? []);
         setError((current) => current || errorText(err));
+      } finally {
+        scheduleInFlight = false;
       }
     };
     // Until the room opens, the 5 s poll retries it on a growing delay instead
@@ -190,43 +197,70 @@ export function useTeamRoom(eventKey: string | null | undefined) {
       }
     };
     const poll = async () => {
-      if (document.visibilityState !== 'visible' || savesInFlightRef.current > 0) return;
-      if (!roomOpen) {
-        if (Date.now() >= nextOpenAt) await open();
-        return;
-      }
-      const seq = nextSeq();
+      if (cancelled || document.visibilityState !== 'visible' || savesInFlightRef.current > 0 || pollInFlight) return;
+      pollInFlight = true;
       try {
-        const next = await getTeamRoom(event);
-        if (cancelled) return;
-        if (next) accept(next, scope, seq);
-        else {
-          roomOpen = false;
-          await open();
+        if (!roomOpen) {
+          if (Date.now() >= nextOpenAt) await open();
+          return;
         }
-      } catch {
-        // Keep showing the last good copy; the next poll or focus retries.
+        const seq = nextSeq();
+        try {
+          const next = await getTeamRoom(event);
+          if (cancelled) return;
+          if (next) accept(next, scope, seq);
+          else {
+            roomOpen = false;
+            await open();
+          }
+        } catch {
+          // Keep showing the last good copy; the next poll or focus retries.
+        }
+      } finally {
+        pollInFlight = false;
+        if (refreshQueued && !cancelled) {
+          refreshQueued = false;
+          void poll();
+        }
       }
     };
-    refetchRef.current = poll;
-    void loadSchedule();
-    void open();
-    const timer = window.setInterval(() => { void poll(); }, POLL_MS);
-    const scheduleTimer = window.setInterval(() => { void loadSchedule(); }, SCHEDULE_POLL_MS);
+    const refetch = async () => {
+      if (pollInFlight) { refreshQueued = true; return; }
+      await poll();
+    };
+    refetchRef.current = refetch;
+    let timer: number | undefined;
+    let scheduleTimer: number | undefined;
+    const stopTimers = () => {
+      window.clearInterval(timer);
+      window.clearInterval(scheduleTimer);
+      timer = scheduleTimer = undefined;
+    };
+    const startTimers = () => {
+      if (timer !== undefined) return;
+      timer = window.setInterval(() => { void poll(); }, POLL_MS);
+      scheduleTimer = window.setInterval(() => { void loadSchedule(); }, SCHEDULE_POLL_MS);
+    };
+    if (document.visibilityState === 'visible') {
+      void loadSchedule();
+      void poll();
+      startTimers();
+    }
     const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible') { stopTimers(); return; }
+      startTimers();
       nextOpenAt = 0;
       void poll();
+      void loadSchedule();
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
-      window.clearInterval(scheduleTimer);
+      stopTimers();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
-      if (refetchRef.current === poll) refetchRef.current = null;
+      if (refetchRef.current === refetch) refetchRef.current = null;
     };
   }, [accept, event, memberId, nextSeq, scope, workspaceId]);
 

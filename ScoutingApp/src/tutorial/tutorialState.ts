@@ -36,10 +36,6 @@ function emitTutorialProgressEvent(map: TutorialSeenMap): void {
   window.dispatchEvent(new CustomEvent<TutorialSeenMap>(SCOUTING_TUTORIAL_PROGRESS_EVENT, { detail: map }));
 }
 
-export function readTutorialSeenMap(): TutorialSeenMap {
-  return readRawMap();
-}
-
 export function hasSeenTutorial(scope: TutorialScope): boolean {
   const seen = readRawMap()[scope];
   return Number.isFinite(seen) && Number(seen) > 0;

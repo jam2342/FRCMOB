@@ -1,3 +1,6 @@
+import { EventCalendarModal } from './EventCalendarView';
+import { useCalendarExpansion, useEventCalendar } from './useEventCalendar';
+import { mergeEventLists } from '../utils/mergeEventLists';
 import { downloadCsv } from '../utils/csvExport';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -25,7 +28,7 @@ import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ActionOverflowMenu } from '../components/ui/ActionOverflowMenu';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Table } from '../components/ui/primitives';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
@@ -427,27 +430,6 @@ function eventLabel(event: EventSearchItem): string {
   return 'Location unavailable';
 }
 
-function mergeEventLists(...lists: EventSearchItem[][]): EventSearchItem[] {
-  const byKey = new Map<string, EventSearchItem>();
-  for (const list of lists) {
-    for (const event of list) {
-      const key = String(event.event_key || '').trim().toLowerCase();
-      if (!key) continue;
-      const previous = byKey.get(key);
-      if (!previous) {
-        byKey.set(key, event);
-        continue;
-      }
-      byKey.set(key, {
-        ...previous,
-        ...event,
-        start_date: event.start_date || previous.start_date,
-        end_date: event.end_date || previous.end_date,
-      });
-    }
-  }
-  return Array.from(byKey.values());
-}
 
 function eventTypeTags(event: EventSearchItem): string[] {
   const name = (event.name || '').toLowerCase();
@@ -460,19 +442,6 @@ function eventTypeTags(event: EventSearchItem): string[] {
   return tags;
 }
 
-function monthTokensForRange(startMs: number | null, endMs: number | null): string[] {
-  const firstMs = startMs ?? endMs;
-  const lastMs = endMs ?? startMs;
-  if (!firstMs || !lastMs) return [];
-  const tokens: string[] = [];
-  const cursor = new Date(Date.UTC(new Date(firstMs).getUTCFullYear(), new Date(firstMs).getUTCMonth(), 1));
-  const terminal = new Date(Date.UTC(new Date(lastMs).getUTCFullYear(), new Date(lastMs).getUTCMonth(), 1));
-  while (cursor <= terminal) {
-    tokens.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
-    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
-  }
-  return tokens;
-}
 
 const ALLIANCE_SLOTS: AllianceSlot[] = [
   {
@@ -569,35 +538,9 @@ export function EventsPage() {
     return `${year}-${month}`;
   });
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
-  const [expandedCalendarDays, setExpandedCalendarDays] = useState<Set<string>>(() => new Set());
+  const { expandedCalendarDays, toggleCalendarDayExpanded } = useCalendarExpansion(calendarModalOpen, calendarMonth, setCalendarModalOpen);
 
-  useEffect(() => {
-    if (!calendarModalOpen) {
-      setExpandedCalendarDays(new Set());
-      return;
-    }
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setCalendarModalOpen(false);
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [calendarModalOpen]);
 
-  useEffect(() => {
-    setExpandedCalendarDays(new Set());
-  }, [calendarMonth]);
-
-  const toggleCalendarDayExpanded = useCallback((token: string) => {
-    setExpandedCalendarDays((prev) => {
-      const next = new Set(prev);
-      if (next.has(token)) {
-        next.delete(token);
-      } else {
-        next.add(token);
-      }
-      return next;
-    });
-  }, []);
   const breakdownEventRef = useRef<string | null>(defaultEventKey || null);
   const lastEventContextRef = useRef('');
   const autoAdjustedCalendarMonthRef = useRef(false);
@@ -1484,35 +1427,7 @@ export function EventsPage() {
     [calendarSeasonEvents, regionFilter, suggestedEvents],
   );
 
-  const calendarEventRows = useMemo(() => {
-    return calendarSourceEvents
-      .map((event) => {
-        const resolved = resolveEventDateRange(event);
-        if (!resolved.startMs && !resolved.endMs) return null;
-        return {
-          event,
-          startMs: resolved.startMs,
-          endMs: resolved.endMs,
-        };
-      })
-      .filter((row): row is { event: EventSearchItem; startMs: number | null; endMs: number | null } => Boolean(row))
-      .sort((a, b) => {
-        const aMs = a.startMs ?? a.endMs ?? Number.MAX_SAFE_INTEGER;
-        const bMs = b.startMs ?? b.endMs ?? Number.MAX_SAFE_INTEGER;
-        if (aMs !== bMs) return aMs - bMs;
-        return a.event.event_key.localeCompare(b.event.event_key);
-      });
-  }, [calendarSourceEvents]);
-
-  const calendarAvailableMonths = useMemo(() => {
-    const months = new Set<string>();
-    for (const row of calendarEventRows) {
-      for (const token of monthTokensForRange(row.startMs, row.endMs)) {
-        months.add(token);
-      }
-    }
-    return Array.from(months).sort();
-  }, [calendarEventRows]);
+  const { modalDayEvents, modalGridDays, calendarAvailableMonths, visibleCalendarEvents, dateTbaCalendarEvents, calendarMonthLabel } = useEventCalendar(calendarSourceEvents, calendarMonth);
 
   useEffect(() => {
     if (autoAdjustedCalendarMonthRef.current) return;
@@ -1523,75 +1438,6 @@ export function EventsPage() {
     const nextMonth = calendarAvailableMonths.find((token) => token >= nowToken) || calendarAvailableMonths[0];
     if (nextMonth) setCalendarMonth(nextMonth);
   }, [calendarAvailableMonths, calendarMonth]);
-
-  const visibleCalendarEvents = useMemo(
-    () =>
-      calendarEventRows
-        .filter((row) => monthTokensForRange(row.startMs, row.endMs).includes(calendarMonth))
-        .map((row) => row.event),
-    [calendarEventRows, calendarMonth],
-  );
-
-  const dateTbaCalendarEvents = useMemo(
-    () =>
-      calendarSourceEvents
-        .filter((event) => {
-          const resolved = resolveEventDateRange(event);
-          return !resolved.startMs && !resolved.endMs;
-        })
-        .sort((a, b) => a.event_key.localeCompare(b.event_key)),
-    [calendarSourceEvents],
-  );
-
-  const modalDayEvents = useMemo(() => {
-    const map = new Map<string, EventSearchItem[]>();
-    for (const row of calendarEventRows) {
-      if (!row.startMs) continue;
-      const start = new Date(row.startMs);
-      const end = row.endMs ? new Date(row.endMs) : start;
-      const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
-      const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
-      while (cursor.getTime() <= endUtc.getTime()) {
-        const token = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${String(cursor.getUTCDate()).padStart(2, '0')}`;
-        const existing = map.get(token);
-        if (existing) {
-          existing.push(row.event);
-        } else {
-          map.set(token, [row.event]);
-        }
-        cursor.setUTCDate(cursor.getUTCDate() + 1);
-      }
-    }
-    return map;
-  }, [calendarEventRows]);
-
-  const modalGridDays = useMemo(() => {
-    const [yearStr, monthStr] = calendarMonth.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10) - 1;
-    if (!Number.isFinite(year) || !Number.isFinite(month)) return [];
-    const firstOfMonth = new Date(Date.UTC(year, month, 1));
-    const firstDay = firstOfMonth.getUTCDay();
-    const gridStart = new Date(firstOfMonth);
-    gridStart.setUTCDate(1 - firstDay);
-    const days: { date: Date; token: string; inMonth: boolean; dayNum: number }[] = [];
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(gridStart);
-      d.setUTCDate(gridStart.getUTCDate() + i);
-      const token = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-      days.push({ date: d, token, inMonth: d.getUTCMonth() === month, dayNum: d.getUTCDate() });
-    }
-    return days;
-  }, [calendarMonth]);
-
-  const calendarMonthLabel = useMemo(() => {
-    const [yearStr, monthStr] = calendarMonth.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10) - 1;
-    if (!Number.isFinite(year) || !Number.isFinite(month)) return calendarMonth;
-    const d = new Date(Date.UTC(year, month, 1));
-    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  }, [calendarMonth]);
 
   const openEvent = useCallback((eventKey: string) => {
     const normalized = eventKey.trim().toLowerCase();
@@ -2250,8 +2096,7 @@ export function EventsPage() {
           </SurfaceCard>
         ) : null}
 
-        {selectedEventKey && activeTab === 'overview' ? (
-          <SurfaceCardGroup groupId="event-center-overview">
+        {selectedEventKey && activeTab === 'overview' ? (<>
             {/* ── Mobile: FotMob-style overview ── */}
             {isMobileLayout ? (
               <div className="fm-content-stack">
@@ -2418,11 +2263,10 @@ export function EventsPage() {
             </SurfaceCard>
             </div>
             ) : null}
-          </SurfaceCardGroup>
+          </>
         ) : null}
 
         {selectedEventKey && activeTab === 'schedule' ? (
-          <SurfaceCardGroup groupId="event-center-schedule">
             <SurfaceCard title="Schedule" compactable>
             {loadingEventData ? (
               <div className="center-loading-state">
@@ -2655,11 +2499,10 @@ export function EventsPage() {
               </div>
             ) : null}
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
 
         {selectedEventKey && activeTab === 'breakdown' ? (
-          <SurfaceCardGroup groupId="event-center-breakdown">
             <SurfaceCard
               title="Event Breakdown"
               compactable
@@ -3003,11 +2846,10 @@ export function EventsPage() {
               ) : null}
             </section>
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
 
         {selectedEventKey && activeTab === 'rankings' ? (
-          <SurfaceCardGroup groupId="event-center-rankings">
             <SurfaceCard title="Rankings" compactable>
             {loadingEventData ? (
               <div className="center-loading-state">
@@ -3106,11 +2948,10 @@ export function EventsPage() {
               </div>
             ) : null}
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
 
         {selectedEventKey && activeTab === 'teams' ? (
-          <SurfaceCardGroup groupId="event-center-teams">
             <SurfaceCard title="Teams" compactable>
             {loadingEventData && eventTeamRows.length === 0 ? (
               <div className="center-loading-state">
@@ -3212,117 +3053,25 @@ export function EventsPage() {
               </div>
             ) : null}
             </SurfaceCard>
-          </SurfaceCardGroup>
+
         ) : null}
       </section>
     </div>
 
     {calendarModalOpen ? (
-      <div
-        className="home-calendar-modal-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Event calendar"
-        onClick={(event) => {
-          if (event.target === event.currentTarget) setCalendarModalOpen(false);
-        }}
-      >
-        <div className="home-calendar-modal">
-          <header className="home-calendar-modal-head">
-            <div className="home-calendar-modal-title">
-              <CalendarIcon className="icon-inline" />
-              <h2>{calendarMonthLabel}</h2>
-              <small>{visibleCalendarEvents.length} event{visibleCalendarEvents.length === 1 ? '' : 's'}</small>
-            </div>
-            <div className="home-calendar-modal-nav">
-              <button
-                type="button"
-                className="center-btn ghost home-calendar-nav-btn"
-                onClick={() => setCalendarMonth((current) => shiftMonthToken(current, -1))}
-                aria-label="Previous month"
-              >
-                <ChevronLeftIcon className="icon-inline" />
-              </button>
-              <button
-                type="button"
-                className="center-btn ghost home-calendar-nav-btn"
-                onClick={() => setCalendarMonth((current) => shiftMonthToken(current, 1))}
-                aria-label="Next month"
-              >
-                <ChevronRightIcon className="icon-inline" />
-              </button>
-              <button
-                type="button"
-                className="home-calendar-modal-close"
-                onClick={() => setCalendarModalOpen(false)}
-                aria-label="Close calendar"
-              >
-                ×
-              </button>
-            </div>
-          </header>
-          <div className="home-calendar-modal-weekdays">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
-              <div key={`events-weekday-${label}`} className="home-calendar-modal-weekday">{label}</div>
-            ))}
-          </div>
-          <div className="home-calendar-modal-grid">
-            {modalGridDays.map((day) => {
-              const events = modalDayEvents.get(day.token) || [];
-              const isExpanded = expandedCalendarDays.has(day.token);
-              const visible = isExpanded ? events : events.slice(0, 2);
-              const overflow = events.length - visible.length;
-              return (
-                <div
-                  key={`events-modal-day-${day.token}`}
-                  className={`home-calendar-modal-day ${day.inMonth ? '' : 'off-month'} ${isExpanded ? 'expanded' : ''}`.trim()}
-                >
-                  <div className="home-calendar-modal-day-num">{day.dayNum}</div>
-                  <div className="home-calendar-modal-day-events">
-                    {visible.map((event) => {
-                      const key = event.event_key.toLowerCase();
-                      return (
-                        <button
-                          key={`events-modal-chip-${day.token}-${event.event_key}`}
-                          type="button"
-                          className={`home-calendar-modal-chip ${selectedEventKey === key ? 'active' : ''}`.trim()}
-                          onClick={() => {
-                            openEvent(event.event_key);
-                            setCalendarModalOpen(false);
-                          }}
-                          title={event.name}
-                        >
-                          {event.name}
-                        </button>
-                      );
-                    })}
-                    {overflow > 0 ? (
-                      <button
-                        type="button"
-                        className="home-calendar-modal-more"
-                        onClick={() => toggleCalendarDayExpanded(day.token)}
-                        aria-expanded={false}
-                      >
-                        +{overflow} more
-                      </button>
-                    ) : null}
-                    {isExpanded && events.length > 2 ? (
-                      <button
-                        type="button"
-                        className="home-calendar-modal-more"
-                        onClick={() => toggleCalendarDayExpanded(day.token)}
-                        aria-expanded={true}
-                      >
-                        Show less
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      <EventCalendarModal
+        monthLabel={calendarMonthLabel}
+        eventCount={visibleCalendarEvents.length}
+        onClose={() => setCalendarModalOpen(false)}
+        onShiftMonth={(delta) => setCalendarMonth((current) => shiftMonthToken(current, delta))}
+        modalGridDays={modalGridDays}
+        modalDayEvents={modalDayEvents}
+        expandedCalendarDays={expandedCalendarDays}
+        toggleCalendarDayExpanded={toggleCalendarDayExpanded}
+        selectedEventKey={selectedEventKey}
+        eventKey={(event) => event.event_key.toLowerCase()}
+        onSelect={(event) => { openEvent(event.event_key); setCalendarModalOpen(false); }}
+      />
     ) : null}
     </div>
     </>

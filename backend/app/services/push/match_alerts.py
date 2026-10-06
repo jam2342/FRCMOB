@@ -122,6 +122,24 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
             notified = dict(sub.notified) if isinstance(sub.notified, dict) else {}
             changed = False
 
+            # Membership and this scout's assignments are the same for every match in
+            # the window, so check and load them once per subscriber (not per match).
+            room_key = str(prefs.get("room_key") or "").strip().lower()
+            scout_profile = str(prefs.get("scout_profile") or "").strip().lower()
+            shift_alerts = bool(prefs.get("shift_alerts")) and bool(room_key) and bool(scout_profile)
+            if shift_alerts and not _shift_alerts_still_allowed(db, prefs, room_key):
+                shift_alerts = False
+            assignment_by_match: dict[str, models.ScoutingRoomAssignment] = {}
+            if shift_alerts:
+                for assignment in db.execute(
+                    select(models.ScoutingRoomAssignment).where(
+                        models.ScoutingRoomAssignment.room_key == room_key,
+                        models.ScoutingRoomAssignment.match_key.in_(match_keys),
+                        models.ScoutingRoomAssignment.assigned_scout_profile_norm == scout_profile,
+                    )
+                ).scalars():
+                    assignment_by_match.setdefault(assignment.match_key, assignment)
+
             for match in matches:
                 match_time = int(match.predicted_time or match.time or 0)
                 if not (now_ts <= match_time <= now_ts + lead_sec):
@@ -155,21 +173,10 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
                         sent_count += 1
 
                 # Scouting shift alerts.
-                shift_alerts = bool(prefs.get("shift_alerts"))
-                room_key = str(prefs.get("room_key") or "").strip().lower()
-                scout_profile = str(prefs.get("scout_profile") or "").strip().lower()
-                if shift_alerts and room_key and scout_profile and not _shift_alerts_still_allowed(db, prefs, room_key):
-                    shift_alerts = False
-                if shift_alerts and room_key and scout_profile:
+                if shift_alerts:
                     dedupe_key = f"shift:{match.match_key}"
                     if dedupe_key not in notified:
-                        assignment = db.execute(
-                            select(models.ScoutingRoomAssignment).where(
-                                models.ScoutingRoomAssignment.room_key == room_key,
-                                models.ScoutingRoomAssignment.match_key == match.match_key,
-                                models.ScoutingRoomAssignment.assigned_scout_profile_norm == scout_profile,
-                            ).limit(1)
-                        ).scalar_one_or_none()
+                        assignment = assignment_by_match.get(match.match_key)
                         if assignment is not None:
                             team_number = str(assignment.team_key or "").removeprefix("frc")
                             ok = send_web_push(

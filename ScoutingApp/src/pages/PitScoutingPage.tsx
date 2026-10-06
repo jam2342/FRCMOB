@@ -12,7 +12,7 @@ import type { PitScoutingEntry } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { PIT_FORM_SECTIONS } from '../config/gameFields';
 import type { PitFieldDef } from '../config/gameFields';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
@@ -402,7 +402,7 @@ function PitScoutingWorkspacePage() {
     <>
       <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
       <div className="center-page-container">
-        <SurfaceCardGroup groupId="pit-scouting">
+
           <SurfaceCard
             title="Pit Scouting"
             subtitle="Robot specs, claimed capabilities, and photos — one entry per team."
@@ -544,7 +544,7 @@ function PitScoutingWorkspacePage() {
               </div>
             </SurfaceCard>
           ) : null}
-        </SurfaceCardGroup>
+
       </div>
     </>
   );

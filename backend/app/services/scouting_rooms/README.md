@@ -54,6 +54,5 @@ Cleanup jobs for stale rooms. If a room has had no active connections for a peri
 ## Dependencies
 
 - WebSockets — connection management
-- `analysis.elite_robot` — used by the elite detector for deep analysis
 - `EventTeamRating`, `TeamMatchFinding` — data sources for role classification
 - Redis — room state persistence across worker restarts

@@ -1,3 +1,4 @@
+import { cx } from '../components/ui/primitives/cx';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { searchTeams } from '../api';
@@ -41,10 +42,6 @@ import { useShellSettingsState } from './useShellSettingsState';
 import { Spinner } from '../components/ui/Spinner';
 import './ProductShell.css';
 
-/** Conditional className builder – falsy values are dropped. */
-function cx(...args: (string | false | null | undefined | 0)[]): string {
-  return args.filter(Boolean).join(' ');
-}
 
 // Each item carries its icon, so the collapsed rail has something to show.
 // Collapsed, every link used to render a 14x3px dash via ::before — eight

@@ -100,8 +100,8 @@ What accepting a session does:
 - auto-scout can draft scouting forms from it (drafts still need human approval);
 - it does **not** reach ratings (they load only official-truth findings, plus legacy
   broadcast rows that are all flagged ineligible);
-- it does **not** reach training: the auto-scout training export skips drafts whose
-  recording is not marked `training_eligible`, and every session is currently marked
+- it does **not** reach training: nothing trains on phone recordings (the auto-scout
+  training export was removed on 2026-10-05), and every session is still marked
   `training_eligible=false` with the blocker `real_phone_ground_truth_validation_pending`.
 
 Do not lift that quarantine based on a desktop or emulator benchmark. First validate

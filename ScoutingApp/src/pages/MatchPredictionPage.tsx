@@ -13,7 +13,7 @@ import type {
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
@@ -402,13 +402,12 @@ export function MatchPredictionPage() {
     navigate(buildMatchCenterPath('', matchKey));
   }
 
-  const surfaceGroupId = 'match-predictions';
 
   return (
     <>
     <PageViewBar items={MATCH_HUB_VIEWS} />
     <div className="center-page-container">
-      <SurfaceCardGroup groupId={surfaceGroupId}>
+
         {/* ---- Event Selection ---- */}
         {/* Named for what it holds. Both this card and the list below it were
             titled "Match Predictions", so the page had two identically named
@@ -521,7 +520,7 @@ export function MatchPredictionPage() {
             </pre>
           </SurfaceCard>
         ) : null}
-      </SurfaceCardGroup>
+
     </div>
     </>
   );

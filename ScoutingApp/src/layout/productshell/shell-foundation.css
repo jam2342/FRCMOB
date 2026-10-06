@@ -1085,7 +1085,7 @@ select.center-input option,
 /* ------------------------------------------------------------------ */
 
 /* The bar owns the space beneath it.
-   
+
    It used to own none, and every page below it was expected to supply its own
    padding — which meant Pit Scouting and Coverage had a 16px gap because
    .center-page-container pads, and Live Scouting had zero because its grid
@@ -1208,23 +1208,6 @@ select.center-input option,
 }
 
 /* Progress bar track + fill */
-.center-progress-track {
-  height: 7px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--color-bg) 40%, transparent);
-  overflow: hidden;
-  margin-top: 8px;
-}
-
-.center-progress-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-
-.center-progress-fill.tone-green { background: var(--color-success); }
-.center-progress-fill.tone-yellow { background: var(--color-warning); }
-.center-progress-fill.tone-red { background: var(--color-danger); }
 
 /* Filter chip row */
 .center-filter-chips {
@@ -1247,15 +1230,6 @@ select.center-input option,
 }
 
 /* Inline checkbox label */
-.center-checkbox-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--font-size-sm);
-  margin-left: auto;
-  cursor: pointer;
-  color: var(--color-text-muted);
-}
 
 /* Scout chip remove button */
 
@@ -3809,14 +3783,6 @@ select.center-input option,
   border-top: 1px solid #2f3d4a;
 }
 
-.compare-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 4px;
-  border-top: 1px solid #2f3d4a;
-}
-
 .compare-highlights-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -3943,41 +3909,6 @@ select.center-input option,
   overflow-wrap: anywhere;
 }
 
-.theoretical-builder-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.theoretical-team-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 10px;
-  background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent);
-}
-
-.theoretical-weight-grid,
-.theoretical-advanced-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 10px;
-  background: color-mix(in srgb, var(--color-bg-elevated) 64%, transparent);
-}
-
-.theoretical-weight-grid input[type='range'] {
-  accent-color: var(--color-accent-strong);
-}
-
-.favorites-overview-grid {
-  display: grid;
-  gap: 14px;
-}
-
 .favorites-card-grid {
   display: grid;
   gap: 12px;
@@ -4064,10 +3995,6 @@ select.center-input option,
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--card-stack-gap);
   min-width: 0;
-}
-
-.scouting-mobile-save {
-  display: none;
 }
 
 .scout-main-grid-extended {
@@ -5067,7 +4994,7 @@ select.center-input option,
   box-shadow: 0 10px 20px rgba(42, 71, 112, 0.08);
 }
 
-.product-shell.theme-light .compare-chip-row,
+
 .product-shell.theme-light .compare-header-card .center-tabs,
 .product-shell.theme-light .favorites-header-card .center-tabs,
 .product-shell.theme-light .compare-deep-card header {
@@ -5077,10 +5004,7 @@ select.center-input option,
 .product-shell.theme-light .compare-highlight-card,
 .product-shell.theme-light .compare-deep-card,
 .product-shell.theme-light .compare-signal-list,
-.product-shell.theme-light .favorites-item-card,
-.product-shell.theme-light .theoretical-team-grid,
-.product-shell.theme-light .theoretical-weight-grid,
-.product-shell.theme-light .theoretical-advanced-grid {
+.product-shell.theme-light .favorites-item-card {
   border-color: var(--color-border);
   background: var(--color-surface-soft);
   box-shadow: none;
@@ -5281,9 +5205,6 @@ select.center-input option,
   .compare-highlights-grid,
   .compare-deep-grid,
   .compare-pros-cons-grid,
-  .theoretical-team-grid,
-  .theoretical-weight-grid,
-  .theoretical-advanced-grid,
   .scout-main-grid,
   .scout-score-grid,
   .scout-pros-cons-grid,
@@ -5314,14 +5235,6 @@ select.center-input option,
 
   .home-mini-panel-head {
     flex-direction: column;
-  }
-
-  .scouting-mobile-save-actions {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .scouting-mobile-context-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

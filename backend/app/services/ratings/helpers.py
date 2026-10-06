@@ -182,9 +182,16 @@ def _percentile_map(
 ) -> dict[str, float]:
     return percentile_ranks(raw_by_key, higher_is_better=higher_is_better, default=default)
 
-def _fit_linear_model(x_values: list[float], y_values: list[float]) -> tuple[float, float]:
+def _fit_linear_model(
+    x_values: list[float],
+    y_values: list[float],
+    *,
+    empty_slope: float = 0.0,
+) -> tuple[float, float]:
+    # Ordinary least squares (intercept, slope). Synergy wants slope 1.0 when there
+    # is no data at all (pass the expectation through unchanged); ratings want 0.0.
     if len(x_values) != len(y_values) or not x_values:
-        return 0.0, 0.0
+        return 0.0, empty_slope
     if len(x_values) == 1:
         return float(y_values[0]), 0.0
 

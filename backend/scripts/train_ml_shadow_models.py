@@ -16,20 +16,12 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.core.config import settings
 from app.db import models
 from app.db.session import SessionLocal
-from app.services.auto_scout.ml import (
-    AUTO_SCOUT_FIELD_FEATURE_ORDER,
-    AUTO_SCOUT_FIELD_MODEL_PREFIX,
-    auto_scout_field_model_key,
-    normalize_auto_scout_field_name,
-)
-from app.services.auto_scout.training import auto_scout_training_source_version
 from app.services.ml.shadow import (
     MATCH_OUTCOME_FEATURE_ORDER,
     MATCH_OUTCOME_MODEL_KEY,
     TEAM_STRENGTH_FEATURE_ORDER,
     TEAM_STRENGTH_MODEL_KEY,
     rebuild_feature_snapshots,
-    train_auto_scout_field_shadow_model,
     train_match_outcome_shadow_model,
     train_role_signal_shadow_model,
     train_synergy_pair_shadow_model,
@@ -55,7 +47,6 @@ MIN_ROWS_BY_MODEL_KEY = {
     MATCH_OUTCOME_MODEL_KEY: 500,
     SYNERGY_PAIR_MODEL_KEY: 300,
 }
-MIN_ROWS_AUTO_SCOUT_FIELD = 200
 MIN_ROWS_ROLE_SIGNAL = 200
 
 
@@ -72,36 +63,10 @@ def _signal_name_from_role_model_key(model_key: object) -> str | None:
     return normalized if normalized in ROLE_SIGNAL_NAMES else None
 
 
-def _is_auto_scout_field_model_key(model_key: object) -> bool:
-    token = str(model_key or "").strip().lower()
-    return token.startswith(f"{AUTO_SCOUT_FIELD_MODEL_PREFIX}:")
-
-
-def _field_name_from_model_key(model_key: object) -> str | None:
-    if not _is_auto_scout_field_model_key(model_key):
-        return None
-    _, raw_field = str(model_key or "").strip().split(":", 1)
-    normalized = normalize_auto_scout_field_name(raw_field)
-    return normalized or None
-
-
 def _resolve_model_key(*, model_key: str | None, legacy_model: str | None, field_name: str | None) -> str:
     raw_model = str(model_key or legacy_model or "all").strip().lower()
     if raw_model in {TEAM_STRENGTH_MODEL_KEY, MATCH_OUTCOME_MODEL_KEY, SYNERGY_PAIR_MODEL_KEY, "all"}:
         return raw_model
-    if raw_model == AUTO_SCOUT_FIELD_MODEL_PREFIX:
-        normalized_field = normalize_auto_scout_field_name(field_name)
-        if not normalized_field:
-            raise RuntimeError(
-                "field_name is required when model-key is auto_scout_field. "
-                "Use --field-name offense_level_1_5 or --model-key auto_scout_field:offense_level_1_5."
-            )
-        return auto_scout_field_model_key(normalized_field)
-    if _is_auto_scout_field_model_key(raw_model):
-        normalized_field = _field_name_from_model_key(raw_model)
-        if not normalized_field:
-            raise RuntimeError("auto_scout_field model key is missing the field name.")
-        return auto_scout_field_model_key(normalized_field)
     if raw_model == ROLE_SIGNAL_MODEL_PREFIX:
         normalized_signal = normalize_role_signal_name(field_name)
         if not normalized_signal or normalized_signal not in ROLE_SIGNAL_NAMES:
@@ -120,7 +85,7 @@ def _resolve_model_key(*, model_key: str | None, legacy_model: str | None, field
         return role_signal_model_key(normalized_signal)
     raise RuntimeError(
         "Unsupported model key. Use one of: team_strength, match_outcome, synergy_pair, all, "
-        "auto_scout_field:<field_name>, or role_signal:<signal_name>."
+        "or role_signal:<signal_name>."
     )
 
 
@@ -128,8 +93,6 @@ def _source_version_for_model(model_key: str, explicit_source_version: str | Non
     explicit = str(explicit_source_version or "").strip()
     if explicit:
         return explicit
-    if _is_auto_scout_field_model_key(model_key):
-        return auto_scout_training_source_version()
     return str(getattr(settings, "ml_shadow_feature_source_version", "") or "").strip() or "shadow_features_v1"
 
 
@@ -140,16 +103,12 @@ def _feature_order_for_model(model_key: str) -> list[str]:
         return list(MATCH_OUTCOME_FEATURE_ORDER)
     if model_key == SYNERGY_PAIR_MODEL_KEY:
         return list(SYNERGY_PAIR_FEATURE_ORDER)
-    if _is_auto_scout_field_model_key(model_key):
-        return list(AUTO_SCOUT_FIELD_FEATURE_ORDER)
     if _is_role_signal_model_key(model_key):
         return list(ROLE_SIGNAL_FEATURE_ORDER)
     raise RuntimeError(f"Unsupported model key for feature-order lookup: {model_key}")
 
 
 def _min_rows_for_model(model_key: str) -> int:
-    if _is_auto_scout_field_model_key(model_key):
-        return MIN_ROWS_AUTO_SCOUT_FIELD
     if _is_role_signal_model_key(model_key):
         return MIN_ROWS_ROLE_SIGNAL
     return int(MIN_ROWS_BY_MODEL_KEY.get(model_key) or 500)
@@ -157,8 +116,6 @@ def _min_rows_for_model(model_key: str) -> int:
 
 def _scope_for_model(model_key: str) -> str:
     if model_key in {TEAM_STRENGTH_MODEL_KEY, MATCH_OUTCOME_MODEL_KEY, SYNERGY_PAIR_MODEL_KEY}:
-        return model_key
-    if _is_auto_scout_field_model_key(model_key):
         return model_key
     if _is_role_signal_model_key(model_key):
         return model_key
@@ -277,15 +234,6 @@ def _train_single_model(
             signal_name=signal_name,
             **common_kwargs,
         )
-    if _is_auto_scout_field_model_key(model_key):
-        field_name = _field_name_from_model_key(model_key)
-        if not field_name:
-            raise RuntimeError("auto_scout_field model key is missing the field name.")
-        return train_auto_scout_field_shadow_model(
-            db,
-            field_name=field_name,
-            **common_kwargs,
-        )
     raise RuntimeError(f"Unsupported model key: {model_key}")
 
 
@@ -300,7 +248,7 @@ def main() -> int:
     parser.add_argument(
         "--field-name",
         default=None,
-        help="Field for auto_scout_field model training when --model-key auto_scout_field is used.",
+        help="Signal name for role_signal training (e.g. scorer) when --model-key role_signal is used.",
     )
     parser.add_argument("--model-version", default=None)
     parser.add_argument("--source-version", default=None)

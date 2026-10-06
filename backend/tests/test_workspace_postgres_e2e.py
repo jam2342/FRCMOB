@@ -301,7 +301,8 @@ def test_private_notes_and_picklists_stay_in_workspace(beta):
     assert client.post("/pit-scouting", headers=headers(first), json={
         "event_key": EVENT_KEY, "team_key": "frc254", "payload": {"notes": "Private notes"}
     }).status_code == 200
-    assert client.get(f"/pit-scouting/{EVENT_KEY}/frc254", headers=headers(other)).json()["entry"] is None
+    other_entries = client.get("/pit-scouting", params={"event_key": EVENT_KEY}, headers=headers(other)).json()["entries"]
+    assert all(entry["team_key"] != "frc254" for entry in other_entries)
 
 
 @pytest.mark.parametrize("write_kind", ["pit", "picklist", "recording"])

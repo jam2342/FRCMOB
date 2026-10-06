@@ -6,7 +6,6 @@
 #
 # * ``app.api.teams.intel``  — search, team intel, event teams intel
 # * ``app.api.teams.media``  — robot image, team logo
-# * ``app.api.teams.stats``  — competitions, capability, event status, awards
 #
 # No business logic was changed during the split.
 
@@ -18,7 +17,6 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -60,9 +58,6 @@ _cache_key = _intel_cache_key
 _event_intel_cache_token = _intel_event_cache_token
 _team_intel_cache_token = _intel_team_cache_token
 
-class TeamCapabilityUpsertRequest(BaseModel):
-    ball_capacity: int | None = Field(default=None, ge=0, le=30)
-    notes: str | None = None
 
 def _matches_team_query(query: str, team_key: str, team_number: int, nickname: str | None) -> bool:
     lower_nickname = (nickname or "").lower()
@@ -217,18 +212,6 @@ def _media_candidate_years(base_years: list[int], lookback_years: int = 2) -> li
             years.append(candidate)
     return years
 
-def _serialize_team_capability(capability: models.TeamStaticCapability | None) -> dict:
-    if capability is None:
-        return {
-            "ball_capacity": None,
-            "notes": None,
-            "updated_at": None,
-        }
-    return {
-        "ball_capacity": capability.ball_capacity,
-        "notes": capability.notes,
-        "updated_at": capability.updated_at.isoformat() if capability.updated_at else None,
-    }
 
 def _now_unix() -> int:
     return int(time.time())
@@ -596,18 +579,6 @@ def _freshness_warnings_from_analysis_payload(payload: dict[str, Any]) -> list[s
         return []
     return [str(item).strip() for item in warnings if isinstance(item, str) and item.strip()]
 
-def _statbotics_norm_epa_from_context(statbotics_context: dict[str, Any]) -> float | None:
-    team_payload = (
-        statbotics_context.get("team")
-        if isinstance(statbotics_context, dict) and isinstance(statbotics_context.get("team"), dict)
-        else {}
-    )
-    norm_epa = team_payload.get("norm_epa") if isinstance(team_payload.get("norm_epa"), dict) else {}
-    for key in ("current", "recent", "mean", "max"):
-        value = _as_float(norm_epa.get(key))
-        if value is not None:
-            return value
-    return None
 
 def _analysis_snapshot_from_breakdown(payload: dict[str, Any]) -> dict[str, Any]:
     team_data = payload.get("team") if isinstance(payload.get("team"), dict) else {}
@@ -1983,11 +1954,9 @@ async def _build_event_teams_intel_payload(
 
 from app.api.teams.intel import router as _intel_router  # noqa: E402
 from app.api.teams.media import router as _media_router  # noqa: E402
-from app.api.teams.stats import router as _stats_router  # noqa: E402
 
 router.include_router(_intel_router)
 router.include_router(_media_router)
-router.include_router(_stats_router)
 
 # ── Register intel builders with the service layer ───────────────────────
 # This allows services (like intel_snapshots) to call these builders

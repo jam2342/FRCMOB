@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -14,9 +14,7 @@ from app.services.auto_scout.scouting import (
     _serialize_draft,
     approve_auto_scout_draft,
     generate_auto_scout_draft,
-    get_auto_scout_approval_telemetry,
     get_auto_scout_draft,
-    list_event_auto_scout_drafts,
     reject_auto_scout_draft,
 )
 
@@ -86,42 +84,6 @@ def get_draft(
     return {
         "ok": True,
         "draft": _serialize_draft(row, season_year=season_year) if row is not None else None,
-        "season_support": _draft_support_payload(season_year or 0) if season_year is not None else None,
-    }
-
-
-@router.get("/telemetry")
-def get_approval_telemetry(
-    event_key: str | None = None,
-    season_year: int | None = Query(default=None, ge=2020, le=2100),
-    mapper_version: str | None = None,
-    max_rows: int = Query(default=2500, ge=100, le=10000),
-    db: Session = Depends(get_db),
-):
-    return {
-        "ok": True,
-        "telemetry": get_auto_scout_approval_telemetry(
-            db,
-            event_key=event_key,
-            season_year=season_year,
-            mapper_version=mapper_version,
-            max_rows=max_rows,
-        ),
-    }
-
-
-@router.get("/event/{event_key}")
-def get_event_draft_readiness(
-    event_key: str,
-    db: Session = Depends(get_db),
-):
-    rows = list_event_auto_scout_drafts(db, event_key=event_key)
-    season_year = _season_year_for_event(db, event_key)
-    return {
-        "ok": True,
-        "event_key": str(event_key or "").strip().lower(),
-        "count": len(rows),
-        "drafts": [_serialize_draft(row, season_year=season_year) for row in rows],
         "season_support": _draft_support_payload(season_year or 0) if season_year is not None else None,
     }
 

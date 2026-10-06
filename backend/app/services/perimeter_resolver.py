@@ -81,15 +81,6 @@ class EventProfileLike(Protocol):
     country: str | None
 
 
-def normalize_perimeter_type(value: str | None, default: PerimeterType = "welded") -> PerimeterType:
-    normalized = (value or "").strip().lower()
-    if normalized == "andymark":
-        return "andymark"
-    if normalized == "welded":
-        return "welded"
-    return default
-
-
 def _normalize_state(state_prov: str | None) -> str:
     raw = (state_prov or "").strip().lower()
     if not raw:

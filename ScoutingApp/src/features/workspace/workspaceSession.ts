@@ -111,13 +111,6 @@ export function setWorkspaceSession(session: WorkspaceSession): void | Promise<v
   });
 }
 
-// Refresh the names/role shown in the UI without touching the token.
-export function updateWorkspaceSessionDetails(workspace: WorkspaceSummary, me: WorkspaceMe) {
-  const current = getWorkspaceSession();
-  if (!current || current.workspace.id !== workspace.id) return;
-  void Promise.resolve(setWorkspaceSession({ ...current, workspace, me })).catch(reportSecureStorageFailure);
-}
-
 export function rememberIssuedJoinCode(workspaceId: number, code: string) {
   issuedJoinCode = { workspaceId, code };
 }

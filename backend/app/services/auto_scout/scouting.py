@@ -13,7 +13,6 @@ from app.services.auto_scout.common import _safe_float, _clamp, _round, _match_t
 from app.db import models
 from app.services.analysis.runs import RUN_KIND_ON_DEVICE, best_on_device_run
 from app.services.auto_scout.shift_play import analyze_run_shift_play
-from app.services.auto_scout.predictors import PREDICTORS, PredictorContext
 from app.services.auto_scout.shift_play import ON_DEVICE_ANALYSIS_VERSION as ANALYSIS_VERSION
 from app.services.auto_scout.specs import (
     AUTO_SCOUT_DERIVED_INSIGHT_FIELDS_BY_SEASON,
@@ -365,6 +364,29 @@ def _build_notes_seed(derived_insights: dict[str, Any]) -> str:
     return " ".join(lines).strip()
 
 
+def _shift_play_for_team(
+    db: Session,
+    *,
+    run_id: int,
+    team_key: str,
+    cache: dict[int, dict[str, Any] | None] | None,
+) -> dict[str, Any] | None:
+    # A batch drafts all six robots of one recording: analyse the run once and share
+    # it. A single draft only needs its own robot.
+    try:
+        if cache is None:
+            return analyze_run_shift_play(db, run_id=run_id, only_team_key=team_key).get(team_key)
+        if run_id not in cache:
+            cache[run_id] = analyze_run_shift_play(db, run_id=run_id)
+    except ValueError:
+        # Shift order unknown (no phone value, no official breakdown): offense and
+        # defense can't be judged, so they stay blank.
+        if cache is not None:
+            cache[run_id] = None
+        return None
+    return (cache[run_id] or {}).get(team_key)
+
+
 def _build_ready_payload(
     *,
     db: Session,
@@ -372,11 +394,8 @@ def _build_ready_payload(
     team_key: str,
     run: models.AnalysisRun,
     run_context: models.AnalysisRunContext | None,
-    finding: models.TeamMatchFinding | None,
-    throughput: models.TeamMatchThroughput | None,
-    quality: models.AnalysisQuality | None,
-    events: list[models.MatchEvent],
     tracks: list[models.RobotTrack],
+    shift_cache: dict[int, dict[str, Any] | None] | None = None,
 ) -> tuple[str, dict[str, Any], dict[str, float], dict[str, str], dict[str, list[dict[str, Any]]], dict[str, Any], list[str]]:
     support = _draft_support_payload(season_year)
     if not support["supported"]:
@@ -390,28 +409,14 @@ def _build_ready_payload(
             ["game_year_unsupported"],
         )
 
-    supported_form_fields = tuple(_supported_form_fields(season_year))
     supported_derived_fields = set(_supported_derived_fields(season_year))
     priors = _field_priors(season_year)
     coverage, tracked_sec = _approx_track_coverage(tracks)
-    throughput_coverage = (
-        _safe_float((throughput.metric_coverage or {}).get("coverage_score"))
-        if throughput is not None and isinstance(throughput.metric_coverage, dict)
-        else None
-    )
-    tracking_quality = quality.tracking_quality_score if quality is not None else None
-    overall_quality = quality.overall_quality_score if quality is not None else None
-    calibration_ok = bool(run_context is not None and run_context.calibration_id is not None)
     coverage_summary = {
         "video_sec": _round(_match_total_sec(), 3),
         "tracked_sec": _round(tracked_sec, 3),
         "track_coverage_0_1": _round(coverage, 4),
-        "throughput_coverage_0_1": _round(throughput_coverage, 4),
-        "tracking_quality_score": _round(tracking_quality, 4),
-        "overall_quality_score": _round(overall_quality, 4),
-        "calibration_ok": calibration_ok,
         "track_rows": len(tracks),
-        "event_rows": len(events),
     }
 
     field_provenance = {field: "needs_review" for field in AUTO_SCOUT_FORM_FIELDS}
@@ -432,43 +437,12 @@ def _build_ready_payload(
     if coverage < _min_track_coverage(season_year):
         missing_reasons.append("low_track_coverage")
 
-    predictor_context = PredictorContext(
-        db=db,
-        season_year=season_year,
-        event_key=(
-            str(run_context.event_key or "").strip().lower()
-            if run_context is not None and getattr(run_context, "event_key", None)
-            else None
-        ),
-        match_key=str(run.match_key or "").strip().lower() if getattr(run, "match_key", None) else None,
-        team_key=str(team_key or "").strip().lower() if team_key else None,
-        analysis_run_id=int(run.id),
-        coverage=coverage,
-        throughput_coverage=throughput_coverage,
-        events=events,
-        tracks=tracks,
-        finding=finding,
-        throughput=throughput,
-        quality=quality,
-    )
+    # Drafts come only from accepted phone recordings, which upload positions and
+    # nothing else. Offense/defense come from the same shift-play assessment Attack vs
+    # Defense shows (defense only when it could be assessed); scoring, misses, fouls,
+    # intake and endgame stay blank for the scout rather than reading as zeros.
     if str(run.run_kind or "") == RUN_KIND_ON_DEVICE:
-        # Offense/defense come from the same shift-play assessment Attack vs Defense
-        # shows (defense only when it could be assessed). Every other field needs its own
-        # evidence: the phone uploads positions only, so without a finding or match
-        # events, scoring, misses, fouls, intake and endgame stay blank rather than
-        # reading as observed zeros.
-        has_scoring_evidence = finding is not None or bool(events) or throughput is not None
-        supported_form_fields = tuple(
-            field_name
-            for field_name in supported_form_fields
-            if has_scoring_evidence and field_name not in {"offense_level_1_5", "defense_level_1_5"}
-        )
-        try:
-            shift = analyze_run_shift_play(db, run_id=int(run.id), only_team_key=team_key).get(team_key)
-        except ValueError:
-            # Shift order unknown (no phone value, no official breakdown): offense and
-            # defense can't be judged, so they stay blank.
-            shift = None
+        shift = _shift_play_for_team(db, run_id=int(run.id), team_key=team_key, cache=shift_cache)
         if shift:
             for field_name, part in (("offense_level_1_5", shift["offense"]), ("defense_level_1_5", shift["defense"])):
                 if field_name not in AUTO_SCOUT_FORM_FIELDS:
@@ -482,29 +456,6 @@ def _build_ready_payload(
                     {"type": "shift_play", "ref_id": f"shift_play:run:{int(run.id)}", "t_sec": 0.0, "meta": {"team_key": team_key}}
                 ]
 
-    video_contract = (finding.summary or {}).get("video_evidence") if finding else None
-    for field_name in supported_form_fields:
-        if isinstance(video_contract, dict) and field_name not in video_contract.get("supported_form_fields", []):
-            continue
-        predictor = PREDICTORS.get(field_name)
-        if predictor is None:
-            continue
-        prediction = predictor(predictor_context)
-        if prediction is None:
-            continue
-        field_provenance[field_name] = str(prediction.provenance or "needs_review")
-        field_confidence[field_name] = _round(_clamp(float(prediction.confidence or 0.0)), 4) or 0.0
-        field_evidence_refs[field_name] = (
-            prediction.evidence_refs
-            if isinstance(prediction.evidence_refs, list)
-            else []
-        )
-        if field_provenance[field_name] == "auto" and prediction.value is not None:
-            draft_payload["form_patch"][field_name] = prediction.value
-
-    if isinstance(video_contract, dict):
-        supported_derived_fields = ()
-
     disabled_period, disabled_evidence, disabled_confidence = _estimate_disabled_period(tracks, coverage=coverage)
     if "disabled_period" in supported_derived_fields:
         if disabled_period is not None:
@@ -512,85 +463,6 @@ def _build_ready_payload(
             field_provenance["disabled_period"] = "auto"
             field_confidence["disabled_period"] = disabled_confidence
             field_evidence_refs["disabled_period"] = disabled_evidence
-
-    defensive_events = [event for event in events if str(event.event_type) == "protected_zone_interference"]
-    defensive_seconds = _safe_float(getattr(finding, "defensive_engagement_sec", None))
-    if "defensive_engagement_presence" in supported_derived_fields:
-        if defensive_seconds is not None:
-            presence = bool(defensive_seconds >= 4.0 or defensive_events)
-            defensive_confidence = _round(
-                min(
-                    0.95,
-                    (priors.get("defensive_engagement_presence", 0.8) * max(coverage, 0.45))
-                    + (0.12 if presence else 0.0)
-                    + (0.08 if defensive_events else 0.0),
-                ),
-                4,
-            ) or 0.0
-            draft_payload["derived_insights"]["defensive_engagement_presence"] = presence
-            field_provenance["defensive_engagement_presence"] = "auto"
-            field_confidence["defensive_engagement_presence"] = defensive_confidence
-            field_evidence_refs["defensive_engagement_presence"] = [
-                {
-                    "type": "match_event",
-                    "ref_id": f"match_event:{event.id}",
-                    "t_sec": float(event.time_sec),
-                    "meta": {
-                        "event_type": event.event_type,
-                        "confidence": _round(event.confidence, 4),
-                    },
-                }
-                for event in defensive_events[:8]
-            ] or [
-                {
-                    "type": "team_match_finding",
-                    "ref_id": f"team_match_finding:{finding.id}",
-                    "t_sec": 0.0,
-                    "meta": {"defensive_engagement_sec": _round(defensive_seconds, 3)},
-                }
-            ]
-
-    if "cycle_pace_summary" in supported_derived_fields and finding is not None:
-        cycle_time_sec = _safe_float(getattr(finding, "cycle_time_sec", None))
-        if cycle_time_sec is not None:
-            total_window_sec = max(1.0, float(_match_total_sec() - _match_auto_sec()))
-            est_cycles = round(total_window_sec / max(1.0, cycle_time_sec), 2)
-            coverage_hint = throughput_coverage if throughput_coverage is not None else coverage
-            cycle_confidence = _round(
-                min(
-                    0.93,
-                    (priors.get("cycle_pace_summary", 0.78) * max(float(coverage_hint), 0.45))
-                    + (0.12 if throughput is not None else 0.0),
-                ),
-                4,
-            ) or 0.0
-            draft_payload["derived_insights"]["cycle_pace_summary"] = {
-                "cycle_time_sec": _round(cycle_time_sec, 3),
-                "est_cycles": est_cycles,
-                "balls_shot_total": int(getattr(throughput, "balls_shot_total", 0) or 0) if throughput is not None else None,
-            }
-            field_provenance["cycle_pace_summary"] = "auto"
-            field_confidence["cycle_pace_summary"] = cycle_confidence
-            field_evidence_refs["cycle_pace_summary"] = [
-                {
-                    "type": "team_match_finding",
-                    "ref_id": f"team_match_finding:{finding.id}",
-                    "t_sec": 0.0,
-                    "meta": {
-                        "cycle_time_sec": _round(cycle_time_sec, 3),
-                        "auto_contribution": _round(getattr(finding, "auto_contribution", None), 3),
-                    },
-                }
-            ]
-            if throughput is not None:
-                field_evidence_refs["cycle_pace_summary"].append(
-                    {
-                        "type": "team_match_throughput",
-                        "ref_id": f"team_match_throughput:{throughput.finding_id}",
-                        "t_sec": 0.0,
-                        "meta": throughput.metric_coverage or {},
-                    }
-                )
 
     zone_dwell = _zone_dwell_breakdown(tracks)
     if "zone_dwell_breakdown" in supported_derived_fields:
@@ -616,7 +488,7 @@ def _build_ready_payload(
     status = "ready"
     if missing_reasons or any(
         field_provenance.get(key) == "auto" and float(field_confidence.get(key) or 0.0) < 0.72
-        for key in list(supported_form_fields) + list(supported_derived_fields)
+        for key in supported_derived_fields
     ):
         status = "low_confidence"
 
@@ -697,289 +569,10 @@ def list_event_auto_scout_drafts(
     return list(latest_by_slot.values())
 
 
-def get_auto_scout_approval_telemetry(
-    db: Session,
-    *,
-    event_key: str | None = None,
-    season_year: int | None = None,
-    mapper_version: str | None = None,
-    max_rows: int = 2500,
-) -> dict[str, Any]:
-    normalized_event_key = _normalize_key(event_key) if event_key is not None else None
-    mapper_token = str(mapper_version or "").strip()
-    bounded_limit = max(100, min(int(max_rows or 2500), 10000))
-
-    query = db.query(models.AutoScoutDraft).filter(models.AutoScoutDraft.status == "approved")
-    if normalized_event_key:
-        query = query.filter(models.AutoScoutDraft.event_key == normalized_event_key)
-    if mapper_token:
-        query = query.filter(models.AutoScoutDraft.mapper_version == mapper_token)
-    if isinstance(season_year, int):
-        query = (
-            query.join(models.Event, models.Event.event_key == models.AutoScoutDraft.event_key)
-            .filter(models.Event.year == int(season_year))
-        )
-
-    rows = (
-        query.order_by(
-            models.AutoScoutDraft.approved_at.desc().nullslast(),
-            models.AutoScoutDraft.id.desc(),
-        )
-        .limit(bounded_limit)
-        .all()
-    )
-    if not rows:
-        return {
-            "approved_draft_count": 0,
-            "window_rows": 0,
-            "filters": {
-                "event_key": normalized_event_key,
-                "season_year": int(season_year) if isinstance(season_year, int) else None,
-                "mapper_version": mapper_token or None,
-                "max_rows": bounded_limit,
-            },
-            "override_rate_by_field": {},
-            "override_rate_when_present_by_field": {},
-            "time_to_approve_sec": {
-                "avg": None,
-                "p50": None,
-                "p90": None,
-                "count": 0,
-            },
-            "confidence_calibration_by_field": {},
-        }
-
-    event_years = _event_year_map(
-        db,
-        {
-            _normalize_key(row.event_key)
-            for row in rows
-            if _normalize_key(row.event_key)
-        },
-    )
-    fields_by_year: dict[int, tuple[str, ...]] = {
-        year: _supported_form_fields(year)
-        for year in set(event_years.values())
-    }
-    all_fields = sorted(
-        {
-            field
-            for year_fields in fields_by_year.values()
-            for field in year_fields
-        }
-    )
-    if not all_fields:
-        all_fields = sorted(AUTO_SCOUT_FORM_FIELDS)
-
-    override_counts: dict[str, int] = {field: 0 for field in all_fields}
-    present_counts: dict[str, int] = {field: 0 for field in all_fields}
-    calibration: dict[str, dict[str, dict[str, float]]] = {}
-    approval_durations_sec: list[float] = []
-
-    for row in rows:
-        row_event_key = _normalize_key(row.event_key)
-        row_year = event_years.get(row_event_key)
-        row_fields = (
-            set(fields_by_year.get(row_year, ()))
-            if row_year is not None
-            else set(all_fields)
-        )
-        if not row_fields:
-            continue
-
-        auto_form = _form_patch(row.draft_payload)
-        approved_form = _form_patch(row.approved_payload)
-        overrides = row.field_overrides if isinstance(row.field_overrides, dict) else {}
-        provenance = row.field_provenance if isinstance(row.field_provenance, dict) else {}
-        confidence = row.field_confidence if isinstance(row.field_confidence, dict) else {}
-
-        if isinstance(row.approved_at, datetime) and isinstance(row.generated_at, datetime):
-            delta_sec = max(0.0, (row.approved_at - row.generated_at).total_seconds())
-            approval_durations_sec.append(delta_sec)
-
-        for field_name in row_fields:
-            if field_name not in override_counts:
-                override_counts[field_name] = 0
-                present_counts[field_name] = 0
-            if field_name in auto_form:
-                present_counts[field_name] = int(present_counts.get(field_name) or 0) + 1
-            if field_name in overrides:
-                override_counts[field_name] = int(override_counts.get(field_name) or 0) + 1
-
-            if str(provenance.get(field_name) or "") != "auto":
-                continue
-            if field_name not in auto_form:
-                continue
-            confidence_value = _safe_float(confidence.get(field_name))
-            if confidence_value is None:
-                continue
-            bucket = f"{_clamp(float(confidence_value), 0.0, 1.0):.1f}"
-            field_bins = calibration.setdefault(field_name, {})
-            bin_row = field_bins.setdefault(
-                bucket,
-                {"count": 0.0, "accepted_sum": 0.0, "confidence_sum": 0.0},
-            )
-            auto_value = auto_form.get(field_name)
-            approved_value = approved_form.get(field_name, auto_value)
-            accepted = 1.0 if approved_value == auto_value else 0.0
-            bin_row["count"] = float(bin_row["count"]) + 1.0
-            bin_row["accepted_sum"] = float(bin_row["accepted_sum"]) + accepted
-            bin_row["confidence_sum"] = float(bin_row["confidence_sum"]) + _clamp(
-                float(confidence_value), 0.0, 1.0
-            )
-
-    approved_count = len(rows)
-    override_rate_by_field = {
-        field: _round(float(override_counts.get(field) or 0) / float(max(1, approved_count)), 4)
-        for field in sorted(override_counts)
-    }
-    override_rate_when_present_by_field = {
-        field: _round(float(override_counts.get(field) or 0) / float(max(1, present_counts.get(field) or 0)), 4)
-        for field in sorted(override_counts)
-    }
-
-    sorted_durations = sorted(float(value) for value in approval_durations_sec)
-    avg_duration = (
-        float(sum(sorted_durations) / float(len(sorted_durations)))
-        if sorted_durations
-        else None
-    )
-    confidence_calibration_by_field: dict[str, list[dict[str, Any]]] = {}
-    for field_name, bins in calibration.items():
-        bucket_rows: list[dict[str, Any]] = []
-        for bucket in sorted(bins, key=lambda raw: float(raw)):
-            row = bins[bucket]
-            count = int(row.get("count") or 0)
-            if count <= 0:
-                continue
-            bucket_rows.append(
-                {
-                    "bucket": bucket,
-                    "samples": count,
-                    "avg_confidence_0_1": _round(float(row["confidence_sum"]) / float(count), 4),
-                    "approval_rate_0_1": _round(float(row["accepted_sum"]) / float(count), 4),
-                }
-            )
-        confidence_calibration_by_field[field_name] = bucket_rows
-
-    return {
-        "approved_draft_count": approved_count,
-        "window_rows": approved_count,
-        "filters": {
-            "event_key": normalized_event_key,
-            "season_year": int(season_year) if isinstance(season_year, int) else None,
-            "mapper_version": mapper_token or None,
-            "max_rows": bounded_limit,
-        },
-        "override_rate_by_field": override_rate_by_field,
-        "override_rate_when_present_by_field": override_rate_when_present_by_field,
-        "time_to_approve_sec": {
-            "avg": _round(avg_duration, 3),
-            "p50": _round(_percentile(sorted_durations, 0.5), 3),
-            "p90": _round(_percentile(sorted_durations, 0.9), 3),
-            "count": len(sorted_durations),
-        },
-        "confidence_calibration_by_field": confidence_calibration_by_field,
-    }
-
-
 # Confidence-bucket boundaries: a "high-confidence" prediction is one we currently
 # treat as ready (>= 0.72 maps to the 0.7 bucket and up); "low-confidence" is below.
 _HIGH_CONFIDENCE_BUCKET_FLOOR = 0.7
 _LOW_CONFIDENCE_BUCKET_CEIL = 0.6
-
-
-def summarize_auto_scout_confidence_calibration(
-    db: Session,
-    *,
-    event_key: str | None = None,
-    season_year: int | None = None,
-    mapper_version: str | None = None,
-    max_rows: int = 2500,
-    min_samples: int = 8,
-) -> dict[str, Any]:
-    # Make calibration visible before retuning any confidence formula. Reads the same
-    # approval telemetry humans generate by approving/overriding drafts and reports,
-    # per field, where our confidence is lying.
-    telemetry = get_auto_scout_approval_telemetry(
-        db,
-        event_key=event_key,
-        season_year=season_year,
-        mapper_version=mapper_version,
-        max_rows=max_rows,
-    )
-    calibration_by_field = telemetry.get("confidence_calibration_by_field") or {}
-    override_rate_by_field = telemetry.get("override_rate_by_field") or {}
-    override_rate_when_present = telemetry.get("override_rate_when_present_by_field") or {}
-
-    fields: dict[str, dict[str, Any]] = {}
-    for field_name in sorted(calibration_by_field):
-        buckets = calibration_by_field.get(field_name) or []
-        total_samples = sum(int(bucket.get("samples") or 0) for bucket in buckets)
-
-        high_samples = 0
-        high_accepted = 0.0
-        low_samples = 0
-        low_accepted = 0.0
-        worst_bucket: dict[str, Any] | None = None
-        for bucket in buckets:
-            samples = int(bucket.get("samples") or 0)
-            if samples <= 0:
-                continue
-            bucket_floor = _safe_float(bucket.get("bucket"))
-            approval_rate = _safe_float(bucket.get("approval_rate_0_1"))
-            if bucket_floor is None or approval_rate is None:
-                continue
-            accepted = approval_rate * samples
-            if bucket_floor >= _HIGH_CONFIDENCE_BUCKET_FLOOR:
-                high_samples += samples
-                high_accepted += accepted
-            elif bucket_floor < _LOW_CONFIDENCE_BUCKET_CEIL:
-                low_samples += samples
-                low_accepted += accepted
-            if worst_bucket is None or approval_rate < float(worst_bucket["approval_rate_0_1"]):
-                worst_bucket = bucket
-
-        high_conf_override_rate = (
-            _round(1.0 - (high_accepted / float(high_samples)), 4) if high_samples > 0 else None
-        )
-        low_conf_approval_rate = (
-            _round(low_accepted / float(low_samples), 4) if low_samples > 0 else None
-        )
-
-        if total_samples < int(min_samples):
-            recommendation = "insufficient_data"
-        elif high_conf_override_rate is not None and high_conf_override_rate >= 0.30:
-            # Humans keep overriding picks we labelled high-confidence -> we're overconfident.
-            recommendation = "lower_confidence"
-        elif (
-            low_conf_approval_rate is not None
-            and low_samples >= max(4, int(min_samples) // 2)
-            and low_conf_approval_rate >= 0.80
-        ):
-            # Our low-confidence picks are usually accepted -> threshold may be too strict.
-            recommendation = "eligible_for_threshold_raise"
-        else:
-            recommendation = "watch"
-
-        fields[field_name] = {
-            "samples": total_samples,
-            "override_rate_0_1": override_rate_by_field.get(field_name),
-            "override_rate_when_present_0_1": override_rate_when_present.get(field_name),
-            "high_confidence_samples": high_samples,
-            "high_confidence_override_rate_0_1": high_conf_override_rate,
-            "low_confidence_samples": low_samples,
-            "low_confidence_approval_rate_0_1": low_conf_approval_rate,
-            "worst_confidence_bucket": worst_bucket,
-            "recommendation": recommendation,
-        }
-
-    return {
-        "approved_draft_count": telemetry.get("approved_draft_count", 0),
-        "filters": telemetry.get("filters", {}),
-        "min_samples": int(min_samples),
-        "fields": fields,
-    }
 
 
 def _aggregate_profile_field(
@@ -1139,6 +732,7 @@ def generate_auto_scout_draft(
     match_key: str,
     team_key: str,
     force_regenerate: bool = False,
+    shift_cache: dict[int, dict[str, Any] | None] | None = None,
 ) -> tuple[models.AutoScoutDraft, bool]:
     normalized_event_key = _normalize_key(event_key)
     normalized_match_key = _normalize_key(match_key)
@@ -1218,12 +812,8 @@ def generate_auto_scout_draft(
     if (
         not force_regenerate
         and latest is not None
-        and latest.status in READY_STATUSES | {"approved"}
-        and (
-            current_run is None
-            or latest.analysis_run_id == current_run.id
-            or latest.status == "approved"
-        )
+        and latest.status in READY_STATUSES
+        and (current_run is None or latest.analysis_run_id == current_run.id)
     ):
         return latest, False
 
@@ -1269,25 +859,6 @@ def generate_auto_scout_draft(
         db.refresh(row)
         return row, created
 
-    finding = (
-        db.query(models.TeamMatchFinding)
-        .filter(
-            models.TeamMatchFinding.analysis_run_id == current_run.id,
-            models.TeamMatchFinding.team_key == normalized_team_key,
-        )
-        .first()
-    )
-    throughput = db.get(models.TeamMatchThroughput, finding.id) if finding is not None else None
-    quality = db.get(models.AnalysisQuality, current_run.id)
-    events = (
-        db.query(models.MatchEvent)
-        .filter(
-            models.MatchEvent.analysis_run_id == current_run.id,
-            models.MatchEvent.team_key == normalized_team_key,
-        )
-        .order_by(models.MatchEvent.time_sec.asc(), models.MatchEvent.id.asc())
-        .all()
-    )
     tracks = (
         db.query(models.RobotTrack)
         .filter(
@@ -1353,11 +924,8 @@ def generate_auto_scout_draft(
         team_key=normalized_team_key,
         run=current_run,
         run_context=current_context,
-        finding=finding,
-        throughput=throughput,
-        quality=quality,
-        events=events,
         tracks=tracks,
+        shift_cache=shift_cache,
     )
     existing = (
         db.query(models.AutoScoutDraft)
@@ -1443,6 +1011,7 @@ def generate_auto_scout_drafts_for_match(
         "draft_ids_by_team": {},
     }
 
+    shift_cache: dict[int, dict[str, Any] | None] = {}
     for match_team in match_teams:
         team_key = _normalize_key(match_team.team_key)
         try:
@@ -1452,6 +1021,7 @@ def generate_auto_scout_drafts_for_match(
                 match_key=normalized_match_key,
                 team_key=team_key,
                 force_regenerate=force_regenerate,
+                shift_cache=shift_cache,
             )
         except HTTPException as exc:
             db.rollback()
@@ -1507,23 +1077,12 @@ def approve_auto_scout_draft(
     db.add(row)
     db.commit()
     db.refresh(row)
-    telemetry = get_auto_scout_approval_telemetry(
-        db,
-        event_key=row.event_key,
-        mapper_version=row.mapper_version,
-        max_rows=2000,
-    )
     logger.info(
-        "auto_scout_approval_metrics event=%s mapper=%s approved=%s avg_tta_sec=%s p50_tta_sec=%s "
-        "override_rate_auto_mobility=%s override_rate_teleop_scored=%s override_rate_offense_level=%s",
+        "auto_scout_draft_approved event=%s match=%s team=%s overrides=%d",
         row.event_key,
-        row.mapper_version,
-        telemetry.get("approved_draft_count"),
-        (telemetry.get("time_to_approve_sec") or {}).get("avg"),
-        (telemetry.get("time_to_approve_sec") or {}).get("p50"),
-        (telemetry.get("override_rate_by_field") or {}).get("auto_mobility"),
-        (telemetry.get("override_rate_by_field") or {}).get("teleop_scored"),
-        (telemetry.get("override_rate_by_field") or {}).get("offense_level_1_5"),
+        row.match_key,
+        row.team_key,
+        len(overrides),
     )
     return row, overrides
 

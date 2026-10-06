@@ -172,8 +172,6 @@ class TeamLiveFormResponse(OkEnvelope):
 
 # ── GET /events/{event_key}/schedule-with-synergy ───────────────
 
-class SynergyPairBreakdown(BaseModel):
-    model_config = ConfigDict(extra="allow")
 
 class AllianceSynergy(BaseModel):
     model_config = ConfigDict(extra="allow")

@@ -16,7 +16,7 @@ export type CropPlan = {
 };
 
 // 1280x352: the field strip of a 720p stands video at native resolution.
-export const CROP_PIXEL_BUDGET = 1280 * 352;
+const CROP_PIXEL_BUDGET = 1280 * 352;
 const STRIDE = 32;
 
 // Robots stand up from the floor, so a robot on the far edge extends above the far line;

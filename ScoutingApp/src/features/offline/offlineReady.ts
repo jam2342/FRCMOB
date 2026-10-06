@@ -5,7 +5,7 @@ import { isNativeApp } from '../../platform/runtime';
 // the rest usable.
 
 import ortWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url';
-import opencvUrl from '@techstark/opencv-js/dist/opencv.js?url';
+import { USE_LOCAL_OPTICAL_FLOW } from '../onDevice/opticalFlow';
 
 import {
   beginOfflineCacheAudit,
@@ -31,7 +31,7 @@ import { appShellReadyOffline, prepareAppShellOffline } from '../../routePrefetc
 
 export type Progress = { done: number; total: number; label: string };
 
-export type SavedEventStep = { label: string; required: boolean; saved: number; total: number; savedAt: number | null; keys: string[] };
+type SavedEventStep = { label: string; required: boolean; saved: number; total: number; savedAt: number | null; keys: string[] };
 export type SavedEventPack = { eventKey: string; workspaceId: number; checkedAt: number; expectedSteps: number; steps: SavedEventStep[] };
 const packKey = (key: string) => `frcmob_offline_pack_v2:${key.trim().toLowerCase()}`;
 
@@ -58,21 +58,25 @@ export async function verifySavedEventPack(pack: SavedEventPack | null): Promise
   return { ...pack, steps };
 }
 
-export type RecorderAsset = { url: string; label: string };
+type RecorderAsset = { url: string; label: string };
 
 // The detector files this device needs: its model (per engine, see modelArtifact.ts) and
 // the onnxruntime-web runtime that executes it (~27 MB).
-export async function recorderAssets(): Promise<RecorderAsset[]> {
+async function recorderAssets(): Promise<RecorderAsset[]> {
   const { pickDeviceModel } = await import('../onDevice/detector');
   const model = await pickDeviceModel();
-  return [
+  const assets: RecorderAsset[] = [
     { url: model.url, label: 'detector model' },
     { url: ortWasmUrl, label: 'detector engine' },
-    { url: opencvUrl, label: 'field tracker' },
   ];
+  if (!USE_LOCAL_OPTICAL_FLOW) {
+    const { default: opencvUrl } = await import('@techstark/opencv-js/dist/opencv.js?url');
+    assets.push({ url: opencvUrl, label: 'field tracker' });
+  }
+  return assets;
 }
 
-export async function isSavedOnDevice(url: string): Promise<boolean> {
+async function isSavedOnDevice(url: string): Promise<boolean> {
   if (isNativeApp()) {
     // Native builds validate and install the model/runtime files; check the local asset handler.
     try {

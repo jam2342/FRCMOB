@@ -1,10 +1,10 @@
+import { cx } from './cx';
 import type { ReactNode } from 'react';
 import styles from './Chip.module.css';
-import { cx } from './cx';
 
 // `red` and `blue` are alliance tones. They carry a real fact about the data —
 // which side a row belongs to — and must never be used as decoration.
-export type ChipTone = 'neutral' | 'accent' | 'warn' | 'danger' | 'red' | 'blue';
+type ChipTone = 'neutral' | 'accent' | 'warn' | 'danger' | 'red' | 'blue';
 
 export type ChipProps = {
   children: ReactNode;

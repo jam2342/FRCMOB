@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { SurfaceCard, SurfaceCardGroup } from '../components/ui/SurfaceCard';
+import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   AUTHOR_NAME,
   AUTHOR_SITE_URL,
@@ -12,7 +12,7 @@ import './LegalPage.css';
 export function TermsOfServicePage() {
   return (
     <div className="center-page-container narrow legal-page">
-      <SurfaceCardGroup>
+
         <SurfaceCard
           title="Terms of Service"
           subtitle="The rules for using FRCMOB."
@@ -203,7 +203,7 @@ export function TermsOfServicePage() {
             </p>
           </section>
         </SurfaceCard>
-      </SurfaceCardGroup>
+
     </div>
   );
 }

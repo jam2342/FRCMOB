@@ -1,3 +1,4 @@
+import { coalesceRefresh } from './sessionChanges';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { listSessions, openDb, type StoredSession } from './offlineStore';
 import { getWorkspaceSession, subscribeWorkspaceSession } from '../workspace/workspaceSession';
@@ -26,10 +27,10 @@ export function useSavedRuns() {
         if (active && request === sequence) setLoading(false);
       }
     };
-    void refresh();
-    const changed = () => { void refresh(); };
+    const { schedule: changed, cancel, flush } = coalesceRefresh(refresh);
+    void flush();
     window.addEventListener('frcmob:session-change', changed);
-    return () => { active = false; window.removeEventListener('frcmob:session-change', changed); };
+    return () => { cancel(); active = false; window.removeEventListener('frcmob:session-change', changed); };
   }, []);
   return { sessions: sessions.filter((session) => session.workspaceId == null || session.workspaceId === workspaceId), error, loading };
 }

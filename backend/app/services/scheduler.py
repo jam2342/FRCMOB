@@ -14,9 +14,7 @@ from app.services.season_config import regional_automation_season
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.auto_scout.backfill import backfill_missing_auto_scout_drafts
-from app.services.auto_scout.training import export_auto_scout_training_snapshots
 from app.services.climb.official_backfill import run_official_climb_backfill
-from app.services.climb.integrity import safe_run_climb_integrity_audit
 from app.services.ratings.snapshots import prune_rating_snapshots
 from app.services.intel.snapshots import refresh_hot_intel_snapshots
 from app.services.push.match_alerts import run_match_alert_tick
@@ -373,18 +371,6 @@ def start_scheduler() -> None:
         misfire_grace_time=3600,
     )
 
-    if settings.climb_integrity_audit_enabled:
-        interval_minutes = max(30, int(settings.climb_integrity_audit_interval_minutes))
-        _register_job(
-            job_fn=_scheduled_climb_integrity_audit,
-            trigger="interval",
-            job_id="climb_integrity_audit",
-            job_name="Climb integrity audit",
-            success_log=f"Scheduled climb integrity audit job added (interval: {interval_minutes} min)",
-            minutes=interval_minutes,
-            misfire_grace_time=max(120, interval_minutes * 60),
-        )
-
     if settings.climb_official_backfill_enabled:
         interval_minutes = max(30, int(settings.climb_official_backfill_interval_minutes))
         _register_job(
@@ -431,18 +417,6 @@ def start_scheduler() -> None:
             success_log=f"Scheduled auto-scout draft backfill job added (interval: {interval_minutes} min)",
             minutes=interval_minutes,
             misfire_grace_time=max(120, interval_minutes * 60),
-        )
-
-    if settings.ml_auto_scout_training_export_enabled:
-        interval_hours = max(6, int(settings.ml_auto_scout_training_export_interval_hours))
-        _register_job(
-            job_fn=_scheduled_export_auto_scout_training_data,
-            trigger="interval",
-            job_id="auto_scout_training_export",
-            job_name="Export auto-scout approved labels to ML snapshots",
-            success_log=f"Scheduled auto-scout training export job added (interval: {interval_hours} hours)",
-            hours=interval_hours,
-            misfire_grace_time=max(300, interval_hours * 3600),
         )
 
     fail_startup = bool(settings.is_production_like) or bool(settings.strict_startup_env_validation)
@@ -547,34 +521,6 @@ def _scheduled_prune_rating_snapshots() -> None:
         logger.info("Rating snapshot prune deleted=%s", deleted)
         details.update(deleted=deleted)
 
-def _scheduled_climb_integrity_audit() -> None:
-    interval_minutes = max(30, int(settings.climb_integrity_audit_interval_minutes))
-    with _scheduled_job("climb_integrity_audit", lock_ttl_sec=max(300, interval_minutes * 120), use_db=True) as details:
-        if details is None:
-            return
-        db = details["_db"]
-        logger.info("Starting scheduled climb integrity audit")
-        result = safe_run_climb_integrity_audit(
-            db,
-            lookback_days=int(settings.climb_integrity_audit_lookback_days),
-            sample_limit=int(settings.climb_integrity_audit_sample_limit),
-            diff_threshold=float(settings.climb_integrity_audit_diff_threshold),
-        )
-        totals = result.get("totals") if isinstance(result, dict) else {}
-        logger.info(
-            "Climb integrity audit ok=%s compared=%s mismatched=%s mismatch_rate=%s severity=%s",
-            bool(result.get("ok")) if isinstance(result, dict) else False,
-            totals.get("compared_pairs") if isinstance(totals, dict) else None,
-            totals.get("mismatched_pairs") if isinstance(totals, dict) else None,
-            totals.get("mismatch_rate") if isinstance(totals, dict) else None,
-            result.get("severity") if isinstance(result, dict) else None,
-        )
-        details.update(
-            severity=result.get("severity") if isinstance(result, dict) else None,
-            compared_pairs=totals.get("compared_pairs") if isinstance(totals, dict) else None,
-            mismatched_pairs=totals.get("mismatched_pairs") if isinstance(totals, dict) else None,
-            mismatch_rate=totals.get("mismatch_rate") if isinstance(totals, dict) else None,
-        )
 
 def _scheduled_climb_official_backfill() -> None:
     interval_minutes = max(30, int(settings.climb_official_backfill_interval_minutes))
@@ -668,35 +614,3 @@ def _scheduled_auto_scout_draft_backfill() -> None:
         )
 
 
-def _scheduled_export_auto_scout_training_data() -> None:
-    interval_hours = max(6, int(settings.ml_auto_scout_training_export_interval_hours))
-    with _scheduled_job(
-        "auto_scout_training_export",
-        lock_ttl_sec=max(600, interval_hours * 2 * 3600),
-        use_db=True,
-    ) as details:
-        if details is None:
-            return
-        db = details["_db"]
-        result = export_auto_scout_training_snapshots(
-            db,
-            source_version=(
-                str(settings.ml_auto_scout_feature_source_version or "").strip() or None
-            ),
-            replace_existing=bool(settings.ml_auto_scout_training_export_replace_existing),
-            max_drafts=int(settings.ml_auto_scout_training_export_max_drafts),
-            season_year=None,
-        )
-        logger.info(
-            "Auto-scout training export completed approved_drafts=%s rows_written=%s skipped_context=%s skipped_target=%s",
-            result.get("approved_drafts"),
-            result.get("rows_written"),
-            result.get("skipped_missing_context"),
-            result.get("skipped_missing_target"),
-        )
-        details.update(
-            approved_drafts=int(result.get("approved_drafts") or 0),
-            rows_written=int(result.get("rows_written") or 0),
-            skipped_missing_context=int(result.get("skipped_missing_context") or 0),
-            skipped_missing_target=int(result.get("skipped_missing_target") or 0),
-        )

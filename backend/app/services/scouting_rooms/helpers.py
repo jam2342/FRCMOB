@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.db import models
 from app.services.quality_gate import evaluate_summary_quality_gate
 from app.services.ratings.model import calibrate_public_rating_scale
+from app.services.ratings.output_builder import rating_subscores
 from app.services.team_utils import model_uses_calibrated_public_scale as _model_uses_calibrated_public_scale
 
 # ── Constants ──────────────────────────────────────────────────
@@ -702,32 +703,7 @@ def serialize_rating_row(row: models.EventTeamRating, team: models.Team | None) 
         "confidence_0_1": row.confidence_0_1,
         "robot_level_0_100": robot_display,
         "driver_skill_0_100": driver_display,
-        "subscores": {
-            "results_anchor": row.results_anchor,
-            "throughput": row.throughput,
-            "shift_productivity": row.shift_productivity,
-            "capacity_utilization": row.capacity_utilization,
-            "endgame": row.endgame,
-            "auto_contribution": ((row.details_json or {}).get("subscores") or {}).get(
-                "auto_contribution"
-            ),
-            "anti_defense": ((row.details_json or {}).get("subscores") or {}).get(
-                "anti_defense"
-            ),
-            "manual_points_impact": ((row.details_json or {}).get("subscores") or {}).get(
-                "manual_points_impact"
-            ),
-            "rp_contribution": ((row.details_json or {}).get("subscores") or {}).get(
-                "rp_contribution"
-            ),
-            "defense_presence": ((row.details_json or {}).get("subscores") or {}).get(
-                "defense_presence"
-            ),
-            "consistency": row.consistency,
-            "penalty_discipline": ((row.details_json or {}).get("subscores") or {}).get(
-                "penalty_discipline"
-            ),
-        },
+        "subscores": rating_subscores(row),
         "pros": row.pros_json or [],
         "cons": row.cons_json or [],
         "evidence": row.evidence_json or [],

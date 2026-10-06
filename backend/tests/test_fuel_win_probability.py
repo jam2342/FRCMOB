@@ -49,7 +49,8 @@ class FuelWinProbabilityTests(unittest.TestCase):
 
     def _margins(self):
         order = [("2026here_qm1", RED, BLUE), ("2026here_qm2", RED, BLUE)]
-        return fuel.fuel_margins_by_match(self.db, "2026here", order, event_start=10_001)
+        details = fuel.fuel_margin_details(self.db, "2026here", order, event_start=10_001)
+        return {key: margin for key, (margin, _seen) in details.items()}
 
     def test_a_match_never_informs_its_own_prediction(self):
         for team in RED:

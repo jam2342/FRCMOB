@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 
 from app.services.auto_scout.on_device import project_point
-from app.services.auto_scout.on_device_cv import (
+from tests.on_device_cv_reference import (
     StabilizedPose,
     estimate_interframe_homography,
 )

@@ -39,7 +39,6 @@ def _seed_minimal_intel_rows(db: Session) -> None:
             event_key=event_key,
             analysis_version="video_v3_tracks",
             params_hash="params-1",
-            calibration_id=1,
         )
     )
     finding = models.TeamMatchFinding(
@@ -86,7 +85,6 @@ def _seed_minimal_intel_rows(db: Session) -> None:
             run_id=run.id,
             match_key=match_key,
             event_key=event_key,
-            calibration_quality_score=0.8,
             tracking_quality_score=0.78,
             identity_quality_score=0.76,
             overall_quality_score=0.78,

@@ -415,18 +415,14 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_room_table_bootstrap_blocked_in_production_like_env(self):
-        prior_app_env = str(getattr(settings, "app_env", "") or "")
-        settings.app_env = "production"
-        try:
-            created = routes_scouting_rooms._bootstrap_missing_room_table(
+    def test_missing_room_table_is_reported_not_created(self):
+        with self.assertLogs("app.api.routes_scouting_rooms", level="ERROR") as logs:
+            routes_scouting_rooms._report_missing_room_table(
                 self.db,
                 "scouting_room_leaders",
-                trigger_exc=Exception("missing table"),
+                Exception("missing table"),
             )
-            self.assertFalse(created)
-        finally:
-            settings.app_env = prior_app_env
+        self.assertIn("alembic upgrade head", logs.output[0])
 
     def test_room_access_token_handles_malformed_secret_bytes(self):
         prior_admin_key = str(settings.admin_api_key or "")

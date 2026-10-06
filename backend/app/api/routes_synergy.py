@@ -5,7 +5,7 @@ import logging
 import random
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -324,83 +324,6 @@ class TheoreticalAllianceRequest(BaseModel):
     model_version: str = Field(default=SYNERGY_MODEL_VERSION, min_length=1)
     quality_threshold: float = Field(default=QUALITY_THRESHOLD_DEFAULT, ge=0.0, le=1.0)
     auto_precompute: bool = True
-
-
-@router.post("/event/{event_key}/precompute")
-def precompute_synergy_for_event(
-    event_key: str,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
-    db: Session = Depends(get_db),
-):
-    require_write_access("Synergy precompute")
-    event = db.get(models.Event, event_key)
-    if event is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
-    logger.info(
-        "synergy.precompute.start event=%s model_version=%s quality_threshold=%s",
-        event_key,
-        synergy_model_version,
-        quality_threshold,
-    )
-
-    if quality_threshold < 0.0 or quality_threshold > 1.0:
-        raise HTTPException(status_code=400, detail="quality_threshold must be between 0 and 1")
-
-    try:
-        result = precompute_event_synergy(
-            db,
-            event_key,
-            model_version=synergy_model_version,
-            quality_threshold=quality_threshold,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result
-
-
-@router.get("/event/{event_key}/projections")
-def list_event_projections(
-    event_key: str,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    db: Session = Depends(get_db),
-):
-    rows = (
-        db.query(models.MatchSynergyProjection)
-        .filter(
-            models.MatchSynergyProjection.event_key == event_key,
-            models.MatchSynergyProjection.model_version == synergy_model_version,
-        )
-        .order_by(
-            models.MatchSynergyProjection.scheduled_time.asc().nullslast(),
-            models.MatchSynergyProjection.match_key.asc(),
-            models.MatchSynergyProjection.alliance_color.asc(),
-        )
-        .all()
-    )
-    return {
-        "ok": True,
-        "event_key": event_key,
-        "model_version": synergy_model_version,
-        "count": len(rows),
-        "projections": [
-            {
-                "match_key": row.match_key,
-                "alliance_color": row.alliance_color,
-                "scheduled_time": row.scheduled_time,
-                "expected_throughput": row.expected_throughput,
-                "alliance_synergy_points": row.alliance_synergy_points,
-                "projected_throughput": row.projected_throughput,
-                "alliance_synergy_score_0_100": row.alliance_synergy_score_0_100,
-                "confidence_0_1": row.confidence_0_1,
-                "source_label": row.source_label,
-                "pair_breakdown": row.pair_breakdown or [],
-                "params_hash": row.params_hash,
-                "computed_at": row.computed_at.isoformat() if row.computed_at else None,
-            }
-            for row in rows
-        ],
-    }
 
 
 @router.post("/event/{event_key}/theoretical-alliance")

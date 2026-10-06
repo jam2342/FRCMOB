@@ -33,10 +33,30 @@ export async function getDatabaseResponse(key: string): Promise<Row | null> {
   } catch { return null; }
 }
 export async function pruneDatabaseResponses(maxEntries: number): Promise<void> {
+  let db: IDBDatabase | undefined;
   try {
-    const rows = await transaction<Row[]>('readonly', store => store.getAll());
-    const live = rows.filter(row => row.retainUntil > Date.now()).sort((a,b) => a.storedAt-b.storedAt);
-    const remove = [...rows.filter(row => row.retainUntil <= Date.now()), ...live.slice(0, Math.max(0,live.length-maxEntries))];
-    for (const row of remove) await transaction('readwrite', store => store.delete(row.key));
+    db = await open();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db!.transaction('responses', 'readwrite');
+      const store = tx.objectStore('responses');
+      const request = store.openCursor();
+      const live: { key: string; storedAt: number }[] = [];
+      const now = Date.now();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+          const row = cursor.value as Row;
+          if (row.retainUntil <= now) cursor.delete();
+          else live.push({ key: row.key, storedAt: row.storedAt });
+          cursor.continue();
+        } else {
+          live.sort((a, b) => a.storedAt - b.storedAt);
+          for (const row of live.slice(0, Math.max(0, live.length - maxEntries))) store.delete(row.key);
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || request.error || new Error('API cache pruning failed'));
+    });
   } catch { /* Offline readiness verifies persisted keys rather than assuming success. */ }
+  finally { db?.close(); }
 }

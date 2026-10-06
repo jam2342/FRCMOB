@@ -6,7 +6,7 @@ export type EventDateRange = {
   endMs: number | null;
 };
 
-export function parseEventDateValue(value: string | null | undefined): number | null {
+function parseEventDateValue(value: string | null | undefined): number | null {
   if (!value || typeof value !== 'string') return null;
   const token = value.trim().slice(0, 10);
   if (!token) return null;
@@ -14,7 +14,7 @@ export function parseEventDateValue(value: string | null | undefined): number | 
   return Number.isFinite(ms) ? ms : null;
 }
 
-export function parseEventYearValue(value: unknown): number | null {
+function parseEventYearValue(value: unknown): number | null {
   const normalized = typeof value === 'number' ? value : Number(String(value || '').trim());
   if (!Number.isFinite(normalized)) return null;
   const year = Math.trunc(normalized);
@@ -22,7 +22,7 @@ export function parseEventYearValue(value: unknown): number | null {
   return year;
 }
 
-export function yearFromEventKey(eventKey: string): number | null {
+function yearFromEventKey(eventKey: string): number | null {
   const match = /^(\d{4})/.exec((eventKey || '').trim().toLowerCase());
   if (!match) return null;
   return parseEventYearValue(match[1]);
@@ -41,7 +41,7 @@ export function resolveEventDateRange(event: EventSearchItem, fallback?: EventDa
   return normalizeDateRange({ startMs, endMs });
 }
 
-export function resolveCalendarYear(event: EventSearchItem, fallback?: EventDateRange): number | null {
+function resolveCalendarYear(event: EventSearchItem, fallback?: EventDateRange): number | null {
   const explicit = parseEventYearValue(event.year);
   if (explicit !== null) return explicit;
   const resolved = resolveEventDateRange(event, fallback);

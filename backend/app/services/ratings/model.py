@@ -6,9 +6,8 @@
 # rating_data_loader, rating_feature_extraction, rating_scoring,
 # rating_signal_generation, rating_output_builder.
 #
-# This file retains ``recompute_event_ratings`` and backward-compatible
-# re-exports so existing ``from app.services.ratings.model import …``
-# statements continue to work.
+# This file keeps ``recompute_event_ratings`` and the few names other modules
+# import from here; helpers are imported from their own modules.
 
 from __future__ import annotations
 
@@ -21,92 +20,32 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db import models
-from app.services.analysis.elite_robot import EliteRobotAnalyzer
 from app.services.scouting_rooms.elite_detector import RoleClassifier
-from app.services.utils import _as_float, _clamp, _mean, _weighted_mean, _weighted_median, _weighted_std  # noqa: F401
+from app.services.utils import _as_float, _clamp
 
-from app.services.ratings.constants import (  # noqa: F401
-    ANTI_DEFENSE_ELITE_DROP_PCT,
-    ANTI_DEFENSE_GOOD_DROP_PCT,
-    ANTIDEFENSE_STAGE_EARLY_QUALS_MULTIPLIER,
-    ANTIDEFENSE_STAGE_ELIMS_MULTIPLIER,
-    ANTIDEFENSE_STAGE_LATE_QUALS_MULTIPLIER,
-    ANTIDEFENSE_STAGE_SUPPORT_MATCHES,
+from app.services.ratings.constants import (
     BASE_ANTIDEFENSE_WEIGHT,
-    BASE_AUTO_WEIGHT,
-    CYCLE_TREND_DELTA_THRESHOLD,
     FALLBACK_MODEL_LABEL,
     MAJOR_FOUL_POINTS,
-    MINOR_FOUL_POINTS,
     MODEL_VERSION,
-    PENALTY_EVENT_POINT_WEIGHTS,
     PENALTY_IMPACT_BASE_RATING,
-    PENALTY_IMPACT_DRIVER,
-    PENALTY_IMPACT_NET_POINTS,
-    PENALTY_IMPACT_SUBSCORES,
-    PENALTY_TREND_DELTA_THRESHOLD,
     PERFORMANCE_ANTIDEFENSE_WEIGHT,
-    PERFORMANCE_AUTO_WEIGHT,
-    PERFORMANCE_EPA_BLEND,
-    RECENT_BASE_WEIGHT,
-    RECENT_MATCH_WINDOW,
-    RECENT_PRIORITY_WEIGHT,
-    RECENT_PRIORITY_WINDOW,
-    RELEVANT_MATCH_EVENT_TYPES,
-    RELIABILITY_TREND_DELTA_THRESHOLD,
-    RESULTS_ANCHOR_EPA_WEIGHT,
-    SIGNAL_MIN_CONFIDENCE,
-    SIGNAL_MIN_MATCHES,
-    SIGNAL_STRONG_CONFIDENCE,
-    SIGNAL_STRONG_MATCHES,
-    SIGNAL_TREND_COVERAGE,
-    SIGNAL_TREND_MATCHES,
-    STATBOTICS_EPA_ENABLED,
-    TBA_SCOREBREAKDOWN_SOURCE,
-    THROUGHPUT_TREND_DELTA_THRESHOLD,
-    _PUBLIC_RATING_CEILING,
-    _PUBLIC_RATING_CENTER,
-    _PUBLIC_RATING_FLOOR,
-    _PUBLIC_RATING_SLOPE,
 )
-from app.services.ratings.helpers import (  # noqa: F401
+from app.services.ratings.helpers import (
     calibrate_public_rating_scale,
     _dedupe_findings_by_match,
-    _event_from_official_source,
-    _event_meta_number,
-    _evidence_for_metric,
-    _extract_clip_url,
-    _extract_first_number,
-    _fit_linear_model,
-    _is_active_hub_attempt_event,
-    _match_stage,
     _percentile_map,
-    _recent_weight_for_index,
     _sort_findings_newest_first,
-    _trend_delta_ratio,
     _weighted_score,
 )
-from app.services.ratings.anti_defense import (  # noqa: F401
-    _anti_defense_drop_band_score,
-    _anti_defense_stage_multiplier,
+from app.services.ratings.anti_defense import (
     _anti_defense_tier,
 )
-from app.services.ratings.signals import (  # noqa: F401
+from app.services.ratings.signals import (
     _apply_sparse_rating_guard,
-    _dedupe_signals,
-    _ensure_minimum_pros_cons_signals,
-    _infer_signal_metric,
-    _make_signal,
 )
-from app.services.ratings.game_context import (  # noqa: F401
+from app.services.ratings.game_context import (
     _manual_game_context,
-    _penalty_event_evidence,
-    _rebuilt_active_hub_duration_sec,
-)
-from app.services.ratings.statbotics import (  # noqa: F401
-    _extract_statbotics_epa_value,
-    _load_statbotics_epa_by_team,
-    _load_statbotics_epa_by_team_async,
 )
 from app.services.ml.shadow import (
     TEAM_STRENGTH_MODEL_KEY,
@@ -263,20 +202,19 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
     ml_rollout_active_count = 0
     ml_blend_applied_count = 0
 
-    elite_dimensions_by_team: dict[str, dict[str, Any]] = {}
     role_classifications_by_team: dict[str, dict[str, Any]] = {}
 
     ml_role_blend_knob = max(0.0, min(1.0, float(getattr(settings, "ml_role_blend", 0.0) or 0.0)))
 
+    # One query for the whole event; the classifier used to load each team's
+    # findings itself (one query per team).
+    role_findings_by_team: dict[str, list[models.TeamMatchFinding]] = {}
+    for finding in db.query(models.TeamMatchFinding).filter(models.TeamMatchFinding.event_key == event_key):
+        role_findings_by_team.setdefault(finding.team_key, []).append(finding)
+
     for team_key in data.team_keys:
         try:
-            analyzer = EliteRobotAnalyzer(db, event_key, team_key)
-            elite_dimensions_by_team[team_key] = analyzer.analyze()
-        except Exception:
-            elite_dimensions_by_team[team_key] = {}
-
-        try:
-            role_classifier = RoleClassifier(db, event_key, team_key)
+            role_classifier = RoleClassifier(db, event_key, team_key, findings=role_findings_by_team.get(team_key, []))
             deterministic_classification = role_classifier.classify()
         except Exception:
             deterministic_classification = {"primary_role": "unknown"}
@@ -321,6 +259,10 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
         role_classifications_by_team[team_key] = deterministic_classification
 
     now = datetime.now(timezone.utc)
+    # Load this event's existing rows once: db.merge() below then finds them in the
+    # session instead of issuing one SELECT per team. Keep the reference; the
+    # session only holds loaded rows weakly.
+    _existing_rows = db.query(models.EventTeamRating).filter(models.EventTeamRating.event_key == event_key).all()
     rating_rows: list[models.EventTeamRating] = []
     for event_team, team in data.team_rows:
         team_key = event_team.team_key
@@ -789,7 +731,6 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
             gate_config=data.gate_config,
             raw_findings_count=int(data.raw_findings_count_by_team.get(team_key, 0)),
             excluded_findings_count=int(data.excluded_findings_count_by_team.get(team_key, 0)),
-            elite_dimensions=elite_dimensions_by_team.get(team_key, {}),
             role_classification=role_classifications_by_team.get(team_key, {}),
             now=now,
         )

@@ -258,6 +258,18 @@ type CacheLookupResult = {
 };
 
 const responseCache = new Map<string, CachedResponse>();
+const MAX_RESPONSE_CACHE_ENTRIES = 200;
+function cacheResponse(requestKey: string, cached: CachedResponse): void {
+  const now = Date.now();
+  for (const [key, value] of responseCache) {
+    if (value.expiresAtMs <= now) responseCache.delete(key);
+  }
+  responseCache.delete(requestKey);
+  responseCache.set(requestKey, cached);
+  while (responseCache.size > MAX_RESPONSE_CACHE_ENTRIES) {
+    responseCache.delete(responseCache.keys().next().value!);
+  }
+}
 const inflightGetRequests = new Map<string, Promise<Response>>();
 const PERSIST_CACHE_PREFIX = "scouting_api_cache_v1:";
 let suggestedEventsCircuitOpenUntilMs = 0;
@@ -749,7 +761,7 @@ type ScheduleSynergyAlliance = {
   computed_at?: string | null;
 };
 
-export type MatchPredictionPayload = {
+type MatchPredictionPayload = {
   available: boolean;
   source_label: string;
   model_key: string;
@@ -1126,18 +1138,6 @@ export type OpsDashboardResponse = {
   media_usage: {
     total_gb?: number;
     disk_free_gb?: number;
-  };
-  climb_integrity: {
-    enabled: boolean;
-    last_result_available: boolean;
-    last_result?: {
-      severity?: string;
-      totals?: {
-        compared_pairs?: number;
-        mismatched_pairs?: number;
-        mismatch_rate?: number | null;
-      };
-    } | null;
   };
   climb_signal_coverage?: {
     ok?: boolean;
@@ -1659,7 +1659,7 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     const persisted = readPersistentGetCache(requestKey, now, staleWhileRevalidateMs);
     if (persisted) {
       const persistedStoredAtMs = Math.max(0, now - persisted.ageSec * 1000);
-      responseCache.set(requestKey, {
+      cacheResponse(requestKey, {
         storedAtMs: persistedStoredAtMs,
         response: persisted.response.clone(),
         expiresAtMs: persisted.state === "fresh" ? now + cacheTtlMs : now - 1,
@@ -1757,7 +1757,7 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     if (auditCall && response.ok) {
       auditCall.saved = await writePersistentGetCache(requestKey, response.clone(), Math.max(1, cacheTtlMs));
     } else if (shouldUseCache && response.ok) {
-      responseCache.set(requestKey, {
+      cacheResponse(requestKey, {
         storedAtMs: Date.now(),
         response: response.clone(),
         expiresAtMs: Date.now() + cacheTtlMs,
@@ -2709,7 +2709,7 @@ export type ScoutingRoomSaveEntryResponse = {
   entry: ScoutingRoomEntryRecord;
 };
 
-export type AutoScoutSeasonSupport = {
+type AutoScoutSeasonSupport = {
   supported: boolean;
   form_fields: string[];
   derived_insights: string[];
@@ -2738,20 +2738,6 @@ export type ScoutingRoomAssignmentRecord = {
   updated_at: string | null;
 };
 
-export type ScoutingRoomAssignmentsResponse = {
-  ok: boolean;
-  room_key: string;
-  event_key: string | null;
-  count: number;
-  leader_scout_profile?: string | null;
-  leader_source?: string | null;
-  room_role?: string | null;
-  secondary_leader_scout_profiles?: string[];
-  presence?: ScoutingRoomPresenceMember[];
-  assignments: ScoutingRoomAssignmentRecord[];
-  my_assignments: ScoutingRoomAssignmentRecord[];
-};
-
 export type ScoutingRoomLeaderUpdateResponse = {
   ok: boolean;
   room_key: string;
@@ -2759,31 +2745,6 @@ export type ScoutingRoomLeaderUpdateResponse = {
   secondary_leader_scout_profiles: string[];
   created?: boolean;
   removed?: boolean;
-};
-
-export type ScoutingRoomAssignmentUpsertResponse = {
-  ok: boolean;
-  room_key: string;
-  deleted: boolean;
-  assignment: {
-    id?: number;
-    room_key?: string;
-    event_key?: string | null;
-    match_key: string | null;
-    team_key: string | null;
-    assigned_scout_profile?: string;
-    assigned_by_scout_profile?: string | null;
-    created_at?: string | null;
-    updated_at?: string | null;
-  };
-};
-
-export type ScoutingRoomAssignmentsReplaceResponse = {
-  ok: boolean;
-  room_key: string;
-  event_key: string | null;
-  count: number;
-  assignments: ScoutingRoomAssignmentRecord[];
 };
 
 export type ScoutingRoomKickMemberResponse = {
@@ -2853,88 +2814,6 @@ export async function getScoutingRoomState(
   });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as ScoutingRoomStateResponse;
-}
-
-export async function getScoutingRoomAssignments(
-  roomKey: string,
-  options?: {
-    event_key?: string;
-    for_scout_profile?: string;
-    client_id?: string;
-    presence_heartbeat?: boolean;
-    room_access_token?: string;
-    timeoutMs?: number;
-  },
-): Promise<ScoutingRoomAssignmentsResponse> {
-  const params = new URLSearchParams();
-  if (options?.event_key) params.set("event_key", String(options.event_key || "").trim().toLowerCase());
-  if (options?.for_scout_profile) params.set("for_scout_profile", String(options.for_scout_profile || "").trim());
-  if (options?.client_id) params.set("client_id", String(options.client_id || "").trim());
-  if (options?.presence_heartbeat) params.set("presence_heartbeat", "1");
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const roomAccessToken = String(options?.room_access_token || "").trim();
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/assignments${suffix}`, {
-    headers: roomAccessToken ? { [ROOM_ACCESS_HEADER]: roomAccessToken } : undefined,
-    bypassCache: true,
-    cacheTtlMs: 0,
-    timeoutMs: Math.max(8000, Math.floor(options?.timeoutMs ?? 30000)),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as ScoutingRoomAssignmentsResponse;
-}
-
-export async function upsertScoutingRoomAssignment(
-  roomKey: string,
-  payload: {
-    match_key: string;
-    team_key: string;
-    assigned_scout_profile?: string | null;
-    event_key?: string;
-    room_access_token?: string;
-    timeoutMs?: number;
-  },
-): Promise<ScoutingRoomAssignmentUpsertResponse> {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  if (payload.room_access_token) {
-    headers.set(ROOM_ACCESS_HEADER, String(payload.room_access_token || "").trim());
-  }
-  const body = withoutRoomAccessToken(payload);
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/assignments`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    timeoutMs: Math.max(10000, Math.floor(payload.timeoutMs ?? 45000)),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as ScoutingRoomAssignmentUpsertResponse;
-}
-
-export async function replaceScoutingRoomAssignments(
-  roomKey: string,
-  payload: {
-    event_key?: string;
-    assignments: Array<{
-      match_key: string;
-      team_key: string;
-      assigned_scout_profile: string;
-    }>;
-    room_access_token?: string;
-    timeoutMs?: number;
-  },
-): Promise<ScoutingRoomAssignmentsReplaceResponse> {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  if (payload.room_access_token) {
-    headers.set(ROOM_ACCESS_HEADER, String(payload.room_access_token || "").trim());
-  }
-  const body = withoutRoomAccessToken(payload);
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/assignments/replace`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    timeoutMs: Math.max(10000, Math.floor(payload.timeoutMs ?? 60000)),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as ScoutingRoomAssignmentsReplaceResponse;
 }
 
 // ── Team rooms: one room per workspace and event, found without a key ──
@@ -3228,7 +3107,7 @@ export async function getTeamShiftPlay(teamKey: string, eventKey: string): Promi
 
 // Per-robot shift-play as returned by the on-device session sync (the match-level
 // analyze_match_shift_play shape, keyed by team_key).
-export type OnDeviceRobotShiftPlay = {
+type OnDeviceRobotShiftPlay = {
   team_key: string;
   alliance: string;
   offense: { level_1_5: number; confidence_0_1: number };
@@ -3262,7 +3141,7 @@ export type OnDeviceSessionSyncResponse = {
 // /tracks/on-device-session). The StoredSession camelCase keys match the
 // endpoint's request aliases, so a stored session posts verbatim. apiFetch
 // auto-attaches the admin/room headers the endpoint's auth gate expects.
-export class OnDeviceSyncError extends Error {
+class OnDeviceSyncError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
     super(message);
@@ -3345,7 +3224,7 @@ export interface WorkspaceMemberRecord extends WorkspaceMe {
   last_seen_at: string | null;
 }
 
-export interface WorkspaceDetails extends WorkspaceSummary {
+interface WorkspaceDetails extends WorkspaceSummary {
   join_code_rotated_at: string | null;
   created_at: string | null;
 }
@@ -3501,7 +3380,7 @@ export function resolveMediaUrl(path: string | null | undefined): string {
 // ── Picklists ──────────────────────────────────────────────────
 
 export type PicklistSlotTier = "first" | "second" | "dnp";
-export type PicklistSlotStatus = "available" | "picked" | "declined" | "captain";
+type PicklistSlotStatus = "available" | "picked" | "declined" | "captain";
 
 export interface PicklistSlot {
   team_key: string;
@@ -3669,7 +3548,7 @@ export async function deletePitPhoto(payload: {
 
 // ── Scouting insights (coverage / leaderboard / raw export) ────
 
-export interface CoverageSlot {
+interface CoverageSlot {
   team_key: string;
   alliance: string;
   station: string | null;
@@ -3677,7 +3556,7 @@ export interface CoverageSlot {
   scouts: string[];
 }
 
-export interface CoverageMatchRow {
+interface CoverageMatchRow {
   match_key: string;
   label: string;
   comp_level: string;
@@ -3685,7 +3564,7 @@ export interface CoverageMatchRow {
   slots: CoverageSlot[];
 }
 
-export interface CoverageLeaderboardRow {
+interface CoverageLeaderboardRow {
   scout_profile: string;
   entry_count: number;
   matches_covered: number;
@@ -3694,7 +3573,7 @@ export interface CoverageLeaderboardRow {
   last_entry_at: string | null;
 }
 
-export interface CoverageOutlier {
+interface CoverageOutlier {
   kind: "scout_disagreement" | "anomalous_entry";
   match_key: string;
   team_key: string;
