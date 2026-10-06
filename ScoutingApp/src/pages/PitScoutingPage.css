@@ -207,3 +207,26 @@
     height: 96px;
   }
 }
+
+.pit-unscouted-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 1120px) {
+  .pit-selected-team {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .pit-selected-team .center-btn {
+    min-height: 44px;
+    padding-inline: 4px;
+  }
+}

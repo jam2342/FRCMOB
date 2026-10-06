@@ -2018,10 +2018,6 @@
     min-width: 560px;
   }
 
-  .events-center-layout .events-mobile-view-toggle-btn {
-    font-size: var(--font-size-2xs);
-  }
-
   .events-center-layout .event-search-submit-btn {
     min-height: 34px;
     border-radius: 9px;

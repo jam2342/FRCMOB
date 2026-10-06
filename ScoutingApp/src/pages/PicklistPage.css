@@ -296,3 +296,36 @@ button.picklist-rank--button {
     display: inline-block !important;
   }
 }
+
+@media (max-width: 1120px) {
+  .picklist-more {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .picklist-more > summary {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    min-height: 44px;
+  }
+
+  .picklist-more-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .picklist-more-actions .center-btn {
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .picklist-select {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    min-height: 44px;
+  }
+}

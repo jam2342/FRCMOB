@@ -323,6 +323,9 @@ function TeamWorkspaceView() {
 
   return (
     <>
+      {/* What a scout opens this page for: where they're scouting and what's next. */}
+      <TeamScoutingCard />
+
       <SurfaceCard
         title={workspace.name}
         subtitle={
@@ -334,10 +337,7 @@ function TeamWorkspaceView() {
         mobileCollapsible={false}
       >
         {error ? <p className="center-callout warning">{error}</p> : null}
-        <p className="my-team__lede">
-          Picklists, pit scouting, scouting rooms and coverage you use while signed in here are visible only to
-          this workspace.
-        </p>
+        <p className="my-team__lede">Only your team sees its picklists, pit notes and scouting.</p>
         {renaming ? (
           <form
             className="my-team__inline-form"
@@ -402,8 +402,6 @@ function TeamWorkspaceView() {
           </Button>
         ) : null}
       </SurfaceCard>
-
-      <TeamScoutingCard />
 
       <SurfaceCard title="Invite scouts" subtitle="Anyone with the code can join this workspace." expandable={false} mobileCollapsible={false}>
         <JoinCodePanel

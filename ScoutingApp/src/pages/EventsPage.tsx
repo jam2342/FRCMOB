@@ -27,6 +27,7 @@ import type {
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { EmptyState } from '../components/ui/EmptyState';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
+import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Table } from '../components/ui/primitives';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
@@ -1784,16 +1785,14 @@ export function EventsPage() {
       className={`center-layout mobile-finder-layout events-center-layout scouting-layout-grid ${mobileSidebarOpen ? 'mobile-finder-open' : ''} ${isMobileLayout && mobilePanel === 'calendar' ? 'mobile-calendar-open' : ''}`.trim()}
     >
       {isMobileLayout ? (
-        <SegmentedTabs
-          className="mobile-view-toggle events-mobile-view-toggle"
-          itemClassName="mobile-view-toggle-btn events-mobile-view-toggle-btn"
-          ariaLabel="Events mobile view switch"
-          value={mobilePanel}
-          onChange={setMobilePanel}
-          items={[
-            { value: 'finder', label: 'Event Finder' },
-            { value: 'calendar', label: 'Calendar' },
-            { value: 'center', label: 'Event Center', disabled: !selectedEventKey },
+        <MobileViewActions
+          label="Event views"
+          actions={[
+            ...(mobilePanel !== 'center' && selectedEventKey
+              ? [{ label: `Back to ${eventHeaderName}`, onClick: () => setMobilePanel('center'), back: true }]
+              : []),
+            ...(mobilePanel !== 'finder' ? [{ label: mobilePanel === 'center' ? 'Change event' : 'Search events', onClick: () => setMobilePanel('finder') }] : []),
+            ...(mobilePanel !== 'calendar' ? [{ label: 'Calendar', onClick: () => setMobilePanel('calendar') }] : []),
           ]}
         />
       ) : null}
@@ -1971,7 +1970,6 @@ export function EventsPage() {
               <div className="fm-event-header-top">
                 <div className="fm-event-header-info">
                   <h2>{eventHeaderName}</h2>
-                  <span className="fm-event-key">{selectedEventKey}</span>
                 </div>
                 <div className="fm-event-header-actions">
                   {/* Sync re-ingests from TBA and needs admin rights; for
@@ -2107,25 +2105,7 @@ export function EventsPage() {
                     <SkeletonBlock rows={3} compact />
                   </div>
                 ) : null}
-                <div className="fm-kpi-grid">
-                  <article className="fm-kpi-card">
-                    <span><ScoreboardIcon className="icon-inline" /> Matches</span>
-                    <strong>{eventSchedule.length}</strong>
-                  </article>
-                  <article className="fm-kpi-card">
-                    <span><UsersIcon className="icon-inline" /> Teams</span>
-                    <strong>{effectiveTeamCount}</strong>
-                  </article>
-                  <article className="fm-kpi-card">
-                    <span><CheckCircleIcon className="icon-inline" /> Played</span>
-                    <strong>{playedMatchCount}</strong>
-                  </article>
-                  <article className="fm-kpi-card">
-                    <span><LiveDotIcon className="icon-inline" /> Status</span>
-                    <strong>{eventStatusLabel}</strong>
-                  </article>
-                </div>
-
+                {/* Matches / Teams / Status are already in the event header right above. */}
                 <div className="fm-top-card">
                   <div className="fm-top-card-header">
                     <h4>Top Rankings</h4>

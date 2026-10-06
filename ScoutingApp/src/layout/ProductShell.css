@@ -1564,10 +1564,6 @@ button.ps-context-chip:disabled {
     padding: 9px 10px;
   }
 
-  .product-shell .home-match-row.mobile-expanded .home-match-main {
-    padding: 11px;
-  }
-
   .product-shell .home-match-compact-score {
     box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 7%, transparent);
   }
@@ -2073,4 +2069,12 @@ button.ps-context-chip:disabled {
   content: '';
   position: absolute;
   inset: -12px -10px;
+}
+
+/* At ~250px the four Home filters ran out of room and read "Upcomin". The word matters more
+   than the dot/clock/tick icon next to it. */
+@media (max-width: 359px) {
+  .product-shell .home-filter-btn .icon-inline {
+    display: none;
+  }
 }

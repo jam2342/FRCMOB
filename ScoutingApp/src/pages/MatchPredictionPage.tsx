@@ -19,9 +19,11 @@ import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
 import { eventHasMatchesInPlay } from './matchStatus';
 import { buildMatchCenterPath, metric, pct, teamNumberFromTeamKey } from './centerUtils';
-import { MOBILE_LAYOUT_BREAKPOINT } from '../hooks/useMobileLayout';
+import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
 import { Stat, Table, type TableColumn } from '../components/ui/primitives';
 import styles from './MatchPredictionPage.module.css';
+
+const PHONE_PAGE_SIZE = 20;
 import { matchWinProbability, type WinProbabilitySource } from '../features/predictions/winProbability';
 
 /* ------------------------------------------------------------------ */
@@ -244,6 +246,7 @@ export function MatchPredictionPage() {
   const [scheduleError, setScheduleError] = useState('');
   const [errorText, setErrorText] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const filterInitializedFor = useRef('');
 
   /* --- Fetch data --- */
   // Only the latest request may write: switching events on a slow connection let
@@ -280,6 +283,10 @@ export function MatchPredictionPage() {
 
     if (results[1].status === 'fulfilled') {
       setScheduleData(results[1].value.matches);
+      if (filterInitializedFor.current !== key) {
+        filterInitializedFor.current = key;
+        setFilterMode(results[1].value.matches.some((match) => match.is_completed === false) ? 'upcoming' : 'all');
+      }
       setScheduleError('');
       loadedAtMs.current = Date.now();
     } else {
@@ -377,6 +384,13 @@ export function MatchPredictionPage() {
       .sort((a, b) => matchSortKey(a) - matchSortKey(b));
   }, [synergyData, scheduleData]);
 
+  // A phone got all ~140 matches at once: 20 to 38 screens of scrolling. Show a page at a time.
+  const isMobileLayout = useMobileLayout();
+  const [phoneVisibleCount, setPhoneVisibleCount] = useState(PHONE_PAGE_SIZE);
+  useEffect(() => {
+    setPhoneVisibleCount(PHONE_PAGE_SIZE);
+  }, [filterMode, eventKey]);
+
   const filteredPredictions = useMemo(() => {
     if (filterMode === 'upcoming') return predictions.filter((p) => p.is_completed === false);
     if (filterMode === 'completed') return predictions.filter((p) => p.is_completed);
@@ -444,6 +458,50 @@ export function MatchPredictionPage() {
           {errorText ? <p className="center-callout warning">{errorText}</p> : null}
         </SurfaceCard>
 
+        {/* ---- Filter + Match List ---- */}
+        {predictions.length > 0 ? (
+          <SurfaceCard
+            title="Match Predictions"
+            subtitle={`${filteredPredictions.length} match${filteredPredictions.length === 1 ? '' : 'es'}`}
+            right={
+              <div className="center-filter-chips">
+                {(['all', 'upcoming', 'completed'] as FilterMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`center-chip clickable ${filterMode === mode ? 'active' : ''}`}
+                    onClick={() => setFilterMode(mode)}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            }
+          >
+            <Table
+              columns={predictionColumns(openMatchCenter)}
+              rows={isMobileLayout ? filteredPredictions.slice(0, phoneVisibleCount) : filteredPredictions}
+              rowKey={(pred) => pred.match_key}
+              cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+              renderCards={(narrowRows) => renderPredictionCards(narrowRows, openMatchCenter)}
+              rowClassName={(pred) => {
+                const correct = wasPredictionCorrect(pred);
+                if (correct === null) return undefined;
+                return correct ? styles.rowCorrect : styles.rowWrong;
+              }}
+            />
+            {isMobileLayout && filteredPredictions.length > phoneVisibleCount ? (
+              <button
+                type="button"
+                className="center-btn ghost"
+                onClick={() => setPhoneVisibleCount((count) => count + PHONE_PAGE_SIZE)}
+              >
+                Show {Math.min(PHONE_PAGE_SIZE, filteredPredictions.length - phoneVisibleCount)} more
+              </button>
+            ) : null}
+          </SurfaceCard>
+        ) : null}
+
         {/* ---- Model Accuracy ---- */}
         {stats.completed > 0 ? (
           <SurfaceCard
@@ -477,41 +535,6 @@ export function MatchPredictionPage() {
                 ) : null}
               </div>
             </div>
-          </SurfaceCard>
-        ) : null}
-
-        {/* ---- Filter + Match List ---- */}
-        {predictions.length > 0 ? (
-          <SurfaceCard
-            title="Match Predictions"
-            subtitle={`${filteredPredictions.length} match${filteredPredictions.length === 1 ? '' : 'es'}`}
-            right={
-              <div className="center-filter-chips">
-                {(['all', 'upcoming', 'completed'] as FilterMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`center-chip clickable ${filterMode === mode ? 'active' : ''}`}
-                    onClick={() => setFilterMode(mode)}
-                  >
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                  </button>
-                ))}
-              </div>
-            }
-          >
-            <Table
-              columns={predictionColumns(openMatchCenter)}
-              rows={filteredPredictions}
-              rowKey={(pred) => pred.match_key}
-              cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
-              renderCards={(narrowRows) => renderPredictionCards(narrowRows, openMatchCenter)}
-              rowClassName={(pred) => {
-                const correct = wasPredictionCorrect(pred);
-                if (correct === null) return undefined;
-                return correct ? styles.rowCorrect : styles.rowWrong;
-              }}
-            />
           </SurfaceCard>
         ) : null}
 

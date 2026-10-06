@@ -15,6 +15,7 @@ import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { PIT_FORM_SECTIONS } from '../config/gameFields';
 import type { PitFieldDef } from '../config/gameFields';
+import { useMobileLayout } from '../hooks/useMobileLayout';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { listQueuedMutations } from '../utils/offlineQueue';
 import { hapticSuccess, hapticTap } from '../utils/haptics';
@@ -76,6 +77,9 @@ async function compressPhoto(file: File): Promise<string> {
 /* ------------------------------------------------------------------ */
 
 function PitScoutingWorkspacePage() {
+  const isMobile = useMobileLayout();
+  const [teamChooserOpen, setTeamChooserOpen] = useState(false);
+  const [unscoutedOnly, setUnscoutedOnly] = useState(false);
   const workspaceId = useWorkspace()!.workspace.id;
   const { eventKey, fetchTrigger, eventInput, setEventInput, commitInput, selectEvent } =
     useEventKeyParam(STORAGE_KEY);
@@ -107,7 +111,7 @@ function PitScoutingWorkspacePage() {
 
   useEffect(() => {
     let cancelled = false;
-    setSelectedTeam(''); setTeams([]); setEntriesByTeam(new Map()); setErrorText(''); setStatusText('');
+    setSelectedTeam(''); setTeamChooserOpen(false); setTeams([]); setEntriesByTeam(new Map()); setErrorText(''); setStatusText('');
     if (!eventKey) {setLoading(false); return;}
     setLoading(true); setServerNotesReady(false);
     void Promise.all([
@@ -176,10 +180,11 @@ function PitScoutingWorkspacePage() {
   }
 
   function selectTeamForEditing(teamKey: string) {
-    if (teamKey === selectedTeam) return;
+    if (teamKey === selectedTeam) { setTeamChooserOpen(false); return; }
     if (formDirty && !draftStored && !window.confirm('This draft could not be saved on your device. Discard it and switch teams?')) return;
     rememberPitSelection(workspaceId,eventKey,teamKey);
     setSelectedTeam(teamKey);
+    setTeamChooserOpen(false);
   }
 
   async function handleSave() {
@@ -465,18 +470,30 @@ function PitScoutingWorkspacePage() {
             {statusText ? <p className="center-success-text" role="status">{statusText}</p> : null}
           </SurfaceCard>
 
-          {teams.length > 0 ? (
+          {isMobile && selectedTeam && !teamChooserOpen ? (
+            <div className="pit-selected-team">
+              <strong>Team {teamNumber(selectedTeam)}</strong>
+              <span aria-hidden="true">·</span>
+              <button type="button" className="center-btn ghost" onClick={() => setTeamChooserOpen(true)} disabled={savingForm || uploadingPhoto}>Change team</button>
+            </div>
+          ) : null}
+          {teams.length > 0 && (!isMobile || !selectedTeam || teamChooserOpen) ? (
             <SurfaceCard
               title="Teams"
               subtitle="Tap a team to fill out its pit form. Green = completed, camera = has photos."
               expandable={false}
               mobileCollapsible={false}
             >
+              {isMobile ? <label className="pit-unscouted-filter">
+                <input type="checkbox" checked={unscoutedOnly} onChange={(event) => setUnscoutedOnly(event.target.checked)} />
+                Unscouted only
+              </label> : null}
               <div className="pit-team-grid">
                 {teams.map((team) => {
                   const entry = entriesByTeam.get(team.team_key);
                   const hasForm = Boolean(entry && Object.keys(entry.payload ?? {}).length > 0);
                   const hasPhotos = Boolean(entry?.photos?.length);
+                  if (isMobile && unscoutedOnly && hasForm) return null;
                   return (
                     <button
                       key={team.team_key}

@@ -56,6 +56,40 @@ const SHEET_ITEMS: MoreSheetItem[] = [
       </svg>
     ),
   },
+  // A scout's or lead's team tools: on a phone these were only reachable through the Scout
+  // page's view switcher.
+  {
+    to: '/scouting/assignments',
+    label: 'Assignments',
+    category: 'tools',
+    icon: (
+      <svg viewBox="0 0 24 24">
+        <path d="M9 11l3 3 8-8" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h9" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    to: '/scouting/pit',
+    label: 'Pit Scouting',
+    category: 'tools',
+    icon: (
+      <svg viewBox="0 0 24 24">
+        <path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.5-2.5 2.5-2.5z" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    to: '/compare/picklist',
+    label: 'Picklist',
+    category: 'tools',
+    icon: (
+      <svg viewBox="0 0 24 24">
+        <path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <path d="M3 6h.01M3 12h.01M3 18h.01" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+      </svg>
+    ),
+  },
   {
     to: '/match-center/predictions',
     label: 'Predictions',
