@@ -11,7 +11,7 @@ requests==2.34.2
 httpx==0.28.1
 redis==8.1.0
 apscheduler==3.11.3
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 numpy==2.1.1
 # ML shadow models (ratings, match outcome, synergy, roles). The production image
 # installs this from the CPU-only index; see Dockerfile.prod.
