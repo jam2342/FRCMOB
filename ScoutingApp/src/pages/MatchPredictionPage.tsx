@@ -411,6 +411,8 @@ export function MatchPredictionPage() {
     return {
       total: predictions.length,
       completed: completed.length,
+      assessed: nonTie.length,
+      ties: completed.length - nonTie.length,
       // Fuel-rate predictions use only results from before each match: real forecasts.
       forecast: completed.filter((p) => p.prediction_source === 'fuel_model').length,
       correct,
@@ -449,7 +451,8 @@ export function MatchPredictionPage() {
           {synergyData ? (
             <div>
               <p className="center-event-status">
-                <strong>{synergyData.event_name || eventKey}</strong> — {predictions.length} match{predictions.length === 1 ? '' : 'es'}
+                {/* The picker above already shows the event's name. */}
+                {predictions.length} match{predictions.length === 1 ? '' : 'es'}
               </p>
             </div>
           ) : null}
@@ -519,7 +522,7 @@ export function MatchPredictionPage() {
                 size="display"
                 label="Agrees with result"
                 value={stats.accuracy != null ? `${(stats.accuracy * 100).toFixed(1)}%` : '—'}
-                sub={`${stats.correct} of ${stats.completed} completed matches`}
+                sub={`${stats.correct} of ${stats.assessed} completed match${stats.assessed === 1 ? '' : 'es'}`}
                 tone={
                   stats.accuracy == null
                     ? 'default'
@@ -535,6 +538,9 @@ export function MatchPredictionPage() {
                 ) : null}
               </div>
             </div>
+            {stats.ties > 0 ? (
+              <p className="center-callout muted">{stats.ties} tied match{stats.ties === 1 ? '' : 'es'} excluded from accuracy.</p>
+            ) : null}
           </SurfaceCard>
         ) : null}
 

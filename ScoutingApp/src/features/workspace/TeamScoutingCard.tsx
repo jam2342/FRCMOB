@@ -1,3 +1,4 @@
+import { ScheduleStatus } from './ScheduleStatus';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { EventPicker } from '../../components/EventPicker';
@@ -45,13 +46,13 @@ export function TeamScoutingCard() {
           onSubmit={() => { commitInput(); setChangingEvent(false); }}
         />
         {changingEvent ? (
-          <Button size="sm" variant="quiet" onClick={() => setChangingEvent(false)}>Keep {eventKey}</Button>
+          <Button size="sm" variant="quiet" onClick={() => setChangingEvent(false)}>Keep this event</Button>
         ) : null}
       </SurfaceCard>
     );
   }
 
-  const title = `Scouting at ${room.eventName || eventKey}`;
+  const title = `Scouting at ${room.eventName || 'this event'}`;
   const loading = !snapshot && room.status === 'loading';
 
   return (
@@ -63,13 +64,14 @@ export function TeamScoutingCard() {
       mobileCollapsible={false}
     >
       <div className={styles.body}>
-        {room.error && !snapshot ? <p className="center-callout warning" role="alert">{room.error}</p> : null}
+        {room.error ? <p className="center-callout warning" role="alert">{room.error}</p> : null}
         {room.fromSavedCopy && !room.online ? (
           <p className="center-callout muted">You're offline. This is the last copy this phone saw.</p>
         ) : null}
+        {room.schedule === null || room.scheduleError ? <ScheduleStatus error={room.scheduleError} loading={room.scheduleLoading} retry={room.retry} /> : null}
         {loading ? <p className={styles.note}>Opening your team's room…</p> : null}
 
-        {snapshot && room.isLeader ? (
+        {snapshot && room.schedule !== null && !room.scheduleError && room.isLeader ? (
           <>
             <div className={styles.stats}>
               <Stat
@@ -90,7 +92,7 @@ export function TeamScoutingCard() {
           </>
         ) : null}
 
-        {snapshot && (!room.isLeader || mine.length > 0) ? (
+        {snapshot && room.schedule !== null && !room.scheduleError && (!room.isLeader || mine.length > 0) ? (
           <NextAssignment
             eventKey={eventKey}
             list={mine}

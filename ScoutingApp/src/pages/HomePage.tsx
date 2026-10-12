@@ -329,6 +329,8 @@ export function HomePage() {
   const [eventSearchOpen, setEventSearchOpen] = useState(false);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
   const [eventSearchResults, setEventSearchResults] = useState<EventSearchItem[]>([]);
+  // The query the shown results answer; Enter must not open a match for older text.
+  const [eventSearchResultsQuery, setEventSearchResultsQuery] = useState('');
   const [eventSearchBusy, setEventSearchBusy] = useState(false);
   const eventSearchInputRef = useRef<HTMLInputElement>(null);
   const eventSearchContainerRef = useRef<HTMLDivElement>(null);
@@ -415,6 +417,7 @@ export function HomePage() {
         .then((result) => {
           if (requestSeq === eventSearchRequestSeqRef.current) {
             setEventSearchResults(result.events);
+            setEventSearchResultsQuery(trimmed);
           }
         })
         .catch(() => {
@@ -1729,7 +1732,7 @@ export function HomePage() {
                   onChange={(e) => setEventSearchQuery(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') setEventSearchOpen(false);
-                    if (e.key === 'Enter' && eventSearchResults.length > 0) {
+                    if (e.key === 'Enter' && eventSearchResults.length > 0 && eventSearchResultsQuery === eventSearchQuery.trim()) {
                       selectHomeEventKey(eventSearchResults[0].event_key, { manual: true });
                       setEventSearchOpen(false);
                     }

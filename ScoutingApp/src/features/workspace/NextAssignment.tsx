@@ -55,7 +55,7 @@ export function NextAssignment({
     return <p className={styles.empty}>{emptyText}</p>;
   }
   if (!remaining.length) {
-    return <p className={styles.empty}>You've scouted every match assigned to you here. Nice work.</p>;
+    return <p className={styles.empty}>No upcoming assignments remain.</p>;
   }
 
   return (

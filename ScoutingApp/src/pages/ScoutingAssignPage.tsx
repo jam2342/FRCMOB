@@ -1,3 +1,4 @@
+import { ScheduleStatus } from '../features/workspace/ScheduleStatus';
 import { useMemo, useState } from 'react';
 import type { EventScheduleItem, TeamRoomAssignment, TeamRoomAssignmentChange, TeamRoomMember } from '../api';
 import { EventPicker } from '../components/EventPicker';
@@ -228,11 +229,12 @@ function ScoutingAssignWorkspacePage() {
       />
       {eventKey && room.eventName ? (
         <p className="center-event-status">
-          <strong>{room.eventName}</strong> — {schedule.length} match{schedule.length === 1 ? '' : 'es'}
+          <strong>{room.eventName}</strong> {room.schedule !== null ? <>— {schedule.length} match{schedule.length === 1 ? '' : 'es'}</> : null}
         </p>
       ) : null}
       {!eventKey ? <p className="center-callout muted">Pick your event to see and hand out matches.</p> : null}
-      {room.error && !snapshot ? <p className="center-callout warning" role="alert">{room.error}</p> : null}
+      {room.scheduleError ? <ScheduleStatus error={room.scheduleError} loading={room.scheduleLoading} retry={room.retry} /> : null}
+      {room.error ? <p className="center-callout warning" role="alert">{room.error}</p> : null}
       {!room.online ? (
         <p className="center-callout warning">
           You're offline. {room.isLeader ? 'Assignments can be changed once you reconnect; ' : ''}this is the last copy this device saw.
@@ -246,6 +248,10 @@ function ScoutingAssignWorkspacePage() {
 
   if (!eventKey || !snapshot) {
     return eventCard;
+  }
+
+  if (room.schedule === null || room.scheduleError) {
+    return <>{eventCard}{!room.scheduleError ? <ScheduleStatus loading={room.scheduleLoading} retry={room.retry} /> : null}</>;
   }
 
   if (!room.isLeader) {

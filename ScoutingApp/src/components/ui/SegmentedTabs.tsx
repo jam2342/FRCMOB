@@ -25,7 +25,8 @@ function edgeEnabledIndex<T extends string>(
 
 type SegmentedTabItem<T extends string> = {
   value: T;
-  label: string;
+  label: ReactNode;
+  ariaLabel?: string;
   icon?: ReactNode;
   disabled?: boolean;
   title?: string;
@@ -89,6 +90,7 @@ export function SegmentedTabs<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            aria-label={item.ariaLabel}
             aria-controls={item.panelId}
             tabIndex={active || index === fallbackFocusIndex ? 0 : -1}
             className={cx('segmented-tabs__item', itemClassName, item.className, active && 'active')}

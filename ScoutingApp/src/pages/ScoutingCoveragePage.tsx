@@ -8,6 +8,7 @@ import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { Stat } from '../components/ui/primitives';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { Table, type TableColumn } from '../components/ui/primitives';
 import './ScoutingCoveragePage.css';
@@ -81,11 +82,15 @@ function ScoutingCoverageWorkspacePage() {
   const { eventKey, fetchTrigger, eventInput, setEventInput, commitInput, selectEvent } =
     useEventKeyParam(STORAGE_KEY);
   const isMobile = useMobileLayout();
+  const { online, isShowingOfflineData } = useOnlineStatus();
+  const connectionRef = useRef({ online, isShowingOfflineData });
+  connectionRef.current = { online, isShowingOfflineData };
 
   const [data, setData] = useState<ScoutingCoverageResponse | null>(null);
   const [tab, setTab] = useState<CoverageTab>('grid');
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   // A response for an event the page has since left is dropped; otherwise a slow
   // old request replaced the new event's coverage.
@@ -96,10 +101,11 @@ function ScoutingCoverageWorkspacePage() {
       const result = await getScoutingCoverage(key);
       if (key !== activeEventKey.current) return;
       setData(result);
+      if (connectionRef.current.online && !connectionRef.current.isShowingOfflineData && navigator.onLine) setLastUpdated(Date.now());
       setErrorText('');
-    } catch (err) {
+    } catch {
       if (key !== activeEventKey.current) return;
-      if (!silent) setErrorText((err as Error).message || 'Failed to load coverage data.');
+      setErrorText('Could not refresh coverage.');
     } finally {
       if (!silent && key === activeEventKey.current) setLoading(false);
     }
@@ -109,6 +115,8 @@ function ScoutingCoverageWorkspacePage() {
     if (!eventKey) return;
     activeEventKey.current = eventKey;
     setData(null);
+    setLastUpdated(null);
+    setErrorText('');
     void fetchCoverage(eventKey);
     const interval = window.setInterval(() => void fetchCoverage(eventKey, true), REFRESH_MS);
     return () => window.clearInterval(interval);
@@ -148,7 +156,10 @@ function ScoutingCoverageWorkspacePage() {
               onSubmit={commitInput}
               loading={loading}
             />
-            {errorText ? <p className="center-callout warning">{errorText}</p> : null}
+            {errorText || (data && (!online || isShowingOfflineData)) ? <p className="center-callout warning" role="alert">
+              {data ? `Showing saved coverage. ${lastUpdated ? `Last live update ${new Date(lastUpdated).toLocaleString()}.` : 'No live update confirmed yet.'}` : errorText}
+              {' '}<button type="button" className="center-btn ghost" disabled={loading} onClick={() => void fetchCoverage(eventKey)}>Retry</button>
+            </p> : null}
 
             {summary ? (
               <div className="page-hero">
@@ -248,7 +259,7 @@ function ScoutingCoverageWorkspacePage() {
               {tab === 'quality' ? (
                 data.outliers.length === 0 ? (
                   <p className="center-callout muted">
-                    No quality flags — scouts agree with each other and with team history.
+                    {data.summary.total_entries > 0 ? 'No quality flags detected.' : <>Quality checks need scouting reports. <a href={`#/scouting?event=${encodeURIComponent(eventKey)}`}>Start scouting</a>.</>}
                   </p>
                 ) : (
                   <ul className="coverage-outliers">

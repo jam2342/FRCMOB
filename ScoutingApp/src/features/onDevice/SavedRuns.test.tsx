@@ -45,7 +45,7 @@ async function seed(session = run) {
   try { await saveSession(db, session); } finally { db.close(); }
 }
 async function openResults() {
-  fireEvent.click(await screen.findByRole('button', { name: /View results for 2026test_qm1/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /View results for Qual 1/ }));
   return screen.findByRole('region', { name: 'Run results' });
 }
 

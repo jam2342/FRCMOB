@@ -171,6 +171,7 @@ function PitScoutingWorkspacePage() {
 
   function setField(key: string, value: unknown) {
     const next = {...formRef.current,[key]:value};
+    if (value === undefined) delete next[key];
     formRef.current = next; setForm(next);
     const stored = savePitDraft(workspaceId,eventKey,selectedTeam,next);
     setDraftStored(stored);
@@ -385,17 +386,19 @@ function PitScoutingWorkspacePage() {
       }
       case 'toggle':
         return (
-          <button
-            type="button"
-            aria-pressed={value === true}
-            className={`center-btn ${value === true ? '' : 'ghost'}`}
-            onClick={() => {
+          <select
+            className="center-input"
+            value={value === true ? 'yes' : value === false ? 'no' : ''}
+            onChange={(event) => {
               hapticTap();
-              setField(field.key, value !== true);
+              const answer = event.target.value;
+              setField(field.key, answer ? answer === 'yes' : undefined);
             }}
           >
-            {value === true ? 'Yes' : 'No'}
-          </button>
+            <option value="">Unanswered</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
         );
       case 'number':
         return (
@@ -560,6 +563,7 @@ function PitScoutingWorkspacePage() {
                 <label className={`pit-photo-add ${uploadingPhoto ? 'busy' : ''}`}>
                   <input
                     ref={fileInputRef}
+                    aria-label="Add robot photo"
                     type="file"
                     accept="image/*"
                     capture="environment"

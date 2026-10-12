@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { EventSearchItem } from '../api';
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/ui/Icons';
 
@@ -87,8 +89,11 @@ export function EventCalendarModal({
   onShiftMonth,
   ...gridProps
 }: GridProps & { monthLabel: string; eventCount: number; onClose: () => void; onShiftMonth: (delta: number) => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, true);
   return (
     <div
+      ref={dialogRef}
       className="home-calendar-modal-backdrop"
       role="dialog"
       aria-modal="true"

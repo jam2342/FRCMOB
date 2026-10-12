@@ -78,6 +78,9 @@ function PicklistWorkspacePage() {
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } =
     useEventKeyParam(STORAGE_KEY);
 
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamsError, setTeamsError] = useState('');
+  const [listsError, setListsError] = useState(false);
   const [teamPool, setTeamPool] = useState<TeamInfo[]>([]);
   const [picklists, setPicklists] = useState<Picklist[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -105,6 +108,8 @@ function PicklistWorkspacePage() {
   /* ---- Data loading ---------------------------------------------- */
 
   const fetchTeams = useCallback(async (key: string, sequence: number) => {
+    setTeamsLoading(true);
+    setTeamsError('');
     try {
       const payload = await getEventTeamsIntel(key, {
         include_tba: true,
@@ -128,7 +133,9 @@ function PicklistWorkspacePage() {
         .sort((a, b) => (b.rating_0_100 ?? 0) - (a.rating_0_100 ?? 0));
       if (loadSequence.current === sequence) setTeamPool(teams);
     } catch {
-      if (loadSequence.current === sequence) setTeamPool([]);
+      if (loadSequence.current === sequence) { setTeamPool([]); setTeamsError('Could not load event teams.'); }
+    } finally {
+      if (loadSequence.current === sequence) setTeamsLoading(false);
     }
   }, []);
 
@@ -149,11 +156,12 @@ function PicklistWorkspacePage() {
 
   const fetchPicklists = useCallback(async (key: string, sequence: number) => {
     setLoading(true);
+    setListsError(false);
     setErrorText('');
     try {
       const result = await listPicklists(key);
       if (loadSequence.current !== sequence) return;
-      const lists = result.picklists ?? [];
+      const lists = (result.picklists ?? []).filter((list) => list.event_key === key);
       setPicklists(lists);
       if (lists.length > 0) {
         setActiveId((current) =>
@@ -163,8 +171,8 @@ function PicklistWorkspacePage() {
         setActiveId(null);
         selectDoc(null);
       }
-    } catch (err) {
-      if (loadSequence.current === sequence) setErrorText((err as Error).message || 'Failed to load picklists.');
+    } catch {
+      if (loadSequence.current === sequence) { setListsError(true); setErrorText('Could not load picklists.'); }
     } finally {
       if (loadSequence.current === sequence) setLoading(false);
     }
@@ -173,6 +181,9 @@ function PicklistWorkspacePage() {
   useEffect(() => {
     const sequence = ++loadSequence.current;
     setActiveId(null);
+    setPicklists([]);
+    setListsError(false);
+    setTeamsError('');
     selectDoc(null);
     setTeamPool([]);
     setPitPhotoByTeam(new Map());
@@ -187,9 +198,9 @@ function PicklistWorkspacePage() {
 
   useEffect(() => {
     if (activeId == null) return;
-    const fromList = picklists.find((p) => p.id === activeId);
+    const fromList = picklists.find((p) => p.id === activeId && p.event_key === eventKey);
     if (fromList) selectDoc(fromList);
-  }, [activeId, picklists, selectDoc]);
+  }, [activeId, picklists, selectDoc, eventKey]);
 
   /* ---- Live mode polling ------------------------------------------ */
 
@@ -384,7 +395,7 @@ function PicklistWorkspacePage() {
         type="button"
         className="center-btn"
         onClick={() => void handleCreate(true)}
-        disabled={loading || deleting || teamPool.length === 0}
+        disabled={loading || deleting || teamsLoading || !!teamsError || teamPool.length === 0}
         title="Create a picklist pre-ranked by team ratings"
       >
         New from ratings
@@ -399,7 +410,7 @@ function PicklistWorkspacePage() {
       </button>
       {doc ? (
         <>
-          <button type="button" className="center-btn ghost" disabled={deleting} onClick={addMissingTeams}>
+          <button type="button" className="center-btn ghost" disabled={deleting || teamsLoading || !!teamsError || teamPool.length === 0} onClick={addMissingTeams}>
             Add missing teams
           </button>
           <button type="button" className="center-btn ghost" onClick={() => void exportPrintableReport('picklist.html').catch(() => window.alert('The report could not be exported. Please try again.'))}>
@@ -426,7 +437,7 @@ function PicklistWorkspacePage() {
       <div className="center-page-container">
 
           <SurfaceCard
-            title={isMobile && doc ? `${eventKey} · ${doc.title}` : "Picklist Builder"}
+            title={isMobile && doc ? doc.title : "Picklist Builder"}
             subtitle={isMobile && doc ? "Shared with your team · Saves automatically." : "Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."}
             className="no-print"
             expandable={false}
@@ -434,7 +445,8 @@ function PicklistWorkspacePage() {
           >
             {!isMobile || !doc ? eventPicker : null}
 
-            {errorText ? <p className="center-callout warning">{errorText}</p> : null}
+            {errorText ? <p className="center-callout warning" role="alert">{errorText}{listsError ? <> <button type="button" className="center-btn ghost" onClick={() => void fetchPicklists(eventKey, loadSequence.current)}>Retry picklists</button></> : null}</p> : null}
+            {teamsLoading ? <p role="status">Loading event teams. Team actions will be ready when loading finishes.</p> : teamsError ? <p className="center-callout warning" role="alert">{teamsError} Team actions are unavailable. <button type="button" className="center-btn ghost" onClick={() => void fetchTeams(eventKey, loadSequence.current)}>Retry teams</button></p> : eventKey && !teamPool.length ? <p>No teams listed for this event yet.</p> : null}
             {editor.notice ? (
               <div className="center-callout" role="status">
                 <p>{editor.notice}</p>
@@ -502,7 +514,7 @@ function PicklistWorkspacePage() {
             >
               {slots.length === 0 ? (
                 <p className="center-callout muted">
-                  Empty picklist. Use “Add missing teams” to pull in every team at this event.
+                  {teamsLoading ? 'Empty picklist. Loading event teams…' : teamsError ? 'Empty picklist. Retry loading event teams above to add them.' : !teamPool.length ? 'Empty picklist. No teams listed for this event yet.' : 'Empty picklist. Use “Add missing teams” to add the event teams.'}
                 </p>
               ) : (
                 <ol className="picklist-rows" inert={deleting ? true : undefined}>
@@ -716,7 +728,7 @@ function PicklistWorkspacePage() {
                 </ol>
               )}
             </SurfaceCard>
-          ) : eventKey && !loading ? (
+          ) : eventKey && !loading && !listsError ? (
             <SurfaceCard
               title="No picklist yet"
               subtitle="Create one to start ranking teams."

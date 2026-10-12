@@ -451,7 +451,7 @@ export function SettingsPage() {
 
   return (
     <div className={styles.layout}>
-      <SurfaceCard title="Appearance">
+      <SurfaceCard title="Appearance" className="settings-appearance-card">
         <CardBody>
           <div className={styles.optionGrid}>
             <FieldSelect
@@ -476,7 +476,7 @@ export function SettingsPage() {
         </CardBody>
       </SurfaceCard>
 
-      <SurfaceCard title="Workflow Defaults">
+      <SurfaceCard title="Workflow Defaults" className="settings-workflow-card">
         <CardBody>
           <div className={styles.optionGrid}>
             {/* "UI Mode" (Full Diagnostics / Simple) was removed: it was saved
@@ -528,7 +528,7 @@ export function SettingsPage() {
       <PushNotificationsCard />
 
       {adminModeEnabled ? (
-      <SurfaceCard title="Refresh + Runtime">
+      <SurfaceCard title="Refresh + Runtime" className="settings-runtime-card">
         <CardBody>
           <FieldText
             label="Admin API Key (session mint only)"
@@ -586,7 +586,7 @@ export function SettingsPage() {
 
       {adminModeEnabled ? (
       <>
-      <SurfaceCard title="Ops Dashboard">
+      <SurfaceCard title="Ops Dashboard" className="settings-ops-card">
         <CardBody>
           <div className={styles.actions}>
             <Button variant="quiet" onClick={() => void refreshOpsDashboard()} loading={opsLoading}>
@@ -671,7 +671,7 @@ export function SettingsPage() {
         </CardBody>
       </SurfaceCard>
 
-      <SurfaceCard title="Local Diagnostics">
+      <SurfaceCard title="Local Diagnostics" className="settings-diagnostics-card">
         <CardBody>
           <CardGrid dense>
             <Stat label="Favorite Events" value={diagnostics.favoriteEventsCount} />
@@ -714,7 +714,7 @@ export function SettingsPage() {
         </Button>
       </div>
 
-      <SurfaceCard title="Maintenance">
+      <SurfaceCard title="Maintenance" className="settings-maintenance-card">
         <CardBody>
           <div className={styles.actions}>
             <Button variant="quiet" onClick={clearFavorites}>

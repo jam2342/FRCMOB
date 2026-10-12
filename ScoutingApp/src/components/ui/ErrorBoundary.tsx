@@ -83,7 +83,7 @@ export class ErrorBoundary extends Component<Props, State> {
             {this.props.label ? `${this.props.label} failed to load` : 'Something went wrong'}
           </h2>
           <p className="error-boundary-message">
-            {this.state.error?.message ?? 'An unexpected error occurred.'}
+            This page could not load. Try again, or reload the app if it keeps happening.
           </p>
           <button onClick={this.handleRetry} className="error-boundary-retry">
             Try again

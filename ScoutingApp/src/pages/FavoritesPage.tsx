@@ -1,4 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEventNames } from '../hooks/useEventNames';
+import { eventDisplayName } from '../utils/eventSearchIndex';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventSchedule,
@@ -59,10 +61,12 @@ type FavoritesTab = 'overview' | 'events' | 'teams';
 type FavoriteEventCard = {
   event_key: string;
   event_name: string;
-  schedule_count: number;
-  teams_count: number;
-  completed_count: number;
-  live_team_count: number;
+  schedule_count: number | null;
+  teams_count: number | null;
+  completed_count: number | null;
+  live_team_count: number | null;
+  schedule_available: boolean;
+  stale: boolean;
   live_matches: EventScheduleItem[];
   upcoming_matches: EventScheduleItem[];
   warnings: string[];
@@ -73,7 +77,7 @@ type FavoriteTeamCard = {
   team_key: string;
   team_number: number | null;
   nickname: string;
-  matches_analyzed: number;
+  matches_analyzed: number | null;
   fuel_rate: number | null;
   cycle_time_sec: number | null;
   auto_contribution: number | null;
@@ -90,7 +94,9 @@ type FavoriteTeamCard = {
   freshness_state: 'fresh' | 'stale' | 'unknown';
   freshness_label: string;
   freshness_detail: string | null;
-  events_count: number;
+  events_count: number | null;
+  event_context_key: string;
+  data_available: boolean;
   registered_events: TeamCompetitionsResponse['registered_events'];
   next_event_key: string | null;
   warnings: string[];
@@ -114,11 +120,14 @@ function normalizeEventKey(value: string): string {
 
 const FAVORITES_TABS = ['overview', 'events', 'teams'] as const;
 
-function eventDisplayName(card: FavoriteEventCard): string {
-  return card.event_name && card.event_name !== card.event_key ? card.event_name : card.event_key.toUpperCase();
+// A failed load still needs to say which event this is: the shared index name, else "2026 ARC".
+function eventCardName(card: FavoriteEventCard): string {
+  return card.event_name && card.event_name !== card.event_key ? card.event_name : eventDisplayName(card.event_key);
 }
 
 export function FavoritesPage() {
+  // Re-renders once the shared event index loads, so fallbacks become names.
+  useEventNames();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobileLayout = useMobileLayout();
@@ -241,18 +250,18 @@ export function FavoritesPage() {
 
         let scheduleMatches: EventScheduleItem[] = [];
         let eventName = eventKey;
-        let teamsCount = 0;
-        let liveTeamCount = 0;
+        let teamsCount: number | null = null;
+        let liveTeamCount: number | null = null;
 
         if (scheduleResult.status === 'fulfilled') {
           scheduleMatches = scheduleResult.value.matches || [];
           eventName = scheduleResult.value.event_name || eventName;
         } else {
-          warnings.push(`Schedule unavailable: ${(scheduleResult.reason as Error).message || 'failed'}`);
+          warnings.push('Schedule unavailable: try refreshing again.');
         }
 
         if (teamsResult.status === 'fulfilled') {
-          teamsCount = teamsResult.value.teams_count || (teamsResult.value.teams || []).length;
+          teamsCount = teamsResult.value.teams_count ?? teamsResult.value.teams?.length ?? null;
           if (!eventName || eventName === eventKey) {
             eventName = teamsResult.value.event_name || eventName;
           }
@@ -260,14 +269,14 @@ export function FavoritesPage() {
             warnings.push(`Intel: ${warning}`);
           }
         } else {
-          warnings.push(`Teams unavailable: ${(teamsResult.reason as Error).message || 'failed'}`);
+          warnings.push('Teams unavailable: try refreshing again.');
         }
 
         if (liveFormResult.status === 'fulfilled') {
           const statuses = Object.values(liveFormResult.value.team_statuses || {});
           liveTeamCount = statuses.filter((item) => item?.is_live).length;
         } else {
-          warnings.push(`Live form unavailable: ${(liveFormResult.reason as Error).message || 'failed'}`);
+          warnings.push('Live updates unavailable: try refreshing again.');
         }
 
         const liveMatches: EventScheduleItem[] = [];
@@ -275,10 +284,13 @@ export function FavoritesPage() {
         let completedCount = 0;
 
         for (const match of scheduleMatches) {
+          if (match.is_completed) {
+            completedCount += 1;
+            continue;
+          }
           const timer = liveTimerLabel(matchStartTime(match), Date.now());
           if (timer.state === 'live') liveMatches.push(match);
           if (timer.state === 'upcoming') upcomingMatches.push(match);
-          if (timer.state === 'ended' || match.is_completed) completedCount += 1;
         }
 
         upcomingMatches.sort((a, b) => {
@@ -291,10 +303,12 @@ export function FavoritesPage() {
         const card: FavoriteEventCard = {
           event_key: eventKey,
           event_name: eventName,
-          schedule_count: scheduleMatches.length,
+          schedule_count: scheduleResult.status === 'fulfilled' ? scheduleMatches.length : null,
           teams_count: teamsCount,
-          completed_count: completedCount,
+          completed_count: scheduleResult.status === 'fulfilled' ? completedCount : null,
           live_team_count: liveTeamCount,
+          schedule_available: scheduleResult.status === 'fulfilled',
+          stale: false,
           live_matches: liveMatches,
           upcoming_matches: upcomingMatches,
           warnings,
@@ -311,14 +325,14 @@ export function FavoritesPage() {
 
         let error = '';
         let teamNumber = teamNumberFromTeamKey(teamKey);
-        let nickname = teamKey;
-        let matchesAnalyzed = 0;
+        let nickname = '';
+        let matchesAnalyzed: number | null = null;
         let fuelRate: number | null = null;
         let cycleTimeSec: number | null = null;
         let autoContribution: number | null = null;
         let climbSuccessProb: number | null = null;
         let reliabilityScore: number | null = null;
-        let eventsCount = 0;
+        let eventsCount: number | null = null;
         let nextEventKey: string | null = null;
         let rating: number | null = null;
         let confidence: number | null = null;
@@ -360,7 +374,7 @@ export function FavoritesPage() {
 
           teamNumber = parseNumber(intelTeam?.team_number) ?? teamNumber;
           nickname = typeof intelTeam?.nickname === 'string' ? intelTeam.nickname : nickname;
-          matchesAnalyzed = parseNumber(analysis?.matches_analyzed) ?? 0;
+          matchesAnalyzed = parseNumber(analysis?.matches_analyzed);
           const freshness = summarizeFreshness(analysis?.data_freshness || null);
           freshnessState = freshness.state;
           freshnessLabel = freshness.label;
@@ -371,7 +385,7 @@ export function FavoritesPage() {
           climbSuccessProb = parseNumber(averages?.climb_success_prob);
           reliabilityScore = parseNumber(averages?.reliability_score);
 
-          eventsCount = parseNumber(competitions?.registered_events_count) ?? 0;
+          eventsCount = parseNumber(competitions?.registered_events_count);
           registeredEvents = Array.isArray(competitions?.registered_events)
             ? (competitions.registered_events as TeamCompetitionsResponse['registered_events'])
             : [];
@@ -405,8 +419,8 @@ export function FavoritesPage() {
           for (const warning of Array.isArray(intel.warnings) ? intel.warnings : []) {
             warnings.push(`Intel: ${String(warning)}`);
           }
-        } catch (requestError) {
-          error = (requestError as Error).message || 'Intel unavailable.';
+        } catch {
+          error = 'Team data unavailable. Try refreshing again.';
         }
 
           const card: FavoriteTeamCard = {
@@ -431,6 +445,8 @@ export function FavoritesPage() {
             freshness_label: freshnessLabel,
             freshness_detail: freshnessDetail,
             events_count: eventsCount,
+            event_context_key: eventContextKey,
+            data_available: !error,
             registered_events: registeredEvents,
             next_event_key: nextEventKey,
             warnings,
@@ -454,7 +470,7 @@ export function FavoritesPage() {
           nextEventCards[key] = result.value;
           errors.push(...result.value.warnings.filter((warning) => warning.includes('unavailable:')));
         } else {
-          errors.push(`${key}: ${(result.reason as Error).message || 'event refresh failed'}`);
+          errors.push('Could not refresh a saved event.');
         }
       }
 
@@ -466,12 +482,43 @@ export function FavoritesPage() {
           nextTeamCards[key] = result.value;
           if (result.value.error) errors.push(result.value.error);
         } else {
-          errors.push(`${key}: ${(result.reason as Error).message || 'team refresh failed'}`);
+          errors.push('Could not refresh a saved team.');
         }
       }
 
-      if (activeTab !== 'teams') setEventCards(nextEventCards);
-      if (activeTab !== 'events') setTeamCards(nextTeamCards);
+      if (activeTab !== 'teams') setEventCards((previous) => {
+        for (const [key, card] of Object.entries(nextEventCards)) {
+          const old = previous[key];
+          if (!old) continue;
+          const retainSchedule = !card.schedule_available && old.schedule_count != null;
+          const retainTeams = card.teams_count == null && old.teams_count != null;
+          const retainLive = card.live_team_count == null && old.live_team_count != null;
+          nextEventCards[key] = {
+            ...card,
+            event_name: card.event_name === key ? old.event_name : card.event_name,
+            ...(retainSchedule ? {
+              schedule_count: old.schedule_count,
+              completed_count: old.completed_count,
+              live_matches: old.live_matches,
+              upcoming_matches: old.upcoming_matches,
+            } : {}),
+            teams_count: retainTeams ? old.teams_count : card.teams_count,
+            live_team_count: retainLive ? old.live_team_count : card.live_team_count,
+            stale: retainSchedule || retainTeams || retainLive,
+            last_updated_at: retainSchedule || retainTeams || retainLive ? old.last_updated_at : card.last_updated_at,
+          };
+        }
+        return { ...nextEventCards };
+      });
+      if (activeTab !== 'events') setTeamCards((previous) => {
+        for (const [key, card] of Object.entries(nextTeamCards)) {
+          const old = previous[key];
+          if (card.error && old?.data_available && old.event_context_key === card.event_context_key) {
+            nextTeamCards[key] = { ...old, error: `${card.error} Showing saved data; it may be out of date.` };
+          }
+        }
+        return { ...nextTeamCards };
+      });
       setLastUpdatedAt(Date.now());
 
       if (errors.length > 0) {
@@ -544,14 +591,14 @@ export function FavoritesPage() {
         if (!byKey.has(eventKey)) {
           byKey.set(eventKey, {
             event_key: eventKey,
-            name: event.name || eventKey,
+            name: event.name || eventDisplayName(eventKey),
             start_date: event.start_date || null,
           });
         }
       }
     }
     const activeEvent = normalizeEventKey(eventContextInput);
-    if (activeEvent && !byKey.has(activeEvent)) byKey.set(activeEvent, {event_key: activeEvent, name: activeEvent, start_date: null});
+    if (activeEvent && !byKey.has(activeEvent)) byKey.set(activeEvent, {event_key: activeEvent, name: eventDisplayName(activeEvent), start_date: null});
     return [...byKey.values()].sort((a, b) => {
       const aDate = a.start_date || '';
       const bDate = b.start_date || '';
@@ -581,11 +628,11 @@ export function FavoritesPage() {
     const eventKey = normalizeEventKey(rawKey);
     if (!eventKey) return;
     if (!isEventKey(eventKey)) {
-      setErrorText('Pick an event from the list, or type its code (for example 2026txhou).');
+      setErrorText('Pick an event from the list.');
       return;
     }
     if (favoriteEvents.includes(eventKey)) {
-      setStatusText(`${eventKey} already added.`);
+      setStatusText('This event is already saved.');
       setEventInput('');
       return;
     }
@@ -593,7 +640,7 @@ export function FavoritesPage() {
     persistFavoriteEvents([eventKey, ...favoriteEvents]);
     if (activeTab === 'teams') setActiveTab('events');
     setEventInput('');
-    setStatusText(`Added ${eventKey}.`);
+    setStatusText('Event added.');
     setErrorText('');
   }
 
@@ -601,11 +648,11 @@ export function FavoritesPage() {
     event.preventDefault();
     const teamKey = normalizeTeamKeyInput(teamInput || '');
     if (!teamKey) {
-      setErrorText('Enter a valid team key or number (example: frc118 or 118).');
+      setErrorText('Enter a valid team number, such as 118.');
       return;
     }
     if (favoriteTeams.includes(teamKey)) {
-      setStatusText(`${teamKey} already added.`);
+      setStatusText(`Team ${teamNumberFromTeamKey(teamKey)} is already saved.`);
       setTeamInput('');
       return;
     }
@@ -613,18 +660,18 @@ export function FavoritesPage() {
     persistFavoriteTeams([teamKey, ...favoriteTeams]);
     if (activeTab === 'events') setActiveTab('teams');
     setTeamInput('');
-    setStatusText(`Added ${teamKey}.`);
+    setStatusText(`Added Team ${teamNumberFromTeamKey(teamKey)}.`);
     setErrorText('');
   }
 
   function removeFavoriteEvent(eventKey: string) {
     persistFavoriteEvents(favoriteEvents.filter((value) => value !== eventKey));
-    setStatusText(`Removed ${eventKey}.`);
+    setStatusText('Event removed.');
   }
 
   function removeFavoriteTeam(teamKey: string) {
     persistFavoriteTeams(favoriteTeams.filter((value) => value !== teamKey));
-    setStatusText(`Removed ${teamKey}.`);
+    setStatusText(`Removed Team ${teamNumberFromTeamKey(teamKey)}.`);
   }
 
   function openEventCenter(eventKey: string) {
@@ -645,7 +692,7 @@ export function FavoritesPage() {
 
   const renderEventCards = (
     <div className="favorites-card-grid">
-      {favoriteEvents.filter(key => !eventCards[key]).map(key => <p key={key} role="status">Loading {key}…</p>)}
+      {favoriteEvents.filter(key => !eventCards[key]).map(key => <p key={key} role="status">Loading {eventDisplayName(key)}…</p>)}
       {favoriteEvents.length === 0 ? (
         <CardEmpty title="No favorite events yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
       ) : null}
@@ -654,14 +701,14 @@ export function FavoritesPage() {
         return (
           <article key={`favorite-event-card-${card.event_key}`} className="favorites-item-card event">
             <header>
-              <strong>{eventDisplayName(card)}</strong>
-              <small>{card.event_key}</small>
+              <strong>{eventCardName(card)}</strong>
             </header>
             <div className={styles.chipRow}>
-              <Chip>{card.schedule_count} match{card.schedule_count === 1 ? '' : 'es'}</Chip>
-              <Chip>{card.teams_count} team{card.teams_count === 1 ? '' : 's'}</Chip>
+              <Chip>{card.schedule_count == null ? 'Matches unavailable' : `${card.schedule_count} match${card.schedule_count === 1 ? '' : 'es'}`}</Chip>
+              <Chip>{card.teams_count == null ? 'Teams unavailable' : `${card.teams_count} team${card.teams_count === 1 ? '' : 's'}`}</Chip>
               <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
             </div>
+            {card.stale ? <p className={`${styles.note} ${styles.noteWarning}`}>Showing saved data; it may be out of date.</p> : null}
 
             {card.live_matches.length > 0 ? (
               <div className="center-stack-gap">
@@ -687,7 +734,7 @@ export function FavoritesPage() {
                 Next match: {nextMatch.display_name || nextMatch.match_key} · {fmtDateShort(matchStartTime(nextMatch))}
               </p>
             ) : (
-              <p className={styles.note}>No schedule rows.</p>
+              <p className={styles.note}>{!card.schedule_available ? 'Schedule unavailable.' : card.schedule_count === 0 ? 'Schedule not published yet.' : card.completed_count === card.schedule_count ? 'All published matches are complete.' : 'No upcoming matches.'}</p>
             )}
 
             {card.warnings.length > 0 ? (
@@ -731,9 +778,8 @@ export function FavoritesPage() {
         <article key={`favorite-team-card-${card.team_key}`} className="favorites-item-card team">
           <header>
             <strong>
-              {card.team_number !== null ? `#${card.team_number}` : card.team_key} {card.nickname}
+              {card.team_number !== null ? `#${card.team_number}` : `Team ${card.team_key.replace(/^frc/, '')}`} {card.nickname}
             </strong>
-            <small>{card.team_key}</small>
           </header>
 
           {card.error ? (
@@ -762,8 +808,8 @@ export function FavoritesPage() {
             </CardGrid>
 
             <div className={styles.chipRow}>
-              <Chip>{card.matches_analyzed} scouted</Chip>
-              <Chip>{card.events_count} event{card.events_count === 1 ? '' : 's'}</Chip>
+              <Chip>{card.matches_analyzed == null ? 'Scouting count unavailable' : `${card.matches_analyzed} scouted`}</Chip>
+              <Chip>{card.events_count == null ? 'Events unavailable' : `${card.events_count} event${card.events_count === 1 ? '' : 's'}`}</Chip>
               <Chip>Driver {metric(card.rating_driver_skill_0_100, 1)}</Chip>
               <Chip>{card.tba_record}</Chip>
               <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
@@ -780,7 +826,7 @@ export function FavoritesPage() {
           ) : null}
 
           <div className={styles.actions}>
-            <Button size="sm" title={`Open Team Center for ${card.team_key}`} onClick={() => openTeamCenter(card.team_key)}>
+            <Button size="sm" title={`Open Team Center for Team ${card.team_number ?? card.team_key.replace(/^frc/, '')}`} onClick={() => openTeamCenter(card.team_key)}>
               Team Details
             </Button>
             <Button size="sm" variant="quiet" onClick={() => removeFavoriteTeam(card.team_key)}>
@@ -854,7 +900,7 @@ export function FavoritesPage() {
                 <option value="">Auto-select from team events</option>
                 {contextEventOptions.map((event) => (
                   <option key={`favorites-context-option-${event.event_key}`} value={event.event_key}>
-                    {event.name} ({event.event_key})
+                    {event.name}
                   </option>
                 ))}
               </FieldSelect>

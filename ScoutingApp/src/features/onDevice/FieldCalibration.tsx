@@ -94,7 +94,8 @@ export function FieldCalibration({ onCalibrated }: Props) {
           setCalibration(cal);
           setError('');
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Calibration failed.');
+          console.warn('Field calibration failed', err);
+          setError('Those corners could not be matched. Tap four different field corners in the order shown.');
         }
       }
     },
@@ -240,7 +241,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
           <p className="field-calibration__prompt">
             {calibration
               ? '✓ Calibrated — check the grid hugs the field. If it drifts, Reset and re-tap.'
-              : `Tap corner ${taps.length + 1} of 4: ${CORNER_PROMPTS[taps.length]}`}
+              : taps.length === 4 ? 'Reset taps and try again.' : `Tap corner ${taps.length + 1} of 4: ${CORNER_PROMPTS[taps.length]}`}
           </p>
           <canvas
             ref={canvasRef}
@@ -260,7 +261,7 @@ export function FieldCalibration({ onCalibrated }: Props) {
         <p className="muted">Upload or capture a field photo to begin.</p>
       )}
 
-      {error ? <p className="field-calibration__error">{error}</p> : null}
+      {error ? <p className="field-calibration__error" role="alert">{error}</p> : null}
     </div>
   );
 }

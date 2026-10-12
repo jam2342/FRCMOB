@@ -46,11 +46,12 @@ const RATINGS_PREVIEW_COLUMNS: TableColumn<EventTeamRatingItem>[] = [
   {
     key: 'strength',
     label: 'Top Strength',
-    render: (row) => <span className={styles.strengthCell}>{row.pros?.[0]?.label || '—'}</span>,
+    render: (row) => <span className={styles.strengthCell}>{row.pros?.[0]?.label ? plainSignalLabel(row.pros[0].label) : '—'}</span>,
   },
 ];
 import { downloadCsv } from '../utils/csvExport';
 import { metric, pct } from './centerUtils';
+import { plainSignalLabel } from './teamCenterOfficial';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 
 /* ------------------------------------------------------------------ */
@@ -114,18 +115,18 @@ function ExportPageContent() {
 
     if (results[0].status === 'fulfilled') {
       setRatings(results[0].value.ratings ?? []);
-      setEventName(results[0].value.event_name || key);
+      setEventName(results[0].value.event_name || 'Selected event');
     }
 
     if (results[1].status === 'fulfilled') {
       const scheduleResult = results[1].value;
       setSchedule(scheduleResult.matches ?? []);
-      setEventName((current) => current || scheduleResult.event_name || key);
+      setEventName((current) => current || scheduleResult.event_name || 'Selected event');
     }
 
     if (results[2].status === 'fulfilled') {
-      const payload = results[2].value as Record<string, unknown>;
-      const rankRows = Array.isArray(payload.rankings) ? payload.rankings as Record<string, unknown>[] : [];
+      const nestedRankings = results[2].value.rankings?.rankings;
+      const rankRows = Array.isArray(nestedRankings) ? nestedRankings as Record<string, unknown>[] : [];
       setRankings(rankRows);
     }
 
@@ -409,18 +410,18 @@ function ExportPageContent() {
         </SurfaceCard>
 
         {/* ---- Export Actions ---- */}
-        {hasAnyData ? (
+        {hasAnyData || Boolean(eventKey && workspace) ? (
           <SurfaceCard
             title="Available Exports"
           >
             <div className="export-card-grid">
+              {hasAnyData ? <>
               {/* Team Ratings */}
               <ExportCard
                 title="Team Ratings"
                 description={`${ratings?.length ?? 0} team${ratings?.length === 1 ? '' : 's'} with rating data, subscores, and scouting signals.`}
                 available={Boolean(ratings?.length)}
                 onExport={exportRatings}
-                icon="[#]"
               />
 
               {/* Match Schedule */}
@@ -429,17 +430,16 @@ function ExportPageContent() {
                 description={`${schedule?.length ?? 0} match${schedule?.length === 1 ? '' : 'es'} with scores, alliances, and results.`}
                 available={Boolean(schedule?.length)}
                 onExport={exportSchedule}
-                icon="[L]"
               />
 
               {/* Rankings */}
               <ExportCard
                 title="Rankings"
-                description={`${rankings?.length ?? 0} team rankings from TBA / FIRST.`}
+                description={`${rankings?.length ?? 0} team ranking${rankings?.length === 1 ? '' : 's'} from TBA / FIRST.`}
                 available={Boolean(rankings?.length)}
                 onExport={exportRankings}
-                icon="[W]"
               />
+              </> : null}
 
               {/* Raw scouting entries */}
               <ExportCard
@@ -451,7 +451,6 @@ function ExportPageContent() {
                 }
                 available={Boolean(eventKey && workspace)}
                 onExport={() => { void exportRawScoutingEntries(); }}
-                icon="[S]"
               />
 
               {/* Pit scouting */}
@@ -464,7 +463,6 @@ function ExportPageContent() {
                 }
                 available={Boolean(eventKey && workspace)}
                 onExport={() => { void exportPitScoutingCsv(); }}
-                icon="[P]"
               />
             </div>
           </SurfaceCard>
@@ -474,7 +472,7 @@ function ExportPageContent() {
         {ratings && ratings.length > 0 ? (
           <SurfaceCard
             title="Ratings Preview"
-            subtitle={`Top teams by rating at ${eventName || eventKey}.`}
+            subtitle={`Top teams by rating at ${eventName || 'the selected event'}.`}
             collapsible
           >
             <Table
@@ -499,18 +497,15 @@ function ExportCard({
   description,
   available,
   onExport,
-  icon,
 }: {
   title: string;
   description: string;
   available: boolean;
   onExport: () => void;
-  icon: string;
 }) {
   return (
     <div className={`export-card${available ? '' : ' unavailable'}`}>
       <div className="export-card-head">
-        <span className="export-card-icon">{icon}</span>
         <strong>{title}</strong>
       </div>
       <p>{description}</p>

@@ -83,10 +83,10 @@ vi.mock('../hooks/useOnlineStatus', () => ({
 }));
 
 
-const room = vi.hoisted(() => ({ snapshot: null as unknown, schedule: [] as unknown[] }));
+const room = vi.hoisted(() => ({ snapshot: null as unknown, schedule: [] as unknown[], retry: vi.fn(async () => {}) }));
 vi.mock('../features/workspace/useTeamRoom', () => ({
   isTeamRoomKey: () => true,
-  useTeamRoom: () => ({ snapshot: room.snapshot, schedule: room.schedule, status: 'ready', isLeader: false }),
+  useTeamRoom: () => ({ snapshot: room.snapshot, schedule: room.schedule, status: 'ready', isLeader: false, retry: room.retry }),
 }));
 vi.mock('../components/PageViewBar', () => ({ PageViewBar: () => null }));
 
@@ -95,9 +95,10 @@ const match = (number: number) => ({
   is_completed: false, scheduled_time: null,
   red: [{team_key:'frc118',team_number:118,station:'r1'}, {team_key:'frc254',team_number:254,station:'r2'}], blue: [],
 });
-const mount = () => render(<MemoryRouter initialEntries={['/scouting?event=2026week0']}><ScoutingPage /></MemoryRouter>);
+const mount = (path = '/scouting?event=2026week0') => render(<MemoryRouter initialEntries={[path]}><ScoutingPage /></MemoryRouter>);
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear();
+  room.retry.mockClear();
   signInTestWorkspace('member');
   vi.stubGlobal('matchMedia', () => ({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
   Element.prototype.scrollIntoView = vi.fn();
@@ -119,49 +120,91 @@ it('starts the next assignment on Auto with its robot, station and existing draf
   expect(screen.getByRole('tab',{name:'Scout'})).toHaveAttribute('aria-selected','true');
   expect(screen.getByRole('tab',{name:'Auto'})).toHaveAttribute('aria-selected','true');
   expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('Qual 2');
-  expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('FRC254');
+  expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254');
   // The editor shows the resumed counter, not just the stored copy.
   await waitFor(() => expect(screen.getAllByLabelText(/Auto fuel scored/i).find((el) => el.tagName === 'INPUT')).toHaveValue(7));
   await waitFor(() => expect(readScoutDraft<typeof EMPTY_FORM,typeof EMPTY_RP>(key)?.form.auto_scored).toBe(7));
   fireEvent.click(screen.getByRole('tab',{name:'Robot'}));
   fireEvent.click(screen.getByRole('button',{name:'Choose another robot'}));
-  expect(screen.getByLabelText('Match')).toBeInTheDocument();
+  expect(screen.getByRole('button', {name:'Qual 1'})).toBeInTheDocument();
 },20000);
-it('uses one phone mode, opens a chosen robot and keeps phases and secondary panels available', async () => {
+it('puts every phone section on visible Robot, Scout and Saved tabs without dropdowns', async () => {
   room.snapshot = null;
-  mount();
-  const robot = await screen.findByRole('button',{name:/FRC254.*Red 2/});
+  const { container } = mount();
+  const robot = await screen.findByRole('button',{name:/#254.*Red 2/});
   expect(robot).not.toHaveClass('active');
-  expect(screen.queryByRole('tab',{name:'Setup'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('tab',{name:'Room'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('tab',{name:'Data'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('tab',{name:'Rapid Tap'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('tab',{name:'Match Scout'})).not.toBeInTheDocument();
+  expect(screen.getByRole('tab',{name:'Robot'})).toHaveAttribute('aria-selected','true');
+  for (const name of ['Scout','Saved']) expect(screen.getByRole('tab',{name})).toHaveAttribute('aria-selected','false');
+  expect(container.querySelector('select')).toBeNull();
   fireEvent.click(robot);
   expect(screen.getByRole('tab',{name:'Scout'})).toHaveAttribute('aria-selected','true');
-  expect(screen.queryByRole('tab',{name:'Capture'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('tab',{name:'Summary'})).not.toBeInTheDocument();
-  for (const phase of ['Auto','Teleop','Endgame']) {
+  for (const phase of ['Auto','Teleop','Endgame','Review']) {
     fireEvent.click(screen.getByRole('tab',{name:phase}));
     expect(screen.getByRole('tab',{name:phase})).toHaveAttribute('aria-selected','true');
+    expect(container.querySelector('select')).toBeNull();
+    expect(screen.queryByLabelText('More scouting panels')).not.toBeInTheDocument();
   }
-  const more = screen.getByLabelText('More scouting panels');
-  for (const value of ['mobility','strategy','notes','summary-points','summary-live']) {
-    fireEvent.change(more,{target:{value}});
-    // The panel opens; the ⋯ box itself stays on ⋯ (fixed width at 250px).
-    expect(more).toHaveValue('');
-    expect(screen.getByRole('tab',{name:'Auto'})).toHaveAttribute('aria-selected','false');
-  }
-  const views = screen.getByLabelText('More scouting views');
-  fireEvent.change(views,{target:{value:'room'}});
-  expect(screen.getByText('Scout Profile')).toBeInTheDocument();
-  fireEvent.change(views,{target:{value:'data'}});
-  expect(screen.getByText('Save + Data')).toBeInTheDocument();
-  expect(screen.queryByRole('button',{name:'Save Scouting Entry'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('button',{name:'Export HTML'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab',{name:'Saved'}));
+  expect(screen.getByRole('tab',{name:'Saved'})).toHaveAttribute('aria-selected','true');
   expect(screen.getByRole('button',{name:'Export CSV'})).toBeInTheDocument();
+  expect(screen.getByRole('heading', {name:'Scouted Matches'}).compareDocumentPosition(screen.getByRole('heading', {name:'Backup & sharing'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByRole('button',{name:'Import QR'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Export HTML'})).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('More scouting views')).not.toBeInTheDocument();
+  expect(container.querySelector('select')).toBeNull();
 },20000);
+
+it('groups Auto, Teleop, Endgame and Review fields in their phone phases', async () => {
+  room.snapshot = null;
+  mount();
+  fireEvent.click(await screen.findByRole('button',{name:/#254.*Red 2/}));
+  fireEvent.click(screen.getByRole('tab',{name:'Auto'}));
+  for (const name of ['Auto fuel scored','Auto misses','Auto pickups','Auto cycles']) expect(screen.getByLabelText(name)).toBeInTheDocument();
+  expect(screen.getByRole('switch',{name:/Mobility/})).toBeInTheDocument();
+  expect(screen.getByRole('group',{name:'Auto path quality'})).toBeInTheDocument();
+  expect(screen.getByRole('link',{name:/Draw auto path/})).toHaveAttribute('href',expect.stringContaining('/scouting/auto-paths'));
+  expect(screen.queryByLabelText('Bump crossings')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab',{name:'Teleop'}));
+  for (const name of ['Teleop fuel scored','Teleop misses','Scored while defended','Attempts while defended','Teleop cycles','Drops/lost pieces','Intake failures','Fouls / penalties','Bump crossings','Trench crossings']) expect(screen.getByLabelText(name)).toBeInTheDocument();
+  expect(screen.getByLabelText('Teleop fuel scored').compareDocumentPosition(screen.getByLabelText('Bump crossings')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole('group',{name:'Anti-defense level'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab',{name:'Endgame'}));
+  expect(screen.getByRole('group',{name:'Endgame result'})).toBeInTheDocument();
+  expect(screen.getByRole('switch',{name:/Climbed while defended/})).toBeInTheDocument();
+  expect(screen.getByRole('switch',{name:/Protected-zone risk/})).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:/Apply Suggested RP/})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab',{name:'Review'}));
+  const points = screen.getByText('Point Summary');
+  const live = screen.getByText('Live Robot Rating');
+  const notes = screen.getByLabelText('Scouting notes');
+  expect(points.compareDocumentPosition(live) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(live.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  for (const name of ['Offense level','Defense level','Field awareness','Decision quality','Communication','Anti-defense level','Escape from pin','Path reroute','Recovery after contact']) {
+    const rating = screen.getByRole('group',{name});
+    expect(notes.compareDocumentPosition(rating) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+},20000);
+
+it('retains an unsaved report while switching all three phone tabs and phases', async () => {
+  room.snapshot = null;
+  mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
+  await waitFor(() => expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254'));
+  fireEvent.click(screen.getByRole('tab',{name:'Auto'}));
+  fireEvent.change(screen.getByLabelText('Auto fuel scored'),{target:{value:'12'}});
+  fireEvent.click(screen.getByRole('tab',{name:'Teleop'}));
+  fireEvent.change(screen.getByLabelText('Trench crossings'),{target:{value:'4'}});
+  fireEvent.click(screen.getByRole('tab',{name:'Review'}));
+  fireEvent.change(screen.getByLabelText('Scouting notes'),{target:{value:'Keep my report'}});
+  for (const tab of ['Saved','Robot','Scout']) fireEvent.click(screen.getByRole('tab',{name:tab}));
+  expect(screen.getByRole('tab',{name:'Review'})).toHaveAttribute('aria-selected','true');
+  expect(screen.getByLabelText('Scouting notes')).toHaveValue('Keep my report');
+  fireEvent.click(screen.getByRole('tab',{name:'Auto'}));
+  expect(screen.getByLabelText('Auto fuel scored')).toHaveValue(12);
+  fireEvent.click(screen.getByRole('tab',{name:'Teleop'}));
+  expect(screen.getByLabelText('Trench crossings')).toHaveValue(4);
+  await waitFor(() => expect(readScoutDraft<typeof EMPTY_FORM,typeof EMPTY_RP>(scoutDraftKey(1,'2026week0_qm1','frc254'))?.notes).toBe('Keep my report'));
+},20000);
+
 it('asks a solo scout for their missing name in Setup without interrupting typing', async () => {
   localStorage.clear();
   const { clearWorkspaceSession } = await import('../features/workspace/workspaceSession');
@@ -178,18 +221,20 @@ it('keeps Match Scout values after saving on a phone even after desktop Rapid Ta
   const listeners: Array<(event: {matches:boolean}) => void> = [];
   vi.stubGlobal('matchMedia', () => ({matches:false,addEventListener:(_name:string,listener:(event:{matches:boolean})=>void)=>listeners.push(listener),removeEventListener:vi.fn()}));
   mount();
-  await screen.findByRole('button',{name:/FRC254.*Red 2/});
+  await screen.findByRole('button',{name:/#254.*Red 2/});
   fireEvent.click(screen.getByRole('tab',{name:'Rapid Tap'}));
   const { act } = await import('@testing-library/react');
   act(() => listeners.forEach(listener => listener({matches:true})));
-  fireEvent.click(screen.getByRole('button',{name:/FRC254.*Red 2/}));
+  fireEvent.click(screen.getByRole('button',{name:/#254.*Red 2/}));
   fireEvent.change(screen.getByLabelText('Auto fuel scored'),{target:{value:'9'}});
   fireEvent.click(screen.getByRole('button',{name:'Save'}));
-  await screen.findByText(/Saved FRC254/);
+  await screen.findByText(/Saved #254/);
   expect(screen.getByLabelText('Auto fuel scored')).toHaveValue(9);
   const { readStoredEntries } = await import('./scoutingPage.helpers');
   expect(readStoredEntries(1)[0].mode).toBe('match');
-  fireEvent.change(screen.getByLabelText('More scouting views'),{target:{value:'data'}});
+  fireEvent.click(screen.getByRole('tab',{name:'Saved'}));
+  expect(screen.getByText('Scouted Matches')).toBeInTheDocument();
+  expect(screen.getAllByText('#254').length).toBeGreaterThan(0);
   const confirm = vi.spyOn(window,'confirm').mockReturnValue(false);
   fireEvent.click(screen.getByRole('button',{name:'Clear All'}));
   expect(confirm).toHaveBeenCalledWith('Clear all local scouting entries on this device?');
@@ -202,7 +247,7 @@ it('confirms before leaving a draft when device storage has failed', async () =>
   mount();
   await screen.findByText('Your next assignment');
   fireEvent.click(screen.getByRole('button',{name:'Choose another robot'}));
-  fireEvent.click(await screen.findByRole('button',{name:/FRC118.*Red 1/}));
+  fireEvent.click(await screen.findByRole('button',{name:/#118.*Red 1/}));
   const original = Storage.prototype.setItem;
   vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage,key:string,value:string) {
     if (key.startsWith('frcmob_scout_draft_v1:')) throw new Error('Storage full');
@@ -222,7 +267,7 @@ it('confirms before leaving a draft when device storage has failed', async () =>
 it('keeps Upcoming Opponents out of phone Setup when my team is configured', async () => {
   room.snapshot = null;
   render(<MemoryRouter initialEntries={['/scouting?event=2026week0&my_team=frc118']}><ScoutingPage /></MemoryRouter>);
-  await screen.findByRole('button',{name:/FRC254.*Red 2/});
+  await screen.findByRole('button',{name:/#254.*Red 2/});
   expect(screen.queryByText(/Upcoming Opponents/)).not.toBeInTheDocument();
 });
 
@@ -230,13 +275,106 @@ it('clears a robot that is not in the newly chosen match', async () => {
   room.snapshot = null;
   room.schedule = [match(1), { ...match(3), red: [{team_key:'frc1',team_number:1,station:'r1'}], blue: [{team_key:'frc2',team_number:2,station:'b1'}] }];
   vi.mocked(getEventSchedule).mockResolvedValue({matches:room.schedule,event_name:'Week 0'} as never);
-  mount();
-  fireEvent.click(await screen.findByRole('button',{name:/FRC254.*Red 2/}));
-  expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('FRC254');
+  mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
+  await waitFor(() => expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254'));
   fireEvent.click(screen.getByRole('tab',{name:'Robot'}));
-  fireEvent.change(screen.getByLabelText('Match'),{target:{value:'2026week0_qm3'}});
-  await waitFor(() => expect(screen.queryByRole('button',{name:/FRC254/})).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button',{name:'Qual 3'}));
+  await waitFor(() => expect(screen.queryByRole('button',{name:/#254.*Red 2/})).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole('tab',{name:'Scout'}));
-  expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).not.toHaveTextContent('FRC254');
+  expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).not.toHaveTextContent('#254');
   expect(screen.getByText('Pick the team you are scouting.')).toBeInTheDocument();
+},20000);
+
+it.each([
+  ['strategy','capture','Review'],
+  ['mobility','capture','Review'],
+  ['notes','capture','Review'],
+  ['teleop','score','Review'],
+  ['auto-paths','capture','Auto'],
+  ['teleop','history','Saved'],
+])('migrates remembered %s / %s to the visible %s view', async (capture, section, expected) => {
+  room.snapshot = null;
+  localStorage.setItem('scouting_mobile_panel_prefs_v1',JSON.stringify({finderOpen:false,section,capture,score:'live'}));
+  mount();
+  await waitFor(() => expect(screen.getByRole('tab',{name:expected})).toHaveAttribute('aria-selected','true'));
+  expect(screen.queryByLabelText('More scouting panels')).not.toBeInTheDocument();
+},20000);
+
+it('keeps reconnect beside the phone counters and room tools at the bottom of Robot', async () => {
+  room.snapshot = null;
+  const { container } = mount();
+  const robot = await screen.findByRole('button',{name:/#254.*Red 2/});
+  const summary = screen.getByText(/Room tools/);
+  fireEvent.click(screen.getByRole('button',{name:'Reconnect'}));
+  expect(room.retry).toHaveBeenCalledTimes(1);
+  expect(summary.tagName).toBe('SUMMARY');
+  expect(summary.closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByRole('button',{name:'Reconnect'})).toBeInTheDocument();
+  fireEvent.click(summary);
+  expect(summary.closest('details')).toHaveAttribute('open');
+  expect(screen.getByLabelText('Scouting room key')).toBeInTheDocument();
+  expect(container.querySelector('select')).toBeNull();
+  fireEvent.click(robot);
+  expect(screen.getByRole('button',{name:'Reconnect'})).toBeInTheDocument();
+  expect(screen.getByRole('tab',{name:'Scout'})).toHaveAttribute('aria-selected','true');
+},20000);
+
+it('keeps the existing desktop groups and dropdown fields', async () => {
+  room.snapshot = null;
+  vi.stubGlobal('matchMedia', () => ({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
+  mount();
+  await screen.findByRole('button',{name:/#254.*Red 2/});
+  expect(screen.getByRole('tab',{name:'Rapid Tap'})).toBeInTheDocument();
+  expect(screen.getByLabelText('Match').tagName).toBe('SELECT');
+  expect(screen.getByLabelText('Endgame result').tagName).toBe('SELECT');
+  for (const name of ['Auto fuel scored','Teleop fuel scored','Bump crossings','Trench crossings']) expect(screen.getByLabelText(name)).toBeInTheDocument();
+  expect(screen.getByRole('group',{name:'Anti-defense level'})).toBeInTheDocument();
+  expect(screen.queryByRole('tab',{name:'Review'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('tab',{name:'Saved'})).not.toBeInTheDocument();
+},20000);
+
+it('cancels a match change without losing a draft when phone storage is full', async () => {
+  room.snapshot = null;
+  mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
+  await waitFor(() => expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254'));
+  fireEvent.click(screen.getByRole('tab',{name:'Auto'}));
+  const original = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage,key:string,value:string) {
+    if (key.startsWith('frcmob_scout_draft_v1:')) throw new Error('Storage full');
+    return original.call(this,key,value);
+  });
+  fireEvent.change(screen.getByLabelText('Auto fuel scored'),{target:{value:'15'}});
+  await screen.findByText(/Device storage is full or unavailable/);
+  fireEvent.click(screen.getByRole('tab',{name:'Robot'}));
+  const choices = within(screen.getByRole('group',{name:'Match'})).getAllByRole('button');
+  const current = choices.find(choice => choice.getAttribute('aria-pressed') === 'true')!;
+  const other = choices.find(choice => choice.getAttribute('aria-pressed') === 'false')!;
+  const confirm = vi.spyOn(window,'confirm').mockReturnValue(false);
+  fireEvent.click(other);
+  expect(confirm).toHaveBeenCalledWith('This draft could not be saved on your device. Discard it and choose another robot?');
+  expect(current).toHaveAttribute('aria-pressed','true');
+  fireEvent.click(screen.getByRole('tab',{name:'Scout'}));
+  expect(screen.getByLabelText('Auto fuel scored')).toHaveValue(15);
+},20000);
+
+it('keeps a joined room key and Copy visible when Room tools is closed', async () => {
+  room.snapshot = null;
+  vi.stubGlobal('WebSocket',class {
+    static OPEN = 1;
+    readyState = 0;
+    send = vi.fn();
+    close = vi.fn();
+  });
+  mount();
+  await screen.findByRole('button',{name:/#254.*Red 2/});
+  const summary = screen.getByText(/Room tools/);
+  fireEvent.click(summary);
+  fireEvent.change(screen.getByLabelText('Scouting room key'),{target:{value:'room-test'}});
+  fireEvent.click(screen.getByRole('button',{name:'Join Room'}));
+  const status = screen.getByRole('status',{name:'Room connection'});
+  await waitFor(() => expect(within(status).getByRole('button',{name:'Copy Key'})).toBeInTheDocument());
+  fireEvent.click(summary);
+  expect(summary.closest('details')).not.toHaveAttribute('open');
+  expect(status).toHaveTextContent('room-test');
+  expect(within(status).getByRole('button',{name:'Copy Key'})).toBeInTheDocument();
 },20000);

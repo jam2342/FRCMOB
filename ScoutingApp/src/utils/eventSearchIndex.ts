@@ -21,6 +21,19 @@ function sortedIndexSnapshot(): EventSearchItem[] {
   });
 }
 
+export function eventNameFromIndex(eventKey: string | null | undefined): string | null {
+  return eventSearchIndexByKey.get(normalizedEventKey(eventKey))?.name || null;
+}
+
+// The event's name once the index has it, else a readable code ("2026 ARC").
+export function eventDisplayName(eventKey: string | null | undefined): string {
+  const value = normalizedEventKey(eventKey);
+  const name = eventNameFromIndex(value);
+  if (name) return name;
+  if (!/^\d{4}[a-z0-9]+$/.test(value)) return value.toUpperCase();
+  return `${value.slice(0, 4)} ${value.slice(4).toUpperCase()}`;
+}
+
 export function getEventSearchIndexSnapshot(): EventSearchItem[] {
   return sortedIndexSnapshot();
 }

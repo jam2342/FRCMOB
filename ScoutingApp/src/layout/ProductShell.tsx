@@ -35,6 +35,8 @@ import { matchesRegionFilter } from '../utils/regionFilters';
 import { resolveScopeFromPath } from './appUx';
 import { buildContextSummary, useContextStrip } from './useContextStrip';
 import { typedTeamName } from './quickJump';
+import { eventDisplayName } from '../utils/eventSearchIndex';
+import { useEventNames } from '../hooks/useEventNames';
 import { type TutorialScope } from './userSettings';
 import { useShellSettingsState } from './useShellSettingsState';
 import { Spinner } from '../components/ui/Spinner';
@@ -109,12 +111,7 @@ function guessLabel(kind: QuickJumpGuess): string {
 }
 
 function formatEventDisplay(raw: string): string {
-  const value = String(raw || '').trim().toLowerCase();
-  if (!value) return 'Choose event';
-  if (!/^\d{4}[a-z0-9]+$/.test(value)) return value.toUpperCase();
-  const year = value.slice(0, 4);
-  const code = value.slice(4).toUpperCase();
-  return `${year} ${code}`;
+  return String(raw || '').trim() ? eventDisplayName(raw) : 'Choose event';
 }
 
 function formatTeamDisplay(raw: string): string {
@@ -180,6 +177,8 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 }
 
 export function ProductShell() {
+  // Re-renders once the shared event index loads, so chips switch from codes to names.
+  useEventNames();
   const navigate = useNavigate();
   const location = useLocation();
   const { online: isOnline, queueSize, isShowingOfflineData } = useOnlineStatus();
@@ -275,7 +274,7 @@ export function ProductShell() {
   const showTopbarTools = finderCollapseAvailable || !isMobileLiveScoutingRoute;
   const hasContextEvent = Boolean(contextSnapshot.eventKey);
   const hasContextTeam = Boolean(contextSnapshot.teamKey);
-  const contextEventLabel = useMemo(() => formatEventDisplay(contextSnapshot.eventKey), [contextSnapshot.eventKey]);
+  const contextEventLabel = formatEventDisplay(contextSnapshot.eventKey);
   const contextTeamLabel = useMemo(() => formatTeamDisplay(contextSnapshot.teamKey), [contextSnapshot.teamKey]);
   const contextStripSummary = useMemo(() => {
     return buildContextSummary(
@@ -772,6 +771,7 @@ export function ProductShell() {
                     key={`pin-event-${eventKey}`}
                     type="button"
                     className="ps-context-quick-chip event"
+                    title={formatEventDisplay(eventKey)}
                     onClick={() => openEventQuickPick(eventKey)}
                   >
                     {formatEventDisplay(eventKey)}
@@ -797,6 +797,7 @@ export function ProductShell() {
                     key={`recent-event-${eventKey}`}
                     type="button"
                     className="ps-context-quick-chip event"
+                    title={formatEventDisplay(eventKey)}
                     onClick={() => openEventQuickPick(eventKey)}
                   >
                     {formatEventDisplay(eventKey)}

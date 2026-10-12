@@ -27,6 +27,7 @@ import {
 } from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import styles from './AllianceAdvisorPage.module.css';
+import { plainSignalLabel } from './teamCenterOfficial';
 import { DEFAULT_WEIGHTS, normalizedWeights, teamsFromParam } from './allianceBuilder';
 import {
   asRecord,
@@ -241,7 +242,7 @@ export function AllianceAdvisorPage() {
     }
     const invalid = keys.filter((k) => !teamKeySet.has(k));
     if (invalid.length) {
-      setBuilderError(`Teams not in event: ${invalid.join(', ')}`);
+      setBuilderError(`Teams not in event: ${invalid.map(teamNumLabel).join(', ')}`);
       return;
     }
     const generation = ++builderGeneration.current;
@@ -426,7 +427,7 @@ export function AllianceAdvisorPage() {
 
           {eventTeams ? (
             <p className={styles.eventSummary}>
-              <strong>{eventTeams.event_name || eventKey}</strong> — {teamPool.length} team{teamPool.length === 1 ? '' : 's'} loaded
+              <strong>{eventTeams.event_name || 'Selected event'}</strong> — {teamPool.length} team{teamPool.length === 1 ? '' : 's'} loaded
               {eventTeams.teams_with_event_rating > 0
                 ? ` (${eventTeams.teams_with_event_rating} with ratings)`
                 : ''}
@@ -608,7 +609,7 @@ export function AllianceAdvisorPage() {
                     <option value="">— Select team —</option>
                     {teamPool.map((t) => (
                       <option key={t.team_key} value={t.team_key}>
-                        #{t.team_number} {t.nickname || t.team_key}
+                        #{t.team_number} {t.nickname || ''}
                         {t.rating_0_100 != null ? ` (${metric(t.rating_0_100, 1)})` : ''}
                       </option>
                     ))}
@@ -737,7 +738,7 @@ export function AllianceAdvisorPage() {
                       { key: 'base_synergy_points', label: 'Base', numeric: true, render: (p) => metric(p.base_synergy_points, 2) },
                       { key: 'complement_bonus_points', label: 'Complement', numeric: true, render: (p) => metric(p.complement_bonus_points, 2) },
                       { key: 'risk_penalty_points', label: 'Risk', numeric: true, render: (p) => metric(p.risk_penalty_points, 2) },
-                      { key: 'source', label: 'Source', align: 'center', render: (p) => <Chip size="sm">{p.source}</Chip> },
+                      { key: 'source', label: 'Source', align: 'center', render: (p) => <Chip size="sm">{{ projection: 'Estimated', blended: 'Results + estimates', measured: 'Scouted' }[p.source] || 'Unavailable'}</Chip> },
                     ]}
                     rows={builderResult.compatibility.pair_breakdown}
                     rowKey={(_pair, index) => String(index)}
@@ -753,15 +754,15 @@ export function AllianceAdvisorPage() {
                           </strong>
                           {team.pros_top.length > 0 ? (
                             <ul className={styles.prosList}>
-                              {team.pros_top.slice(0, 3).map((p, i) => (
-                                <li key={i}>{p.label ?? JSON.stringify(p)}</li>
+                              {team.pros_top.filter((p) => typeof p.label === 'string' && p.label.trim()).slice(0, 3).map((p, i) => (
+                                <li key={i}>{plainSignalLabel(p.label!)}</li>
                               ))}
                             </ul>
                           ) : null}
                           {team.cons_top.length > 0 ? (
                             <ul className={styles.consList}>
-                              {team.cons_top.slice(0, 3).map((c, i) => (
-                                <li key={i}>{c.label ?? JSON.stringify(c)}</li>
+                              {team.cons_top.filter((c) => typeof c.label === 'string' && c.label.trim()).slice(0, 3).map((c, i) => (
+                                <li key={i}>{plainSignalLabel(c.label!)}</li>
                               ))}
                             </ul>
                           ) : null}
