@@ -7,6 +7,13 @@ const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 12000);
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 import { enqueue as enqueueOffline } from "./utils/offlineQueue";
 import { getStoredResponse, putStoredResponse } from "./utils/apiResponseStore";
+import {
+  SUGGESTED_EVENTS_SHARED_LIMIT,
+  SUGGESTED_EVENTS_SHARED_TEAM_COUNT_FETCHES,
+  suggestedEventsQuery,
+} from "./bootPath";
+import { takeBootFetch } from "./bootPrefetch";
+import { markData, type DataSource } from "./perf/routeTiming";
 
 // The write didn't reach the server but is safely queued and will replay.
 // Callers that report sync results use this to say "will sync" instead of
@@ -229,9 +236,16 @@ type ApiFetchInit = RequestInit & {
   // Never answer with (or save) a stored copy. For reads whose caller keeps
   // its own offline copy, where an old answer could undo a newer one.
   liveOnly?: boolean;
+  // With no fresh copy, answer at once with a saved one up to this old and refresh
+  // in the background; pages re-render when the refresh brings something new
+  // ("api:updated", see useSingleFlightPolling). 0 = wait for the network.
+  showSavedMaxAgeMs?: number;
 };
 
-type ApiRequestOptions = Pick<ApiFetchInit, "cacheTtlMs" | "staleWhileRevalidateMs" | "bypassCache" | "timeoutMs">;
+type ApiRequestOptions = Pick<
+  ApiFetchInit,
+  "cacheTtlMs" | "staleWhileRevalidateMs" | "bypassCache" | "timeoutMs" | "showSavedMaxAgeMs"
+>;
 
 type CachedResponse = {
   storedAtMs: number;
@@ -1259,6 +1273,7 @@ function _cacheRequestOptions(
       typeof base?.timeoutMs === "number"
         ? Math.max(2000, Math.floor(base.timeoutMs))
         : defaults.timeoutMs,
+    showSavedMaxAgeMs: Math.max(0, Math.floor(base?.showSavedMaxAgeMs ?? defaults.showSavedMaxAgeMs ?? 0)),
   };
 }
 
@@ -1634,6 +1649,21 @@ export function beginOfflineCacheAudit(accepts: (url: string) => boolean = () =>
   return { calls: audit.calls, stop: () => { if (offlineCacheAudit === audit) offlineCacheAudit = null; } };
 }
 
+// Stores a payload that arrived inside a combined response under its own URL, as if
+// that URL had been fetched: memory for this session, the saved copy for offline.
+function seedGetCache(url: string, payload: unknown, ttlMs: number): void {
+  const requestKey = cacheKeyFor(url);
+  const body = JSON.stringify(payload);
+  const headers = { "content-type": "application/json" };
+  const now = Date.now();
+  cacheResponse(requestKey, {
+    storedAtMs: now,
+    response: new Response(body, { status: 200, headers }),
+    expiresAtMs: now + ttlMs,
+  });
+  void writePersistentGetCache(requestKey, new Response(body, { status: 200, headers }), ttlMs);
+}
+
 export async function hasSavedApiResponse(requestKey: string): Promise<boolean> {
   try {
     const raw = window.localStorage.getItem(persistentCacheKey(requestKey));
@@ -1643,6 +1673,39 @@ export async function hasSavedApiResponse(requestKey: string): Promise<boolean> 
     }
   } catch { /* use Cache Storage */ }
   return Boolean(await getStoredResponse(requestKey));
+}
+
+// A saved copy no older than maxAgeMs, from memory, localStorage or (for big
+// responses) Cache Storage. Used to answer at once while the network catches up.
+async function savedCopyWithin(requestKey: string, maxAgeMs: number): Promise<CacheLookupResult | null> {
+  const quick = readCacheAnyAge(requestKey);
+  if (quick && quick.ageSec * 1000 <= maxAgeMs) return quick;
+  try {
+    const stored = await getStoredResponse(requestKey);
+    if (!stored) return null;
+    const ageMs = Date.now() - stored.storedAtMs;
+    if (stored.storedAtMs <= 0 || ageMs > maxAgeMs) return null;
+    return { state: "stale", response: stored.response, ageSec: Math.max(0, Math.floor(ageMs / 1000)) };
+  } catch {
+    return null;
+  }
+}
+
+// Tells mounted pages that a refresh replaced data they may be showing.
+function notifyApiUpdated(url: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("api:updated", { detail: { url } }));
+  } catch {
+    // non-DOM environment
+  }
+}
+
+// Page-speed timing (perf/rum.ts): a route's first data. The shell's own startup
+// requests (event list, search index, health) aren't the page's content.
+const SHELL_REQUEST_RE = /\/(events\/suggested|events\/search|health)\b/;
+function noteFirstData(url: string, source: DataSource): void {
+  if (!SHELL_REQUEST_RE.test(url)) markData(source);
 }
 
 async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
@@ -1668,6 +1731,7 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
   if (shouldUseCache) {
     const memCached = readMemoryGetCache(requestKey, now, staleWhileRevalidateMs);
     if (memCached && memCached.state === "fresh") {
+      noteFirstData(url, "saved");
       return memCached.response.clone();
     }
     if (memCached && memCached.state === "stale") {
@@ -1685,12 +1749,18 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
         if (ENABLE_REQUEST_LOGS) {
           console.debug(`[api] ${method} ${url} -> persisted-cache hit`);
         }
+        noteFirstData(url, "saved");
         return persisted.response.clone();
       }
       if (!staleCandidate) {
         staleCandidate = persisted;
       }
     }
+  }
+
+  const showSavedMaxAgeMs = shouldUseCache ? _cacheValueInt(init?.showSavedMaxAgeMs, 0) : 0;
+  if (shouldUseCache && !staleCandidate && showSavedMaxAgeMs > 0) {
+    staleCandidate = await savedCopyWithin(requestKey, showSavedMaxAgeMs);
   }
 
   if (shouldUseCache) {
@@ -1700,6 +1770,7 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
         if (ENABLE_REQUEST_LOGS) {
           console.debug(`[api] ${method} ${url} -> stale-cache hit (inflight refresh)`);
         }
+        noteFirstData(url, "saved");
         return staleCandidate.response.clone();
       }
       const shared = await inFlight;
@@ -1740,12 +1811,25 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     const requestSignal = withTimeout(forBackground ? undefined : init?.signal, timeoutMs, timeoutState);
     let response: Response;
     try {
-      const fetched = await fetch(url, {
-        ...init,
-        method,
-        headers,
-        signal: requestSignal,
-      });
+      // index.html may already have started this exact request (bootPrefetch.ts).
+      const boot = method === "GET" && !forBackground ? takeBootFetch(url) : null;
+      let fetched: Response | null = null;
+      if (boot) {
+        try {
+          const early = await boot;
+          fetched = early.ok ? early : null;
+        } catch {
+          fetched = null;
+        }
+      }
+      if (!fetched) {
+        fetched = await fetch(url, {
+          ...init,
+          method,
+          headers,
+          signal: requestSignal,
+        });
+      }
       // The timeout covers the whole download. Once it is in, the timer must not
       // fire: in Chrome its abort breaks every unread clone, including the copy
       // kept in the cache, so a cache hit after 12 s failed with "timed out".
@@ -1771,6 +1855,7 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
     if (response.status === 401 && sentWorkspaceToken && sentWorkspaceToken === getWorkspaceToken()) {
       clearWorkspaceSession("revoked");
     }
+    if (method === "GET" && response.ok) noteFirstData(url, "network");
     if (auditCall && response.ok) {
       auditCall.saved = await writePersistentGetCache(requestKey, response.clone(), Math.max(1, cacheTtlMs));
     } else if (shouldUseCache && response.ok) {
@@ -1867,7 +1952,16 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
         `[api] ${method} ${url} -> stale-cache hit (age=${staleCandidate.ageSec}s), background refresh`,
       );
     }
+    noteFirstData(url, "saved");
+    const staleBody = staleCandidate.response.clone().text().catch(() => "");
     const backgroundPromise = run(true)
+      .then(async (fresh) => {
+        if (fresh.ok) {
+          const [before, after] = await Promise.all([staleBody, fresh.clone().text().catch(() => "")]);
+          if (after && before !== after) notifyApiUpdated(url);
+        }
+        return fresh;
+      })
       .catch(() => staleCandidate!.response.clone())
       .finally(() => {
         inflightGetRequests.delete(requestKey);
@@ -1917,7 +2011,9 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
 }
 
 export async function getApiHealth(): Promise<ApiHealthResponse> {
-  const res = await apiFetch(`${API}/health`);
+  // Server settings (read-only mode, write auth), not liveness: that is
+  // useOnlineStatus's own uncached ping.
+  const res = await apiFetch(`${API}/health`, _cacheRequestOptions(undefined, { cacheTtlMs: 5 * 60_000 }));
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as ApiHealthResponse;
 }
@@ -2161,18 +2257,19 @@ export async function getSuggestedEvents(
     return loadSuggestedEventsSearchFallback(preferredYear, fallbackYear, normalizedLimit);
   }
 
-  const params = new URLSearchParams({
-    preferred_year: String(preferredYear),
-    fallback_year: String(fallbackYear),
-    limit: String(normalizedLimit),
-    prioritize_running: String(options?.preferLiveNow ?? true),
-  });
-  if (typeof options?.remoteTeamCountFetchLimit === 'number') {
-    params.set('team_count_fetch_limit', String(Math.max(0, Math.floor(options.remoteTeamCountFetchLimit))));
-  }
+  // Every caller (event index, Home, Events, pickers, Scouting) asks for the same
+  // list with a different length. One shared request, cut to size here, replaces the
+  // 2-3 per page load they used to make. The order doesn't depend on the limit.
+  const query = suggestedEventsQuery(
+    preferredYear,
+    fallbackYear,
+    Math.max(normalizedLimit, SUGGESTED_EVENTS_SHARED_LIMIT),
+    options?.preferLiveNow ?? true,
+    Math.max(SUGGESTED_EVENTS_SHARED_TEAM_COUNT_FETCHES, Math.floor(options?.remoteTeamCountFetchLimit ?? 0)),
+  );
   try {
     const res = await apiFetch(
-      `${API}/events/suggested?${params.toString()}`,
+      `${API}/events/suggested?${query}`,
       _cacheRequestOptions(undefined, {
         cacheTtlMs: SUGGESTED_EVENTS_CACHE_TTL_MS,
         staleWhileRevalidateMs: SUGGESTED_EVENTS_CACHE_TTL_MS,
@@ -2190,7 +2287,8 @@ export async function getSuggestedEvents(
     }
     const payload = (await res.json()) as SuggestedEventsResponse;
     suggestedEventsCircuitOpenUntilMs = 0;
-    return payload;
+    const events = (payload.events || []).slice(0, normalizedLimit);
+    return { ...payload, events, count: events.length };
   } catch {
     suggestedEventsCircuitOpenUntilMs =
       Date.now() + Math.max(10_000, Math.floor(SUGGESTED_EVENTS_FAILURE_COOLDOWN_MS));
@@ -2386,6 +2484,7 @@ export async function getEventTeamsHistory(
   eventKey: string,
   historyLimit = 8,
   excludeCurrentEvent = false,
+  requestOptions?: ApiRequestOptions,
 ): Promise<EventTeamsHistoryResponse> {
   const params = new URLSearchParams({
     history_limit: String(historyLimit),
@@ -2393,7 +2492,7 @@ export async function getEventTeamsHistory(
   });
   const res = await apiFetch(
     `${API}/scouting/event/${eventKey}/teams/history?${params.toString()}`,
-    _cacheRequestOptions(undefined, {
+    _cacheRequestOptions(requestOptions, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS,
     }),
@@ -2426,13 +2525,16 @@ export async function getTeamBreakdown(
 export async function getEventRatings(
   eventKey: string,
   refresh = false,
-  options?: { includeTrend?: boolean; bypassCache?: boolean },
+  options?: { includeTrend?: boolean; bypassCache?: boolean; showSavedMaxAgeMs?: number },
 ): Promise<EventRatingsResponse> {
-  const params = new URLSearchParams({ refresh: String(refresh) });
+  // view=summary: no screen reads a rating's details or evidence, 2/3 of the payload.
+  const params = new URLSearchParams({ refresh: String(refresh), view: "summary" });
   if (options?.includeTrend) params.set("include_trend", "true");
   const res = await apiFetch(
     `${API}/scouting/event/${eventKey}/ratings?${params.toString()}`,
-    _cacheRequestOptions(options?.bypassCache ? { bypassCache: true } : undefined, {
+    _cacheRequestOptions(
+      options?.bypassCache ? { bypassCache: true } : { showSavedMaxAgeMs: options?.showSavedMaxAgeMs },
+      {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
     }),
@@ -2447,10 +2549,13 @@ export async function getEventRatings(
 export async function getEventRatingsLive(
   eventKey: string,
 ): Promise<EventRatingsResponse> {
-  const params = new URLSearchParams({ refresh: "false", include_trend: "true" });
+  const params = new URLSearchParams({ refresh: "false", include_trend: "true", view: "summary" });
   const res = await apiFetch(
     `${API}/scouting/event/${eventKey}/ratings?${params.toString()}`,
-    _cacheRequestOptions(undefined, { bypassCache: true }),
+    // 2 s and no stale window: calls that overlap (the panel's first run, a page's own
+    // load, a restart when the live flag flips) share one request, while polls (8 s at
+    // the fastest) always get a fresh answer.
+    _cacheRequestOptions(undefined, { cacheTtlMs: 2000, staleWhileRevalidateMs: 0 }),
   );
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as EventRatingsResponse;
@@ -2545,6 +2650,63 @@ export async function getEventSchedule(
   return (await res.json()) as EventScheduleResponse;
 }
 
+type EventSchedulesBatchResponse = {
+  ok: boolean;
+  count: number;
+  schedules: Record<string, EventScheduleResponse | { ok: false; status?: number; detail?: string }>;
+};
+
+const EVENT_SCHEDULES_BATCH_MAX = 24;
+
+// Many events' schedules in one request (Home shows every event on a day). Each one
+// is also stored under its single-event URL, so opening that event next is instant
+// and the copy is there offline. Falls back to one request per event if the batch
+// call fails (e.g. an older backend).
+export async function getEventSchedules(
+  eventKeys: string[],
+  requestOptions?: ApiRequestOptions,
+): Promise<Record<string, EventScheduleResponse | Error>> {
+  const keys = [...new Set(eventKeys.map((key) => key.trim().toLowerCase()).filter(Boolean))];
+  const out: Record<string, EventScheduleResponse | Error> = {};
+  for (let offset = 0; offset < keys.length; offset += EVENT_SCHEDULES_BATCH_MAX) {
+    const chunk = keys.slice(offset, offset + EVENT_SCHEDULES_BATCH_MAX);
+    let batch: EventSchedulesBatchResponse | null = null;
+    try {
+      const res = await apiFetch(
+        `${API}/matches/schedules?${new URLSearchParams({ event_keys: chunk.join(",") }).toString()}`,
+        _cacheRequestOptions(requestOptions, {
+          cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+          staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
+        }),
+      );
+      if (res.ok) batch = (await res.json()) as EventSchedulesBatchResponse;
+    } catch {
+      batch = null;
+    }
+    if (!batch || !batch.schedules) {
+      const singles = await Promise.allSettled(chunk.map((key) => getEventSchedule(key, false, undefined, requestOptions)));
+      singles.forEach((result, idx) => {
+        out[chunk[idx]] = result.status === "fulfilled"
+          ? result.value
+          : result.reason instanceof Error ? result.reason : new Error("Schedule unavailable");
+      });
+      continue;
+    }
+    for (const key of chunk) {
+      const entry = batch.schedules[key];
+      if (entry && entry.ok !== false && Array.isArray((entry as EventScheduleResponse).matches)) {
+        const schedule = entry as EventScheduleResponse;
+        out[key] = schedule;
+        seedGetCache(`${API}/matches/event/${key}/schedule?refresh=false`, schedule, EVENT_SCHEDULE_CACHE_TTL_MS);
+      } else {
+        const detail = entry && "detail" in entry && entry.detail ? entry.detail : "Schedule unavailable";
+        out[key] = new Error(detail);
+      }
+    }
+  }
+  return out;
+}
+
 export async function getEventLiveStream(eventKey: string): Promise<EventLiveStreamResponse> {
   const res = await apiFetch(
     `${API}/matches/event/${eventKey}/live-stream`,
@@ -2586,6 +2748,7 @@ export async function getEventScheduleWithSynergy(
     model_version?: string;
     include_pair_breakdown?: boolean;
     refresh?: boolean;
+    showSavedMaxAgeMs?: number;
     // Skip this tab's cached copy without asking the server to rebuild synergy.
     bypassCache?: boolean;
   },
@@ -2605,7 +2768,9 @@ export async function getEventScheduleWithSynergy(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await apiFetch(
     `${API}/events/${eventKey}/schedule-with-synergy${suffix}`,
-    _cacheRequestOptions(options?.bypassCache ? { bypassCache: true } : undefined, {
+    _cacheRequestOptions(
+      options?.bypassCache ? { bypassCache: true } : { showSavedMaxAgeMs: options?.showSavedMaxAgeMs },
+      {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
     }),
@@ -2636,10 +2801,10 @@ export async function getEventAlliances(
   return (await res.json()) as EventAlliancesResponse;
 }
 
-export async function getEventRankings(eventKey: string): Promise<EventRankingsResponse> {
+export async function getEventRankings(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventRankingsResponse> {
   const res = await apiFetch(
     `${API}/events/${eventKey}/rankings`,
-    _cacheRequestOptions(undefined, {
+    _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
     }),
@@ -2648,10 +2813,10 @@ export async function getEventRankings(eventKey: string): Promise<EventRankingsR
   return (await res.json()) as EventRankingsResponse;
 }
 
-export async function getEventPredictions(eventKey: string): Promise<EventPredictionsResponse> {
+export async function getEventPredictions(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventPredictionsResponse> {
   const res = await apiFetch(
     `${API}/events/${eventKey}/predictions`,
-    _cacheRequestOptions(undefined, {
+    _cacheRequestOptions(requestOptions, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
     }),
@@ -2660,10 +2825,10 @@ export async function getEventPredictions(eventKey: string): Promise<EventPredic
   return (await res.json()) as EventPredictionsResponse;
 }
 
-export async function getEventAwards(eventKey: string): Promise<EventAwardsResponse> {
+export async function getEventAwards(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventAwardsResponse> {
   const res = await apiFetch(
     `${API}/events/${eventKey}/awards`,
-    _cacheRequestOptions(undefined, {
+    _cacheRequestOptions(requestOptions, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 4,
     }),

@@ -46,6 +46,10 @@ _WRITE_PATH_ADMIN_EXEMPT_PREFIXES = (
     # without admin keys. Scoped to the single sync route, not all of /tracks.
     "/tracks/on-device-session",
     "/api/tracks/on-device-session",
+    # Anonymous page-speed counts (routes_telemetry): validated, rate-limited,
+    # aggregate-only. Still blocked in public readonly mode.
+    "/telemetry/vitals",
+    "/api/telemetry/vitals",
 )
 # Computations that take a JSON body but write nothing. The method alone made them
 # look like writes, which locked every non-admin out of Alliance Advisor and Compare.

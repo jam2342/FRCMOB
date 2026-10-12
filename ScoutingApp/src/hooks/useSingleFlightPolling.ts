@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-export type SingleFlightPollReason = 'initial' | 'poll' | 'manual' | 'resume';
+// 'update': a background refresh replaced data the page may be showing (a saved
+// copy it was answered with first); re-running reads the fresh copy from memory.
+export type SingleFlightPollReason = 'initial' | 'poll' | 'manual' | 'resume' | 'update';
+
+const UPDATE_DEBOUNCE_MS = 250;
 
 type UseSingleFlightPollingOptions = {
   enabled: boolean;
@@ -124,10 +128,21 @@ export function useSingleFlightPolling(options: UseSingleFlightPollingOptions): 
     };
 
     void execute('initial');
+    let updateTimer: number | null = null;
+    const onUpdated = () => {
+      if (updateTimer !== null) window.clearTimeout(updateTimer);
+      updateTimer = window.setTimeout(() => {
+        updateTimer = null;
+        void execute('update');
+      }, UPDATE_DEBOUNCE_MS);
+    };
+    window.addEventListener('api:updated', onUpdated);
     return () => {
       disposed = true;
       triggerRef.current = () => undefined;
       clearTimer();
+      window.removeEventListener('api:updated', onUpdated);
+      if (updateTimer !== null) window.clearTimeout(updateTimer);
     };
   }, [
     backoffMultiplier,

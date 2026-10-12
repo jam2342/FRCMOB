@@ -126,6 +126,13 @@ export function PrivacyPolicyPage() {
                 <strong>Derived analytics</strong> — ratings, predictions, and match findings computed
                 from the above and from public data.
               </li>
+              <li>
+                <strong>Anonymous speed timings</strong> — how long pages take to load and respond, so
+                we can make the app faster. We keep only counts per page type, device size, and
+                connection type: no IP address, team, event, workspace, or anything else that points
+                to you. Nothing is sent if your browser asks sites not to track you (Do Not Track or
+                Global Privacy Control).
+              </li>
             </ul>
           </section>
 

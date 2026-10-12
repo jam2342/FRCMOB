@@ -1,5 +1,5 @@
 import { cx } from '../components/ui/primitives/cx';
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { searchTeams } from '../api';
 import { BottomTabBar } from '../components/navigation/BottomTabBar';
@@ -20,7 +20,6 @@ import {
 import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePwaInstall } from '../hooks/usePwaInstall';
-import { TabTutorialOverlay } from '../components/tutorial/TabTutorialOverlay';
 import { TourPrompt } from '../components/tutorial/TourPrompt';
 import { dismissTourPrompt, tourPromptDismissed } from '../tutorial/tourPrompt';
 import {
@@ -46,6 +45,12 @@ import './ProductShell.css';
 // Each item carries its icon, so the collapsed rail has something to show.
 // Collapsed, every link used to render a 14x3px dash via ::before — eight
 // identical dashes, which is a nav you cannot read.
+// The tour (its steps and mascot) loads only when someone opens it; it no longer
+// starts on its own, so it was ~50 KB of every first page load for nothing.
+const TabTutorialOverlay = lazy(() =>
+  import('../components/tutorial/TabTutorialOverlay').then((module) => ({ default: module.TabTutorialOverlay })),
+);
+
 const NAV_ITEMS = [
   { to: '/home', label: 'Home', Icon: GridIcon },
   { to: '/events', label: 'Events', Icon: CalendarIcon },
@@ -866,7 +871,11 @@ export function ProductShell() {
         jumpRegion={jumpRegion}
       />
 
-      {tutorialOpen ? <TabTutorialOverlay key={tutorialScope} scope={tutorialScope} onClose={() => setTutorialOpen(false)} /> : null}
+      {tutorialOpen ? (
+        <Suspense fallback={null}>
+          <TabTutorialOverlay key={tutorialScope} scope={tutorialScope} onClose={() => setTutorialOpen(false)} />
+        </Suspense>
+      ) : null}
       {showTourPrompt ? (
         <TourPrompt
           onStart={() => {

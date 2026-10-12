@@ -7,8 +7,6 @@ import {
   getEventTeamsIntel,
   getTeamHeatmap,
   getTeamShiftPlay,
-  getTeamIntel,
-  getTeamLogo,
   getTeamRobotImage,
   isClientAdminModeEnabled,
 } from '../api';
@@ -43,7 +41,6 @@ import {
   asRecord,
   clampNumber,
   CURRENT_SEASON_YEAR,
-  FALLBACK_SEASON_YEAR,
   fmtDateShort,
   matchStartTime,
   meanNumber,
@@ -72,6 +69,7 @@ import { ordinal } from '../utils/ordinal';
 import { cancelIdleWork, scheduleIdleWork } from '../utils/idle';
 import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
+import { loadTeamCenterIntel, loadTeamCenterLogo } from '../features/prefetch/pageRequests';
 
 const BASE_TEAM_TABS = ['overview', 'performance', 'events', 'media'] as const;
 /* titleizeKey turns 'events' into "Events", which is also the name of a
@@ -588,21 +586,9 @@ export function TeamCenterPage() {
       void eventTeamsRequest?.catch(() => undefined);
       const [intelResult, logoResult, liveFormResult] =
         await Promise.allSettled([
+          shouldRefreshStatic ? loadTeamCenterIntel(selectedTeamKey, selectedEvent) : Promise.resolve(null),
           shouldRefreshStatic
-            ? getTeamIntel(selectedTeamKey, {
-                event_key: selectedEvent,
-                preferred_year: CURRENT_SEASON_YEAR,
-                fallback_year: FALLBACK_SEASON_YEAR,
-                include_tba: true,
-                include_statbotics: false,
-                allow_season_fallback: true,
-                auto_heal_ratings: true,
-              }, {
-                timeoutMs: 25000,
-              })
-            : Promise.resolve(null),
-          shouldRefreshStatic
-            ? getTeamLogo(selectedTeamKey, shouldLoadEventSpecific ? selectedEvent : undefined)
+            ? loadTeamCenterLogo(selectedTeamKey, shouldLoadEventSpecific ? selectedEvent : undefined)
             : Promise.resolve(null),
           shouldLoadEventSpecific
             ? getEventTeamLiveForm(selectedEventKey, { form_window: 5, live_window_sec: 180 })
@@ -1520,7 +1506,9 @@ export function TeamCenterPage() {
             </SurfaceCard>
             )}
 
-            {loadingTeamData && !teamBreakdown && !teamRating ? (
+            {/* The overview's own cards stand in while it loads (their values read "—"); a
+                separate card here vanished when data came and jolted the page up. */}
+            {loadingTeamData && !teamBreakdown && !teamRating && activeTab !== 'overview' ? (
               <SurfaceCard title="Loading" compactable>
                 <SkeletonBlock rows={6} />
               </SurfaceCard>
@@ -1530,10 +1518,16 @@ export function TeamCenterPage() {
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
                   <SurfaceCard
                     title="Robot Stats"
-                    subtitle={metricsAreEstimates ? officialMetricsNote(officialStats) : undefined}
+                    subtitle={
+                      metricsAreEstimates
+                        ? officialMetricsNote(officialStats)
+                        : loadingTeamData && !teamBreakdown
+                          ? "Loading this team's numbers…"
+                          : undefined
+                    }
                     compactable
                   >
-                    <div className="center-kpi-grid">
+                    <div className="center-kpi-grid team-stats-grid">
                       <article className="center-kpi-card">
                         <span><FlameIcon className="icon-inline icon-muted" /> Fuel / active min</span>
                         <strong>{metric(teamBreakdown?.averages?.fuel_scoring_rate ?? null, 1)}</strong>

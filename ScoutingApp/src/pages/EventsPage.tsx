@@ -9,12 +9,11 @@ import {
   getApiHealth,
   getEventAlliances,
   getEventAwards,
-  getEventRankings,
   getEventSchedule,
   getEventTeamLiveForm,
-  getEventTeamsHistory,
   ingestEvent,
 } from '../api';
+import { SAVED_COPY_MAX_AGE_MS } from '../config/savedCopy';
 import type {
   EventAllianceItem,
   EventAwardsResponse,
@@ -80,6 +79,7 @@ import { resolveEventDateRange, matchesCalendarDisplayYear, monthTokenFromMs, sh
 import { inferMatchCompleted, matchHasScores } from './matchStatus';
 import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
+import { loadEventsRankings, loadEventsTeamsHistory } from '../features/prefetch/pageRequests';
 import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 
@@ -109,7 +109,6 @@ const EVENT_TEAMS_AUTO_CHUNK_SIZE = 24;
 const EVENT_TEAMS_AUTO_VISIBLE_TARGET = 72;
 // One request: the server reads at least its 20-match window whatever limit is
 // asked, so the old "fast 2, then full 6" pair ran the same ~3 s query twice.
-const EVENT_TEAMS_HISTORY_LIMIT = 6;
 
 type RankingRow = {
   team_key: string;
@@ -762,17 +761,22 @@ export function EventsPage() {
       const liveRequestOptions = shouldBypassLiveCache
         ? { bypassCache: true, cacheTtlMs: 0, staleWhileRevalidateMs: 0 }
         : undefined;
-      const schedulePromise = getEventSchedule(selectedEventKey, false, undefined, liveRequestOptions);
+      const schedulePromise = getEventSchedule(
+        selectedEventKey,
+        false,
+        undefined,
+        liveRequestOptions ?? { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.schedule },
+      );
       const formPromise = getEventTeamLiveForm(
         selectedEventKey,
         { form_window: 5, live_window_sec: 180 },
         liveRequestOptions,
       );
-      const rankingsPromise = shouldRefreshStatic ? getEventRankings(selectedEventKey) : Promise.resolve(null);
-      const teamsPromise = shouldRefreshStatic
-        ? getEventTeamsHistory(selectedEventKey, EVENT_TEAMS_HISTORY_LIMIT, false)
+      const rankingsPromise = shouldRefreshStatic ? loadEventsRankings(selectedEventKey) : Promise.resolve(null);
+      const teamsPromise = shouldRefreshStatic ? loadEventsTeamsHistory(selectedEventKey) : Promise.resolve(null);
+      const awardsPromise = shouldRefreshStatic
+        ? getEventAwards(selectedEventKey, { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.eventData })
         : Promise.resolve(null);
-      const awardsPromise = shouldRefreshStatic ? getEventAwards(selectedEventKey) : Promise.resolve(null);
 
       // Attach rejection handlers immediately: any parallel request can fail
       // before the schedule finishes (especially on a dropped connection).
@@ -1203,7 +1207,7 @@ export function EventsPage() {
 
   const pollAllianceSelections = useCallback(async (reason: SingleFlightPollReason) => {
     const success = await refreshAllianceSelections({
-      quiet: reason === 'poll' || reason === 'resume',
+      quiet: reason === 'poll' || reason === 'resume' || reason === 'update',
     });
     if (reason === 'manual') {
       setAllianceActionStatus(success ? 'Alliance selections refreshed.' : 'Alliance refresh failed.');

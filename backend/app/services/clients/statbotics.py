@@ -14,7 +14,12 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # HTTP client configuration
-DEFAULT_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
+# Statbotics answers in well under a second when healthy. During its outages it
+# returns 500s after 8-15 s, and a 12 s read timeout made every cold team page wait
+# that long (twice, with the retry).
+DEFAULT_TIMEOUT = httpx.Timeout(6.0, connect=3.0)
+# Only quick failures are worth a retry; a slow 500 or a timeout means it is down.
+RETRY_ONLY_FAILURES_UNDER_SEC = 1.0
 DEFAULT_TTL_SEC = 300
 MAX_TEAMS_PAGE_LIMIT = 1000
 MAX_RETRIES = 2
@@ -118,58 +123,144 @@ def _circuit_threshold() -> int:
 def _circuit_cooldown_sec() -> int:
     return max(10, int(getattr(settings, "statbotics_circuit_cooldown_sec", 90)))
 
+def _circuit_max_cooldown_sec() -> int:
+    return max(_circuit_cooldown_sec(), int(getattr(settings, "statbotics_circuit_max_cooldown_sec", 1800)))
+
 def _circuit_enabled() -> bool:
     return bool(getattr(settings, "statbotics_circuit_breaker_enabled", True))
+
+# The breaker is shared through Redis: with two web workers, the scheduler and each
+# run_sync loop keeping their own memory copy, every process had to rediscover an
+# outage (101 openings in 72 h during the Oct 2026 outage, each costing a visitor
+# 13-23 s). Memory state stays as the fallback when Redis is unavailable.
+_SHARED_PREFIX = "statbotics:circuit:"
+# How long a run of re-openings counts as one outage for the growing cooldown.
+_OUTAGE_MEMORY_SEC = 6 * 3600
+# A half-open probe that hangs must not block other probes forever.
+_PROBE_LOCK_SEC = 20
+
+def _shared_redis():
+    # The sync client on purpose: run_sync callers each run their own event loop, and
+    # a loopback Redis round trip is well under a millisecond.
+    try:
+        from app.services.cache import get_cache
+
+        return get_cache().redis_client
+    except Exception:
+        return None
+
+def _shared_call(method: str, *args: Any, **kwargs: Any) -> Any:
+    client = _shared_redis()
+    if client is None:
+        return None
+    try:
+        return getattr(client, method)(*args, **kwargs)
+    except Exception as exc:
+        logger.debug("statbotics shared circuit %s failed: %s", method, exc)
+        return None
+
+def _new_circuit_state() -> dict[str, Any]:
+    return {
+        "failures": 0,
+        "open_until_ts": 0.0,
+        "opens": 0,
+        "probe_until_ts": 0.0,
+        "half_open": False,
+        "last_failure_ts": None,
+        "last_success_ts": None,
+        "last_error": "",
+    }
 
 def _circuit_record_success(endpoint: str) -> None:
     if not endpoint:
         return
     state = _CIRCUIT.get(endpoint)
-    if state is None:
-        return
-    state["failures"] = 0
-    state["open_until_ts"] = 0.0
-    state["last_success_ts"] = time.time()
+    if state is not None:
+        state["failures"] = 0
+        state["open_until_ts"] = 0.0
+        state["opens"] = 0
+        state["probe_until_ts"] = 0.0
+        state["half_open"] = False
+        state["last_success_ts"] = time.time()
+    _shared_call(
+        "delete",
+        f"{_SHARED_PREFIX}{endpoint}:open_until",
+        f"{_SHARED_PREFIX}{endpoint}:opens",
+        f"{_SHARED_PREFIX}{endpoint}:probe",
+    )
 
 def _circuit_record_failure(endpoint: str, *, error: str) -> None:
     if not endpoint:
         return
-    state = _CIRCUIT.setdefault(
-        endpoint,
-        {
-            "failures": 0,
-            "open_until_ts": 0.0,
-            "last_failure_ts": None,
-            "last_success_ts": None,
-            "last_error": "",
-        },
-    )
+    state = _CIRCUIT.setdefault(endpoint, _new_circuit_state())
     now = time.time()
     failures = int(state.get("failures") or 0) + 1
     state["failures"] = failures
     state["last_failure_ts"] = now
     state["last_error"] = str(error or "").strip()
-    if failures >= _circuit_threshold():
-        open_until = now + float(_circuit_cooldown_sec())
-        state["open_until_ts"] = open_until
-        logger.warning(
-            "statbotics circuit opened endpoint=%s failures=%s cooldown_sec=%s",
-            endpoint,
-            failures,
-            _circuit_cooldown_sec(),
-        )
+    # A failed half-open probe reopens at once; otherwise wait for the threshold.
+    if failures < _circuit_threshold() and not state.get("half_open"):
+        return
+    shared_opens = _shared_call("incr", f"{_SHARED_PREFIX}{endpoint}:opens")
+    if isinstance(shared_opens, int):
+        _shared_call("expire", f"{_SHARED_PREFIX}{endpoint}:opens", _OUTAGE_MEMORY_SEC)
+        opens = shared_opens
+    else:
+        opens = int(state.get("opens") or 0) + 1
+    state["opens"] = opens
+    # 90 s, 3 min, 6 min ... up to 30 min while the outage lasts.
+    cooldown = min(_circuit_max_cooldown_sec(), _circuit_cooldown_sec() * (2 ** max(0, opens - 1)))
+    open_until = now + float(cooldown)
+    state["open_until_ts"] = open_until
+    state["half_open"] = False
+    state["failures"] = 0
+    _shared_call("set", f"{_SHARED_PREFIX}{endpoint}:open_until", f"{open_until:.3f}", ex=int(cooldown) + 1)
+    _shared_call("delete", f"{_SHARED_PREFIX}{endpoint}:probe")
+    logger.warning(
+        "statbotics circuit opened endpoint=%s opens=%s cooldown_sec=%s",
+        endpoint,
+        opens,
+        int(cooldown),
+    )
 
 def _circuit_open(endpoint: str) -> tuple[bool, float]:
     if not _circuit_enabled():
         return False, 0.0
-    state = _CIRCUIT.get(endpoint)
-    if not isinstance(state, dict):
-        return False, 0.0
-    open_until = float(state.get("open_until_ts") or 0.0)
     now = time.time()
+    state = _CIRCUIT.get(endpoint)
+    open_until = float(state.get("open_until_ts") or 0.0) if isinstance(state, dict) else 0.0
+    shared_raw = _shared_call("get", f"{_SHARED_PREFIX}{endpoint}:open_until")
+    try:
+        shared_until = float(shared_raw) if shared_raw is not None else 0.0
+    except (TypeError, ValueError):
+        shared_until = 0.0
+    if shared_until > open_until:
+        state = _CIRCUIT.setdefault(endpoint, _new_circuit_state())
+        state["open_until_ts"] = shared_until
+        open_until = shared_until
     if open_until <= now:
         return False, 0.0
     return True, max(0.0, open_until - now)
+
+def _circuit_claim_probe(endpoint: str) -> bool:
+    # After a cooldown, one request tries Statbotics again and the rest keep failing
+    # fast until it answers. Outside an outage every request may go.
+    if not _circuit_enabled():
+        return True
+    state = _CIRCUIT.setdefault(endpoint, _new_circuit_state())
+    shared_opens = _shared_call("get", f"{_SHARED_PREFIX}{endpoint}:opens")
+    in_outage = bool(shared_opens) or int(state.get("opens") or 0) > 0
+    if not in_outage:
+        return True
+    now = time.time()
+    claimed = _shared_call("set", f"{_SHARED_PREFIX}{endpoint}:probe", "1", nx=True, ex=_PROBE_LOCK_SEC)
+    if claimed is None and _shared_redis() is None:
+        claimed = float(state.get("probe_until_ts") or 0.0) <= now
+    if not claimed:
+        return False
+    state["probe_until_ts"] = now + _PROBE_LOCK_SEC
+    state["half_open"] = True
+    return True
 
 def runtime_metrics() -> dict[str, Any]:
     now = time.time()
@@ -227,6 +318,22 @@ def run_sync(coro: Any) -> Any:
 
     return asyncio.run(_runner())
 
+def _consume_task_result(task: asyncio.Task) -> None:
+    # Reads a finished background fetch's outcome so asyncio doesn't log it as unhandled.
+    if not task.cancelled():
+        task.exception()
+
+async def within_budget(coro: Any, budget_sec: float) -> Any:
+    # Waits up to budget_sec for a Statbotics call on a request path. On timeout the
+    # call keeps running in the background, so it still fills the cache or records the
+    # failure that opens the breaker (cancelling it would hide a slow outage forever).
+    task = asyncio.ensure_future(coro)
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=max(0.1, float(budget_sec)))
+    except asyncio.TimeoutError:
+        task.add_done_callback(_consume_task_result)
+        raise
+
 async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> Any:
     # Fetch and cache JSON response with retry logic.
     cached = _cache_get(path)
@@ -249,6 +356,12 @@ async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> A
             f"Statbotics circuit open for {endpoint}; retry in ~{int(max(1.0, remaining_sec))}s."
         )
 
+    if not _circuit_claim_probe(endpoint):
+        stale_payload = _cache_get_stale(path)
+        if stale_payload is not None and bool(getattr(settings, "statbotics_stale_serve_on_error", True)):
+            return stale_payload
+        raise RuntimeError(f"Statbotics is unavailable ({endpoint}); another request is checking it.")
+
     url = _build_url(path)
     client = await _get_client()
 
@@ -256,8 +369,10 @@ async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> A
     last_error: Exception | None = None
 
     for attempt in range(max_retries):
+        attempt_started = time.perf_counter()
         try:
             response = await client.get(url, headers={"Accept": "application/json"})
+            quick_failure = (time.perf_counter() - attempt_started) < RETRY_ONLY_FAILURES_UNDER_SEC
 
             if response.status_code >= 400:
                 snippet = response.text.strip().replace("\n", " ")
@@ -269,7 +384,7 @@ async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> A
                 if response.status_code >= 500:
                     _circuit_record_failure(endpoint, error=error_msg)
                     last_error = RuntimeError(error_msg)
-                    if attempt < max_retries - 1:
+                    if attempt < max_retries - 1 and quick_failure and not _circuit_open(endpoint)[0]:
                         await asyncio.sleep(RETRY_BACKOFF_MS * (2 ** attempt) / 1000)
                         continue
                     stale_payload = _cache_get_stale(path)
@@ -280,9 +395,13 @@ async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> A
                             endpoint,
                         )
                         return stale_payload
-                    raise last_error
+                    # break, not raise: a raise here landed in the generic except below
+                    # and was retried after all.
+                    break
 
-                # 4xx errors do not count toward circuit state and should fail fast.
+                # A 4xx means Statbotics is up and answering, so it closes a half-open
+                # breaker; the request itself fails fast.
+                _circuit_record_success(endpoint)
                 raise _NonRetryableStatboticsError(error_msg)
 
             payload = response.json()
@@ -297,7 +416,13 @@ async def _fetch_json_with_retry(path: str, max_retries: int = MAX_RETRIES) -> A
             err_msg = f"Statbotics request failed for {url}"
             _circuit_record_failure(endpoint, error=f"{err_msg}: {exc}")
             last_error = RuntimeError(err_msg)
-            if attempt < max_retries - 1:
+            quick_failure = (time.perf_counter() - attempt_started) < RETRY_ONLY_FAILURES_UNDER_SEC
+            if (
+                attempt < max_retries - 1
+                and quick_failure
+                and not isinstance(exc, httpx.TimeoutException)
+                and not _circuit_open(endpoint)[0]
+            ):
                 await asyncio.sleep(RETRY_BACKOFF_MS * (2 ** attempt) / 1000)
                 continue
             stale_payload = _cache_get_stale(path)

@@ -51,4 +51,30 @@ describe('useSingleFlightPolling', () => {
     });
     expect(run).toHaveBeenCalledTimes(2);
   });
+
+  it('re-runs once when a background refresh replaces data the page showed', async () => {
+    const reasons: SingleFlightPollReason[] = [];
+    const run = vi.fn((reason: SingleFlightPollReason) => {
+      reasons.push(reason);
+      return Promise.resolve();
+    });
+    const { unmount } = renderHook(() => useSingleFlightPolling({ enabled: true, intervalMs: 60000, run }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('api:updated', { detail: { url: '/api/a' } }));
+      window.dispatchEvent(new CustomEvent('api:updated', { detail: { url: '/api/b' } }));
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(reasons).toEqual(['initial', 'update']);
+    unmount();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('api:updated', { detail: { url: '/api/c' } }));
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(reasons).toEqual(['initial', 'update']);
+  });
 });

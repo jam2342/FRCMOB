@@ -8,6 +8,7 @@ import {
   getEventRatings,
   getEventTeamLiveForm,
 } from '../api';
+import { SAVED_COPY_MAX_AGE_MS } from '../config/savedCopy';
 import type {
   EventScheduleItem,
   EventTeamRatingItem,
@@ -397,9 +398,11 @@ export function StrategyBriefingPage() {
     setErrorText('');
 
     const results = await Promise.allSettled([
-      getEventSchedule(key, false, undefined, { bypassCache: fresh }),
-      getEventScheduleWithSynergy(key, { include_pair_breakdown: false, bypassCache: fresh }),
-      getEventRatings(key, false, { bypassCache: fresh }),
+      getEventSchedule(key, false, undefined, fresh ? { bypassCache: true } : { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.schedule }),
+      getEventScheduleWithSynergy(key, fresh
+        ? { include_pair_breakdown: false, bypassCache: true }
+        : { include_pair_breakdown: false, bypassCache: false, showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.matchData }),
+      getEventRatings(key, false, fresh ? { bypassCache: true } : { bypassCache: false, showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.eventData }),
       getEventTeamLiveForm(key, undefined, { bypassCache: fresh }),
     ]);
     if (generation !== requestGeneration.current) return;

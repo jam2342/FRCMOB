@@ -30,6 +30,8 @@ from app.api.routes_synergy import router as synergy_router
 from app.api.routes_teams import router as teams_router
 from app.api.routes_tracks import router as tracks_router
 from app.api.routes_workspaces import router as workspaces_router
+from app.api.routes_telemetry import router as telemetry_router
+from app.api.edge_cache import EdgeCacheMiddleware
 from app.core.config import (
     LOCAL_DATABASE_URL_FALLBACK,
     assert_no_legacy_texas_settings,
@@ -337,6 +339,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Inside compression on purpose: it hashes and caches the uncompressed body.
+app.add_middleware(EdgeCacheMiddleware)
 if bool(getattr(settings, "response_compression_enabled", True)):
     app.add_middleware(
         GZipMiddleware,
@@ -438,6 +442,7 @@ app.include_router(synergy_router)
 app.include_router(teams_router)
 app.include_router(tracks_router)
 app.include_router(workspaces_router)
+app.include_router(telemetry_router)
 app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 
 async def _handle_scouting_room_bus_message(room_key: str, payload: dict) -> None:

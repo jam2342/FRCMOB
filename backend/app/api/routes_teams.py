@@ -1360,12 +1360,26 @@ async def _build_team_intel_payload(
                 "resolved_year": None,
                 "warnings": [],
             }
-        return await _load_statbotics_team_context(
-            team_number=resolved_team_number,
-            event_key=normalized_event_key,
-            preferred_year=preferred_year,
-            fallback_year=fallback_year,
-        )
+        try:
+            return await statbotics_client.within_budget(
+                _load_statbotics_team_context(
+                    team_number=resolved_team_number,
+                    event_key=normalized_event_key,
+                    preferred_year=preferred_year,
+                    fallback_year=fallback_year,
+                ),
+                settings.intel_statbotics_budget_sec,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "enabled": True,
+                "available": False,
+                "team": None,
+                "team_event": None,
+                "team_year": None,
+                "resolved_year": None,
+                "warnings": ["Statbotics is slow right now; EPA is left out of this page for now."],
+            }
 
     def _sync_official_stats():
         thread_db = _thread_db()
@@ -1696,10 +1710,13 @@ async def _build_event_teams_intel_payload(
         try:
             # One bulk request gives event EPA rows for all teams and is much cheaper
             # than N per-team requests.
-            team_event_rows = await statbotics_client.get_team_events(
-                event_key=normalized_event_key,
-                limit=max(128, len(team_rows) * 2),
-                metric="epa",
+            team_event_rows = await statbotics_client.within_budget(
+                statbotics_client.get_team_events(
+                    event_key=normalized_event_key,
+                    limit=max(128, len(team_rows) * 2),
+                    metric="epa",
+                ),
+                settings.intel_statbotics_budget_sec,
             )
             for item in team_event_rows:
                 if not isinstance(item, dict):
@@ -1709,6 +1726,8 @@ async def _build_event_teams_intel_payload(
                     continue
                 team_key = _normalize_team_key(f"frc{int(team_number)}")
                 statbotics_by_team[team_key] = item
+        except asyncio.TimeoutError:
+            statbotics_errors.append(f"event:{normalized_event_key}: Statbotics is slow right now")
         except Exception as exc:
             statbotics_errors.append(
                 f"event:{normalized_event_key}: {sanitize_external_error(exc, default='request_failed')}"
