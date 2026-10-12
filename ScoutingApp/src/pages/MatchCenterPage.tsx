@@ -4,10 +4,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventLiveStream,
   getEventSchedule,
-  getEventScheduleWithSynergy,
   getEventTeamLiveForm,
   getMatchPhases,
 } from '../api';
+import { SAVED_COPY_MAX_AGE_MS } from '../config/savedCopy';
 import type {
   EventScheduleItem,
   EventTeamLiveFormResponse,
@@ -54,6 +54,7 @@ import { pickDefaultMatchKey } from './homeFeed';
 import { inferMatchCompleted, matchHasScores } from './matchStatus';
 import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
+import { loadMatchCenterSynergy } from '../features/prefetch/pageRequests';
 
 const MATCH_CENTER_VIEW_PREFS_STORAGE = 'scouting_match_center_view_prefs_v1';
 const MATCH_CENTER_RECENT_STORAGE = 'scouting_match_center_recent_matches_v1';
@@ -303,14 +304,16 @@ export function MatchCenterPage() {
         ? { bypassCache: true, cacheTtlMs: 0, staleWhileRevalidateMs: 0 }
         : undefined;
       const [scheduleResult, liveFormResult, streamResult, synergyResult] = await Promise.allSettled([
-        getEventSchedule(selectedEventKey, false, undefined, liveRequestOptions),
+        getEventSchedule(
+          selectedEventKey,
+          false,
+          undefined,
+          liveRequestOptions ?? { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.schedule },
+        ),
         getEventTeamLiveForm(selectedEventKey, { form_window: 5, live_window_sec: 180 }, liveRequestOptions),
         shouldRefreshStatic ? getEventLiveStream(selectedEventKey) : Promise.resolve(null),
         shouldRefreshStatic
-          ? getEventScheduleWithSynergy(selectedEventKey, {
-              refresh: false,
-              include_pair_breakdown: true,
-            })
+          ? loadMatchCenterSynergy(selectedEventKey)
           : Promise.resolve(null),
       ]);
       // Another event was picked while this was loading; its own load follows right away.

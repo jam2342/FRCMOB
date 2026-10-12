@@ -1843,6 +1843,11 @@
     padding: 10px 12px;
   }
 
+  /* Loaded height on a phone (see .team-stats-grid in shell-foundation). */
+  .center-layout-team .center-main .fm-content-stack .team-stats-grid .center-kpi-card {
+    min-height: 105px;
+  }
+
   .center-layout-team .center-main .fm-content-stack .center-kpi-card span {
     font-size: var(--font-size-legacy-10);
   }
@@ -3437,4 +3442,11 @@
 
   .fm-red { text-align: left; }
   .fm-blue { text-align: right; }
+}
+
+/* The narrowest phones wrap the tile notes onto more lines (see .team-stats-grid). */
+@media (max-width: 300px) {
+  .center-layout-team .center-main .fm-content-stack .team-stats-grid .center-kpi-card {
+    min-height: 136px;
+  }
 }

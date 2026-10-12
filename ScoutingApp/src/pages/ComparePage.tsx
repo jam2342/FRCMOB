@@ -9,6 +9,7 @@ import {
   getTeamIntel,
   searchTeams,
 } from '../api';
+import { SAVED_COPY_MAX_AGE_MS } from '../config/savedCopy';
 import type {
   EventTeamsIntelResponse,
   EventTeamRatingItem,
@@ -280,7 +281,7 @@ export function ComparePage() {
         include_rating_details: false,
         include_rating_signals: false,
         auto_heal_ratings: true,
-      });
+      }, { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.eventData });
       // Another event was picked meanwhile; don't show this one's teams under it.
       if (currentEventKeyRef.current !== selectedEventKey) return true;
       setEventTeams(payload);

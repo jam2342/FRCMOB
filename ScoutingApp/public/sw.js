@@ -167,6 +167,28 @@ self.addEventListener("fetch", (event) => {
 
 // ── Web Push notifications ──────────────────────────────────────
 
+// A match alert links to its event's Match Center. Fetch what that page asks for
+// first while the notification shows: API answers are "no-cache" with an ETag, so
+// the browser keeps them and opening the alert costs a 304 instead of the whole
+// schedule (and the CDN is warm). The URLs must stay exactly what the app requests;
+// src/features/prefetch/swPrefetch.test.ts checks them against api.ts.
+const ALERT_PREFETCH_PATHS = [
+  "/api/events/{event}/schedule-with-synergy?include_pair_breakdown=true&refresh=false",
+  "/api/matches/event/{event}/schedule?refresh=false",
+];
+
+function prefetchAlertEvent(url) {
+  const match = /[?&]event=([0-9]{4}[a-z0-9]+)/.exec(url || "");
+  if (!match) return Promise.resolve();
+  const requests = ALERT_PREFETCH_PATHS.map((path) =>
+    fetch(path.replace("{event}", match[1]), { headers: { Accept: "application/json" } })
+      .then((response) => response.arrayBuffer())
+      .catch(() => undefined),
+  );
+  // Platforms give a push handler little time; never hold the event open long.
+  return Promise.race([Promise.all(requests), new Promise((resolve) => setTimeout(resolve, 8000))]);
+}
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
@@ -176,14 +198,17 @@ self.addEventListener("push", (event) => {
   }
   const title = payload.title || "FRCMOB";
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: payload.body || "",
-      tag: payload.tag || undefined,
-      icon: "/icons/icon-192.png",
-      // Android draws the badge as a white silhouette.
-      badge: "/icons/badge-96.png",
-      data: { url: payload.url || "/home" },
-    }),
+    Promise.all([
+      self.registration.showNotification(title, {
+        body: payload.body || "",
+        tag: payload.tag || undefined,
+        icon: "/icons/icon-192.png",
+        // Android draws the badge as a white silhouette.
+        badge: "/icons/badge-96.png",
+        data: { url: payload.url || "/home" },
+      }),
+      prefetchAlertEvent(payload.url),
+    ]),
   );
 });
 
