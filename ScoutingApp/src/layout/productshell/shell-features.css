@@ -1127,7 +1127,8 @@
 
 .event-picker-dropdown-item-key {
   font-size: var(--font-size-2xs);
-  color: var(--color-text-dim);
+  /* text-dim is 4.26:1 on the light dropdown; muted clears AA. */
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -1167,7 +1168,7 @@
 
 .event-picker-dropdown-item .event-picker-tag.subtle {
   background: transparent;
-  color: var(--color-text-dim);
+  color: var(--color-text-muted);
 }
 
 /* Light theme is handled by the global --color-* tokens above (they swap on

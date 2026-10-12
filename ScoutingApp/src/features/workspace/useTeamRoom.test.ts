@@ -105,6 +105,30 @@ describe('useTeamRoom', () => {
     expect(api.getTeamRoom).not.toHaveBeenCalled();
   });
 
+  it('retries opening immediately when requested after a failed room open', async () => {
+    vi.useFakeTimers();
+    signInAs(2, 'member');
+    api.ensureTeamRoom
+      .mockRejectedValueOnce(new Error('No signal'))
+      .mockResolvedValueOnce({ ...snapshot(2, 2), created: false });
+    const { result } = renderHook(() => useTeamRoom('2026week0'));
+    await act(async () => {});
+    expect(result.current.status).toBe('error');
+    expect(result.current.snapshot).toBeNull();
+    expect(api.ensureTeamRoom).toHaveBeenCalledTimes(1);
+    const failedAt = Date.now();
+
+    // No timer advances: an explicit reconnect must bypass automatic backoff.
+    await act(async () => { await result.current.retry(); });
+    expect(Date.now()).toBe(failedAt);
+    expect(api.ensureTeamRoom).toHaveBeenCalledTimes(2);
+    expect(api.getTeamRoom).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('ready');
+    expect(result.current.error).toBe('');
+    expect(result.current.snapshot?.room_key).toBe('team-room');
+    expect(result.current.snapshot?.me.member_id).toBe(2);
+  });
+
   it('runs saves one at a time so the last answer is the newest state', async () => {
     signInAs(1, 'leader');
     api.ensureTeamRoom.mockResolvedValue({ ...snapshot(1, null), created: false });

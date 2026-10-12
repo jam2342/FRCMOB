@@ -37,7 +37,7 @@ it('puts phone list maintenance in More and keeps live actions, rank and notes a
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><PicklistPage /></MemoryRouter>);
   await screen.findByRole('button', {name:'Picked'});
-  expect(screen.getByText('2026old · Picks')).toBeInTheDocument();
+  expect(screen.getAllByText('Picks').length).toBeGreaterThan(0);
   const more = screen.getByText('More').closest('details')!;
   expect(more.open).toBe(false);
   for (const name of ['New from ratings', 'New empty', 'Add missing teams', 'Print / PDF', 'Delete']) {

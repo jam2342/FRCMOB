@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { plainSignalLabel } from './teamCenterOfficial';
+import { plainSignalLabel, signalRankLabel } from './teamCenterOfficial';
 import { Navigate } from 'react-router-dom';
 import {
   getEventRatings,
@@ -27,7 +27,7 @@ const RANKING_COLUMNS: TableColumn<RankingRow>[] = [
     label: 'Team',
     render: (row) => (
       <>
-        <strong>{row.team_number ?? row.team_key}</strong>
+        <strong>#{row.team_number ?? row.team_key.replace(/^frc/, '')}</strong>
         {row.nickname ? <span className="dviz-nick"> {row.nickname}</span> : null}
       </>
     ),
@@ -41,7 +41,7 @@ const RANKING_COLUMNS: TableColumn<RankingRow>[] = [
   { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence_0_1) },
   { key: 'throughput', label: 'Throughput', numeric: true, render: (row) => row.subscores.throughput.toFixed(0) },
   { key: 'endgame', label: 'Endgame', numeric: true, render: (row) => row.subscores.endgame.toFixed(0) },
-  { key: 'auto', label: 'Auto', numeric: true, render: (row) => (row.subscores.auto_contribution ?? 0).toFixed(0) },
+  { key: 'auto', label: 'Auto', numeric: true, render: (row) => row.subscores.auto_contribution == null ? '—' : metric(row.subscores.auto_contribution, 0) },
   { key: 'consistency', label: 'Consistency', numeric: true, render: (row) => row.subscores.consistency.toFixed(0) },
 ];
 import { metric, pct, normalizeTeamKeyInput } from './centerUtils';
@@ -125,7 +125,7 @@ function RadarChart({
   maxVal = 100,
   size = 260,
 }: {
-  scores: { key: string; label: string; value: number }[];
+  scores: { key: string; label: string; value: number | null }[];
   maxVal?: number;
   size?: number;
 }) {
@@ -143,12 +143,19 @@ function RadarChart({
   }
 
   const rings = [0.25, 0.5, 0.75, 1.0];
+  const complete = scores.every((s) => s.value != null);
   const dataPath = scores
     .map((s, i) => {
+      if (s.value == null) return '';
       const [x, y] = polarToXY(i, s.value);
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+      return `${i === 0 || scores[i - 1].value == null ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     })
-    .join(' ') + 'Z';
+    .join(' ') + (complete ? 'Z' : '');
+  const first = scores[0].value;
+  const last = scores[n - 1].value;
+  const closingEdge = !complete && first != null && last != null
+    ? `M${polarToXY(n - 1, last).join(',')} L${polarToXY(0, first).join(',')}`
+    : '';
 
   return (
     <svg
@@ -156,6 +163,7 @@ function RadarChart({
       viewBox={`0 0 ${size} ${size}`}
       width={size}
       height={size}
+      style={{ maxWidth: '100%', height: 'auto' }}
     >
       {/* grid rings */}
       {rings.map((frac) => (
@@ -185,20 +193,20 @@ function RadarChart({
         );
       })}
       {/* data shape */}
-      <polygon className="dviz-radar-shape" points={scores
+      {complete ? <polygon className="dviz-radar-shape" points={scores
         .map((s, i) => {
-          const [x, y] = polarToXY(i, s.value);
+          const [x, y] = polarToXY(i, s.value!);
           return `${x.toFixed(1)},${y.toFixed(1)}`;
         })
-        .join(' ')} />
-      <path className="dviz-radar-outline" d={dataPath} />
+        .join(' ')} /> : null}
+      <path className="dviz-radar-outline" d={`${dataPath} ${closingEdge}`} style={{ fill: 'none' }} />
       {/* data dots & labels */}
       {scores.map((s, i) => {
-        const [x, y] = polarToXY(i, s.value);
+        const point = s.value == null ? null : polarToXY(i, s.value);
         const [lx, ly] = polarToXY(i, maxVal + 12);
         return (
           <g key={s.key}>
-            <circle className="dviz-radar-dot" cx={x} cy={y} r={3} />
+            {point ? <circle className="dviz-radar-dot" cx={point[0]} cy={point[1]} r={3} /> : null}
             <text
               className="dviz-radar-label"
               x={lx}
@@ -433,7 +441,9 @@ function DataVizPageContent() {
   /* ── data state ─────────────────────────────── */
   const [ratings, setRatings] = useState<EventTeamRatingItem[]>([]);
   const [breakdown, setBreakdown] = useState<TeamBreakdownResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loadingRatings, setLoadingRatings] = useState(false);
+  const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+  const loading = loadingRatings || loadingBreakdown;
   const [error, setError] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<'overview' | 'team'>('overview');
 
@@ -452,8 +462,8 @@ function DataVizPageContent() {
   const loadRatings = useCallback(async () => {
     const generation = ++ratingsGeneration.current;
     setRatings([]);
+    setLoadingRatings(Boolean(eventKey));
     if (!eventKey) return;
-    setLoading(true);
     setError(null);
     try {
       const resp = await getEventRatings(eventKey);
@@ -464,7 +474,7 @@ function DataVizPageContent() {
     } catch {
       if (generation === ratingsGeneration.current) setError('Could not load ratings. Try loading the event again.');
     } finally {
-      if (generation === ratingsGeneration.current) setLoading(false);
+      if (generation === ratingsGeneration.current) setLoadingRatings(false);
     }
   }, [eventKey]);
 
@@ -472,11 +482,11 @@ function DataVizPageContent() {
   const loadBreakdown = useCallback(async () => {
     const generation = ++breakdownGeneration.current;
     setBreakdown(null);
+    setLoadingBreakdown(Boolean(teamKey && eventKey));
     if (!teamKey || !eventKey) {
       setBreakdown(null);
       return;
     }
-    setLoading(true);
     setError(null);
     try {
       const resp = await getTeamBreakdown(teamKey, eventKey);
@@ -484,7 +494,7 @@ function DataVizPageContent() {
     } catch {
       if (generation === breakdownGeneration.current) setError('Could not load team data. Try loading the event again.');
     } finally {
-      if (generation === breakdownGeneration.current) setLoading(false);
+      if (generation === breakdownGeneration.current) setLoadingBreakdown(false);
     }
   }, [teamKey, eventKey]);
 
@@ -511,7 +521,7 @@ function DataVizPageContent() {
     return SUBSCORE_KEYS.map((key) => ({
       key,
       label: SUBSCORE_LABELS[key] || key,
-      value: (teamRating.subscores as Record<string, number | null | undefined>)[key] ?? 0,
+      value: (teamRating.subscores as Record<string, number | null | undefined>)[key] ?? null,
     }));
   }, [teamRating]);
 
@@ -596,6 +606,7 @@ function DataVizPageContent() {
       <div className="center-input-row" style={{ marginTop: '0.5rem' }}>
         <input
           id="dviz-team"
+              aria-label="Team number"
           className="center-input"
           type="text"
           inputMode="numeric"
@@ -659,7 +670,7 @@ function DataVizPageContent() {
                     size="display"
                     label="Top rating"
                     value={ratings[0].rating_0_100.toFixed(1)}
-                    sub={`${ratings[0].nickname ?? ratings[0].team_key} · field average ${fieldAverageRating.toFixed(1)}`}
+                    sub={`${ratings[0].nickname || `Team ${ratings[0].team_number ?? ratings[0].team_key.replace(/^frc/, '')}`} · field average ${fieldAverageRating.toFixed(1)}`}
                     confidence={
                       ratings.reduce((sum, row) => sum + row.confidence_0_1, 0) / ratings.length
                     }
@@ -698,7 +709,7 @@ function DataVizPageContent() {
             {/* Radar Chart */}
             {teamRating && (
               <SurfaceCard
-                title={`Team ${teamRating.team_number ?? teamKey} - Subscore Profile`}
+                title={`Team ${teamRating.team_number ?? teamKey.replace(/^frc/, '')} - Subscore Profile`}
                 subtitle={`Overall: ${teamRating.rating_0_100.toFixed(1)} / 100`}
               >
                 <div className="dviz-radar-container">
@@ -706,12 +717,13 @@ function DataVizPageContent() {
                   <div className="dviz-radar-legend">
                     {radarScores.map((s) => (
                       <div key={s.key} className="dviz-radar-legend-item">
-                        <span className="dviz-radar-legend-val">{s.value.toFixed(0)}</span>
+                        <span className="dviz-radar-legend-val">{s.value == null ? '—' : metric(s.value, 0)}</span>
                         <span className="dviz-radar-legend-label">{s.label}</span>
                       </div>
                     ))}
                   </div>
                 </div>
+                {radarScores.some((s) => s.value == null) ? <p className="dviz-empty">Missing scores are shown as gaps.</p> : null}
               </SurfaceCard>
             )}
 
@@ -802,7 +814,7 @@ function DataVizPageContent() {
                         <div key={i} className="dviz-proscons-item dviz-pro-item">
                           <span className="dviz-proscons-label">{plainSignalLabel(p.label)}</span>
                           <span className="dviz-proscons-val">
-                            {p.metric_value.toFixed(1)} (P{(p.percentile * 100).toFixed(0)})
+                            {signalRankLabel(p.percentile, 'strength')}
                           </span>
                         </div>
                       ))}
@@ -815,7 +827,7 @@ function DataVizPageContent() {
                         <div key={i} className="dviz-proscons-item dviz-con-item">
                           <span className="dviz-proscons-label">{plainSignalLabel(c.label)}</span>
                           <span className="dviz-proscons-val">
-                            {c.metric_value.toFixed(1)} (P{(c.percentile * 100).toFixed(0)})
+                            {signalRankLabel(c.percentile, 'risk')}
                           </span>
                         </div>
                       ))}

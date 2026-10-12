@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import { type EventSearchItem } from '../api';
 import { loadSeasonEventCatalog } from '../features/events/eventCatalog';
+import { eventTypeTags } from '../features/events/eventTags';
 import { smartSearchEvents } from '../utils/eventSearch';
 import { CURRENT_SEASON_YEAR, FALLBACK_SEASON_YEAR } from '../pages/centerUtils';
 
@@ -19,16 +20,6 @@ function eventLocation(event: EventSearchItem): string {
   return parts.length > 0 ? parts.join(', ') : 'Location unavailable';
 }
 
-function eventTypeTags(event: EventSearchItem): string[] {
-  const name = (event.name || '').toLowerCase();
-  const tags: string[] = [];
-  if (name.includes('district')) tags.push('District');
-  if (name.includes('regional')) tags.push('Regional');
-  if (name.includes('league')) tags.push('League');
-  if (name.includes('championship') || name.includes('cmp')) tags.push('Championship');
-  if (tags.length === 0) tags.push('Event');
-  return tags;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
@@ -38,7 +29,7 @@ export interface EventPickerProps {
   /** The current committed event key (controls the "active" highlight). */
   value: string;
   /** Called when the user selects an event from the suggestions. */
-  onSelect: (eventKey: string) => void;
+  onSelect: (eventKey: string) => void | boolean;
   /** Current text in the input — managed externally so the parent
    *  retains full control (e.g. via useEventKeyParam). */
   inputValue: string;
@@ -61,6 +52,7 @@ export interface EventPickerProps {
   clearOnSelect?: boolean;
   /** Lets a visible <label> point at the input. */
   inputId?: string;
+  inlineResults?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -80,6 +72,7 @@ export function EventPicker({
   actionLabel = 'Load event',
   clearOnSelect = false,
   inputId,
+  inlineResults = false,
 }: EventPickerProps) {
   /* ---- Internal state ---- */
   const [suggestions, setSuggestions] = useState<EventSearchItem[]>([]);
@@ -239,7 +232,7 @@ export function EventPicker({
         window.clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
-      onSelect(normalized);
+      if (onSelect(normalized) === false) return;
       onInputChange(clearOnSelect ? '' : normalized);
       setOpen(false);
     },
@@ -285,14 +278,13 @@ export function EventPicker({
   }
 
   /* ---- Portal dropdown ---- */
-  const dropdownPortal = showDropdown
-    ? createPortal(
+  const suggestionsPanel = showDropdown || inlineResults ? (
         <div
           ref={dropdownRef}
           className="event-picker-dropdown"
-          role="listbox"
+          role={inlineResults ? "group" : "listbox"}
           aria-label="Event suggestions"
-          style={{
+          style={inlineResults ? { position: 'static', width: '100%', maxHeight: 240, boxShadow: 'none' } : {
             position: 'fixed',
             top: dropdownPos.top,
             left: dropdownPos.left,
@@ -315,8 +307,9 @@ export function EventPicker({
             <button
               key={`ep-${event.event_key}`}
               type="button"
-              role="option"
-              aria-selected={value === event.event_key.toLowerCase()}
+              role={inlineResults ? undefined : "option"}
+              aria-selected={inlineResults ? undefined : value === event.event_key.toLowerCase()}
+              aria-pressed={inlineResults ? value === event.event_key.toLowerCase() : undefined}
               className={`event-picker-dropdown-item ${
                 value === event.event_key.toLowerCase() ? 'active' : ''
               }`.trim()}
@@ -348,10 +341,9 @@ export function EventPicker({
               </div>
             </button>
           ))}
-        </div>,
-        document.body,
-      )
-    : null;
+        </div>
+      ) : null;
+  const dropdownPortal = inlineResults ? suggestionsPanel : suggestionsPanel ? createPortal(suggestionsPanel, document.body) : null;
 
   return (
     <div

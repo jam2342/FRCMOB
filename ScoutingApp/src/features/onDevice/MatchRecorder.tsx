@@ -8,7 +8,6 @@ import { summarizeInferenceTelemetry, type InferenceTelemetry } from './benchmar
 import {
   createDeviceDetector,
   detectRobots,
-  ON_DEVICE_MODEL_URL,
   type Detector,
 } from './detector';
 import { type Mat3 } from './homography';
@@ -32,6 +31,7 @@ type Props = {
   confThreshold?: number;
   // Lets the parent lock the capture-source switch while frames are being captured.
   onRecordingChange?: (busy: boolean) => void;
+  onBeforeCapture?: () => boolean;
 };
 
 type DetectorState = 'idle' | 'loading' | 'ready' | 'error';
@@ -45,6 +45,7 @@ export function MatchRecorder({
   // Unset: the loaded model's own cutoff (modelArtifact.ts), tuned per model.
   confThreshold,
   onRecordingChange,
+  onBeforeCapture,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -60,7 +61,6 @@ export function MatchRecorder({
   const inferenceSamplesRef = useRef<number[]>([]);
 
   const [detectorState, setDetectorState] = useState<DetectorState>('idle');
-  const [detectorError, setDetectorError] = useState('');
   const [recording, setRecording] = useState(false);
   const busyForParent = recording;
   const onRecordingChangeRef = useRef(onRecordingChange);
@@ -77,7 +77,6 @@ export function MatchRecorder({
     if (detectorRef.current) return detectorRef.current;
     if (mountedRef.current) {
       setDetectorState('loading');
-      setDetectorError('');
     }
     try {
       const det = await createDeviceDetector();
@@ -87,7 +86,7 @@ export function MatchRecorder({
     } catch (err) {
       if (mountedRef.current) {
         setDetectorState('error');
-        setDetectorError(err instanceof Error ? err.message : 'Failed to load the detector model.');
+        console.warn('Robot detector could not load', err);
       }
       return null;
     }
@@ -193,6 +192,13 @@ export function MatchRecorder({
   }, [confThreshold, onFrame, onTelemetry, resolvePose, stopCamera, targetFps]);
 
   const start = useCallback(async () => {
+    if (onBeforeCapture && !onBeforeCapture()) return;
+    if (onBeforeCapture) {
+      elapsedRecordingMsRef.current = 0;
+      inferenceSamplesRef.current = [];
+      setFrames(0);
+      setDetections(0);
+    }
     const requestId = ++startRequestRef.current;
     setCameraError('');
     const detector = await ensureDetector();
@@ -238,7 +244,7 @@ export function MatchRecorder({
         setCameraError(err instanceof Error ? err.message : 'Could not access the camera.');
       }
     }
-  }, [ensureDetector, loop, releaseStream]);
+  }, [ensureDetector, loop, releaseStream, onBeforeCapture]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -252,9 +258,8 @@ export function MatchRecorder({
     <div className="camera-capture">
       {detectorState === 'loading' ? <p className="muted">Loading detector model…</p> : null}
       {detectorState === 'error' ? (
-        <p className="field-calibration__error">
-          Detector unavailable: {detectorError}. Set VITE_ONDEVICE_MODEL_URL or place the model at{' '}
-          {ON_DEVICE_MODEL_URL}.
+        <p className="field-calibration__error" role="alert">
+          The robot detector could not load. Reconnect and try Start recording again. Before going offline, prepare the recorder on this device.
         </p>
       ) : null}
       {cameraError ? <p className="field-calibration__error">{cameraError}</p> : null}

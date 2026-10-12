@@ -170,7 +170,7 @@ export function OnDeviceRun() {
   // Capture source: live camera (handheld, optical-flow stabilized) or an uploaded clip
   // (desktop, static calibration — one fixed camera view).
   const [captureBusy, setCaptureBusy] = useState(false);
-  const captureStateProps = { onRecordingChange: setCaptureBusy };
+  const [captureGeneration, setCaptureGeneration] = useState(0);
   const [captureMode, setCaptureMode] = useState<'camera' | 'video'>('camera');
   const mountedRef = useRef(true);
   const [timingAnchorSec, setTimingAnchorSec] = useState(0);
@@ -234,6 +234,9 @@ export function OnDeviceRun() {
     cvResolverRef.current?.dispose();
     cvResolverRef.current = null;
     setCapturedCount(0);
+    setCoveredUntilSec(null);
+    registeredStaticPoseRef.current = null;
+    setCaptureGeneration((value) => value + 1);
     poseTelemetryRef.current = { frames: 0, fallbackFrames: 0, opticalFlowFrames: 0 };
     inferenceTelemetryRef.current = null;
     setBreakdownTelemetry(null);
@@ -246,6 +249,15 @@ export function OnDeviceRun() {
     setResultNote('');
     setTimingAnchorSec(0);
   }, []);
+
+  const beforeCapture = useCallback(() => {
+    if (!capturedRef.current.length) return true;
+    if (!window.confirm('Discard the previous capture and start a new one?')) return false;
+    resetRunState();
+    setTimingAnchorSec(timingAnchorSec);
+    return true;
+  }, [resetRunState, timingAnchorSec]);
+  const captureStateProps = { onRecordingChange: setCaptureBusy, onBeforeCapture: beforeCapture };
 
   const setupContext = `${normalizedEventKey}:${normalizedMatchKey}`;
   const currentSetupContext = useRef(setupContext);
@@ -387,6 +399,8 @@ export function OnDeviceRun() {
           verified: Boolean(saved.verified),
         };
         setStage('capture');
+      } else {
+        setCalibrationError('No calibration saved on this device. Capture or upload a field photo first.');
       }
     } catch {
       setCalibrationError('Could not load the saved calibration. Please re-calibrate.');
@@ -493,7 +507,7 @@ export function OnDeviceRun() {
       cvResolverRef.current?.dispose();
       cvResolverRef.current = null;
     };
-  }, [stage, stabilize, captureMode]);
+  }, [stage, stabilize, captureMode, captureGeneration]);
 
   // The sync flow awaits IndexedDB and the network, so its state updates can land after
   // the screen is gone. Without this guard React schedules an update against a torn-down
@@ -914,15 +928,7 @@ export function OnDeviceRun() {
                 onClick={() => {
                   if (mode === captureMode || captureBusy) return;
                   if (capturedRef.current.length && !window.confirm('Discard these captured frames and switch source?')) return;
-                  capturedRef.current = [];
-                  setCapturedCount(0);
-                  poseTelemetryRef.current = {
-                    frames: 0,
-                    fallbackFrames: 0,
-                    opticalFlowFrames: 0,
-                  };
-                  inferenceTelemetryRef.current = null;
-                  registeredStaticPoseRef.current = null;
+                  resetRunState();
                   setCaptureMode(mode);
                   setTimingAnchorSec(0);
                 }}

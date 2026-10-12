@@ -21,6 +21,9 @@ import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
+import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
+import { usePageVisibility } from '../hooks/usePageVisibility';
+import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { metric, pct, normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
 import { readMyTeamKey, saveMyTeamKey, workspaceTeamKey } from '../features/workspace/myTeam';
 import { matchWinProbability } from '../features/predictions/winProbability';
@@ -352,8 +355,14 @@ export function StrategyBriefingPage() {
   const [errorText, setErrorText] = useState('');
 
   const [schedule, setSchedule] = useState<EventScheduleItem[] | null>(null);
+  const [scheduleEventKey, setScheduleEventKey] = useState('');
   // Until the schedule loads, assume live so a running event isn't shown as finished.
   const eventHasMatchesLeft = schedule == null || schedule.some((match) => !match.is_completed);
+  const upcomingCount = schedule ? schedule.filter((match) => !match.is_completed).length : 0;
+  // Only finished finals end an event. An empty schedule (not published yet) or
+  // a gap before playoffs are published is not the end, so keep refreshing.
+  const finals = schedule ? schedule.filter((match) => match.comp_level === 'f') : [];
+  const eventOver = finals.length > 0 && finals.every((match) => match.is_completed);
   const [synergyMatches, setSynergyMatches] = useState<ScheduleWithSynergyMatch[]>([]);
   const [ratings, setRatings] = useState<EventTeamRatingItem[]>([]);
   const [liveFormStatuses, setLiveFormStatuses] = useState<Record<string, EventTeamLiveFormEntry>>({});
@@ -371,7 +380,9 @@ export function StrategyBriefingPage() {
   // schedule on screen), and only the latest request may write.
   const requestGeneration = useRef(0);
   const loadedEventKey = useRef('');
-  const fetchData = useCallback(async (key: string) => {
+  // `fresh` skips this tab's cached copies; it never asks the server to rebuild
+  // anything (ratings refresh is admin-only and would 403 for everyone else).
+  const fetchData = useCallback(async (key: string, fresh: boolean = false) => {
     if (!key) return;
     const generation = ++requestGeneration.current;
     if (loadedEventKey.current !== key) {
@@ -386,18 +397,19 @@ export function StrategyBriefingPage() {
     setErrorText('');
 
     const results = await Promise.allSettled([
-      getEventSchedule(key),
-      getEventScheduleWithSynergy(key, { include_pair_breakdown: false }),
-      getEventRatings(key),
-      getEventTeamLiveForm(key),
+      getEventSchedule(key, false, undefined, { bypassCache: fresh }),
+      getEventScheduleWithSynergy(key, { include_pair_breakdown: false, bypassCache: fresh }),
+      getEventRatings(key, false, { bypassCache: fresh }),
+      getEventTeamLiveForm(key, undefined, { bypassCache: fresh }),
     ]);
     if (generation !== requestGeneration.current) return;
 
     if (results[0].status === 'fulfilled') {
       setSchedule(results[0].value.matches);
-      setEventName(results[0].value.event_name || key);
+      setScheduleEventKey(key);
+      setEventName(results[0].value.event_name || 'Selected event');
     } else {
-      setErrorText((results[0].reason as Error)?.message || 'Failed to load schedule.');
+      setErrorText('Could not refresh the schedule. Try loading the event again.');
     }
 
     if (results[1].status === 'fulfilled') {
@@ -413,15 +425,32 @@ export function StrategyBriefingPage() {
     }
 
     setLoading(false);
+    return results.every((result) => result.status === 'fulfilled');
   }, []);
 
+  const pageVisible = usePageVisibility();
+  const liveRefreshSec = useLiveRefreshSetting();
+  const pollRunner = useCallback(() => fetchData(eventKey, true), [eventKey, fetchData]);
+  const pollingEnabled = Boolean(eventKey) && (scheduleEventKey !== eventKey || !eventOver);
+  const { triggerNow } = useSingleFlightPolling({
+    enabled: pollingEnabled,
+    visible: pageVisible,
+    intervalMs: Math.max(10, liveRefreshSec) * 1000,
+    run: pollRunner,
+  });
+  const previousScope = useRef({ eventKey, fetchTrigger, pollingEnabled });
   useEffect(() => {
-    if (!eventKey) return;
-    const timer = window.setTimeout(() => {
-      void fetchData(eventKey);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [eventKey, fetchData, fetchTrigger]);
+    const previous = previousScope.current;
+    // Router navigation can settle after the picker increments its retry counter.
+    if (previous.eventKey === eventKey && previous.fetchTrigger !== fetchTrigger && eventInput.trim().toLowerCase() !== eventKey) return;
+    if (previous.eventKey !== eventKey || previous.fetchTrigger !== fetchTrigger) {
+      if (!pollingEnabled) void fetchData(eventKey, true);
+      else if (previous.pollingEnabled) triggerNow();
+    }
+    previousScope.current = { eventKey, fetchTrigger, pollingEnabled };
+  }, [eventInput, eventKey, fetchData, fetchTrigger, pollingEnabled, triggerNow]);
+
+  useEffect(() => () => { requestGeneration.current += 1; }, [eventKey, fetchTrigger]);
 
   // Maps for quick lookup
   const ratingsMap = useMemo(() => {
@@ -498,7 +527,12 @@ export function StrategyBriefingPage() {
 
           {eventName && schedule ? (
             <p className="center-event-status">
-              <strong>{eventName}</strong> — {schedule.filter((m) => !m.is_completed).length} upcoming matches
+              {/* The picker above already shows the event's name. */}
+              {schedule.length === 0
+                ? 'No schedule published yet.'
+                : upcomingCount === 0
+                ? eventOver ? 'No upcoming matches. This event is over.' : 'No upcoming matches published yet.'
+                : `${upcomingCount} upcoming match${upcomingCount === 1 ? '' : 'es'}`}
             </p>
           ) : null}
 
@@ -512,6 +546,7 @@ export function StrategyBriefingPage() {
               inputMode="numeric"
               pattern="[0-9]*"
               placeholder="Your team number"
+              aria-label="Your team number"
               value={myTeamInput}
               onChange={(e) => setMyTeamInput(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => e.key === 'Enter' && commitMyTeam()}

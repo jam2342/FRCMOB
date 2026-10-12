@@ -1,0 +1,34 @@
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { useScoutCountdown } from './scoutDraftTimer';
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+it('counts hidden time from the deadline, including completion while hidden', () => {
+  vi.useFakeTimers();
+  const { result, rerender } = renderHook(({ visible }) => useScoutCountdown(160, visible), { initialProps: { visible: true } });
+  act(() => result.current.toggle());
+  rerender({ visible: false });
+  act(() => vi.advanceTimersByTime(61_500));
+  rerender({ visible: true });
+  expect(result.current.seconds).toBe(99);
+  rerender({ visible: false });
+  act(() => vi.advanceTimersByTime(100_000));
+  rerender({ visible: true });
+  expect(result.current.seconds).toBe(0);
+  expect(result.current.running).toBe(false);
+});
+it('pauses using the current deadline and preserves the remaining fraction on resume', () => {
+  vi.useFakeTimers();
+  const { result, rerender } = renderHook(({ visible }) => useScoutCountdown(160, visible), { initialProps: { visible: true } });
+  act(() => result.current.toggle());
+  rerender({ visible: false });
+  act(() => { vi.advanceTimersByTime(1500); result.current.toggle(); });
+  expect(result.current.seconds).toBe(159);
+  act(() => vi.advanceTimersByTime(50_000));
+  act(() => result.current.toggle());
+  rerender({ visible: true });
+  act(() => vi.advanceTimersByTime(500));
+  expect(result.current.seconds).toBe(158);
+  act(() => result.current.setCountdown(160));
+  expect(result.current.running).toBe(false);
+  expect(result.current.seconds).toBe(160);
+});

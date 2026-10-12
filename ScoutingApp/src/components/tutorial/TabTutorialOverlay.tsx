@@ -1,13 +1,14 @@
 import { cx } from '../ui/primitives/cx';
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { TutorialScope } from '../../layout/userSettings';
 import {
   getTutorialBlueprint,
   type TutorialStepPlacement,
   type TutorialWalkthroughStep,
 } from '../../tutorial/tutorialBlueprints';
-import { markAllTutorialsSeen, markTutorialSeen } from '../../tutorial/tutorialState';
+import { markTutorialSeen } from '../../tutorial/tutorialState';
 import { TutorialRobotMascot } from './TutorialRobotMascot';
+import './TabTutorialOverlay.css';
 
 type SpotlightRect = { top: number; left: number; width: number; height: number };
 
@@ -141,15 +142,22 @@ function TutorialRobotGuide({
 
 export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) {
   const blueprint = useMemo(() => getTutorialBlueprint(scope), [scope]);
+  const [walkthrough, setWalkthrough] = useState(() => blueprint.walkthrough.filter((step) => !step.requiresTarget));
   const [stepIndex, setStepIndex] = useState(0);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT_PX);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [targetFound, setTargetFound] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
-  const totalSteps = blueprint.walkthrough.length;
+  useLayoutEffect(() => {
+    // Panels mounted beside the overlay are available after the DOM commits.
+    setWalkthrough(blueprint.walkthrough.filter((step) => !step.requiresTarget || findTargetElement(step.selector)));
+    setStepIndex(0);
+  }, [blueprint]);
+
+  const totalSteps = walkthrough.length;
   const safeIndex = totalSteps ? Math.max(0, Math.min(stepIndex, totalSteps - 1)) : 0;
-  const step = totalSteps ? blueprint.walkthrough[safeIndex] : null;
+  const step = totalSteps ? walkthrough[safeIndex] : null;
   const atStart = safeIndex === 0;
   const atEnd = safeIndex >= totalSteps - 1;
   const mobileDockClass =
@@ -242,11 +250,6 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
     onClose();
   }
 
-  function skipAllTutorials() {
-    markAllTutorialsSeen();
-    onClose();
-  }
-
   const tips = step ? (isMobile ? step.tooltips.slice(0, 1) : step.tooltips.slice(0, 3)) : [];
   const effectivePanelStyle = !isMobile && targetFound ? panelStyle : undefined;
 
@@ -326,7 +329,7 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
           </button>
           <span className="tut-counter">{safeIndex + 1} / {totalSteps}</span>
           <div className="tut-foot-actions">
-            <button type="button" className="tut-skip-all" onClick={skipAllTutorials}>
+            <button type="button" className="tut-skip-all" onClick={finish}>
               I've already seen this
             </button>
             {atEnd ? (

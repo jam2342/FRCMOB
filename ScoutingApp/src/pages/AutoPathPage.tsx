@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useEventNames } from '../hooks/useEventNames';
+import { scoutingMatchLabel } from './scoutDraftDisplay';
 import { useSearchParams } from 'react-router-dom';
 import { useCanvasTokens } from '../hooks/useCanvasTokens';
 import { getTeamBreakdown } from '../api';
@@ -283,6 +285,7 @@ export function AutoPathPage() {
   const [loadedTrackRequestKey, setLoadedTrackRequestKey] = useState('');
 
   const teamKey = useMemo(() => normalizeTeamKeyInput(teamInput), [teamInput]);
+  const eventDisplayName = useEventNames();
   const activeTrackRequestKey = teamKey && eventKey ? `${eventKey}|${teamKey}` : '';
 
   /* persist saved paths */
@@ -649,27 +652,30 @@ export function AutoPathPage() {
         onSubmit={commitInput}
       />
 
-      <div className="center-input-row" style={{ marginTop: '0.5rem', gridTemplateColumns: 'auto auto 1fr' }}>
-        <input
-          id="ap-team"
-          className="center-input"
-          type="text"
-          inputMode="numeric"
-          placeholder="Team # — e.g. 254"
-          value={teamInput}
-          onChange={(e) => setTeamInput(e.target.value)}
-          style={{ maxWidth: 180 }}
-        />
-        <input
-          id="ap-match"
-          className="center-input"
-          type="text"
-          placeholder="Match — e.g. qm1"
-          value={matchInput}
-          onChange={(e) => setMatchInput(e.target.value)}
-          style={{ maxWidth: 180 }}
-        />
-        <span />
+      <div className="center-input-row" style={{ marginTop: '0.5rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))' }}>
+        <label>Team
+          <input
+            id="ap-team"
+            className="center-input"
+            type="text"
+            inputMode="numeric"
+            placeholder="Team # — e.g. 254"
+            value={teamInput}
+            onChange={(e) => setTeamInput(e.target.value)}
+            style={{ minWidth: 0, maxWidth: '100%', minHeight: 44 }}
+          />
+        </label>
+        <label>Match
+          <input
+            id="ap-match"
+            className="center-input"
+            type="text"
+            placeholder="Match — e.g. qm1"
+            value={matchInput}
+            onChange={(e) => setMatchInput(e.target.value)}
+            style={{ minWidth: 0, maxWidth: '100%', minHeight: 44 }}
+          />
+        </label>
       </div>
 
 
@@ -708,13 +714,16 @@ export function AutoPathPage() {
 
           {drawMode === 'draw' && (
             <div className="autopath-draw-controls">
-              <input
-                type="text"
-                placeholder="Path label"
-                value={pathLabel}
-                onChange={(e) => setPathLabel(e.target.value)}
-                className="autopath-label-input"
-              />
+              <label style={{ minWidth: 0, maxWidth: '100%' }}>Path name
+                <input
+                  type="text"
+                  placeholder="Path label"
+                  value={pathLabel}
+                  onChange={(e) => setPathLabel(e.target.value)}
+                  className="autopath-label-input"
+                  style={{ minWidth: 0, maxWidth: '100%', minHeight: 44 }}
+                />
+              </label>
               <span className="autopath-draw-hint">
                 Click and drag on the field to draw a path
               </span>
@@ -758,9 +767,9 @@ export function AutoPathPage() {
                     <span className="autopath-list-info">
                       <span className="autopath-list-label">{p.label}</span>
                       <span className="autopath-list-meta">
-                        {teamNumberFromTeamKey(p.teamKey) ?? p.teamKey}
-                        {p.matchKey ? ` - ${p.matchKey}` : ''}
-                        {` - ${p.eventKey || 'Unknown event'}`}
+                        {`#${teamNumberFromTeamKey(p.teamKey) ?? '?'}`}
+                        {p.matchKey ? ` · ${scoutingMatchLabel(p.matchKey)}` : ''}
+                        {` · ${p.eventKey ? eventDisplayName(p.eventKey) : 'Unknown event'}`}
                         {' - '}
                         {p.points.length} pts
                       </span>

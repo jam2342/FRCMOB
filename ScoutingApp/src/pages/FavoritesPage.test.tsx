@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FavoritesPage } from './FavoritesPage';
@@ -24,6 +24,7 @@ beforeEach(() => {
   api.getTeamIntel.mockReset().mockResolvedValue({ team: { team_number: 1, nickname: 'Team' }, analysis: {} });
 });
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -102,4 +103,59 @@ it('preserves Auto-select and an active event outside the team registrations', a
   fireEvent.click(screen.getByRole('button',{name:'Use Active'}));
   await act(async () => {});
   expect(context).toHaveValue('2026active');
+});
+
+it('shows unavailable event counts on an initial failure', async () => {
+  api.getEventSchedule.mockRejectedValue(new Error('offline'));
+  api.getEventTeamsIntel.mockRejectedValue(new Error('offline'));
+  showFavorites();
+  await act(async () => {});
+  expect(screen.getByText('Matches unavailable')).toBeInTheDocument();
+  expect(screen.getByText('Teams unavailable')).toBeInTheDocument();
+  expect(screen.queryByText('0 matches')).not.toBeInTheDocument();
+  expect(screen.queryByText('0 teams')).not.toBeInTheDocument();
+  expect(screen.queryByText('Schedule not published yet.')).not.toBeInTheDocument();
+});
+it('retains successful event counts and schedule after a partial refresh failure', async () => {
+  api.getEventSchedule.mockResolvedValue({ event_name: 'Test', matches: [{
+    match_key: '2026test_qm1', display_name: 'Qual 1', is_completed: false, scheduled_time: Date.now() / 1000 + 3600,
+  }] });
+  api.getEventTeamsIntel.mockResolvedValue({ teams_count: 6 });
+  showFavorites();
+  await act(async () => {});
+  expect(screen.getByText('1 match')).toBeInTheDocument();
+  expect(screen.getByText('6 teams')).toBeInTheDocument();
+  api.getEventSchedule.mockRejectedValue(new Error('offline'));
+  api.getEventTeamsIntel.mockResolvedValue({ teams_count: 7 });
+  await act(async () => { vi.advanceTimersByTime(10_000); });
+  expect(screen.getByText('1 match')).toBeInTheDocument();
+  expect(screen.getByText('7 teams')).toBeInTheDocument();
+  expect(screen.getByText(/Next match: Qual 1/)).toBeInTheDocument();
+  expect(screen.getByText('Showing saved data; it may be out of date.')).toBeInTheDocument();
+  expect(screen.queryByText('All published matches are complete.')).not.toBeInTheDocument();
+});
+it('shows unavailable team counts on failure and preserves a successful snapshot across repeated failures', async () => {
+  api.getTeamIntel.mockRejectedValue(new Error('offline'));
+  render(<MemoryRouter initialEntries={['/favorites?tab=teams']}><FavoritesPage /></MemoryRouter>);
+  await act(async () => {});
+  expect(screen.getByText('Scouting count unavailable')).toBeInTheDocument();
+  expect(screen.getByText('Events unavailable')).toBeInTheDocument();
+  expect(screen.queryByText('0 scouted')).not.toBeInTheDocument();
+  expect(screen.queryByText('0 events')).not.toBeInTheDocument();
+  api.getTeamIntel.mockResolvedValue({ team: { team_number: 1 }, analysis: { matches_analyzed: 3 }, competitions: { registered_events_count: 1 } });
+  await act(async () => { vi.advanceTimersByTime(15_000); });
+  expect(screen.getByText('3 scouted')).toBeInTheDocument();
+  expect(screen.getByText('1 event')).toBeInTheDocument();
+  api.getTeamIntel.mockRejectedValue(new Error('offline'));
+  await act(async () => { vi.advanceTimersByTime(10_000); });
+  await act(async () => { vi.advanceTimersByTime(15_000); });
+  expect(screen.getByText('3 scouted')).toBeInTheDocument();
+  expect(screen.getByText('1 event')).toBeInTheDocument();
+  expect(screen.getByText('Team data unavailable. Try refreshing again. Showing saved data; it may be out of date.')).toHaveAttribute('role', 'alert');
+});
+it.each([false, true])('distinguishes empty from completed schedules (completed=%s)', async completed => {
+  api.getEventSchedule.mockResolvedValue({ event_name: 'Test', matches: completed ? [{ is_completed: true, scheduled_time: Date.now() / 1000, match_key: '2026test_qm1' }] : [] });
+  showFavorites();
+  await act(async () => {});
+  expect(screen.getByText(completed ? 'All published matches are complete.' : 'Schedule not published yet.')).toBeInTheDocument();
 });

@@ -93,7 +93,7 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: manipulation;
 }
 
 .product-shell .page-view-bar > :first-child,
@@ -968,6 +968,16 @@
 .product-shell .home-fotmob-feed > .home-event-section {
   content-visibility: auto;
   contain-intrinsic-size: 420px;
+}
+
+/* Estimated off-screen card heights change the scroll range as they render.
+   Phone pages are short enough to lay out normally and keep swipes stable. */
+@media (max-width: 1120px) {
+  .product-shell .center-main > .surface-card,
+  .product-shell .home-fotmob-feed > .home-event-section {
+    content-visibility: visible;
+    contain-intrinsic-size: none;
+  }
 }
 
 .product-shell .center-content-grid {

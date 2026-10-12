@@ -1,5 +1,6 @@
 import { cx } from './primitives/cx';
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { createPortal } from 'react-dom';
 
 
@@ -105,6 +106,8 @@ export function SurfaceCard({
   compactable = false,
 }: SurfaceCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const expandedRef = useRef<HTMLElement>(null);
+  useFocusTrap(expandedRef, expanded);
   const isMobileViewport = useSyncExternalStore(subscribeViewport, viewportIsMobile, () => false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -160,6 +163,11 @@ export function SurfaceCard({
               aria-label={`Close expanded ${title} panel`}
             />
             <section
+              ref={expandedRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={title}
+              tabIndex={-1}
               className={cx(
                 'surface-card',
                 'surface-card--expanded',

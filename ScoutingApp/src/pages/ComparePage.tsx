@@ -97,6 +97,17 @@ function readStoredCompareTeamKeys(): string[] {
   }
 }
 
+// Accepts "frc254,1678"; null when the link carries no usable team.
+function teamKeysFromParam(raw: string | null): string[] | null {
+  if (!raw) return null;
+  const keys = raw
+    .split(',')
+    .map((value) => normalizeTeamKeyInput(value))
+    .filter((value, idx, array): value is string => Boolean(value) && array.indexOf(value) === idx)
+    .slice(0, 4);
+  return keys.length > 0 ? keys : null;
+}
+
 function compareTeamLabel(teamKey: string, breakdown: TeamIntelBreakdown | null): string {
   if (breakdown?.team.team_number) return `#${breakdown.team.team_number}`;
   const teamNumber = teamNumberFromTeamKey(teamKey);
@@ -160,18 +171,21 @@ export function ComparePage() {
 
   const [compareInput, setCompareInput] = useState('');
   const [addingTeam, setAddingTeam] = useState(false);
-  const [compareTeamKeys, setCompareTeamKeys] = useState<string[]>(() => readStoredCompareTeamKeys());
+  // A shared link (?teams=frc254,frc1678) wins over this device's saved list.
+  const [compareTeamKeys, setCompareTeamKeys] = useState<string[]>(() => teamKeysFromParam(searchParams.get('teams')) ?? readStoredCompareTeamKeys());
   const [teamBundles, setTeamBundles] = useState<Record<string, CompareTeamBundle>>({});
   const teamBundlesRef = useRef(teamBundles);
   const failedContextsRef = useRef(new Set<string>());
   teamBundlesRef.current = teamBundles;
+  const selectedEventRef = useRef('');
+  selectedEventRef.current = selectedEventKey || '';
 
   const [eventTeams, setEventTeams] = useState<EventTeamsIntelResponse | null>(null);
   const [loadingEventTeams, setLoadingEventTeams] = useState(false);
 
   const [refreshingCompare, setRefreshingCompare] = useState(false);
 
-  const [statusText, setStatusText] = useState('Add teams to compare.');
+  const [statusText, setStatusText] = useState(() => (compareTeamKeys.length > 0 ? '' : 'Add teams to compare.'));
   const [errorText, setErrorText] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [eventPoolVisibleCount, setEventPoolVisibleCount] = useState(120);
@@ -200,6 +214,8 @@ export function ComparePage() {
       setEventInput(urlEvent);
     }
     setActiveTab(resolveTab(urlTab, COMPARE_TABS, 'summary'));
+    const urlTeams = teamKeysFromParam(params.get('teams'));
+    if (urlTeams) setCompareTeamKeys(urlTeams);
   });
 
   useEffect(() => {
@@ -208,6 +224,7 @@ export function ComparePage() {
     const next = new URLSearchParams();
     if (normalizedEvent) next.set('event', normalizedEvent);
     if (activeTab !== 'summary') next.set('tab', activeTab);
+    if (compareTeamKeys.length > 0) next.set('teams', compareTeamKeys.join(','));
 
     if (next.toString() !== searchParams.toString()) {
       urlSync.markWritten(next.toString());
@@ -310,10 +327,13 @@ export function ComparePage() {
         return;
       }
 
+      // Another event's numbers must never sit under this event while it loads or fails.
+      const sameContext = (bundle: CompareTeamBundle | undefined) =>
+        bundle && bundle.event_key === contextEventKey ? bundle : emptyBundle(teamKey, contextEventKey);
       setTeamBundles((prev) => ({
         ...prev,
         [teamKey]: {
-          ...(prev[teamKey] || emptyBundle(teamKey, contextEventKey)),
+          ...sameContext(prev[teamKey]),
           team_key: teamKey,
           event_key: contextEventKey,
           loading: true,
@@ -339,6 +359,7 @@ export function ComparePage() {
           },
           { bypassCache: forceNetwork },
         );
+        if (selectedEventRef.current !== contextEventKey) return;
         const team = asRecord(intel.team);
         const teamNumber = parseNumber(team?.team_number) ?? teamNumberFromTeamKey(teamKey) ?? 0;
         const nickname = typeof team?.nickname === 'string' ? team.nickname : null;
@@ -377,11 +398,12 @@ export function ComparePage() {
         }));
         failedContextsRef.current.delete(contextKey);
       } catch (error) {
+        if (selectedEventRef.current !== contextEventKey) return;
         failedContextsRef.current.add(contextKey);
         setTeamBundles((prev) => ({
           ...prev,
           [teamKey]: {
-            ...(prev[teamKey] || emptyBundle(teamKey, contextEventKey)),
+            ...sameContext(prev[teamKey]),
             team_key: teamKey,
             event_key: contextEventKey,
             loading: false,
@@ -402,7 +424,13 @@ export function ComparePage() {
       const needsLoad = !bundle || bundle.event_key !== contextEventKey || (!bundle.loading && !bundle.breakdown);
       // A failed context waits for the row's explicit Retry action instead of
       // retrying in a tight loop on bad wifi.
-      if (needsLoad && !bundle?.loading && !failedContextsRef.current.has(contextKey)) {
+      // Only a request for this event blocks a new one; a request still out for the
+      // previous event is ignored when it lands, so it must not hold this one back.
+      const loadingThisEvent = Boolean(bundle?.loading && bundle.event_key === contextEventKey);
+      // The no-auto-retry rule holds only while this event's own error is on screen;
+      // a bundle from another event must never stand in for it.
+      const failedHere = failedContextsRef.current.has(contextKey) && bundle?.event_key === contextEventKey;
+      if (needsLoad && !loadingThisEvent && !failedHere) {
         void loadCompareBundle(teamKey, true);
       }
     }
@@ -658,7 +686,7 @@ export function ComparePage() {
     setSelectedEventKey(normalized);
     setEventInput(normalized);
     setErrorText('');
-    setStatusText(normalized ? `Event: ${normalized}.` : 'Event cleared.');
+    setStatusText(normalized ? '' : 'Event cleared.');
     if (isMobileLayout) setMobileFinderOpen(false);
   }
 
@@ -666,7 +694,7 @@ export function ComparePage() {
     const active = readStoredCenterContext().eventKey;
     setEventInput(active);
     setSelectedEventKey(active);
-    setStatusText(active ? `Event: ${active}.` : 'No active event found.');
+    setStatusText(active ? '' : 'No active event found.');
     if (active && isMobileLayout) setMobileFinderOpen(false);
   }
 
@@ -677,12 +705,13 @@ export function ComparePage() {
   function addCompareTeam(teamKeyInput: string): boolean {
     const normalized = normalizeTeamKeyInput(teamKeyInput || '');
     if (!normalized) {
-      setErrorText('Enter a valid team key or number (example: frc118 or 118).');
+      setErrorText('Enter a team number, like 118.');
       return false;
     }
 
+    const label = `#${normalized.replace(/^frc/, '')}`;
     if (compareTeamKeys.includes(normalized)) {
-      setStatusText(`${normalized} already added.`);
+      setStatusText(`${label} is already in the comparison.`);
       return false;
     }
 
@@ -692,12 +721,12 @@ export function ComparePage() {
     }
 
     setCompareTeamKeys((prev) => [...prev, normalized]);
-    setStatusText(`Added ${normalized}.`);
+    setStatusText(`Added ${label}.`);
     setErrorText('');
     setActiveTab('summary');
 
     if (selectedEventKey && eventTeams && !eventTeamKeySet.has(normalized)) {
-      setStatusText(`Added ${normalized} (not in ${selectedEventKey} pool).`);
+      setStatusText(`Added ${label}. They didn't play at this event.`);
     }
 
     return true;
@@ -785,7 +814,10 @@ export function ComparePage() {
           actions={
             mobileFinderOpen
               ? [{ label: 'Back to comparison', onClick: () => setMobileFinderOpen(false), back: true }]
-              : [{ label: 'Edit teams', onClick: () => setMobileFinderOpen(true) }]
+              : compareTeamKeys.length > 0
+                // With no teams yet, the card's own "Choose teams" button is the one to press.
+                ? [{ label: 'Edit teams', onClick: () => setMobileFinderOpen(true) }]
+                : []
           }
         />
       ) : null}
@@ -807,7 +839,7 @@ export function ComparePage() {
               <option value="">Auto-select from compared team events</option>
               {compareEventOptions.map((event) => (
                 <option key={`compare-event-option-${event.event_key}`} value={event.event_key}>
-                  {event.name} ({event.event_key})
+                  {event.name || event.event_key}
                 </option>
               ))}
             </select>
@@ -852,12 +884,11 @@ export function ComparePage() {
 
           <div className="center-status-row">
             <span className="center-chip">{compareTeamKeys.length}/4 teams</span>
-            <span className="center-chip">{eventTeams?.teams_count ?? 0} pool</span>
-            <span className="center-chip">Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
+            {lastUpdatedAt ? <span className="center-chip">Updated {relativeFromTimestamp(lastUpdatedAt)}</span> : null}
           </div>
 
           {errorText ? <p className="center-callout danger">{errorText}</p> : null}
-          <p className="center-callout muted">{statusText}</p>
+          {statusText ? <p className="center-callout muted">{statusText}</p> : null}
         </SurfaceCard>
 
         <SurfaceCard
@@ -865,7 +896,7 @@ export function ComparePage() {
           subtitle={
             selectedEventKey
               ? 'Teams at this event. Tap one to add it.'
-              : 'Pick an event key to load a constrained team pool.'
+              : 'Pick an event to see its teams.'
           }
           right={<span className="center-chip">{loadingEventTeams ? 'Loading...' : `${eventTeamPool.length} team${eventTeamPool.length === 1 ? '' : 's'}`}</span>}
           className="compare-pool-card"
@@ -897,7 +928,8 @@ export function ComparePage() {
                         #{team.team_number} {team.nickname || team.team_key}
                       </strong>
                       <small>
-                        {team.team_key} · scouted {team.analyzed} · rating {metric(team.rating_0_100, 1)}
+                        {/* `analyzed` counts official match rows, not scouting reports. */}
+                        {team.analyzed} match{team.analyzed === 1 ? '' : 'es'} · rating {metric(team.rating_0_100, 1)}
                       </small>
                     </button>
                   );
@@ -923,6 +955,7 @@ export function ComparePage() {
           title="Compare Center"
           className="compare-header-card"
         >
+          {compareTeamKeys.length > 0 ? (
           <div className="center-tabs-header">
             <SegmentedTabs
               className="center-tabs"
@@ -936,6 +969,7 @@ export function ComparePage() {
               }))}
             />
           </div>
+          ) : null}
 
           {compareTeamKeys.length > 0 ? (
             <div className={styles.chipRow}>
@@ -943,7 +977,7 @@ export function ComparePage() {
                 <Chip
                   key={`compare-chip-${teamKey}`}
                   onRemove={() => removeCompareTeam(teamKey)}
-                  removeLabel={`Remove ${teamKey}`}
+                  removeLabel={`Remove ${compareTeamLabel(teamKey, teamBundles[teamKey]?.breakdown || null)}`}
                 >
                   {/* The accessible name here is the team's nickname, which is
                       the right name for a person to hear and the wrong one for

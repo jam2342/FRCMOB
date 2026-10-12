@@ -4,7 +4,6 @@ import { summarizeInferenceTelemetry, type InferenceTelemetry } from './benchmar
 import {
   createDeviceDetector,
   detectRobots,
-  ON_DEVICE_MODEL_URL,
   type Detector,
 } from './detector';
 import { SEASON } from '../../config/season';
@@ -73,6 +72,7 @@ type Props = {
   matchStartSec?: number;
   // Lets the parent lock the capture-source switch while frames are being captured.
   onRecordingChange?: (busy: boolean) => void;
+  onBeforeCapture?: () => boolean;
 };
 
 type VideoWithRvfc = HTMLVideoElement & {
@@ -279,6 +279,7 @@ export function VideoFileProcessor({
   confThreshold,
   matchStartSec = 0,
   onRecordingChange,
+  onBeforeCapture,
 }: Props) {
   const detectorRef = useRef<Detector | null>(null);
   const mountedRef = useRef(true);
@@ -302,6 +303,7 @@ export function VideoFileProcessor({
 
   const process = useCallback(
     async (file: File) => {
+      if (onBeforeCapture && !onBeforeCapture()) return;
       activeAbortRef.current?.abort();
       const abortController = new AbortController();
       activeAbortRef.current = abortController;
@@ -319,10 +321,9 @@ export function VideoFileProcessor({
           detectorRef.current = detector;
         } catch (err) {
           if (isCurrentJob()) {
+            console.warn('Robot detector could not load', err);
             setStatus('error');
-            setError(
-              `Detector unavailable: ${err instanceof Error ? err.message : 'load failed'}. Set VITE_ONDEVICE_MODEL_URL or place the model at ${ON_DEVICE_MODEL_URL}.`,
-            );
+            setError('The robot detector could not load. Reconnect and choose the video again. Before going offline, prepare the recorder on this device.');
           }
           return;
         }
@@ -510,7 +511,7 @@ export function VideoFileProcessor({
         if (activeAbortRef.current === abortController) activeAbortRef.current = null;
       }
     },
-    [confThreshold, matchStartSec, onComplete, onFrame, onTelemetry, resolvePose, targetFps],
+    [confThreshold, matchStartSec, onBeforeCapture, onComplete, onFrame, onTelemetry, resolvePose, targetFps],
   );
 
   useEffect(() => {

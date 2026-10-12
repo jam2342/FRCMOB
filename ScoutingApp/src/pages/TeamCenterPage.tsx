@@ -56,7 +56,6 @@ import {
   pct,
   relativeFromTimestamp,
   summarizeFreshness,
-  friendlyDataWarning,
   teamNumberFromTeamKey,
   titleizeKey,
 } from './centerUtils';
@@ -346,6 +345,20 @@ function profileFieldToRow(key: string, field: AutoScoutProfileField): ProfileRo
   };
 }
 
+// The finder shows the number people type, not the frc-prefixed key.
+function teamInputLabel(teamKey: string): string {
+  return teamKey.replace(/^frc/i, '');
+}
+
+function PositionalLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="center-callout warning" role="alert">
+      <p>Couldn't load this right now. Check your connection.</p>
+      <button type="button" className="center-btn ghost" onClick={onRetry}>Try again</button>
+    </div>
+  );
+}
+
 export function TeamCenterPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -363,7 +376,7 @@ export function TeamCenterPage() {
   const defaultTab = resolveTab(tabParam, teamTabs, 'overview');
 
   const [eventInput, setEventInput] = useState(defaultEventKey);
-  const [teamInput, setTeamInput] = useState(defaultTeamKey);
+  const [teamInput, setTeamInput] = useState(() => teamInputLabel(defaultTeamKey));
   const [selectedEventKey, setSelectedEventKey] = useState(defaultEventKey);
   const [selectedTeamKey, setSelectedTeamKey] = useState(defaultTeamKey);
   const [activeTab, setActiveTab] = useState<TeamTab>(defaultTab);
@@ -384,6 +397,9 @@ export function TeamCenterPage() {
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [teamShiftPlay, setTeamShiftPlay] = useState<TeamShiftPlayResponse | null>(null);
   const [shiftPlayLoading, setShiftPlayLoading] = useState(false);
+  const [heatmapFailed, setHeatmapFailed] = useState(false);
+  const [shiftPlayFailed, setShiftPlayFailed] = useState(false);
+  const [positionalRetry, setPositionalRetry] = useState(0);
   const [teamRobotImageLoading, setTeamRobotImageLoading] = useState(false);
 
   const [loadingTeamData, setLoadingTeamData] = useState(false);
@@ -403,6 +419,7 @@ export function TeamCenterPage() {
   const [scheduleSortMode, setScheduleSortMode] = useState<TeamScheduleSortMode>('time');
   const [mobileFinderOpen, setMobileFinderOpen] = useState(() => !defaultTeamKey);
   const lastContextRef = useRef('');
+  const staticFailedRef = useRef(false);
   const currentSelectionRef = useRef('');
   currentSelectionRef.current = `${selectedTeamKey}|${selectedEventKey || ''}`;
   const lastRequestedSelectionRef = useRef('');
@@ -429,7 +446,7 @@ export function TeamCenterPage() {
     setSelectedTeamKey(urlTeamKey);
     setActiveTab(urlTab);
     setEventInput(urlEventKey);
-    setTeamInput(urlTeamKey);
+    setTeamInput(teamInputLabel(urlTeamKey));
   });
 
   useEffect(() => {
@@ -533,14 +550,16 @@ export function TeamCenterPage() {
     setErrorMessages([]);
     setStatusText(
       contextChanged || reason === 'initial'
-        ? `Loading ${selectedTeamKey}...`
-        : `Refreshing ${selectedTeamKey}...`,
+        ? `Loading team ${teamInputLabel(selectedTeamKey)}…`
+        : 'Refreshing…',
     );
     try {
       const eventDetailsMissing =
         shouldLoadEventDetails &&
         (!eventDetailsLoadRef.current.scheduleLoaded || !eventDetailsLoadRef.current.teamsLoaded);
-      const shouldRefreshStatic = contextChanged || reason !== 'poll' || eventDetailsMissing;
+      // A failed team-intel or logo load retries on the next poll, which is what the
+      // "retries on its own" note promises.
+      const shouldRefreshStatic = contextChanged || reason !== 'poll' || eventDetailsMissing || staticFailedRef.current;
       const scheduleContextKey = contextKey;
       const scheduleRequest = shouldRefreshStatic && shouldLoadEventDetails
         ? getEventSchedule(
@@ -614,12 +633,8 @@ export function TeamCenterPage() {
           tbaAwardsRaw.filter((value): value is Record<string, unknown> => Boolean(asRecord(value))),
         );
 
-        const intelWarnings = Array.isArray(intel.warnings)
-          ? intel.warnings.map((warning) => String(warning || '').trim()).filter(Boolean)
-          : [];
-        if (intelWarnings.length > 0) {
-          errors.push(...intelWarnings.map((warning) => friendlyDataWarning(String(warning))));
-        }
+        // intel.warnings are notes about the data ("No scouted matches yet"), not failed
+        // loads; the freshness callout below already shows the one that matters.
       } else if (shouldRefreshStatic && intelResult.status === 'rejected') {
         if (!isTransientAbortLikeError(intelResult.reason)) {
           errors.push(`Team intel: ${intelResult.reason instanceof Error ? intelResult.reason.message : 'failed'}`);
@@ -690,6 +705,10 @@ export function TeamCenterPage() {
           });
       }
 
+      if (shouldRefreshStatic) {
+        staticFailedRef.current = (intelResult.status === 'rejected' && !isTransientAbortLikeError(intelResult.reason))
+          || (logoResult.status === 'rejected' && !isTransientAbortLikeError(logoResult.reason));
+      }
       setErrorMessages(errors);
       setStatusText(
         errors.length > 0
@@ -740,28 +759,39 @@ export function TeamCenterPage() {
   }, [activeTab, selectedEventKey, selectedTeamKey, triggerTeamReload]);
 
   /* ── heatmap: lazy-load when performance tab is active ────────── */
+  // Positional data belongs to one team at one event: drop it as soon as either
+  // changes, so "Overall" never shows the previous event's heat map.
+  useEffect(() => {
+    setTeamHeatmap(null);
+    setTeamShiftPlay(null);
+    setHeatmapFailed(false);
+    setShiftPlayFailed(false);
+  }, [selectedTeamKey, selectedEventKey]);
+
   useEffect(() => {
     if (activeTab !== 'performance' || !selectedTeamKey || !selectedEventKey) return;
     let cancelled = false;
     setHeatmapLoading(true);
+    setHeatmapFailed(false);
     getTeamHeatmap(selectedTeamKey, selectedEventKey)
       .then((res) => { if (!cancelled) setTeamHeatmap(res); })
-      .catch(() => { if (!cancelled) setTeamHeatmap(null); })
+      .catch(() => { if (!cancelled) { setTeamHeatmap(null); setHeatmapFailed(true); } })
       .finally(() => { if (!cancelled) setHeatmapLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, selectedTeamKey, selectedEventKey]);
+  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry]);
 
   /* ── shift-play (offense/defense + attack/defense heat maps) ────── */
   useEffect(() => {
     if (activeTab !== 'performance' || !selectedTeamKey || !selectedEventKey) return;
     let cancelled = false;
     setShiftPlayLoading(true);
+    setShiftPlayFailed(false);
     getTeamShiftPlay(selectedTeamKey, selectedEventKey)
       .then((res) => { if (!cancelled) setTeamShiftPlay(res); })
-      .catch(() => { if (!cancelled) setTeamShiftPlay(null); })
+      .catch(() => { if (!cancelled) { setTeamShiftPlay(null); setShiftPlayFailed(true); } })
       .finally(() => { if (!cancelled) setShiftPlayLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, selectedTeamKey, selectedEventKey]);
+  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry]);
 
   useEffect(() => {
     if (activeTab !== 'media' || !selectedTeamKey) return;
@@ -1213,13 +1243,13 @@ export function TeamCenterPage() {
     const currentSelectionKey = `${selectedTeamKey}|${selectedEventKey || ''}`;
 
     if (!normalizedTeam) {
-      setErrorMessages(['Use a valid team key like frc118 or team number like 118.']);
+      setErrorMessages(['Enter a team number, like 118.']);
       return;
     }
 
     setSelectedTeamKey(normalizedTeam);
     setSelectedEventKey(normalizedEvent);
-    setTeamInput(normalizedTeam);
+    setTeamInput(teamInputLabel(normalizedTeam));
     setEventInput(normalizedEvent);
     setActiveTab('overview');
     const nextSelectionKey = `${normalizedTeam}|${normalizedEvent || ''}`;
@@ -1275,7 +1305,7 @@ export function TeamCenterPage() {
               id="team-center-team-input"
               value={teamInput}
               onChange={(event) => setTeamInput(event.target.value)}
-              placeholder="frc118 or 118"
+              placeholder="Team number, e.g. 118"
               className="center-input"
             />
             <label className="center-label" htmlFor="team-center-event-input">
@@ -1293,7 +1323,7 @@ export function TeamCenterPage() {
               ) : null}
               {registeredEventOptions.map((event) => (
                 <option key={`team-center-event-option-${event.event_key}`} value={event.event_key}>
-                  {event.name || event.event_key} ({event.event_key})
+                  {event.name || event.event_key}
                 </option>
               ))}
             </select>
@@ -1303,7 +1333,7 @@ export function TeamCenterPage() {
           </form>
 
           <div className="center-status-row compact">
-            <span className="center-chip">{statusText}</span>
+            {statusText !== 'Up to date' ? <span className="center-chip">{statusText}</span> : null}
             <span className="center-chip" title={`Refreshes every ${liveRefreshSec}s`}>Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
           </div>
           {/* The per-request messages ("Schedule: …", "Event teams: …") stay in the tooltip. */}
@@ -1414,7 +1444,7 @@ export function TeamCenterPage() {
               </>
             ) : (
             <SurfaceCard
-              title={`Team ${teamNumber} (${selectedTeamKey})`}
+              title={`Team ${teamNumber}`}
               subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Didn't compete at ${skippedEventKey}; showing the whole season` : ''}`}
             >
               <div className="center-team-hero">
@@ -1456,14 +1486,17 @@ export function TeamCenterPage() {
                       </span>
                     ) : null}
                     <span className="center-chip">Qual rank: {tbaRank !== null ? `#${tbaRank}` : 'N/A'}</span>
-                    <span className={`center-chip freshness ${freshnessSummary.state}`}>{freshnessSummary.label}</span>
+                    {/* "0 scouted" already says it; "Not scouted yet" next to it was the same chip twice. */}
+                    {freshnessSummary.state !== 'unknown' ? (
+                      <span className={`center-chip freshness ${freshnessSummary.state}`}>{freshnessSummary.label}</span>
+                    ) : null}
                   </div>
                 </div>
                 {/* The freshness detail is often word-for-word one of the load
                     warnings above, and the same sentence twice on one screen
                     reads as a bug. Show it only when it is saying something
                     new. */}
-                {freshnessSummary.detail && !errorMessages.includes(freshnessSummary.detail) ? (
+                {freshnessSummary.state !== 'unknown' && freshnessSummary.detail && !errorMessages.includes(freshnessSummary.detail) ? (
                   <p className={`center-callout ${freshnessSummary.state === 'stale' ? 'warning' : 'muted'}`}>
                     {freshnessSummary.detail}
                   </p>
@@ -1496,7 +1529,7 @@ export function TeamCenterPage() {
             {activeTab === 'overview' ? (
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
                   <SurfaceCard
-                    title="FRC Scouting Metrics"
+                    title="Robot Stats"
                     subtitle={metricsAreEstimates ? officialMetricsNote(officialStats) : undefined}
                     compactable
                   >
@@ -1535,12 +1568,13 @@ export function TeamCenterPage() {
                       <article className="center-kpi-card">
                         <span><TrophyIcon className="icon-inline icon-muted" /> Best Climb Level</span>
                         <strong>{climbCapability.best_level_label}</strong>
-                        <small>
-                          {climbCapability.matches_with_level}/{climbCapability.matches_considered} matches
-                          {climbCapability.level_counts.level3 > 0 || climbCapability.level_counts.level2 > 0 || climbCapability.level_counts.level1 > 0
-                            ? ` · L3 ${climbCapability.level_counts.level3} · L2 ${climbCapability.level_counts.level2} · L1 ${climbCapability.level_counts.level1}`
-                            : ''}
-                        </small>
+                        {/* With no climbs, "0/69 matches" only repeats the Climb Success tile. */}
+                        {climbCapability.matches_with_level > 0 ? (
+                          <small>
+                            {climbCapability.matches_with_level}/{climbCapability.matches_considered} matches
+                            {` · L3 ${climbCapability.level_counts.level3} · L2 ${climbCapability.level_counts.level2} · L1 ${climbCapability.level_counts.level1}`}
+                          </small>
+                        ) : null}
                       </article>
                       <article className="center-kpi-card">
                         <span><ShieldIcon className="icon-inline icon-muted" /> Defense Time</span>
@@ -1727,6 +1761,10 @@ export function TeamCenterPage() {
                     <div style={{ minHeight: 180 }}>
                       <SkeletonBlock rows={5} compact />
                     </div>
+                  ) : !selectedEventKey ? (
+                    <p className="center-callout muted">Choose an event to see where this team plays on the field.</p>
+                  ) : heatmapFailed ? (
+                    <PositionalLoadError onRetry={() => setPositionalRetry((n) => n + 1)} />
                   ) : teamHeatmap ? (
                     <FieldHeatmap data={teamHeatmap} />
                   ) : (
@@ -1796,6 +1834,10 @@ export function TeamCenterPage() {
                         </div>
                       </div>
                     </div>
+                  ) : !selectedEventKey ? (
+                    <p className="center-callout muted">Choose an event to see attack and defense play.</p>
+                  ) : shiftPlayFailed ? (
+                    <PositionalLoadError onRetry={() => setPositionalRetry((n) => n + 1)} />
                   ) : (
                     <p className="center-callout muted">No shift analysis available for this team at this event.</p>
                   )}
@@ -1816,7 +1858,7 @@ export function TeamCenterPage() {
                             <header>
                               <strong>{event.name}</strong>
                               <small>
-                                {event.event_key} · {event.year}
+                                {event.year}
                               </small>
                             </header>
                             <small>

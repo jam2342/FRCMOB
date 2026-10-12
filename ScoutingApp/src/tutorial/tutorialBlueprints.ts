@@ -12,6 +12,7 @@ export type TutorialWalkthroughStep = {
   selector?: string;
   mobileSelector?: string;
   placement?: TutorialStepPlacement;
+  requiresTarget?: boolean;
 };
 
 export type TutorialBlueprint = {
@@ -198,7 +199,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Do not overuse Overview once event is active.',
           'Most tactical decisions happen in Schedule and Teams.',
         ],
-        selector: '.center-main .center-tabs, .fm-tab-bar',
+        selector: '.center-tabs, .fm-tab-bar',
         mobileSelector: '.fm-tab-bar',
         placement: 'bottom',
       },
@@ -453,17 +454,17 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         system: 'Topline Snapshot',
         title: 'Read team hero before tab analysis',
         description:
-          'Mobile and desktop hero sections provide rating, EPA, and live status signals that frame all deeper analysis.',
+          'The team header shows rating, fuel, rank or event count, and scouting coverage. Check it before opening the detail tabs.',
         actions: [
           'Confirm team identity and current event.',
-          'Check rating/EPA headline values.',
+          'Check rating, fuel, and scouting coverage.',
           'Use hero to spot obvious drift before deep dive.',
         ],
         tooltips: [
           'Hero values are a filter, not the final decision.',
           'Mismatch between hero and detail tabs usually means stale data.',
         ],
-        selector: '.fm-team-hero, .center-main .surface-card',
+        selector: '.fm-team-hero, .center-team-hero',
         mobileSelector: '.fm-team-hero',
         placement: 'bottom',
       },
@@ -472,17 +473,17 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         system: 'Analysis Tabs',
         title: 'Use tabs by purpose, not habit',
         description:
-          'Each tab is optimized for a specific analysis question: overview, events, media, and advanced.',
+          'Overview covers the team at a glance. Performance shows scoring and field activity, Event history lists competitions, and Media shows robot photos.',
         actions: [
           'Start in overview for role and reliability snapshot.',
           'Use events tab for schedule and competition context.',
-          'Use advanced tab only when debugging model payload.',
+          'Use Performance for scoring trends and field activity.',
         ],
         tooltips: [
-          'Advanced tab is diagnostic, not daily scouting workflow.',
-          'Overview + Events handle most tactical decisions.',
+          'Missing data means there is no score to compare yet.',
+          'Use Event history to check which competitions the team attended.',
         ],
-        selector: '.center-main .center-tabs, .fm-tab-bar',
+        selector: '.center-tabs, .fm-tab-bar',
         mobileSelector: '.fm-tab-bar',
         placement: 'bottom',
       },
@@ -506,22 +507,20 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
       {
-        id: 'team-media-advanced',
-        system: 'Evidence + Diagnostics',
-        title: 'Use media and advanced payloads to close uncertain cases',
+        id: 'team-media',
+        system: 'Robot Photos',
+        title: 'Check robot photos for context',
         description:
-          'When metrics conflict, use images and raw payload views to resolve context before final recommendations.',
+          'Open Media to see available robot photos. Use them alongside scoring and scouting notes when planning a match.',
         actions: [
-          'Check logo/robot media recency.',
-          'Inspect model details for outlier inputs.',
-          'Capture caveats in notes for strategy crew.',
+          'Open Media and check the robot photos.',
+          'Compare what you see with scouting notes.',
         ],
         tooltips: [
-          'Raw payload checks are fastest way to validate suspicious outputs.',
-          'Document caveats so selection meetings stay auditable.',
+          'A photo may be from an earlier event or season.',
         ],
-        selector: '.center-media-image, .center-code-block',
-        mobileSelector: '.center-code-block, .center-media-image',
+        selector: '.center-media-image',
+        mobileSelector: '.center-media-image',
         placement: 'left',
       },
     ],
@@ -554,15 +553,15 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         system: 'Event Pool',
         title: 'Curate candidates from event team pool',
         description:
-          'Use pool rows to add/remove teams quickly while preserving event constraints for theoretical modeling.',
+          'Use the event team pool to add or remove candidates for comparison.',
         actions: [
           'Select candidates from pool list.',
           'Watch scouted-match count and rating hints.',
-          'Avoid mixing out-of-event teams for theoretical mode.',
+          'Choose teams from the same event for a useful comparison.',
         ],
         tooltips: [
           'Pool curation is faster than typing during live meetings.',
-          'Out-of-event teams break theoretical assumptions.',
+          'Check scouting coverage before comparing scores.',
         ],
         selector: '.compare-pool-card',
         mobileSelector: '.compare-pool-card',
@@ -571,17 +570,17 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
       {
         id: 'compare-tabs',
         system: 'Decision Modes',
-        title: 'Switch between diagnostics and theoretical builder',
+        title: 'Switch between Summary and Detailed',
         description:
-          'Diagnostics tab compares known signals; theoretical tab tests alliance compositions and weighting strategies.',
+          'Summary compares the main ratings and match metrics. Detailed shows more information for each team. Use Alliance Advisor to try teams as an alliance.',
         actions: [
-          'Use diagnostics for direct team comparison.',
-          'Use theoretical tab for alliance what-if scoring.',
+          'Use Summary for a quick comparison.',
+          'Use Detailed to inspect individual metrics.',
           'Keep context event stable across both.',
         ],
         tooltips: [
           'Do not change event context mid-session.',
-          'Theoretical mode is only as good as candidate quality.',
+          'Alliance Advisor uses your selected teams for alliance analysis.',
         ],
         selector: '.compare-header-card .center-tabs',
         mobileSelector: '.compare-header-card .center-tabs',
@@ -589,8 +588,8 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
       },
       {
         id: 'compare-summary',
-        system: 'Diagnostics',
-        title: 'Read summary and model signals together',
+        system: 'Summary',
+        title: 'Read ratings and scouting coverage together',
         description:
           'Use summary cards to compare rating, confidence, strengths, risk, and TBA context in one scan.',
         actions: [
@@ -607,22 +606,20 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         placement: 'top',
       },
       {
-        id: 'compare-theoretical',
-        system: 'Alliance Modeling',
-        title: 'Run theoretical builder for shortlist scoring',
+        id: 'compare-alliance-advisor',
+        system: 'Alliance Advisor',
+        title: 'Try these teams together in Alliance Advisor',
         description:
-          'Builder mode lets you test composition and weight strategies to stress-test shortlist recommendations.',
+          'Use the Alliance Advisor link above the comparison to open the alliance builder with your selected teams.',
         actions: [
-          'Set team slots and weight sliders.',
-          'Run builder and review weighted score output.',
-          'Inspect pair and selection model tables.',
+          'Choose the teams you want to try together.',
+          'Open Alliance Advisor and analyze the alliance there.',
         ],
         tooltips: [
-          'Weight tuning should be explicit and documented.',
-          'Use autofill only as a starting point, not final result.',
+          'You can change team slots and weights in Alliance Advisor.',
         ],
-        selector: '.compare-theoretical-card',
-        mobileSelector: '.compare-theoretical-card',
+        selector: 'a[href*="alliance-advisor"]',
+        mobileSelector: 'a[href*="alliance-advisor"]',
         placement: 'top',
       },
     ],
@@ -787,6 +784,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         ],
         selector: '.settings-runtime-card',
         mobileSelector: '.settings-runtime-card',
+        requiresTarget: true,
         placement: 'left',
       },
       {
@@ -806,6 +804,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         ],
         selector: '.settings-ops-card',
         mobileSelector: '.settings-ops-card',
+        requiresTarget: true,
         placement: 'top',
       },
       {
@@ -816,8 +815,8 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Diagnostics and maintenance sections let you inspect and safely reset local browser state.',
         actions: [
           'Refresh diagnostics before cleanup.',
-          'Clear only targeted caches when possible.',
-          'Use full reset defaults only for re-onboarding.',
+          'Clear favorites or saved comparisons as needed.',
+          'Reset Defaults restores settings; it does not erase all local data.',
         ],
         tooltips: [
           'Over-clearing local state can disrupt active shifts.',

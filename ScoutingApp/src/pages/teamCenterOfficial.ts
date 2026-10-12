@@ -31,7 +31,7 @@ export function parseOfficialStats(raw: unknown): OfficialTeamStats | null {
   };
 }
 
-// The one line under "FRC Scouting Metrics" that says where the numbers came
+// The one line under "Robot Stats" that says where the numbers came
 // from when nobody has scouted the team.
 export function officialMetricsNote(stats: OfficialTeamStats | null | undefined): string {
   if (!stats?.available) {

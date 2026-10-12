@@ -231,6 +231,8 @@ function TeamWorkspaceView() {
     session ? issuedJoinCodeFor(session.workspace.id) : null,
   );
   const [busy, setBusy] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
@@ -247,9 +249,9 @@ function TeamWorkspaceView() {
     const request = (async () => {
       try {
         setState(await getMyWorkspace());
-        setError(null);
+        setRefreshError(null);
       } catch (err) {
-        setError(errorMessage(err));
+        setRefreshError(errorMessage(err));
       }
     })();
     refreshInFlightRef.current = request;
@@ -281,6 +283,7 @@ function TeamWorkspaceView() {
   const run = async (label: string, action: () => Promise<WorkspaceStateResponse | void>) => {
     setBusy(label);
     setError(null);
+    if (label === 'remove') setRemoveError(null);
     try {
       const result = await action();
       if (result) {
@@ -289,7 +292,8 @@ function TeamWorkspaceView() {
       }
       return true;
     } catch (err) {
-      setError(errorMessage(err));
+      if (label === 'remove') setRemoveError(errorMessage(err));
+      else setError(errorMessage(err));
       return false;
     } finally {
       setBusy(null);
@@ -336,7 +340,7 @@ function TeamWorkspaceView() {
         expandable={false}
         mobileCollapsible={false}
       >
-        {error ? <p className="center-callout warning">{error}</p> : null}
+        {error || refreshError ? <p className="center-callout warning" role="alert">{error || refreshError}</p> : null}
         <p className="my-team__lede">Only your team sees its picklists, pit notes and scouting.</p>
         {renaming ? (
           <form
@@ -448,7 +452,7 @@ function TeamWorkspaceView() {
                     >
                       {member.role === 'leader' ? 'Make member' : 'Make leader'}
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => { setRotateOnRemove(true); setRemoving(member); }}>
+                    <Button size="sm" variant="danger" onClick={() => { setRotateOnRemove(true); setRemoveError(null); setRemoving(member); }}>
                       Remove
                     </Button>
                   </div>
@@ -487,6 +491,7 @@ function TeamWorkspaceView() {
           </>
         }
       >
+        {removeError ? <p className="center-callout warning" role="alert">{removeError}</p> : null}
         <p>They lose access to this workspace on every device right away, including any open scouting room.</p>
         <FieldCheckbox
           label="Also make a new join code, so they can't rejoin with the old one"

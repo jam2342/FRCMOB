@@ -1835,7 +1835,21 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
           method,
           body: typeof init?.body === "string" ? init.body : null,
           headers: headerEntries,
-          label: `${method} ${new URL(url, window.location.origin).pathname}`,
+          label: (() => {
+            const path = new URL(url, window.location.origin).pathname;
+            let team = "";
+            try {
+              const payload = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+              const key = String(payload?.team_key || payload?.entry?.team_key || "");
+              if (/^frc\d+$/i.test(key)) team = ` for Team ${key.slice(3)}`;
+            } catch {
+              // A label still works without a readable body.
+            }
+            return path.includes("pit-scouting") ? `Pit notes${team}`
+              : path.includes("picklist") ? "Picklist changes"
+              : path.includes("assignment") ? "Scouting assignments"
+              : `Scouting report${team}`;
+          })(),
         });
         throw new QueuedForSyncError(
           offline
@@ -2412,13 +2426,13 @@ export async function getTeamBreakdown(
 export async function getEventRatings(
   eventKey: string,
   refresh = false,
-  options?: { includeTrend?: boolean },
+  options?: { includeTrend?: boolean; bypassCache?: boolean },
 ): Promise<EventRatingsResponse> {
   const params = new URLSearchParams({ refresh: String(refresh) });
   if (options?.includeTrend) params.set("include_trend", "true");
   const res = await apiFetch(
     `${API}/scouting/event/${eventKey}/ratings?${params.toString()}`,
-    _cacheRequestOptions(undefined, {
+    _cacheRequestOptions(options?.bypassCache ? { bypassCache: true } : undefined, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
     }),
@@ -2572,6 +2586,8 @@ export async function getEventScheduleWithSynergy(
     model_version?: string;
     include_pair_breakdown?: boolean;
     refresh?: boolean;
+    // Skip this tab's cached copy without asking the server to rebuild synergy.
+    bypassCache?: boolean;
   },
 ): Promise<EventScheduleWithSynergyResponse> {
   const params = new URLSearchParams();
@@ -2589,7 +2605,7 @@ export async function getEventScheduleWithSynergy(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await apiFetch(
     `${API}/events/${eventKey}/schedule-with-synergy${suffix}`,
-    _cacheRequestOptions(undefined, {
+    _cacheRequestOptions(options?.bypassCache ? { bypassCache: true } : undefined, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
     }),

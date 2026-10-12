@@ -143,6 +143,15 @@
     row-gap: 6px;
   }
 
+  /* Keep "Minimize" and "View Event" side by side; when they don't fit next to
+     the event name the whole pair drops below it instead of stacking. The
+     `> div` title rule below would otherwise make this a one-column grid. */
+  .product-shell .home-event-section-head > .home-card-head-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+
   .product-shell .home-fotmob-toolbar-actions {
     min-width: 0;
     flex-wrap: nowrap;
@@ -563,6 +572,10 @@ button.ps-context-chip:disabled {
 
 .ps-context-chip strong {
   font-size: var(--font-size-sm);
+  /* Event names can run to sixty characters ("… presented by …"). */
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ps-context-pin-btn {
@@ -625,6 +638,9 @@ button.ps-context-chip:disabled {
   letter-spacing: 0.01em;
   white-space: nowrap;
   cursor: pointer;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ps-context-quick-chip.event {
