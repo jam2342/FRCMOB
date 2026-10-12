@@ -18,7 +18,7 @@ export type Level1To5 = 1 | 2 | 3 | 4 | 5 | null;
 export type EndgameMode = 'none' | 'kept_scoring' | 'parked' | 'climb_level_1' | 'climb_level_2' | 'climb_level_3';
 export type ScoutingMode = 'match' | 'rapid';
 export type MobileScoutSection = 'capture' | 'score' | 'history';
-export type MobileCapturePanel = 'auto' | 'teleop' | 'endgame' | 'mobility' | 'strategy' | 'notes' | 'auto-paths';
+export type MobileCapturePanel = 'auto' | 'teleop' | 'endgame' | 'mobility' | 'strategy' | 'notes' | 'auto-paths' | 'review';
 export type MobileScorePanel = 'points' | 'live';
 
 export type ScoutFormState = {

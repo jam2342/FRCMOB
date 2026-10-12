@@ -1,7 +1,9 @@
 import { exportTextFile } from '../platform/exportFile';
 import { useCallback, useEffect, useMemo, useRef, useState, useEffectEvent } from 'react';
+import { useEventNames } from '../hooks/useEventNames';
+import { ScheduleStatus } from '../features/workspace/ScheduleStatus';
 import type { ReactNode } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   QueuedForSyncError,
   addScoutingRoomSecondaryLeader,
@@ -105,6 +107,7 @@ import type {
   TeamSummaryRow,
 } from './scoutingPage.types';
 import {
+  scoutingTeamLabel,
   apiSnapshotFromIntel,
   buildSavedScoutingEntry,
   compLevelLabel,
@@ -123,8 +126,6 @@ import {
   inferWinnerAlliance,
   manualScoutingRating,
   mergeEntry,
-  MOBILE_CAPTURE_PANEL_TABS,
-  MOBILE_SCORE_PANEL_TABS,
   normalizeEntry,
   normalizeEventKeyInput,
   normalizeRoomKey,
@@ -148,6 +149,7 @@ import {
   stripEntriesForRoom,
   teamAllianceForMatch,
 } from './scoutingPage.helpers';
+import { useScoutCountdown } from './scoutDraftTimer';
 import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
 import { useWorkspace } from '../features/workspace/useWorkspace';
@@ -211,6 +213,7 @@ type StoredMobilePanelPrefs = {
   section: MobileScoutSection;
   capture: MobileCapturePanel;
   score: MobileScorePanel;
+  view?: 'robot' | 'scout' | 'saved';
 };
 
 const DEFAULT_MOBILE_PANEL_PREFS: StoredMobilePanelPrefs = {
@@ -225,25 +228,21 @@ function readStoredMobilePanelPrefs(): StoredMobilePanelPrefs {
     const raw = window.localStorage.getItem(SCOUTING_MOBILE_PANEL_PREFS_STORAGE);
     if (!raw) return DEFAULT_MOBILE_PANEL_PREFS;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const finderOpen = typeof parsed.finderOpen === 'boolean'
-      ? parsed.finderOpen
-      : DEFAULT_MOBILE_PANEL_PREFS.finderOpen;
-    const section = parsed.section === 'capture' || parsed.section === 'score' || parsed.section === 'history'
-      ? parsed.section
-      : DEFAULT_MOBILE_PANEL_PREFS.section;
-    const capture = MOBILE_CAPTURE_PANEL_TABS.some((panel) => panel.id === parsed.capture)
-      ? (parsed.capture as MobileCapturePanel)
+    const legacyReview = parsed.section === 'score' || ['mobility', 'strategy', 'notes'].includes(String(parsed.capture));
+    const view = parsed.view === 'saved' || parsed.section === 'history' ? 'saved'
+      : parsed.view === 'robot' ? 'robot'
+      : parsed.view === 'scout' || legacyReview || parsed.capture === 'auto-paths' ? 'scout'
+      : parsed.finderOpen === false ? 'scout' : 'robot';
+    const capture = legacyReview || parsed.capture === 'review' ? 'review'
+      : parsed.capture === 'auto-paths' ? 'auto'
+      : ['auto', 'teleop', 'endgame'].includes(String(parsed.capture)) ? parsed.capture as MobileCapturePanel
       : DEFAULT_MOBILE_PANEL_PREFS.capture;
-    const score = parsed.score === 'driver' || parsed.score === 'saved'
-      ? 'points'
-      : MOBILE_SCORE_PANEL_TABS.some((panel) => panel.id === parsed.score)
-        ? (parsed.score as MobileScorePanel)
-        : DEFAULT_MOBILE_PANEL_PREFS.score;
     return {
-      finderOpen,
-      section,
+      finderOpen: view !== 'scout',
+      section: 'capture',
       capture,
-      score,
+      score: 'live',
+      view,
     };
   } catch {
     return DEFAULT_MOBILE_PANEL_PREFS;
@@ -326,7 +325,6 @@ function ScaleInput(props: {
 
 export function ScoutingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const isMobileLayout = useMobileLayout();
   const pageVisible = usePageVisibility();
   const storedCenterContext = readStoredCenterContext();
@@ -364,6 +362,10 @@ export function ScoutingPage() {
   const [entries, setEntries] = useState<SavedScoutingEntry[]>(() =>
     readStoredEntries(getWorkspaceSession()?.workspace.id ?? null),
   );
+  const eventDisplayName = useEventNames(selectedEventKey, scheduleName || '');
+  // Room titles read the name through a ref so a late-arriving name never re-runs a room join.
+  const eventDisplayNameRef = useRef(eventDisplayName);
+  eventDisplayNameRef.current = eventDisplayName;
   const [sharingNotice, setSharingNotice] = useState<{workspaceId: number | null; eventKey: string; text: string} | null>(null);
   const sharingEntriesRef = useRef(new Set<string>());
   const latestEntriesRef = useRef(entries);
@@ -372,8 +374,7 @@ export function ScoutingPage() {
   // for a new team, so a render that still holds the old team's entries is
   // written under the old team's key even after the session has switched.
   const entriesWorkspaceRef = useRef<number | null>(getWorkspaceSession()?.workspace.id ?? null);
-  const [timerSec, setTimerSec] = useState(MATCH_DURATION_SEC);
-  const [timerRunning, setTimerRunning] = useState(false);
+  const { seconds: timerSec, running: timerRunning, setCountdown, toggle: toggleTimer } = useScoutCountdown(MATCH_DURATION_SEC, pageVisible);
   const [floatingTimerPosition, setFloatingTimerPosition] = useState<FloatingTimerPosition>(() => {
     const stored = readStoredFloatingTimerPosition();
     if (stored) return stored;
@@ -413,11 +414,16 @@ export function ScoutingPage() {
   useEffect(() => {
     const nav = phoneNavRef.current;
     if (!isMobileLayout || !nav) return;
-    const update = () => nav.parentElement?.style.setProperty('--scout-phone-nav-height', `${nav.offsetHeight}px`);
+    const hero = nav.parentElement?.querySelector<HTMLElement>('.fm-scout-hero');
+    const update = () => {
+      nav.parentElement?.style.setProperty('--scout-phone-nav-height', `${nav.offsetHeight}px`);
+      nav.parentElement?.style.setProperty('--scout-phone-chrome-height', `${nav.offsetHeight + (hero?.offsetHeight ?? 0) + 24}px`);
+    };
     update();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(update);
     observer.observe(nav);
+    if (hero) observer.observe(hero);
     return () => observer.disconnect();
   }, [isMobileLayout]);
   const [roomKeyInput, setRoomKeyInput] = useState(() =>
@@ -434,26 +440,30 @@ export function ScoutingPage() {
   const [roomErrorText, setRoomErrorText] = useState('');
   // Leader actions report here, not in roomErrorText: a socket reconnect clears
   // that one, which could wipe "Promotion rejected" before the leader saw it.
-  const [roomLeaderActionError, setRoomLeaderActionError] = useState('');
-  useEffect(() => { setRoomLeaderActionError(''); }, [activeRoom?.room_key]);
+  // Each message remembers its room and shows only while that room is open. A
+  // "clear on room change" effect used to run late on busy phones and wipe an
+  // error the leader had just caused.
+  const [roomLeaderActionErrorState, setRoomLeaderActionErrorState] = useState({ roomKey: '', text: '' });
+  const activeRoomKeyNormalized = normalizeRoomKey(activeRoom?.room_key || '');
+  const setRoomLeaderActionError = (text: string) => setRoomLeaderActionErrorState({ roomKey: activeRoomKeyNormalized, text });
+  const roomLeaderActionError = roomLeaderActionErrorState.roomKey === activeRoomKeyNormalized ? roomLeaderActionErrorState.text : '';
   const [roomHttpFallbackActive, setRoomHttpFallbackActive] = useState(false);
   const [roomClientId] = useState(() => getOrCreateScoutingRoomClientId());
   const [roomSocketNonce, setRoomSocketNonce] = useState(0);
   const [eventApiBaselineByTeam, setEventApiBaselineByTeam] = useState<Record<string, EventTeamApiBaseline>>({});
   const [apiSnapshotCache, setApiSnapshotCache] = useState<Record<string, ApiTeamSnapshot | null>>({});
   const [showTeamSummaries, setShowTeamSummaries] = useState(false);
-  const [sidebarSection, setSidebarSection] = useState<SidebarSection>('setup');
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(() => mobilePanelPrefs.view === 'saved' ? 'data' : 'setup');
   // A link to one match and team ("Scout team 254") means scout it now, so a
   // phone opens on the board instead of the setup finder.
   const [mobileFinderOpen, setMobileFinderOpen] = useState<boolean>(() =>
     searchParams.get('match') && searchParams.get('team') ? false : mobilePanelPrefs.finderOpen,
   );
+  const [matchQuery, setMatchQuery] = useState('');
   const [mobileScoutSection, setMobileScoutSection] = useState<MobileScoutSection>(() => mobilePanelPrefs.section);
   const [mobileCapturePanel, setMobileCapturePanel] = useState<MobileCapturePanel>(() => mobilePanelPrefs.capture);
-  const [mobileScorePanel, setMobileScorePanel] = useState<MobileScorePanel>(() => mobilePanelPrefs.score);
+  const [mobileScorePanel] = useState<MobileScorePanel>(() => mobilePanelPrefs.score);
   const [mobileCompactMode, setMobileCompactMode] = useState<boolean>(() => readStoredMobileCompactMode());
-  const [scoutingTopCondensed, setScoutingTopCondensed] = useState(false);
-  const [scoutingTopHidden, setScoutingTopHidden] = useState(false);
   const [setupHeaderManuallyCollapsed, setSetupHeaderManuallyCollapsed] = useState(false);
   const setupSectionRef = useRef<HTMLDivElement | null>(null);
   const roomSectionRef = useRef<HTMLDivElement | null>(null);
@@ -517,7 +527,7 @@ export function ScoutingPage() {
           event_key: selectedEventKey || activeRoom?.event_key || undefined,
           scout_profile: normalizedScoutProfile,
           client_id: roomClientId,
-          title: selectedEventKey ? `Scouting ${selectedEventKey}` : undefined,
+          title: selectedEventKey ? `Scouting ${eventDisplayNameRef.current(selectedEventKey)}` : undefined,
           create_if_missing: false,
           room_access_token: resolveRoomAccessToken(normalizedRoomKey) || undefined,
           timeoutMs: 25000,
@@ -599,7 +609,7 @@ export function ScoutingPage() {
     for (const match of scheduleRows) {
       for (const team of parseTeamOptions(match)) {
         if (!map.has(team.team_key)) {
-          map.set(team.team_key, team.team_label || team.team_key.toUpperCase());
+          map.set(team.team_key, team.team_label || scoutingTeamLabel(team.team_key));
         }
       }
     }
@@ -656,7 +666,7 @@ export function ScoutingPage() {
           match_key: selectedMatchKey.trim().toLowerCase(),
           match_display: selectedMatch?.display_name || selectedMatchKey.toUpperCase(),
           team_key: teamOptions[currentIndex + 1]?.team_key || '',
-          team_label: teamOptions[currentIndex + 1]?.team_label || teamOptions[currentIndex + 1]?.team_key?.toUpperCase() || '',
+          team_label: teamOptions[currentIndex + 1]?.team_label || scoutingTeamLabel(teamOptions[currentIndex + 1]?.team_key || ''),
         };
       }
     }
@@ -666,7 +676,7 @@ export function ScoutingPage() {
         match_key: nextMatchTarget.match_key,
         match_display: nextMatchTarget.match_display,
         team_key: candidateTeam.team_key,
-        team_label: candidateTeam.team_label || candidateTeam.team_key.toUpperCase(),
+        team_label: candidateTeam.team_label || scoutingTeamLabel(candidateTeam.team_key),
       };
     }
     if (eventTeamOptions.length > 0) {
@@ -679,7 +689,7 @@ export function ScoutingPage() {
         match_key: selectedMatchKey.trim().toLowerCase(),
         match_display: selectedMatch?.display_name || selectedMatchKey.toUpperCase(),
         team_key: fallback.team_key,
-        team_label: fallback.team_label || fallback.team_key.toUpperCase(),
+        team_label: fallback.team_label || scoutingTeamLabel(fallback.team_key),
       };
     }
     return null;
@@ -824,18 +834,18 @@ export function ScoutingPage() {
     [selectedMatchStart],
   );
   const showCaptureSection = !isMobileLayout || mobileScoutSection === 'capture';
-  const showScoreSection = !isMobileLayout || mobileScoutSection === 'score';
+  const showScoreSection = !isMobileLayout;
   const showHistorySection = !isMobileLayout;
   const showCaptureAutoCard = !isMobileLayout || mobileCapturePanel === 'auto';
   const showCaptureTeleopCard = !isMobileLayout || mobileCapturePanel === 'teleop';
   const showCaptureEndgameCard = !isMobileLayout || mobileCapturePanel === 'endgame';
-  const showCaptureMobilityCard = !isMobileLayout || mobileCapturePanel === 'mobility';
+  const showCaptureMobilityCard = !isMobileLayout;
   const showDesktopStackedAutoEndgame = !isMobileLayout && showCaptureAutoCard && showCaptureEndgameCard;
-  const showCaptureStrategyCards = !isMobileLayout || mobileCapturePanel === 'strategy';
-  const showCaptureNotesCard = !isMobileLayout || mobileCapturePanel === 'notes';
+  const showCaptureStrategyCards = !isMobileLayout;
+  const showCaptureNotesCard = !isMobileLayout;
   const showScoreDriverCard = !isMobileLayout;
-  const showScorePointsCard = !isMobileLayout || mobileScorePanel === 'points';
-  const showScoreLiveCard = !isMobileLayout || mobileScorePanel === 'live';
+  const showScorePointsCard = !isMobileLayout;
+  const showScoreLiveCard = !isMobileLayout;
   const showScoreSavedCard = !isMobileLayout;
   const showHistorySummariesCard = showTeamSummaries;
   const supportsPointerEvents = typeof window !== 'undefined' && typeof window.PointerEvent !== 'undefined';
@@ -1005,7 +1015,7 @@ export function ScoutingPage() {
           match_key: matchKey,
           team_key: teamKey,
           match_display: matchDisplay,
-          team_display: teamNumber !== null ? `#${teamNumber}` : teamKey.toUpperCase(),
+          team_display: teamNumber !== null ? `#${teamNumber}` : scoutingTeamLabel(teamKey),
           match_order: scheduleIndexByMatch.get(matchKey)?.index ?? Number.MAX_SAFE_INTEGER,
         };
       })
@@ -1273,7 +1283,7 @@ export function ScoutingPage() {
       }
       const notes = Array.from(noteSet);
       const summary =
-        `${latest.team_key.toUpperCase()} averages ${overallAvg.toFixed(1)} overall (scout data)` +
+        `${scoutingTeamLabel(latest.team_key)} averages ${overallAvg.toFixed(1)} overall (scout data)` +
         `, ${manualAvg.toFixed(1)} manual` +
         `${apiAvg !== null ? ` / ${apiAvg.toFixed(1)} Scout+API` : ''}` +
         ` across ${teamEntries.length} report${teamEntries.length === 1 ? '' : 's'}, with ${pointsAvg.toFixed(1)} avg points, ` +
@@ -1316,7 +1326,7 @@ export function ScoutingPage() {
     // The product shell scrolls on its own root element (not `.ps-content`,
     // which is in-flow and never scrolls). Resolve the real scrolling ancestor
     // from the content node so the auto-collapse actually fires; fall back to
-    // the document scroller. Without this the setup header never minimized.
+    // the document scroller so focused fields clear the top bar.
     const contentNode = document.querySelector('.ps-content') as HTMLElement | null;
     const resolveScroller = (): HTMLElement => {
       let node: HTMLElement | null = contentNode?.parentElement ?? null;
@@ -1331,70 +1341,67 @@ export function ScoutingPage() {
       return (document.scrollingElement as HTMLElement) || document.documentElement;
     };
     const scrollContainer = resolveScroller();
-    // Collapsing the mobile header changes layout height. Browser anchoring
-    // otherwise moves scrollTop, which reads as a reverse gesture and expands
-    // the header again; in landscape this repeats without any user input.
-    const previousOverflowAnchor = scrollContainer.style.overflowAnchor;
-    if (isMobileLayout) scrollContainer.style.overflowAnchor = 'none';
     const previousScrollPaddingTop = scrollContainer.style.scrollPaddingTop;
     const topbarHeight = document.querySelector('.ps-topbar')?.getBoundingClientRect().height ?? 0;
     const setupHeaderHeight = !isMobileLayout
       ? document.querySelector('.finder-sidebar-header.scout-sidebar-hub')?.getBoundingClientRect().height ?? 0
       : 0;
     scrollContainer.style.scrollPaddingTop = `${Math.ceil(topbarHeight + setupHeaderHeight + 16)}px`;
-    const isDocScroller =
-      scrollContainer === document.documentElement ||
-      scrollContainer === document.scrollingElement ||
-      scrollContainer === document.body;
-    const scrollEventTarget: HTMLElement | Window = isDocScroller ? window : scrollContainer;
-
-    let ticking = false;
-    let lastScrollTop = scrollContainer.scrollTop;
-
-    const updateChromeState = () => {
-      const nextScrollTop = scrollContainer.scrollTop;
-      const nextCondensed = isMobileLayout && nextScrollTop > 44;
-      const hideThreshold = Math.min(140, Math.max(84, Math.round(window.innerHeight * 0.18)));
-      setScoutingTopCondensed((current) => (current === nextCondensed ? current : nextCondensed));
-
-      if (nextScrollTop <= 12) {
-        setScoutingTopHidden(false);
-        lastScrollTop = nextScrollTop;
+    // Slide the sticky controls out of view without changing their layout size.
+    // Direction hysteresis absorbs tiny reversals and inertial-scroll noise.
+    const nav = phoneNavRef.current;
+    const layout = nav?.parentElement;
+    const hero = layout?.querySelector<HTMLElement>('.fm-scout-hero');
+    let hidden = false;
+    let anchorY = Math.max(0, scrollContainer.scrollTop);
+    let frame = 0;
+    const setHidden = (next: boolean) => {
+      if (next === hidden) return;
+      hidden = next;
+      layout?.classList.toggle(styles.chromeHidden, next);
+      if (nav) nav.inert = next;
+      if (hero) hero.inert = next;
+    };
+    const update = () => {
+      frame = 0;
+      const maxY = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+      const y = Math.min(maxY, Math.max(0, scrollContainer.scrollTop));
+      if (y <= 24) {
+        setHidden(false);
+        anchorY = y;
         return;
       }
-
-      const scrollDelta = nextScrollTop - lastScrollTop;
-      if (scrollDelta > 10 && nextScrollTop > hideThreshold) {
-        setScoutingTopHidden(true);
-      } else if (scrollDelta < -8) {
-        setScoutingTopHidden(false);
+      if (hidden) {
+        anchorY = Math.max(anchorY, y);
+        if (anchorY - y >= 64) {
+          setHidden(false);
+          anchorY = y;
+        }
+      } else {
+        anchorY = Math.min(anchorY, y);
+        if (y > 160 && y - anchorY >= 48) {
+          setHidden(true);
+          anchorY = y;
+        }
       }
-
-      lastScrollTop = nextScrollTop;
     };
-
     const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        updateChromeState();
-        ticking = false;
-      });
+      if (!frame) frame = requestAnimationFrame(update);
     };
-
-    updateChromeState();
-    scrollEventTarget.addEventListener('scroll', onScroll, { passive: true });
-
+    const target = scrollContainer === document.scrollingElement ? window : scrollContainer;
+    if (isMobileLayout) target.addEventListener('scroll', onScroll, { passive: true });
     return () => {
-      scrollEventTarget.removeEventListener('scroll', onScroll);
-      scrollContainer.style.overflowAnchor = previousOverflowAnchor;
+      target.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+      layout?.classList.remove(styles.chromeHidden);
+      if (nav) nav.inert = false;
+      if (hero) hero.inert = false;
       scrollContainer.style.scrollPaddingTop = previousScrollPaddingTop;
     };
-  }, [isMobileLayout]);
+  }, [isMobileLayout, mobileFinderOpen]);
 
   useEffect(() => {
     if (!isMobileLayout) return;
-    setScoutingTopHidden(false);
     setSetupHeaderManuallyCollapsed(false);
   }, [isMobileLayout, mobileFinderOpen]);
 
@@ -1404,6 +1411,7 @@ export function ScoutingPage() {
       window.localStorage.setItem(
         SCOUTING_MOBILE_PANEL_PREFS_STORAGE,
         JSON.stringify({
+          view: !mobileFinderOpen ? 'scout' : sidebarSection === 'data' ? 'saved' : 'robot',
           finderOpen: mobileFinderOpen,
           section: mobileScoutSection,
           capture: mobileCapturePanel,
@@ -1413,32 +1421,8 @@ export function ScoutingPage() {
     } catch {
       // ignore storage failures
     }
-  }, [mobileCapturePanel, mobileFinderOpen, mobileScoutSection, mobileScorePanel]);
+  }, [mobileCapturePanel, mobileFinderOpen, mobileScoutSection, mobileScorePanel, sidebarSection]);
 
-  useEffect(() => {
-    if (!isMobileLayout) return;
-    if (mobileScoutSection === 'history') {
-      setMobileScoutSection('capture');
-    }
-  }, [isMobileLayout, mobileScoutSection]);
-
-  useEffect(() => {
-    if (!pageVisible) return;
-    const timer = window.setInterval(() => {
-      setTimerSec((current) => {
-        if (!timerRunning) return current;
-        if (current <= 0) return 0;
-        return current - 1;
-      });
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [pageVisible, timerRunning]);
-
-  useEffect(() => {
-    if (timerSec <= 0 && timerRunning) {
-      setTimerRunning(false);
-    }
-  }, [timerRunning, timerSec]);
 
   useEffect(() => {
     if (!floatingTimerDragging) return;
@@ -1617,7 +1601,7 @@ export function ScoutingPage() {
           event_key: selectedEventKey || undefined,
           scout_profile: scoutProfile,
           client_id: roomClientId,
-          title: selectedEventKey ? `Scouting ${selectedEventKey}` : undefined,
+          title: selectedEventKey ? `Scouting ${eventDisplayNameRef.current(selectedEventKey)}` : undefined,
           create_if_missing: false,
           room_access_token: storedAccessToken || undefined,
           timeoutMs: 25000,
@@ -1712,7 +1696,7 @@ export function ScoutingPage() {
         if (cancelled) return;
         setScheduleRows([]);
         setScheduleName(null);
-        setErrorText((error as Error).message || `Unable to load schedule for ${selectedEventKey}.`);
+        setErrorText((error as Error).message || 'Unable to load the match schedule. Try again.');
       } finally {
         if (!cancelled) setLoadingSchedule(false);
       }
@@ -1766,7 +1750,7 @@ export function ScoutingPage() {
       } catch (error) {
         if (cancelled) return;
         setEventApiBaselineByTeam({});
-        setEventIntelError((error as Error).message || `Unable to load team intel for ${selectedEventKey}.`);
+        setEventIntelError((error as Error).message || 'Unable to load event teams. Try again.');
       } finally {
         if (!cancelled) setLoadingEventIntel(false);
       }
@@ -2243,7 +2227,11 @@ export function ScoutingPage() {
     // and Save was enabled for a robot that isn't in this match.
     if (teamOptions.length === 0) return;
     if (!teamOptions.some((team) => team.team_key === selectedTeamKey)) {
-      setSelectedTeamKey(isMobileLayout ? '' : teamOptions[0]?.team_key || '');
+      const fallback = isMobileLayout ? '' : teamOptions[0]?.team_key || '';
+      // On a busy phone this effect can still be pending from the previous render
+      // when a scout taps Start; replace only the robot it checked, never one the
+      // scout has picked since (that tap used to come out as "no robot").
+      setSelectedTeamKey((current) => (current === selectedTeamKey ? fallback : current));
     }
   }, [isMobileLayout, selectedTeamKey, teamOptions]);
 
@@ -2269,10 +2257,9 @@ export function ScoutingPage() {
     setForm(draft ? { ...EMPTY_FORM, ...draft.form } : EMPTY_FORM);
     setRpState(draft ? { ...EMPTY_RP, ...draft.rp } : EMPTY_RP);
     setScoutNotes(draft?.notes ?? '');
-    setTimerSec(MATCH_DURATION_SEC);
-    setTimerRunning(false);
+    setCountdown(MATCH_DURATION_SEC);
     if (draft) setStatusText('Picked up your unsaved report for this match.');
-  }, [selectedDraftKey]);
+  }, [selectedDraftKey, setCountdown]);
 
   useEffect(() => {
     // Wait for the new scope's form to load before writing. Persist each edit:
@@ -2310,8 +2297,12 @@ export function ScoutingPage() {
     }));
   }
 
+  function confirmDraftScopeChange(changing: boolean) {
+    return !isMobileLayout || !changing || !draftStorageFailed || window.confirm('This draft could not be saved on your device. Discard it and choose another robot?');
+  }
+
   function jumpToNextMatchTarget() {
-    if (!nextMatchTarget) return;
+    if (!nextMatchTarget || !confirmDraftScopeChange(nextMatchTarget.match_key !== selectedMatchKey)) return;
     setSelectedMatchKey(nextMatchTarget.match_key);
     const hasCurrentTeam = nextMatchTarget.teams.some((team) => team.team_key === selectedTeamKey);
     if (!hasCurrentTeam) {
@@ -2323,24 +2314,23 @@ export function ScoutingPage() {
   }
 
   function jumpToNextTeamTarget() {
-    if (!nextTeamTarget?.team_key) return;
+    if (!nextTeamTarget?.team_key || !confirmDraftScopeChange(nextTeamTarget.team_key !== selectedTeamKey || Boolean(nextTeamTarget.match_key && nextTeamTarget.match_key !== selectedMatchKey))) return;
     if (nextTeamTarget.match_key) setSelectedMatchKey(nextTeamTarget.match_key);
     setSelectedTeamKey(nextTeamTarget.team_key);
-    setStatusText(`Loaded next team: ${nextTeamTarget.team_key.toUpperCase()} (${nextTeamTarget.match_display}).`);
+    setStatusText(`Loaded next team: ${scoutingTeamLabel(nextTeamTarget.team_key)} (${nextTeamTarget.match_display}).`);
     if (isMobileLayout) setMobileFinderOpen(false);
   }
 
   function syncTimerToMatch() {
-    if (!selectedMatch?.scheduled_time) {
-      setTimerSec(MATCH_DURATION_SEC);
-      setTimerRunning(false);
+    const start = matchStartTime(selectedMatch);
+    if (!start) {
+      setCountdown(MATCH_DURATION_SEC);
       return;
     }
     const nowSec = Math.floor(Date.now() / 1000);
-    const elapsed = nowSec - selectedMatch.scheduled_time;
+    const elapsed = nowSec - start;
     const remaining = clampNumber(MATCH_DURATION_SEC - elapsed, 0, MATCH_DURATION_SEC);
-    setTimerSec(remaining);
-    setTimerRunning(elapsed >= 0 && remaining > 0);
+    setCountdown(remaining, elapsed >= 0 && remaining > 0);
   }
 
   async function createOrJoinRoom(options?: { overrideRoomKey?: string; restoring?: boolean }): Promise<{ ok: boolean; error?: string }> {
@@ -2365,7 +2355,7 @@ export function ScoutingPage() {
         event_key: selectedEventKey || undefined,
         scout_profile: scoutProfile,
         client_id: roomClientId,
-        title: selectedEventKey ? `Scouting ${selectedEventKey}` : undefined,
+        title: selectedEventKey ? `Scouting ${eventDisplayNameRef.current(selectedEventKey)}` : undefined,
         create_if_missing: createIfMissing,
         room_access_token: roomAccessToken || undefined,
         timeoutMs: 25000,
@@ -2494,7 +2484,7 @@ export function ScoutingPage() {
     if (!current && restoring && restoring !== teamRoomKey && !isTeamRoomKey(restoring)) return;
     if (teamRoomJoinRef.current === teamRoomKey) return;
     teamRoomJoinRef.current = teamRoomKey;
-    const eventLabel = selectedEventKey;
+    const eventLabel = scheduleName || teamRoom.eventName || 'this event';
     void createOrJoinRoom({ overrideRoomKey: teamRoomKey, restoring: true }).then((result) => {
       if (result.ok) {
         teamJoinAttemptsRef.current = 0;
@@ -2526,7 +2516,7 @@ export function ScoutingPage() {
   );
   const inTeamRoom = Boolean(teamRoomKey) && normalizeRoomKey(activeRoom?.room_key || '') === teamRoomKey;
 
-  const nextPhoneAssignment = inTeamRoom
+  const nextPhoneAssignment = inTeamRoom && teamRoom.schedule !== null && !teamRoom.scheduleError
     ? myTeamAssignments.find((item) => !item.done && !(teamRoom.schedule ?? scheduleRows).find((match) => match.match_key === item.match_key)?.is_completed)
     : undefined;
   const nextPhoneStation = nextPhoneAssignment
@@ -2535,7 +2525,7 @@ export function ScoutingPage() {
 
   function openPhoneRobot(matchKey: string, teamKey: string) {
     const changingRobot = matchKey !== selectedMatchKey || teamKey !== selectedTeamKey;
-    if (changingRobot && draftStorageFailed && !window.confirm('This draft could not be saved on your device. Discard it and choose another robot?')) return;
+    if (!confirmDraftScopeChange(changingRobot)) return;
     // Selecting the scope resumes its draft; starting never resets its counters.
     setSelectedMatchKey(matchKey);
     setSelectedTeamKey(teamKey);
@@ -2883,7 +2873,7 @@ export function ScoutingPage() {
         && row.scout_profile === scoutProfile
         && (row.room_key || null) === entryRoomKey);
       if (previousReport && !window.confirm(
-        `You already saved ${selectedTeam.team_key.toUpperCase()} in ${selectedMatch.display_name}. Replace that report with this one?`,
+        `You already saved ${scoutingTeamLabel(selectedTeam.team_key)} in ${selectedMatch.display_name}. Replace that report with this one?`,
       )) {
         setStatusText('Not saved. Your earlier report is unchanged.');
         return;
@@ -2939,15 +2929,14 @@ export function ScoutingPage() {
       setLastSavedEntryId(entry.id);
       setErrorText('');
       hapticSuccess();
-      const label = `${previousReport ? 'Updated' : 'Saved'} ${selectedTeam.team_key.toUpperCase()} · ${overallRating.score_0_100}/100${entrySource === 'reviewed_auto' ? ' · reviewed auto draft' : ''}.`;
+      const label = `${previousReport ? 'Updated' : 'Saved'} ${scoutingTeamLabel(selectedTeam.team_key)} · ${overallRating.score_0_100}/100${entrySource === 'reviewed_auto' ? ' · reviewed auto draft' : ''}.`;
       const roomKey = activeRoom?.room_key || null;
       setStatusText(`${label} ${roomKey ? 'Saved on this phone; syncing to your team…' : 'Saved on this phone.'}`);
       if (!isMobileLayout && scoutingMode === 'rapid') {
         setForm(EMPTY_FORM);
         setRpState(EMPTY_RP);
         setScoutNotes('');
-        setTimerSec(MATCH_DURATION_SEC);
-        setTimerRunning(false);
+        setCountdown(MATCH_DURATION_SEC);
       }
       savedEntry = entry;
       followUp = {
@@ -3116,7 +3105,7 @@ export function ScoutingPage() {
       })
       .join('\n');
 
-    const eventLabel = selectedEventKey ? selectedEventKey.toUpperCase() : 'All Events';
+    const eventLabel = selectedEventKey ? eventDisplayName(selectedEventKey) : 'All Events';
     const exportedAt = new Date().toLocaleString();
 
     const html = `<!DOCTYPE html>
@@ -3308,11 +3297,11 @@ export function ScoutingPage() {
         ? 'Connecting'
         : 'Offline';
   const setupSectionSummary = selectedTeamKey
-    ? `${selectedMatch?.display_name || 'Match selected'} · ${selectedTeamKey.toUpperCase()}`
+    ? `${selectedMatch?.display_name || 'Match selected'} · ${scoutingTeamLabel(selectedTeamKey)}`
     : selectedMatch?.display_name
       ? `${selectedMatch.display_name} selected. Pick the robot to scout.`
       : selectedEventKey
-        ? `${selectedEventKey} loaded. Choose a match to continue.`
+        ? `${eventDisplayName(selectedEventKey)} loaded. Choose a match to continue.`
         : 'Pick an event, match, and robot before the match starts.';
   const roomSectionSummary = activeRoom?.room_key
     ? `${roomConnectionLabel} · ${roomMemberCount} active member${roomMemberCount === 1 ? '' : 's'}`
@@ -3335,14 +3324,14 @@ export function ScoutingPage() {
         ? roomSectionSummary
         : dataSectionSummary;
   const showSetupSidebarSection = !isMobileLayout || sidebarSection === 'setup';
-  const showRoomSidebarSection = !isMobileLayout || sidebarSection === 'room';
+  const showRoomSidebarSection = !isMobileLayout || sidebarSection === 'setup';
   const showDataSidebarSection = !isMobileLayout || sidebarSection === 'data';
   const autoScoutEnabled = effectiveCaptureMode === 'auto';
   const autoScoutInsightRows = Object.entries(autoScout.derivedInsights || {});
   const setupHeaderCollapseEligible = !isMobileLayout || mobileFinderOpen;
   // Desktop setup controls stay in place while scrolling or focusing a field.
   // An automatic collapse moved WebKit's newly focused control off-screen.
-  const setupHeaderCollapsed = setupHeaderCollapseEligible && ((isMobileLayout && scoutingTopHidden) || setupHeaderManuallyCollapsed);
+  const setupHeaderCollapsed = setupHeaderCollapseEligible && setupHeaderManuallyCollapsed;
   const scoutingSidebarSideCollapsed = !isMobileLayout && setupHeaderManuallyCollapsed;
 
   function renderAutoScoutBadge(fieldName: string) {
@@ -3394,12 +3383,22 @@ export function ScoutingPage() {
           />
         ))}
       </div>
+      {isMobileLayout ? <Link className="center-btn ghost" to={`/scouting/auto-paths${searchParams.toString() ? `?${searchParams.toString()}` : ''}`}>Draw auto path ›</Link> : null}
     </SurfaceCard>
   ) : null;
 
   const captureEndgameCard = showCaptureEndgameCard ? (
     <SurfaceCard title="Endgame" className={phaseEmphasis('Endgame')}>
       <div className="scout-control-card">
+        {isMobileLayout ? (
+          <FieldRadioGroup
+            legend="Endgame result"
+            name="phone-endgame-result"
+            value={form.endgame_mode}
+            onValueChange={(next) => setForm((current) => ({ ...current, endgame_mode: next as EndgameMode }))}
+            options={Object.entries(ENDGAME_LABELS).map(([value, label]) => ({ value, label }))}
+          />
+        ) : (
         <FieldSelect
           label="Endgame result"
           badge={renderAutoScoutBadge('endgame_mode')}
@@ -3418,6 +3417,7 @@ export function ScoutingPage() {
           <option value="climb_level_2">{ENDGAME_LABELS.climb_level_2}</option>
           <option value="climb_level_3">{ENDGAME_LABELS.climb_level_3}</option>
         </FieldSelect>
+        )}
         {/* These were buttons whose only state signal was the word at the end
             of their own label, so nothing announced them as on or off. A switch
             carries aria-checked. */}
@@ -3445,462 +3445,26 @@ export function ScoutingPage() {
     </SurfaceCard>
   ) : null;
 
-  return (
-    <>
-    {/* On a phone's Scout (Board) view the counters come first; Pit, Assignments and the rest
-        are in the More menu and back on the Robot view. */}
-    {isMobileLayout && !mobileFinderOpen ? null : (
-      <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
-    )}
-    {draftStorageFailed || entryStorageFailed ? (
-      <p className="center-callout danger" role="alert">
-        Device storage is full or unavailable. Keep this tab open: unfinished scouting stays in memory.
-        Free some space and try Save again before closing or refreshing.
-      </p>
-    ) : null}
-    <div
-      className={`center-layout center-layout-team scouting-layout-grid mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''} ${isMobileLayout && mobileCompactMode ? 'scouting-mobile-compact' : ''} ${isMobileLayout && scoutingTopCondensed ? 'scouting-top-condensed' : ''} ${isMobileLayout && scoutingTopHidden ? 'scouting-top-hidden' : ''} ${scoutingSidebarSideCollapsed ? 'scouting-sidebar-side-collapsed' : ''}`.trim()}
-    >
-      {!isMobileLayout ? (
-        <div
-          ref={floatingTimerRef}
-          className={`scout-mini-timer-float ${floatingTimerDragging ? 'dragging' : ''}`.trim()}
-          style={floatingTimerStyle}
-          aria-live="polite"
-          aria-atomic="true"
-          title={selectedMatch?.display_name || 'No selected match'}
-        >
-          <div
-            className="scout-mini-timer-top scout-mini-timer-drag-handle"
-            onPointerDown={handleFloatingTimerDragStart}
-            onTouchStart={handleFloatingTimerTouchStart}
-          >
-            <strong className="scout-mini-timer-clock">{timerClockLabel}</strong>
-            <span className={`center-chip timer ${timerPhaseState}`.trim()}>{timerPhase}</span>
-          </div>
-          <div className="scout-mini-timer-bottom">
-            <span className={`scout-mini-timer-dot ${timerRunning ? 'live' : 'idle'}`.trim()} aria-hidden="true" />
-            <small>{liveTimer.label}: {liveTimer.value}</small>
-          </div>
-          <div className="scout-mini-timer-controls" role="group" aria-label="Mini timer controls">
-            <button
-              type="button"
-              className="scout-mini-timer-btn"
-              aria-label={timerRunning ? 'Pause timer' : 'Start timer'}
-              onClick={() => setTimerRunning((current) => !current)}
-            >
-              {timerRunning ? <PauseIcon size={12} /> : <PlayIcon size={12} />}
-            </button>
-            <button
-              type="button"
-              className="scout-mini-timer-btn"
-              aria-label="Reset timer"
-              onClick={() => {
-                setTimerSec(MATCH_DURATION_SEC);
-                setTimerRunning(false);
-              }}
-            >
-              <ResetIcon size={12} />
-            </button>
-          </div>
-        </div>
+  function reconnectPhoneRoom() {
+    if (activeRoom?.room_key) { reconnectRoomSocket(); return; }
+    teamAutoJoinSuspendedRef.current = false;
+    teamRoomJoinRef.current = '';
+    teamJoinAttemptsRef.current = 0;
+    setTeamJoinNonce((current) => current + 1);
+    teamRoom.retry?.();
+  }
+
+  const phoneRoomStatus = activeRoom || roomConnectionState === 'connecting' || (workspace && selectedEventKey) ? (
+    <div className={styles.roomStatus} role="status" aria-label="Room connection">
+      <span>{roomConnectionState === 'connected' ? inTeamRoom ? 'Team room connected' : 'Room connected' : roomConnectionState === 'connecting' ? 'Joining room…' : 'Room disconnected'}</span>
+      {workspace && selectedEventKey && roomConnectionState !== 'connected' ? (
+        <button type="button" className="center-btn ghost" onClick={reconnectPhoneRoom}>Reconnect</button>
       ) : null}
-      {isMobileLayout ? (
-        <div ref={phoneNavRef} className={`mobile-view-toggle ${styles.phoneNav}`}>
-          <SegmentedTabs
-            className={styles.robotTabs}
-            ariaLabel="Scouting mobile view switch"
-            value={mobileFinderOpen && sidebarSection === 'setup' ? 'setup' : !mobileFinderOpen ? 'board' : ''}
-            onChange={(next) => {
-              setMobileFinderOpen(next !== 'board');
-              if (next === 'setup') focusSidebarSection('setup');
-            }}
-            items={[
-              { value: 'setup', label: 'Robot' },
-              { value: 'board', label: 'Scout', disabled: !selectedEventKey },
-            ]}
-          />
-          <select
-            className={styles.phoneMore}
-            aria-label="More scouting views"
-            // Always shows "⋯": a native select is as wide as its longest option, and the view
-            // it opens has its own title.
-            value=""
-            onChange={(event) => {
-              const next = event.target.value as 'room' | 'data';
-              if (!next) return;
-              setMobileFinderOpen(true);
-              focusSidebarSection(next);
-            }}
-          >
-            <option value="">⋯</option>
-            <option value="room">Room</option>
-            <option value="data">Saved data</option>
-          </select>
-        </div>
-      ) : null}
-      <aside className={`center-sidebar ${scoutingSidebarSideCollapsed ? 'scout-sidebar-side-collapsed' : ''}`.trim()}>
-        {!isMobileLayout ? (
-        <div
-          className={`finder-sidebar-header scout-sidebar-hub ${setupHeaderCollapsed ? 'collapsed' : ''}`.trim()}
-          aria-label="Scouting session controls"
-        >
-          {!isMobileLayout ? (
-            <div className="scout-sidebar-overview">
-              <div className="scout-sidebar-overview-copy">
-                <span className="scout-sidebar-overview-kicker">Scouting workspace</span>
-                <strong>{activeSectionTitle}</strong>
-                <p>{activeSectionSummary}</p>
-              </div>
-              <div className="scout-sidebar-overview-actions">
-                <span className={`scout-sidebar-overview-state ${saveReady ? 'ready' : 'pending'}`.trim()}>
-                  {saveReady ? 'Ready to save' : 'Setup required'}
-                </span>
-                <button
-                  type="button"
-                  className="center-btn"
-                  onClick={() => {
-                    focusSidebarSection('data');
-                    void saveScoutingEntry();
-                  }}
-                  disabled={!saveReady || savingEntry}
-                >
-                  {savingEntry ? 'Saving...' : <><SaveIcon className="icon-inline" /> Save Entry</>}
-                </button>
-              </div>
-            </div>
-          ) : null}
+      {activeRoom?.room_key && !inTeamRoom ? <div className={styles.roomKey}><strong>{activeRoom.room_key}</strong><button type="button" className="center-btn ghost" onClick={copyRoomKey}>Copy Key</button></div> : null}
+    </div>
+  ) : null;
 
-          <button
-            type="button"
-            className={`scout-sidebar-collapse-btn ${scoutingSidebarSideCollapsed ? 'icon-only' : ''}`.trim()}
-            onClick={() => {
-              if (setupHeaderCollapsed) {
-                setScoutingTopHidden(false);
-                setSetupHeaderManuallyCollapsed(false);
-                return;
-              }
-              setSetupHeaderManuallyCollapsed(true);
-            }}
-            aria-expanded={!setupHeaderCollapsed}
-            aria-label={setupHeaderCollapsed ? 'Expand setup controls' : 'Collapse setup controls'}
-          >
-            {setupHeaderCollapsed ? <ChevronDownIcon className="icon-inline" /> : <ChevronUpIcon className="icon-inline" />}
-            {/* Names its region, like the three shell toggles. On the 52px rail
-                there is no room, and the section icons underneath say what the
-                rail is — the same reason the collapsed nav shows icons rather
-                than eight identical dashes. */}
-            {!scoutingSidebarSideCollapsed ? <span>Setup</span> : null}
-          </button>
-
-          <SegmentedTabs
-            className={`scout-sidebar-nav ${
-              scoutingSidebarSideCollapsed
-                ? 'rail'
-                : setupHeaderCollapsed
-                  ? 'collapsed'
-                  : ''
-            }`.trim()}
-            itemClassName="scout-sidebar-nav-pill"
-            ariaLabel="Scouting sidebar section"
-            value={sidebarSection}
-            onChange={focusSidebarSection}
-            items={[
-              { value: 'setup', label: 'Setup', icon: <SettingsIcon className="icon-inline" />, panelId: 'scouting-sidebar-setup' },
-              { value: 'room', label: 'Room', icon: <UsersIcon className="icon-inline" />, panelId: 'scouting-sidebar-room' },
-              { value: 'data', label: 'Data', icon: <SaveIcon className="icon-inline" />, panelId: 'scouting-sidebar-data' },
-            ]}
-          />
-        </div>
-
-        ) : null}
-
-        <div className={`finder-sidebar-sections ${scoutingSidebarSideCollapsed ? 'collapsed' : ''}`.trim()}>
-        {showSetupSidebarSection ? (
-        <div
-          id="scouting-sidebar-setup"
-          ref={setupSectionRef}
-          className={`scout-sidebar-section ${sidebarSection === 'setup' ? 'active' : ''}`.trim()}
-          onFocusCapture={() => setSidebarSection('setup')}
-        >
-          {!isMobileLayout ? (
-            <div className="scout-sidebar-section-head">
-              <span className="scout-sidebar-section-label">Setup</span>
-              <span className="scout-sidebar-section-note">{setupSectionSummary}</span>
-            </div>
-          ) : null}
-        {isMobileLayout && nextPhoneAssignment ? (
-          <SurfaceCard title="Your next assignment" mobileCollapsible={false}>
-            <p className={styles.assignmentIdentity}>
-              <strong>{nextPhoneAssignment.match_label} · Team {nextPhoneAssignment.team_number}</strong>
-              <span>{nextPhoneAssignment.alliance === 'red' ? 'Red' : 'Blue'} {nextPhoneStation?.replace(/^[rb]/i, '')}</span>
-            </p>
-            <button type="button" className={`center-btn ${styles.assignmentStart}`} onClick={() => openPhoneRobot(nextPhoneAssignment.match_key, nextPhoneAssignment.team_key)}>Start</button>
-            <button type="button" className={`center-btn ghost ${styles.assignmentStart}`} onClick={() => setChooseAnotherRobot(true)}>Choose another robot</button>
-          </SurfaceCard>
-        ) : null}
-        {isMobileLayout && !workspace && (setupNameRequested || !hasScoutProfile) ? (
-          <SurfaceCard title="Scout name" mobileCollapsible={false}>
-            <label className="center-label" htmlFor="setup-scout-name">Scout name</label>
-            <input id="setup-scout-name" className="center-input" value={scoutProfile} onChange={(event) => setScoutProfile(normalizeScoutProfile(event.target.value))} placeholder="Your name" />
-          </SurfaceCard>
-        ) : null}
-        {!isMobileLayout || !nextPhoneAssignment || chooseAnotherRobot ? (
-        <SurfaceCard title={isMobileLayout ? "Robot" : "Scouting Mode"} subtitle={isMobileLayout ? undefined : "Tap-first scouting with direct number entry."} collapsible>
-          {!isMobileLayout ? (
-          <SegmentedTabs
-            className={`center-tabs ${styles.modeTabs}`}
-            itemClassName="center-tab-btn"
-            ariaLabel="Scouting mode"
-            value={scoutingMode}
-            onChange={setScoutingMode}
-            items={[
-              // The difference between the two used to be explained in a
-              // sentence sitting between them: "Rapid Tap resets inputs after
-              // each save; Match Scout keeps values." A control that needs a
-              // paragraph to distinguish it from its neighbour should say it
-              // itself, so the behaviour is the tooltip on each option.
-              {
-                value: 'match',
-                label: 'Match Scout',
-                icon: <ClipboardCheckIcon className="icon-inline" />,
-                title: 'Keeps your values after saving',
-              },
-              {
-                value: 'rapid',
-                label: 'Rapid Tap',
-                icon: <ZapIcon className="icon-inline" />,
-                title: 'Clears the form after each save',
-              },
-            ]}
-          />
-
-          ) : null}
-
-          {autoDraftAvailable ? (
-            <>
-          <SegmentedTabs
-            className="center-tabs"
-            itemClassName="center-tab-btn"
-            ariaLabel="Entry capture mode"
-            value={entryCaptureMode}
-            onChange={setEntryCaptureMode}
-            items={[
-              { value: 'manual', label: 'Manual', icon: <PenIcon className="icon-inline" /> },
-              { value: 'auto', label: 'Auto Draft', icon: <RobotIcon className="icon-inline" />, disabled: !selectedEventKey || !selectedMatchKey || !selectedTeamKey },
-            ]}
-          />
-          {!isMobileLayout ? (
-            <p className="center-callout muted">
-              Auto Draft prefills supported objective fields with evidence, then routes the reviewed result through the normal save flow.
-            </p>
-          ) : null}
-            </>
-          ) : null}
-
-          <label className="center-label" htmlFor="scout-event-select">
-            Event
-          </label>
-          <EventPicker
-            value={selectedEventKey}
-            onSelect={(key) => {
-              const next = normalizeEventKeyInput(key);
-              setEventInput(next);
-              setSelectedEventKey(next);
-              setEventFetchCtr((c) => c + 1);
-            }}
-            inputValue={eventInput}
-            onInputChange={(v) => setEventInput(normalizeEventKeyInput(v))}
-            onSubmit={() => {
-              const next = normalizeEventKeyInput(eventInput);
-              setSelectedEventKey(next);
-              setEventFetchCtr((c) => c + 1);
-            }}
-            placeholder={'Search events — try "houston district" or "2026txhou"'}
-          />
-
-          <label className="center-label" htmlFor="scout-match-select">
-            Match
-          </label>
-          <select
-            id="scout-match-select"
-            className="center-input"
-            value={selectedMatchKey}
-            onChange={(event) => {
-              const next = event.target.value.trim().toLowerCase();
-              setSelectedMatchKey(next);
-            }}
-            disabled={scheduleRows.length === 0}
-          >
-            <option value="">{loadingSchedule ? 'Loading schedule...' : errorText ? 'Schedule unreachable' : 'Select match'}</option>
-            {scheduleRows.map((match) => (
-              <option key={`scout-match-${match.match_key}`} value={match.match_key.toLowerCase()}>
-                {match.display_name} · {fmtDateShort(matchStartTime(match))}
-              </option>
-            ))}
-          </select>
-          {isMobileLayout ? (
-            <div className="scout-match-quick-actions">
-              <button
-                type="button"
-                className="scout-match-quick-btn"
-                onClick={jumpToNextMatchTarget}
-                disabled={!nextMatchTarget}
-                title={nextMatchTarget ? `Next match: ${nextMatchTarget.match_display}` : 'No upcoming match'}
-                aria-label="Jump to next match"
-              >
-                <ClockIcon size={16} /> Next match
-              </button>
-              <button
-                type="button"
-                className="scout-match-quick-btn"
-                onClick={jumpToNextTeamTarget}
-                disabled={!nextTeamTarget?.team_key}
-                title={nextTeamTarget ? `Next team: ${nextTeamTarget.team_key.toUpperCase()}` : 'No next team'}
-                aria-label="Jump to next team"
-              >
-                <UsersIcon size={16} /> Next team
-              </button>
-            </div>
-          ) : (
-            <div className="center-actions-row compact">
-              <button
-                type="button"
-                className="center-btn ghost"
-                onClick={jumpToNextMatchTarget}
-                disabled={!nextMatchTarget}
-                title={nextMatchTarget ? `Jump to ${nextMatchTarget.match_display}` : 'No upcoming match available'}
-              >
-                <ClockIcon className="icon-inline" /> Next Match
-              </button>
-              <button
-                type="button"
-                className="center-btn ghost"
-                onClick={jumpToNextTeamTarget}
-                disabled={!nextTeamTarget?.team_key}
-                title={nextTeamTarget ? `Jump to ${nextTeamTarget.team_key.toUpperCase()}` : 'No next team available'}
-              >
-                <UsersIcon className="icon-inline" /> Next Team
-              </button>
-              <button
-                type="button"
-                className={`center-btn ghost ${mobileCompactMode ? 'active' : ''}`.trim()}
-                onClick={() => setMobileCompactMode((current) => !current)}
-              >
-                {mobileCompactMode ? 'Dense Layout' : 'Relaxed Layout'}
-              </button>
-            </div>
-          )}
-
-          {!isMobileLayout && myTeamKey ? (
-            <div className="scout-opponent-section">
-              <div className="scout-opponent-head">
-                <strong>Upcoming Opponents for {myTeamKey.toUpperCase()}</strong>
-                <small>
-                  {upcomingOpponentOptions.length > 0
-                    ? `${upcomingOpponentOptions.length} opponent${upcomingOpponentOptions.length !== 1 ? 's' : ''} from upcoming matches`
-                    : 'No schedule loaded yet — opponents will appear when the schedule drops.'}
-                </small>
-              </div>
-              {upcomingOpponentOptions.length > 0 ? (
-                <div className="scout-opponent-grid">
-                  {upcomingOpponentOptions.slice(0, 18).map((opponent) => (
-                    <button
-                      key={`scout-upcoming-opponent-${opponent.team_key}-${opponent.next_match_key}`}
-                      type="button"
-                      className={`scout-opponent-chip ${opponent.status}`.trim()}
-                      onClick={() => {
-                        setSelectedMatchKey(opponent.next_match_key);
-                        setSelectedTeamKey(opponent.team_key);
-                        setStatusText(`Loaded ${opponent.team_key.toUpperCase()} from ${opponent.next_match_display}.`);
-                      }}
-                    >
-                      <strong>{opponent.team_key.toUpperCase()}</strong>
-                      <small>{opponent.next_match_display}</small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <label className="center-label">Team</label>
-          <div className="scout-team-grid">
-            {teamOptions.map((team) => (
-              <button
-                key={`scout-team-${team.team_key}-${team.station || 'station'}`}
-                type="button"
-                className={`scout-team-chip ${selectedTeamKey === team.team_key ? 'active' : ''} ${team.alliance}`.trim()}
-                onClick={() => {
-                  if (isMobileLayout) openPhoneRobot(selectedMatchKey, team.team_key);
-                  else setSelectedTeamKey(team.team_key);
-                }}
-              >
-                <strong>{team.team_key.toUpperCase()}</strong>
-                <small>{team.alliance === 'red' ? 'Red' : 'Blue'} {team.station?.replace(/^[rb]/i, '')}</small>
-              </button>
-            ))}
-            {teamOptions.length === 0 ? <p className="center-callout muted">Select a match to pick a robot.</p> : null}
-          </div>
-
-          {!isMobileLayout ? (
-            <>
-              <div className="center-status-row compact scout-status-row">
-                <span className="center-chip">{selectedEventKey || 'No event'}</span>
-                <span className="center-chip">{selectedMatch?.display_name || 'No match'}</span>
-                <span className="center-chip">{selectedTeamKey ? selectedTeamKey.toUpperCase() : 'No team'}</span>
-                {myTeamKey ? <span className="center-chip">My Team: {myTeamKey.toUpperCase()}</span> : null}
-              </div>
-
-              <p className="center-callout muted">
-                {loadingSuggested
-                  ? 'Loading events...'
-                  : scheduleName
-                    ? `Schedule: ${scheduleName}.`
-                    : 'No schedule loaded.'}
-              </p>
-
-              <p className="center-callout muted">
-                {loadingEventIntel
-                  ? 'Loading API baseline...'
-                  : eventIntelError
-                    ? `API baseline unavailable: ${eventIntelError}`
-                    : `API baseline: ${Object.keys(eventApiBaselineByTeam).length} team${Object.keys(eventApiBaselineByTeam).length === 1 ? '' : 's'}`}
-              </p>
-
-              <div className="center-actions-row">
-                {selectedEventKey ? (
-                  <Link className="center-btn ghost" to={`/events?event=${selectedEventKey}`}>
-                    <CalendarIcon className="icon-inline" /> This event
-                  </Link>
-                ) : null}
-                {selectedMatch?.match_key ? (
-                  <Link
-                    className="center-btn ghost"
-                    to={`/match-center?event=${selectedEventKey}&match=${selectedMatch.match_key.toLowerCase()}`}
-                  >
-                    <ScoreboardIcon className="icon-inline" /> Match Center
-                  </Link>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-        </SurfaceCard>
-        ) : null}
-        </div>
-        ) : null}
-
-        {showRoomSidebarSection ? (
-        <div
-          id="scouting-sidebar-room"
-          ref={roomSectionRef}
-          className={`scout-sidebar-section ${sidebarSection === 'room' ? 'active' : ''}`.trim()}
-          onFocusCapture={() => setSidebarSection('room')}
-        >
-          <div className="scout-sidebar-section-head">
-            <span className="scout-sidebar-section-label">Room</span>
-            <span className="scout-sidebar-section-note">{roomSectionSummary}</span>
-          </div>
+  const roomToolsContent = (<>
         <SurfaceCard title="Scout Profile">
           <div className="scout-profile-grid">
             <label className="center-label" htmlFor="scout-profile-name">
@@ -3953,7 +3517,7 @@ export function ScoutingPage() {
               // picking a team switches this page to that team's opponents).
               <div className="scout-profile-chip-row">
                 <button type="button" className="scout-profile-chip" onClick={() => setMyTeamKey(workspaceTeamKey())}>
-                  Use {workspaceTeamKey().toUpperCase()} (your team on My Team)
+                  Use {scoutingTeamLabel(workspaceTeamKey())} (your team on My Team)
                 </button>
               </div>
             ) : null}
@@ -3972,14 +3536,14 @@ export function ScoutingPage() {
                       className={`scout-profile-chip ${team.team_key === myTeamKey ? 'active' : ''}`.trim()}
                       onClick={() => setMyTeamKey(team.team_key)}
                     >
-                      {team.team_key.toUpperCase()}
+                      {scoutingTeamLabel(team.team_key)}
                     </button>
                   ))}
               </div>
             ) : null}
             <p className="center-callout muted">
               {myTeamKey
-                ? `Scouting as ${myTeamKey.toUpperCase()}. Opponents auto-populate with schedule.`
+                ? `Scouting as ${scoutingTeamLabel(myTeamKey)}. Opponents auto-populate with schedule.`
                 : 'Set your team to surface upcoming opponents.'}
             </p>
           </div>
@@ -3998,7 +3562,7 @@ export function ScoutingPage() {
           <div className="scout-profile-grid">
             {inTeamRoom ? (
               <p className="center-callout muted">
-                You're in your team's room for <strong>{selectedEventKey}</strong>. Your entries reach your team on
+                You're in your team's room for <strong>{scheduleName || teamRoom.eventName || 'this event'}</strong>. Your entries reach your team on
                 their own; no key needed.
               </p>
             ) : workspace && teamRoomKey && !activeRoom?.room_key && roomErrorText ? (
@@ -4022,7 +3586,7 @@ export function ScoutingPage() {
             ) : workspace && !selectedEventKey ? (
               <p className="center-callout muted">Pick an event in Setup and you'll join your team's room for it.</p>
             ) : null}
-            <details className={styles.otherRooms} open={!workspace || (!inTeamRoom && Boolean(activeRoom?.room_key))}>
+            <details className={styles.otherRooms} open={isMobileLayout || !workspace || (!inTeamRoom && Boolean(activeRoom?.room_key))}>
             <summary>{inTeamRoom || !activeRoom?.room_key ? 'Use a room key instead' : 'Room key'}</summary>
             <label className="center-label" htmlFor="scout-room-key">
               Room Key
@@ -4074,7 +3638,7 @@ export function ScoutingPage() {
             {activeRoom?.room_key ? (
               <>
                 <div className="center-status-row compact scout-status-row">
-                  <span className="center-chip">Room: {activeRoom.room_key}</span>
+                  {!isMobileLayout ? <span className="center-chip">Room: {activeRoom.room_key}</span> : null}
                   <span className={`center-chip timer ${roomConnectionState === 'connected' ? 'live' : roomConnectionState === 'connecting' ? 'upcoming' : 'ended'}`.trim()}>
                     {roomConnectionState === 'connected' ? <><WifiIcon className="icon-inline" /> Connected</> : roomConnectionState === 'connecting' ? 'Connecting…' : <><WifiOffIcon className="icon-inline" /> Disconnected</>}
                   </span>
@@ -4187,9 +3751,9 @@ export function ScoutingPage() {
                   </p>
                 )}
                 <div className="center-actions-row">
-                  <button type="button" className="center-btn ghost" onClick={copyRoomKey}>
+                  {!isMobileLayout ? <button type="button" className="center-btn ghost" onClick={copyRoomKey}>
                     <CopyIcon className="icon-inline" /> Copy Key
-                  </button>
+                  </button> : null}
                   <button type="button" className="center-btn ghost" onClick={reconnectRoomSocket}>
                     <RefreshIcon className="icon-inline" /> Reconnect
                   </button>
@@ -4214,6 +3778,722 @@ export function ScoutingPage() {
           </div>
           )}
         </SurfaceCard>
+  </>);
+
+  const pointSummaryCard = (
+<SurfaceCard title="Point Summary">
+            <div className="center-kpi-grid">
+              <div className="center-kpi-card">
+                <span>Auto points</span>
+                <strong>{pointsSummary.auto}</strong>
+              </div>
+              <div className="center-kpi-card">
+                <span>Teleop points</span>
+                <strong>{pointsSummary.teleop}</strong>
+              </div>
+              <div className="center-kpi-card">
+                <span>Endgame points</span>
+                <strong>{pointsSummary.endgame}</strong>
+              </div>
+              <div className="center-kpi-card">
+                <span>Total points</span>
+                <strong>{pointsSummary.total}</strong>
+              </div>
+            </div>
+          </SurfaceCard>
+  );
+
+  const liveRatingCard = (
+<SurfaceCard title="Live Robot Rating">
+            <div className="center-kpi-grid">
+              <div className="center-kpi-card">
+                <span>Overall scout score (0-100)</span>
+                <strong>{liveOverallScoutRating.score_0_100.toFixed(1)}</strong>
+              </div>
+              <div className="center-kpi-card">
+                <span>Robot ranking</span>
+                <strong>
+                  {liveOverallScoutRating.tier} · L{liveRobotRankLevel}/5
+                </strong>
+              </div>
+            </div>
+            <p className="center-callout muted">
+              Updates instantly from scout data. Saved ratings appear after save.
+            </p>
+          </SurfaceCard>
+  );
+
+  const notesCard = (
+<SurfaceCard
+            title="Per-Game Scouting Notes"
+            subtitle="Context that counters and scales can't capture."
+          >
+          <div className="scout-notes-shell">
+            <textarea
+              className="scout-notes-input"
+              value={scoutNotes}
+              onChange={(event) => setScoutNotes(normalizeScoutingNotes(event.target.value))}
+              placeholder="Example: struggled against hard pin for first 45s, recovered after driver station call, missed final climb timing."
+              aria-label="Scouting notes"
+            />
+            <div className="center-status-row compact">
+              <span className="center-chip">{scoutNotes.length}/600</span>
+              <span className="center-chip">Saved on report save</span>
+            </div>
+          </div>
+          </SurfaceCard>
+  );
+
+  const strategyCard = (
+<SurfaceCard title="Driver + Strategy Scales" subtitle="1-5 qualitative signals.">
+            <div className="scout-strategy-grid">
+              {scalesFor('strategy').map((field) => (
+                <ScaleInput
+                  key={field.key}
+                  label={field.label}
+                  value={form[field.key]}
+                  onChange={(next) => setForm((current) => ({ ...current, [field.key]: next }))}
+                  badge={renderAutoScoutBadge(field.key)}
+                />
+              ))}
+            </div>
+          </SurfaceCard>
+  );
+
+  const mobilityCard = (
+<SurfaceCard title={isMobileLayout ? "Anti-Defense" : "Anti-Defense + Mobility"} className={phaseEmphasis('Teleop')}>
+            <div className="scout-control-card">
+              {(!isMobileLayout ? countersFor('mobility') : []).map((field) => (
+                <CounterInput
+                  key={field.key}
+                  label={field.label}
+                  value={form[field.key]}
+                  onChange={(next) => updateCounter(field.key, next)}
+                  step={field.step}
+                  badge={renderAutoScoutBadge(field.key)}
+                />
+              ))}
+              {scalesFor('mobility').map((field) => (
+                <ScaleInput
+                  key={field.key}
+                  label={field.label}
+                  value={form[field.key]}
+                  onChange={(next) => setForm((current) => ({ ...current, [field.key]: next }))}
+                  badge={renderAutoScoutBadge(field.key)}
+                />
+              ))}
+            </div>
+          </SurfaceCard>
+  );
+
+  const matchTimerCard = (
+<SurfaceCard title="Match Timer">
+          <div className="scout-timer-shell">
+            <div className="scout-timer-value">{timerClockLabel}</div>
+            <span className={`center-chip timer ${timerPhaseState}`.trim()}>
+              Phase: {timerPhase}
+            </span>
+            <span className={`center-chip timer ${liveTimer.state}`.trim()}>
+              {liveTimer.label}: {liveTimer.value}
+            </span>
+          </div>
+          <div className="center-actions-row">
+            <button type="button" className="center-btn" onClick={() => toggleTimer()}>
+              {timerRunning ? <><PauseIcon className="icon-inline" /> Pause</> : <><PlayIcon className="icon-inline" /> Start</>}
+            </button>
+            <button
+              type="button"
+              className="center-btn ghost"
+              onClick={() => {
+                setCountdown(MATCH_DURATION_SEC);
+              }}
+            >
+              <ResetIcon className="icon-inline" /> Reset
+            </button>
+            <button type="button" className="center-btn ghost" onClick={syncTimerToMatch}>
+              <RefreshIcon className="icon-inline" /> Sync to Match Clock
+            </button>
+          </div>
+          <p className="center-callout muted">
+            Start/Pause while scouting live. Sync pulls from match schedule.
+          </p>
+        </SurfaceCard>
+  );
+
+  const savedMatchesCard = (
+    <SurfaceCard
+            title="Scouted Matches"
+            right={<Chip tone={activeRoom?.room_key ? 'accent' : 'neutral'} dot>
+              {activeRoom?.room_key ? `Room ${activeRoom.room_key}` : 'Not connected'}
+            </Chip>}
+          >
+          {/* Phone reports wrap notes and actions; desktop keeps its existing table. */}
+          <Table
+            cardBreakpoint={isMobileLayout ? 1120 : undefined}
+            renderCards={isMobileLayout ? (rows) => (
+              <div className={styles.savedReports}>
+                {rows.map((entry) => <article key={entry.id} className={styles.savedReport}>
+                  <strong>{entry.match_display} · {scoutingTeamLabel(entry.team_key)}</strong>
+                  <small>{eventDisplayName(entry.event_key)} · {relativeFromTimestamp(entry.saved_at_ms)} · {entry.scout_profile || 'Unknown scout'}</small>
+                  <dl>
+                    {[
+                      ['Total points', entry.points.total],
+                      ['Driver', entry.driver_competency.score_0_100],
+                      ['Overall', entry.overall_scout_rating.score_0_100.toFixed(1)],
+                      ['Manual', entry.manual_rating.score_0_100.toFixed(1)],
+                      ['Scout+API', entry.scouting_api_rating?.score_0_100.toFixed(1) ?? 'N/A'],
+                    ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                  </dl>
+                  <p>{entryHeadUp(entry)}</p>
+                  <p><strong>Notes: </strong>{entry.notes || 'No notes'}</p>
+                  <div className={styles.rowActions}>
+                    <Button as="a" size="sm" variant="quiet" href={`#/match-center?event=${entry.event_key}&match=${entry.match_key}`}>Match</Button>
+                    <Button as="a" size="sm" variant="quiet" href={`#/team-center?event=${entry.event_key}&team=${entry.team_key}`}>Team</Button>
+                    <Button size="sm" variant="quiet" onClick={() => setQrShareEntry(entry)} icon={<QrCodeIcon className="icon-inline" />}>QR</Button>
+                  </div>
+                </article>)}
+              </div>
+            ) : undefined}
+            columns={[
+              {
+                key: 'match_display',
+                label: 'Match',
+                render: (entry) => (
+                  <span className={styles.matchCell}>
+                    <strong>{entry.match_display}</strong>
+                    <small>{scoutingTeamLabel(entry.team_key)} · {eventDisplayName(entry.event_key)}</small>
+                  </span>
+                ),
+              },
+              { key: 'saved_at_ms', label: 'Saved', sortable: true, render: (e) => relativeFromTimestamp(e.saved_at_ms) },
+              { key: 'scout_profile', label: 'Scout', render: (e) => e.scout_profile || 'Unknown' },
+              { key: 'points', label: 'Total', numeric: true, sortable: true, render: (e) => e.points.total },
+              { key: 'driver', label: 'Driver', numeric: true, render: (e) => e.driver_competency.score_0_100 },
+              { key: 'overall', label: 'Overall', numeric: true, render: (e) => e.overall_scout_rating.score_0_100.toFixed(1) },
+              { key: 'manual', label: 'Manual', numeric: true, render: (e) => e.manual_rating.score_0_100.toFixed(1) },
+              {
+                key: 'api',
+                label: 'Scout+API',
+                numeric: true,
+                render: (e) => (e.scouting_api_rating ? e.scouting_api_rating.score_0_100.toFixed(1) : 'N/A'),
+              },
+              { key: 'headup', label: 'Head-up', align: 'center', render: (e) => entryHeadUp(e) },
+              {
+                key: 'notes',
+                label: 'Notes',
+                render: (e) => (
+                  <span className={styles.noteCell} title={e.notes || undefined}>
+                    {e.notes || '—'}
+                  </span>
+                ),
+              },
+              {
+                key: 'actions',
+                label: 'Open',
+                align: 'right',
+                render: (e) => (
+                  <span className={styles.rowActions}>
+                    <Button
+                      as="a"
+                      size="sm"
+                      variant="quiet"
+                      href={`#/match-center?event=${e.event_key}&match=${e.match_key}`}
+                      icon={<ScoreboardIcon className="icon-inline" />}
+                    >
+                      Match
+                    </Button>
+                    <Button
+                      as="a"
+                      size="sm"
+                      variant="quiet"
+                      href={`#/team-center?event=${e.event_key}&team=${e.team_key}`}
+                      icon={<UsersIcon className="icon-inline" />}
+                    >
+                      Team
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      onClick={() => setQrShareEntry(e)}
+                      icon={<QrCodeIcon className="icon-inline" />}
+                    >
+                      QR
+                    </Button>
+                  </span>
+                ),
+              },
+            ]}
+            rows={visibleEntries}
+            rowKey={(entry) => entry.id}
+            stickyHeader
+            empty="No entries yet. Save a scouting entry first."
+          />
+          </SurfaceCard>
+  );
+
+  return (
+    <>
+    {/* Related scouting pages stay on Robot and Saved so Scout opens directly on capture. */}
+    {isMobileLayout && !mobileFinderOpen ? null : (
+      <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" />
+    )}
+    {draftStorageFailed || entryStorageFailed ? (
+      <p className="center-callout danger" role="alert">
+        Device storage is full or unavailable. Keep this tab open: unfinished scouting stays in memory.
+        Free some space and try Save again before closing or refreshing.
+      </p>
+    ) : null}
+    <div
+      className={`center-layout center-layout-team scouting-layout-grid mobile-finder-layout ${isMobileLayout ? styles.phoneLayout : ''} ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''} ${isMobileLayout && mobileCompactMode ? 'scouting-mobile-compact' : ''} ${scoutingSidebarSideCollapsed ? 'scouting-sidebar-side-collapsed' : ''}`.trim()}
+    >
+      {!isMobileLayout ? (
+        <div
+          ref={floatingTimerRef}
+          className={`scout-mini-timer-float ${floatingTimerDragging ? 'dragging' : ''}`.trim()}
+          style={floatingTimerStyle}
+          aria-live="polite"
+          aria-atomic="true"
+          title={selectedMatch?.display_name || 'No selected match'}
+        >
+          <div
+            className="scout-mini-timer-top scout-mini-timer-drag-handle"
+            onPointerDown={handleFloatingTimerDragStart}
+            onTouchStart={handleFloatingTimerTouchStart}
+          >
+            <strong className="scout-mini-timer-clock">{timerClockLabel}</strong>
+            <span className={`center-chip timer ${timerPhaseState}`.trim()}>{timerPhase}</span>
+          </div>
+          <div className="scout-mini-timer-bottom">
+            <span className={`scout-mini-timer-dot ${timerRunning ? 'live' : 'idle'}`.trim()} aria-hidden="true" />
+            <small>{liveTimer.label}: {liveTimer.value}</small>
+          </div>
+          <div className="scout-mini-timer-controls" role="group" aria-label="Mini timer controls">
+            <button
+              type="button"
+              className="scout-mini-timer-btn"
+              aria-label={timerRunning ? 'Pause timer' : 'Start timer'}
+              onClick={() => toggleTimer()}
+            >
+              {timerRunning ? <PauseIcon size={12} /> : <PlayIcon size={12} />}
+            </button>
+            <button
+              type="button"
+              className="scout-mini-timer-btn"
+              aria-label="Reset timer"
+              onClick={() => {
+                setCountdown(MATCH_DURATION_SEC);
+              }}
+            >
+              <ResetIcon size={12} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {isMobileLayout ? (
+        <div ref={phoneNavRef} className={`mobile-view-toggle ${styles.phoneNav}`}>
+          <SegmentedTabs
+            className={styles.robotTabs}
+            ariaLabel="Scouting mobile view switch"
+            value={!mobileFinderOpen ? 'board' : sidebarSection === 'data' ? 'data' : 'setup'}
+            onChange={(next) => {
+              setMobileFinderOpen(next !== 'board');
+              if (next !== 'board') focusSidebarSection(next === 'data' ? 'data' : 'setup');
+            }}
+            items={[
+              { value: 'setup', label: 'Robot' },
+              { value: 'board', label: 'Scout', disabled: !selectedEventKey },
+              { value: 'data', label: 'Saved' },
+            ]}
+          />
+
+        </div>
+      ) : null}
+      <aside className={`center-sidebar ${scoutingSidebarSideCollapsed ? 'scout-sidebar-side-collapsed' : ''}`.trim()}>
+        {!isMobileLayout ? (
+        <div
+          className={`finder-sidebar-header scout-sidebar-hub ${setupHeaderCollapsed ? 'collapsed' : ''}`.trim()}
+          aria-label="Scouting session controls"
+        >
+          {!isMobileLayout ? (
+            <div className="scout-sidebar-overview">
+              <div className="scout-sidebar-overview-copy">
+                <span className="scout-sidebar-overview-kicker">Scouting workspace</span>
+                <strong>{activeSectionTitle}</strong>
+                <p>{activeSectionSummary}</p>
+              </div>
+              <div className="scout-sidebar-overview-actions">
+                <span className={`scout-sidebar-overview-state ${saveReady ? 'ready' : 'pending'}`.trim()}>
+                  {saveReady ? 'Ready to save' : 'Setup required'}
+                </span>
+                <button
+                  type="button"
+                  className="center-btn"
+                  onClick={() => {
+                    focusSidebarSection('data');
+                    void saveScoutingEntry();
+                  }}
+                  disabled={!saveReady || savingEntry}
+                >
+                  {savingEntry ? 'Saving...' : <><SaveIcon className="icon-inline" /> Save Entry</>}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            className={`scout-sidebar-collapse-btn ${scoutingSidebarSideCollapsed ? 'icon-only' : ''}`.trim()}
+            onClick={() => {
+              if (setupHeaderCollapsed) {
+                setSetupHeaderManuallyCollapsed(false);
+                return;
+              }
+              setSetupHeaderManuallyCollapsed(true);
+            }}
+            aria-expanded={!setupHeaderCollapsed}
+            aria-label={setupHeaderCollapsed ? 'Expand setup controls' : 'Collapse setup controls'}
+          >
+            {setupHeaderCollapsed ? <ChevronDownIcon className="icon-inline" /> : <ChevronUpIcon className="icon-inline" />}
+            {/* Names its region, like the three shell toggles. On the 52px rail
+                there is no room, and the section icons underneath say what the
+                rail is — the same reason the collapsed nav shows icons rather
+                than eight identical dashes. */}
+            {!scoutingSidebarSideCollapsed ? <span>Setup</span> : null}
+          </button>
+
+          <SegmentedTabs
+            className={`scout-sidebar-nav ${
+              scoutingSidebarSideCollapsed
+                ? 'rail'
+                : setupHeaderCollapsed
+                  ? 'collapsed'
+                  : ''
+            }`.trim()}
+            itemClassName="scout-sidebar-nav-pill"
+            ariaLabel="Scouting sidebar section"
+            value={sidebarSection}
+            onChange={focusSidebarSection}
+            items={[
+              { value: 'setup', label: 'Setup', icon: <SettingsIcon className="icon-inline" />, panelId: 'scouting-sidebar-setup' },
+              { value: 'room', label: 'Room', icon: <UsersIcon className="icon-inline" />, panelId: 'scouting-sidebar-room' },
+              { value: 'data', label: 'Data', icon: <SaveIcon className="icon-inline" />, panelId: 'scouting-sidebar-data' },
+            ]}
+          />
+        </div>
+
+        ) : null}
+
+        <div className={`finder-sidebar-sections ${scoutingSidebarSideCollapsed ? 'collapsed' : ''}`.trim()}>
+        {showSetupSidebarSection ? (
+        <div
+          id="scouting-sidebar-setup"
+          ref={setupSectionRef}
+          className={`scout-sidebar-section ${sidebarSection === 'setup' ? 'active' : ''}`.trim()}
+          onFocusCapture={() => setSidebarSection('setup')}
+        >
+          {!isMobileLayout ? (
+            <div className="scout-sidebar-section-head">
+              <span className="scout-sidebar-section-label">Setup</span>
+              <span className="scout-sidebar-section-note">{setupSectionSummary}</span>
+            </div>
+          ) : null}
+        {isMobileLayout && mobileFinderOpen && sidebarSection === 'setup' ? phoneRoomStatus : null}
+        {isMobileLayout && nextPhoneAssignment ? (
+          <SurfaceCard title="Your next assignment" mobileCollapsible={false}>
+            <p className={styles.assignmentIdentity}>
+              <strong>{nextPhoneAssignment.match_label} · Team {nextPhoneAssignment.team_number}</strong>
+              <span>{nextPhoneAssignment.alliance === 'red' ? 'Red' : 'Blue'} {nextPhoneStation?.replace(/^[rb]/i, '')}</span>
+            </p>
+            <button type="button" className={`center-btn ${styles.assignmentStart}`} onClick={() => openPhoneRobot(nextPhoneAssignment.match_key, nextPhoneAssignment.team_key)}>Start</button>
+            <button type="button" className={`center-btn ghost ${styles.assignmentStart}`} onClick={() => setChooseAnotherRobot(true)}>Choose another robot</button>
+          </SurfaceCard>
+        ) : null}
+        {isMobileLayout && !workspace && (setupNameRequested || !hasScoutProfile) ? (
+          <SurfaceCard title="Scout name" mobileCollapsible={false}>
+            {/* The card title is the label; a second "Scout name" right under it read as a stutter. */}
+            <input id="setup-scout-name" aria-label="Scout name" className="center-input" value={scoutProfile} onChange={(event) => setScoutProfile(normalizeScoutProfile(event.target.value))} placeholder="Your name" />
+          </SurfaceCard>
+        ) : null}
+        {!isMobileLayout || !nextPhoneAssignment || chooseAnotherRobot ? (
+        <SurfaceCard title={isMobileLayout ? "Robot" : "Scouting Mode"} subtitle={isMobileLayout ? undefined : "Tap-first scouting with direct number entry."} collapsible>
+          {!isMobileLayout ? (
+          <SegmentedTabs
+            className={`center-tabs ${styles.modeTabs}`}
+            itemClassName="center-tab-btn"
+            ariaLabel="Scouting mode"
+            value={scoutingMode}
+            onChange={setScoutingMode}
+            items={[
+              // The difference between the two used to be explained in a
+              // sentence sitting between them: "Rapid Tap resets inputs after
+              // each save; Match Scout keeps values." A control that needs a
+              // paragraph to distinguish it from its neighbour should say it
+              // itself, so the behaviour is the tooltip on each option.
+              {
+                value: 'match',
+                label: 'Match Scout',
+                icon: <ClipboardCheckIcon className="icon-inline" />,
+                title: 'Keeps your values after saving',
+              },
+              {
+                value: 'rapid',
+                label: 'Rapid Tap',
+                icon: <ZapIcon className="icon-inline" />,
+                title: 'Clears the form after each save',
+              },
+            ]}
+          />
+
+          ) : null}
+
+          {autoDraftAvailable ? (
+            <>
+          <SegmentedTabs
+            className="center-tabs"
+            itemClassName="center-tab-btn"
+            ariaLabel="Entry capture mode"
+            value={entryCaptureMode}
+            onChange={setEntryCaptureMode}
+            items={[
+              { value: 'manual', label: 'Manual', icon: <PenIcon className="icon-inline" /> },
+              { value: 'auto', label: 'Auto Draft', icon: <RobotIcon className="icon-inline" />, disabled: !selectedEventKey || !selectedMatchKey || !selectedTeamKey },
+            ]}
+          />
+          {!isMobileLayout ? (
+            <p className="center-callout muted">
+              Auto Draft prefills supported objective fields with evidence, then routes the reviewed result through the normal save flow.
+            </p>
+          ) : null}
+            </>
+          ) : null}
+
+          <label className="center-label" htmlFor="scout-event-select">
+            Event
+          </label>
+          <EventPicker
+            value={selectedEventKey}
+            inlineResults={isMobileLayout}
+            inputId="scout-event-select"
+            onSelect={(key) => {
+              const next = normalizeEventKeyInput(key);
+              if (!confirmDraftScopeChange(next !== selectedEventKey)) return false;
+              setEventInput(next);
+              setSelectedEventKey(next);
+              setEventFetchCtr((c) => c + 1);
+            }}
+            inputValue={eventInput}
+            onInputChange={(v) => setEventInput(normalizeEventKeyInput(v))}
+            onSubmit={() => {
+              const next = normalizeEventKeyInput(eventInput);
+              if (!confirmDraftScopeChange(next !== selectedEventKey)) return;
+              setSelectedEventKey(next);
+              setEventFetchCtr((c) => c + 1);
+            }}
+            placeholder={'Search events — try "houston district" or "2026txhou"'}
+          />
+
+          {isMobileLayout ? (
+            <div className={styles.matchPicker}>
+              <FieldText label="Find match" value={matchQuery} onChange={(event) => setMatchQuery(event.target.value)} placeholder="Match name or number" />
+              <div className={styles.matchChoices} role="group" aria-label="Match">
+                {scheduleRows.filter((match) => `${match.display_name} ${match.match_number}`.toLowerCase().includes(matchQuery.trim().toLowerCase())).map((match) => (
+                  <button type="button" className={`center-btn ${match.match_key.toLowerCase() === selectedMatchKey ? '' : 'ghost'}`} key={match.match_key}
+                    aria-pressed={match.match_key.toLowerCase() === selectedMatchKey}
+                    onClick={() => { if (confirmDraftScopeChange(match.match_key.toLowerCase() !== selectedMatchKey)) setSelectedMatchKey(match.match_key.toLowerCase()); }}>{match.display_name}</button>
+                ))}
+              </div>
+              {scheduleRows.length === 0 ? <p className="center-callout muted">{loadingSchedule ? 'Loading schedule…' : errorText ? 'Schedule unreachable' : 'No schedule loaded.'}</p> : null}
+            </div>
+          ) : (<>
+          <label className="center-label" htmlFor="scout-match-select">
+            Match
+          </label>
+          <select
+            id="scout-match-select"
+            className="center-input"
+            value={selectedMatchKey}
+            onChange={(event) => {
+              const next = event.target.value.trim().toLowerCase();
+              setSelectedMatchKey(next);
+            }}
+            disabled={scheduleRows.length === 0}
+          >
+            <option value="">{loadingSchedule ? 'Loading schedule...' : errorText ? 'Schedule unreachable' : 'Select match'}</option>
+            {scheduleRows.map((match) => (
+              <option key={`scout-match-${match.match_key}`} value={match.match_key.toLowerCase()}>
+                {match.display_name} · {fmtDateShort(matchStartTime(match))}
+              </option>
+            ))}
+          </select>
+          </>)}
+          {isMobileLayout ? (
+            <div className="scout-match-quick-actions">
+              <button
+                type="button"
+                className="scout-match-quick-btn"
+                onClick={jumpToNextMatchTarget}
+                disabled={!nextMatchTarget}
+                title={nextMatchTarget ? `Next match: ${nextMatchTarget.match_display}` : 'No upcoming match'}
+                aria-label="Jump to next match"
+              >
+                <ClockIcon size={16} /> Next match
+              </button>
+              <button
+                type="button"
+                className="scout-match-quick-btn"
+                onClick={jumpToNextTeamTarget}
+                disabled={!nextTeamTarget?.team_key}
+                title={nextTeamTarget ? `Next team: ${scoutingTeamLabel(nextTeamTarget.team_key)}` : 'No next team'}
+                aria-label="Jump to next team"
+              >
+                <UsersIcon size={16} /> Next team
+              </button>
+            </div>
+          ) : (
+            <div className="center-actions-row compact">
+              <button
+                type="button"
+                className="center-btn ghost"
+                onClick={jumpToNextMatchTarget}
+                disabled={!nextMatchTarget}
+                title={nextMatchTarget ? `Jump to ${nextMatchTarget.match_display}` : 'No upcoming match available'}
+              >
+                <ClockIcon className="icon-inline" /> Next Match
+              </button>
+              <button
+                type="button"
+                className="center-btn ghost"
+                onClick={jumpToNextTeamTarget}
+                disabled={!nextTeamTarget?.team_key}
+                title={nextTeamTarget ? `Jump to ${scoutingTeamLabel(nextTeamTarget.team_key)}` : 'No next team available'}
+              >
+                <UsersIcon className="icon-inline" /> Next Team
+              </button>
+              <button
+                type="button"
+                className={`center-btn ghost ${mobileCompactMode ? 'active' : ''}`.trim()}
+                onClick={() => setMobileCompactMode((current) => !current)}
+              >
+                {mobileCompactMode ? 'Dense Layout' : 'Relaxed Layout'}
+              </button>
+            </div>
+          )}
+
+          {!isMobileLayout && myTeamKey ? (
+            <div className="scout-opponent-section">
+              <div className="scout-opponent-head">
+                <strong>Upcoming Opponents for {scoutingTeamLabel(myTeamKey)}</strong>
+                <small>
+                  {upcomingOpponentOptions.length > 0
+                    ? `${upcomingOpponentOptions.length} opponent${upcomingOpponentOptions.length !== 1 ? 's' : ''} from upcoming matches`
+                    : 'No schedule loaded yet — opponents will appear when the schedule drops.'}
+                </small>
+              </div>
+              {upcomingOpponentOptions.length > 0 ? (
+                <div className="scout-opponent-grid">
+                  {upcomingOpponentOptions.slice(0, 18).map((opponent) => (
+                    <button
+                      key={`scout-upcoming-opponent-${opponent.team_key}-${opponent.next_match_key}`}
+                      type="button"
+                      className={`scout-opponent-chip ${opponent.status}`.trim()}
+                      onClick={() => {
+                        setSelectedMatchKey(opponent.next_match_key);
+                        setSelectedTeamKey(opponent.team_key);
+                        setStatusText(`Loaded ${scoutingTeamLabel(opponent.team_key)} from ${opponent.next_match_display}.`);
+                      }}
+                    >
+                      <strong>{scoutingTeamLabel(opponent.team_key)}</strong>
+                      <small>{opponent.next_match_display}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <label className="center-label">Team</label>
+          <div className="scout-team-grid">
+            {teamOptions.map((team) => (
+              <button
+                key={`scout-team-${team.team_key}-${team.station || 'station'}`}
+                type="button"
+                className={`scout-team-chip ${selectedTeamKey === team.team_key ? 'active' : ''} ${team.alliance}`.trim()}
+                onClick={() => {
+                  if (isMobileLayout) openPhoneRobot(selectedMatchKey, team.team_key);
+                  else setSelectedTeamKey(team.team_key);
+                }}
+              >
+                <strong>{scoutingTeamLabel(team.team_key)}</strong>
+                <small>{team.alliance === 'red' ? 'Red' : 'Blue'} {team.station?.replace(/^[rb]/i, '')}</small>
+              </button>
+            ))}
+            {teamOptions.length === 0 ? <p className="center-callout muted">Select a match to pick a robot.</p> : null}
+          </div>
+
+          {!isMobileLayout ? (
+            <>
+              <div className="center-status-row compact scout-status-row">
+                <span className="center-chip">{selectedEventKey ? eventDisplayName(selectedEventKey) : 'No event'}</span>
+                <span className="center-chip">{selectedMatch?.display_name || 'No match'}</span>
+                <span className="center-chip">{selectedTeamKey ? scoutingTeamLabel(selectedTeamKey) : 'No team'}</span>
+                {myTeamKey ? <span className="center-chip">My Team: {scoutingTeamLabel(myTeamKey)}</span> : null}
+              </div>
+
+              <p className="center-callout muted">
+                {loadingSuggested
+                  ? 'Loading events...'
+                  : scheduleName
+                    ? `Schedule: ${scheduleName}.`
+                    : 'No schedule loaded.'}
+              </p>
+
+              <p className="center-callout muted">
+                {loadingEventIntel
+                  ? 'Loading API baseline...'
+                  : eventIntelError
+                    ? `API baseline unavailable: ${eventIntelError}`
+                    : `API baseline: ${Object.keys(eventApiBaselineByTeam).length} team${Object.keys(eventApiBaselineByTeam).length === 1 ? '' : 's'}`}
+              </p>
+
+              <div className="center-actions-row">
+                {selectedEventKey ? (
+                  <Link className="center-btn ghost" to={`/events?event=${selectedEventKey}`}>
+                    <CalendarIcon className="icon-inline" /> This event
+                  </Link>
+                ) : null}
+                {selectedMatch?.match_key ? (
+                  <Link
+                    className="center-btn ghost"
+                    to={`/match-center?event=${selectedEventKey}&match=${selectedMatch.match_key.toLowerCase()}`}
+                  >
+                    <ScoreboardIcon className="icon-inline" /> Match Center
+                  </Link>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </SurfaceCard>
+        ) : null}
+        </div>
+        ) : null}
+
+        {showRoomSidebarSection ? (
+        <div
+          id="scouting-sidebar-room"
+          ref={roomSectionRef}
+          className={`scout-sidebar-section ${sidebarSection === 'room' ? 'active' : ''}`.trim()}
+          onFocusCapture={() => { if (!isMobileLayout) setSidebarSection('room'); }}
+        >
+          <div className="scout-sidebar-section-head">
+            <span className="scout-sidebar-section-label">Room</span>
+            <span className="scout-sidebar-section-note">{roomSectionSummary}</span>
+          </div>
+        {isMobileLayout ? (
+          <details className={styles.otherRooms}>
+            <summary>Room tools ▸</summary>
+            {roomToolsContent}
+          </details>
+        ) : roomToolsContent}
         </div>
         ) : null}
 
@@ -4267,40 +4547,14 @@ export function ScoutingPage() {
         </SurfaceCard>
         ) : null}
 
-        <SurfaceCard title="Match Timer">
-          <div className="scout-timer-shell">
-            <div className="scout-timer-value">{timerClockLabel}</div>
-            <span className={`center-chip timer ${timerPhaseState}`.trim()}>
-              Phase: {timerPhase}
-            </span>
-            <span className={`center-chip timer ${liveTimer.state}`.trim()}>
-              {liveTimer.label}: {liveTimer.value}
-            </span>
-          </div>
-          <div className="center-actions-row">
-            <button type="button" className="center-btn" onClick={() => setTimerRunning((current) => !current)}>
-              {timerRunning ? <><PauseIcon className="icon-inline" /> Pause</> : <><PlayIcon className="icon-inline" /> Start</>}
-            </button>
-            <button
-              type="button"
-              className="center-btn ghost"
-              onClick={() => {
-                setTimerSec(MATCH_DURATION_SEC);
-                setTimerRunning(false);
-              }}
-            >
-              <ResetIcon className="icon-inline" /> Reset
-            </button>
-            <button type="button" className="center-btn ghost" onClick={syncTimerToMatch}>
-              <RefreshIcon className="icon-inline" /> Sync to Match Clock
-            </button>
-          </div>
-          <p className="center-callout muted">
-            Start/Pause while scouting live. Sync pulls from match schedule.
-          </p>
-        </SurfaceCard>
+        {!isMobileLayout ? matchTimerCard : null}
 
-        <SurfaceCard title="Save + Data" subtitle="Ratings generated on save.">
+        {isMobileLayout ? <>
+          <FieldCheckbox label="My reports only" checked={historyMineOnly} onChange={(event) => setHistoryMineOnly(event.target.checked)} />
+          <FieldCheckbox label="Current event only" checked={historyOnlyCurrentEvent} onChange={(event) => setHistoryOnlyCurrentEvent(event.target.checked)} />
+          {savedMatchesCard}
+        </> : null}
+        <SurfaceCard title={isMobileLayout ? "Backup & sharing" : "Save + Data"} subtitle={isMobileLayout ? undefined : "Ratings generated on save."}>
           {!isMobileLayout ? (
           <div className="center-actions-row">
             <button
@@ -4331,11 +4585,11 @@ export function ScoutingPage() {
               <QrCodeIcon className="icon-inline" /> Import QR
             </button>
           </div>
-          <div className="center-status-row compact scout-status-row">
+          {!isMobileLayout ? <div className="center-status-row compact scout-status-row">
             <span className="center-chip">Saved entries: {entries.length}</span>
             <span className="center-chip">Last save: {relativeFromTimestamp(lastSavedAt)}</span>
             <span className="center-chip">Scout: {scoutProfile || 'Not set'}</span>
-          </div>
+          </div> : null}
           {errorText ? <p className="center-callout danger">{errorText}</p> : null}
           <p className="center-callout muted">{statusText}</p>
         </SurfaceCard>
@@ -4345,8 +4599,9 @@ export function ScoutingPage() {
       </aside>
 
       <section className="center-main">
+        {workspace && selectedEventKey && (teamRoom.schedule === null || teamRoom.scheduleError) ? <ScheduleStatus error={teamRoom.scheduleError} loading={teamRoom.scheduleLoading} retry={teamRoom.retry} /> : null}
         {sharingNotice?.workspaceId === workspaceId && sharingNotice?.eventKey === selectedEventKey ? <p className="center-callout muted" role="status">{sharingNotice.text}</p> : null}
-        {!isMobileLayout && workspace && selectedEventKey && teamRoom.snapshot && (!teamRoom.isLeader || myTeamAssignments.length > 0) ? (
+        {!isMobileLayout && workspace && selectedEventKey && teamRoom.snapshot && teamRoom.schedule !== null && !teamRoom.scheduleError && (!teamRoom.isLeader || myTeamAssignments.length > 0) ? (
           <SurfaceCard title="Your assignments">
             <NextAssignment
               eventKey={selectedEventKey}
@@ -4363,7 +4618,7 @@ export function ScoutingPage() {
         ) : null}
         {isMobileLayout ? (
           <>
-            <div className="fm-scout-hero" role="region" aria-label="Mobile scouting quick context">
+            <div className={`fm-scout-hero ${styles.compactHero}`} role="region" aria-label="Mobile scouting quick context">
               <div className="fm-scout-hero-actions">
                 <button
                   type="button"
@@ -4378,8 +4633,8 @@ export function ScoutingPage() {
               </div>
               <div className="fm-scout-hero-context" role="list" aria-label="Core scouting context">
                 <span className="fm-scout-hero-chip match" role="listitem"><strong>{selectedMatch?.display_name || 'N/A'}</strong></span>
-                <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? selectedTeamKey.toUpperCase() : 'N/A'}</strong></span>
-                <span className="fm-scout-hero-chip mode" role="listitem">{autoScoutEnabled ? 'Auto Draft' : 'Manual'}</span>
+                <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? scoutingTeamLabel(selectedTeamKey) : 'N/A'}</strong></span>
+                {autoScoutEnabled ? <span className="fm-scout-hero-chip mode" role="listitem">Auto Draft</span> : null}
                 <span className="fm-scout-hero-chip points" role="listitem">Pts <strong>{pointsSummary.total}</strong></span>
                 <span className={`fm-scout-hero-chip timer ${timerPhaseState}`.trim()} role="listitem">
                   {timerClockLabel} · {timerPhase}
@@ -4404,30 +4659,14 @@ export function ScoutingPage() {
                     setMobileScoutSection('capture');
                     if (panel) setMobileCapturePanel(panel);
                   }}
-                  items={MOBILE_CAPTURE_PANEL_TABS.slice(0, 3).map((panel) => ({ value: panel.id, label: panel.label }))}
+                  items={[
+                    { value: 'auto', label: 'Auto' },
+                    { value: 'teleop', label: 'Teleop' },
+                    { value: 'endgame', label: <><span className={styles.endFull}>Endgame</span><span className={styles.endShort}>End</span></>, ariaLabel: 'Endgame' },
+                    { value: 'review', label: 'Review' },
+                  ]}
                 />
-                <select
-                  className={styles.phoneMore}
-                  aria-label="More scouting panels"
-                  value=""
-                  onChange={(event) => {
-                    const panel = event.target.value;
-                    if (!panel) return;
-                    if (panel === 'auto-paths') {
-                      navigate(`/scouting/auto-paths${searchParams.toString() ? `?${searchParams.toString()}` : ''}`);
-                    } else if (panel.startsWith('summary-')) {
-                      setMobileScoutSection('score');
-                      setMobileScorePanel(panel.slice(8) as typeof mobileScorePanel);
-                    } else {
-                      setMobileScoutSection('capture');
-                      setMobileCapturePanel(panel as typeof mobileCapturePanel);
-                    }
-                  }}
-                >
-                  <option value="">⋯</option>
-                  {MOBILE_CAPTURE_PANEL_TABS.slice(3).map((panel) => <option key={panel.id} value={panel.id}>{panel.label}</option>)}
-                  {MOBILE_SCORE_PANEL_TABS.map((panel) => <option key={panel.id} value={`summary-${panel.id}`}>Summary: {panel.label}</option>)}
-                </select>
+
               </div>
             ) : null}
           </>
@@ -4444,6 +4683,17 @@ export function ScoutingPage() {
             heatmapError={autoScout.heatmapError}
             onClose={autoScout.closeEvidence}
           />
+        ) : null}
+
+        {isMobileLayout && !mobileFinderOpen && roomConnectionState !== 'connected' ? phoneRoomStatus : null}
+        {isMobileLayout && !mobileFinderOpen && mobileCapturePanel === 'review' ? (
+          <div className={`fm-scout-cards ${styles.phoneReview}`}>
+            {pointSummaryCard}
+            {liveRatingCard}
+            {notesCard}
+            {strategyCard}
+            {mobilityCard}
+          </div>
         ) : null}
 
         {showCaptureSection ? (
@@ -4464,7 +4714,7 @@ export function ScoutingPage() {
           {showCaptureTeleopCard ? (
           <SurfaceCard title="Teleop" className={phaseEmphasis('Teleop')}>
             <div className="scout-control-card">
-              {countersFor('teleop').map((field) => (
+              {[...countersFor('teleop'), ...(isMobileLayout ? countersFor('mobility') : [])].map((field) => (
                 <CounterInput
                   key={field.key}
                   label={field.label}
@@ -4478,53 +4728,15 @@ export function ScoutingPage() {
           </SurfaceCard>
           ) : null}
 
-          {showCaptureMobilityCard ? (
-          <SurfaceCard title="Anti-Defense + Mobility" className={phaseEmphasis('Teleop')}>
-            <div className="scout-control-card">
-              {countersFor('mobility').map((field) => (
-                <CounterInput
-                  key={field.key}
-                  label={field.label}
-                  value={form[field.key]}
-                  onChange={(next) => updateCounter(field.key, next)}
-                  step={field.step}
-                  badge={renderAutoScoutBadge(field.key)}
-                />
-              ))}
-              {scalesFor('mobility').map((field) => (
-                <ScaleInput
-                  key={field.key}
-                  label={field.label}
-                  value={form[field.key]}
-                  onChange={(next) => setForm((current) => ({ ...current, [field.key]: next }))}
-                  badge={renderAutoScoutBadge(field.key)}
-                />
-              ))}
-            </div>
-          </SurfaceCard>
-          ) : null}
+          {showCaptureMobilityCard ? mobilityCard : null}
           </div>
         ) : null}
 
         {showCaptureSection ? (
           <div className={`scout-main-grid scout-secondary-grid ${isMobileLayout ? 'fm-scout-cards' : ''}`.trim()}>
-          {showCaptureStrategyCards ? (
-          <SurfaceCard title="Driver + Strategy Scales" subtitle="1-5 qualitative signals.">
-            <div className="scout-strategy-grid">
-              {scalesFor('strategy').map((field) => (
-                <ScaleInput
-                  key={field.key}
-                  label={field.label}
-                  value={form[field.key]}
-                  onChange={(next) => setForm((current) => ({ ...current, [field.key]: next }))}
-                  badge={renderAutoScoutBadge(field.key)}
-                />
-              ))}
-            </div>
-          </SurfaceCard>
-          ) : null}
+          {showCaptureStrategyCards ? strategyCard : null}
 
-          {showCaptureStrategyCards ? (
+          {showCaptureStrategyCards || (isMobileLayout && mobileCapturePanel === 'endgame') ? (
           <SurfaceCard title="RP Checks" subtitle="Suggestions + manual override.">
             <div className="center-actions-row">
               <button type="button" className="center-btn ghost" onClick={applySuggestedRp}>
@@ -4546,10 +4758,11 @@ export function ScoutingPage() {
                 <button
                   key={`rp-${key}`}
                   type="button"
+                  aria-pressed={rpState[key]}
                   className={`scout-rp-btn ${rpState[key] ? 'active' : ''}`.trim()}
                   onClick={() => setRpState((current) => ({ ...current, [key]: !current[key] }))}
                 >
-                  <strong>{label}</strong>
+                  <strong>{label}{rpState[key] ? ' ✓' : ''}</strong>
                   <small>{suggested ? 'Suggested by points model' : 'Manual toggle'}</small>
                 </button>
               ))}
@@ -4604,48 +4817,9 @@ export function ScoutingPage() {
           </SurfaceCard>
           ) : null}
 
-          {showScorePointsCard ? (
-          <SurfaceCard title="Point Summary">
-            <div className="center-kpi-grid">
-              <div className="center-kpi-card">
-                <span>Auto points</span>
-                <strong>{pointsSummary.auto}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Teleop points</span>
-                <strong>{pointsSummary.teleop}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Endgame points</span>
-                <strong>{pointsSummary.endgame}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Total points</span>
-                <strong>{pointsSummary.total}</strong>
-              </div>
-            </div>
-          </SurfaceCard>
-          ) : null}
+          {showScorePointsCard ? pointSummaryCard : null}
 
-          {showScoreLiveCard ? (
-          <SurfaceCard title="Live Robot Rating">
-            <div className="center-kpi-grid">
-              <div className="center-kpi-card">
-                <span>Overall scout score (0-100)</span>
-                <strong>{liveOverallScoutRating.score_0_100.toFixed(1)}</strong>
-              </div>
-              <div className="center-kpi-card">
-                <span>Robot ranking</span>
-                <strong>
-                  {liveOverallScoutRating.tier} · L{liveRobotRankLevel}/5
-                </strong>
-              </div>
-            </div>
-            <p className="center-callout muted">
-              Updates instantly from scout data. Saved ratings appear after save.
-            </p>
-          </SurfaceCard>
-          ) : null}
+          {showScoreLiveCard ? liveRatingCard : null}
 
           {showScoreSavedCard ? (
           <SurfaceCard title="Saved Report Ratings" subtitle="Ratings appear after save.">
@@ -4814,32 +4988,13 @@ export function ScoutingPage() {
               rows={selectedTeamMatchPerformance}
               rowKey={(row) => row.match_key}
               stickyHeader
-              empty={`No schedule rows for ${selectedTeamKey.toUpperCase()} in ${selectedEventKey || 'this event'}.`}
+              empty={`No schedule rows for ${scoutingTeamLabel(selectedTeamKey)} in ${selectedEventKey ? eventDisplayName(selectedEventKey) : 'this event'}.`}
             />
           )}
           </SurfaceCard>
         ) : null}
 
-        {showCaptureSection && showCaptureNotesCard ? (
-          <SurfaceCard
-            title="Per-Game Scouting Notes"
-            subtitle="Context that counters and scales can't capture."
-          >
-          <div className="scout-notes-shell">
-            <textarea
-              className="scout-notes-input"
-              value={scoutNotes}
-              onChange={(event) => setScoutNotes(normalizeScoutingNotes(event.target.value))}
-              placeholder="Example: struggled against hard pin for first 45s, recovered after driver station call, missed final climb timing."
-              aria-label="Scouting notes"
-            />
-            <div className="center-status-row compact">
-              <span className="center-chip">{scoutNotes.length}/600</span>
-              <span className="center-chip">Saved on report save</span>
-            </div>
-          </div>
-          </SurfaceCard>
-        ) : null}
+        {showCaptureSection && showCaptureNotesCard ? notesCard : null}
 
         {showHistorySection ? (
           <SurfaceCard
@@ -4886,7 +5041,7 @@ export function ScoutingPage() {
                   label: 'Team',
                   render: (row) => (
                     <span className={styles.matchCell}>
-                      <strong>{row.team_key.toUpperCase()}</strong>
+                      <strong>{scoutingTeamLabel(row.team_key)}</strong>
                       <small>{row.team_label}</small>
                     </span>
                   ),
@@ -4962,7 +5117,7 @@ export function ScoutingPage() {
                           setSelectedTeamKey(row.team_key);
                           setSelectedEventKey(row.latest_event_key);
                           setEventInput(row.latest_event_key);
-                          setStatusText(`Focused on ${row.team_key.toUpperCase()}.`);
+                          setStatusText(`Focused on ${scoutingTeamLabel(row.team_key)}.`);
                         }}
                       >
                         Focus
@@ -4990,7 +5145,7 @@ export function ScoutingPage() {
                 {teamSummaries.map((row) => (
                   <article key={`team-summary-${row.team_key}`} className="scout-team-summary-card">
                     <header>
-                      <h4>{row.team_key.toUpperCase()}</h4>
+                      <h4>{scoutingTeamLabel(row.team_key)}</h4>
                       <small>{row.team_label}</small>
                     </header>
                     <p>{row.summary}</p>
@@ -5018,95 +5173,8 @@ export function ScoutingPage() {
           </SurfaceCard>
         ) : null}
 
-        {showHistorySection ? (
-          <SurfaceCard
-            title="Scouted Matches"
-            right={<Chip tone={activeRoom?.room_key ? 'accent' : 'neutral'} dot>
-              {activeRoom?.room_key ? `Room ${activeRoom.room_key}` : 'Not connected'}
-            </Chip>}
-          >
-          {/* One Table, not a desktop table plus a hand-maintained mobile card
-              list of the same rows. Below 560px it stacks each row into a card
-              itself. The old "Room" column repeated activeRoom.room_key in
-              every row — a column whose every cell is identical is not a
-              column, so it moved to the card header above. */}
-          <Table
-            columns={[
-              {
-                key: 'match_display',
-                label: 'Match',
-                render: (entry) => (
-                  <span className={styles.matchCell}>
-                    <strong>{entry.match_display}</strong>
-                    <small>{entry.team_key.toUpperCase()} · {entry.event_key}</small>
-                  </span>
-                ),
-              },
-              { key: 'saved_at_ms', label: 'Saved', sortable: true, render: (e) => relativeFromTimestamp(e.saved_at_ms) },
-              { key: 'scout_profile', label: 'Scout', render: (e) => e.scout_profile || 'Unknown' },
-              { key: 'points', label: 'Total', numeric: true, sortable: true, render: (e) => e.points.total },
-              { key: 'driver', label: 'Driver', numeric: true, render: (e) => e.driver_competency.score_0_100 },
-              { key: 'overall', label: 'Overall', numeric: true, render: (e) => e.overall_scout_rating.score_0_100.toFixed(1) },
-              { key: 'manual', label: 'Manual', numeric: true, render: (e) => e.manual_rating.score_0_100.toFixed(1) },
-              {
-                key: 'api',
-                label: 'Scout+API',
-                numeric: true,
-                render: (e) => (e.scouting_api_rating ? e.scouting_api_rating.score_0_100.toFixed(1) : 'N/A'),
-              },
-              { key: 'headup', label: 'Head-up', align: 'center', render: (e) => entryHeadUp(e) },
-              {
-                key: 'notes',
-                label: 'Notes',
-                render: (e) => (
-                  <span className={styles.noteCell} title={e.notes || undefined}>
-                    {e.notes || '—'}
-                  </span>
-                ),
-              },
-              {
-                key: 'actions',
-                label: 'Open',
-                align: 'right',
-                render: (e) => (
-                  <span className={styles.rowActions}>
-                    <Button
-                      as="a"
-                      size="sm"
-                      variant="quiet"
-                      href={`#/match-center?event=${e.event_key}&match=${e.match_key}`}
-                      icon={<ScoreboardIcon className="icon-inline" />}
-                    >
-                      Match
-                    </Button>
-                    <Button
-                      as="a"
-                      size="sm"
-                      variant="quiet"
-                      href={`#/team-center?event=${e.event_key}&team=${e.team_key}`}
-                      icon={<UsersIcon className="icon-inline" />}
-                    >
-                      Team
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="quiet"
-                      onClick={() => setQrShareEntry(e)}
-                      icon={<QrCodeIcon className="icon-inline" />}
-                    >
-                      QR
-                    </Button>
-                  </span>
-                ),
-              },
-            ]}
-            rows={visibleEntries}
-            rowKey={(entry) => entry.id}
-            stickyHeader
-            empty="No entries yet. Save a scouting entry first."
-          />
-          </SurfaceCard>
-        ) : null}
+        {showHistorySection ? savedMatchesCard : null}
+        {isMobileLayout && !mobileFinderOpen ? matchTimerCard : null}
       </section>
     </div>
     <AutoScoutEvidencePanel

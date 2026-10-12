@@ -31,6 +31,7 @@ import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Table } from '../components/ui/primitives';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
+import { eventTypeTags } from '../features/events/eventTags';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -160,6 +161,19 @@ type ParsedEventAward = {
   name: string;
   winners: string[];
 };
+
+// "Ranking Score" cut to four letters read "RANK", right beside the # column.
+function shortSortLabel(label: string | undefined, fallback: string): string {
+  if (!label) return fallback;
+  if (/^ranking score$/i.test(label.trim())) return 'RS';
+  return label.slice(0, 4);
+}
+
+function RankingsEmpty({ failed, loading }: { failed: boolean; loading: boolean }) {
+  if (loading) return <EmptyState compact title="Loading rankings" description="Getting the latest standings." />;
+  if (failed) return <EmptyState compact type="offline" title="Couldn't load rankings" description="They load again on the next refresh." />;
+  return <EmptyState compact title="No rankings yet" description="Rankings appear once qualification matches are played." />;
+}
 
 function defaultBreakdownStage(hasQualifying: boolean, hasKnockout: boolean): BreakdownStage {
   if (!hasQualifying && hasKnockout) return 'knockout';
@@ -431,16 +445,6 @@ function eventLabel(event: EventSearchItem): string {
 }
 
 
-function eventTypeTags(event: EventSearchItem): string[] {
-  const name = (event.name || '').toLowerCase();
-  const tags: string[] = [];
-  if (name.includes('district')) tags.push('District');
-  if (name.includes('regional')) tags.push('Regional');
-  if (name.includes('league')) tags.push('League');
-  if (name.includes('championship') || name.includes('cmp')) tags.push('Championship');
-  if (tags.length === 0) tags.push('Event');
-  return tags;
-}
 
 
 const ALLIANCE_SLOTS: AllianceSlot[] = [
@@ -543,6 +547,9 @@ export function EventsPage() {
 
   const breakdownEventRef = useRef<string | null>(defaultEventKey || null);
   const lastEventContextRef = useRef('');
+  // Rankings, teams and awards load once per event; a failed one retries on the next poll.
+  const staticFailedRef = useRef(false);
+  const [rankingsFailed, setRankingsFailed] = useState(false);
   const currentEventKeyRef = useRef(selectedEventKey);
   currentEventKeyRef.current = selectedEventKey;
   const autoAdjustedCalendarMonthRef = useRef(false);
@@ -736,6 +743,7 @@ export function EventsPage() {
       setEventAlliances([]);
       setEventAlliancesError('');
       setEventAlliancesLastModified(null);
+      setRankingsFailed(false);
     }
     lastEventContextRef.current = selectedEventKey;
 
@@ -744,12 +752,12 @@ export function EventsPage() {
     setEventAwardsError('');
     setStatusText(
       contextChanged || reason === 'initial'
-        ? `Loading ${selectedEventKey}...`
-        : `Refreshing ${selectedEventKey}...`,
+        ? 'Loading event…'
+        : 'Refreshing…',
     );
 
     try {
-      const shouldRefreshStatic = contextChanged || reason !== 'poll';
+      const shouldRefreshStatic = contextChanged || reason !== 'poll' || staticFailedRef.current;
       const shouldBypassLiveCache = reason === 'poll' && eventHasLiveScoreWindow;
       const liveRequestOptions = shouldBypassLiveCache
         ? { bypassCache: true, cacheTtlMs: 0, staleWhileRevalidateMs: 0 }
@@ -801,8 +809,10 @@ export function EventsPage() {
       if (shouldRefreshStatic) {
         if (rankingsResult.status === 'fulfilled' && rankingsResult.value) {
           setEventRankings(rankingsResult.value);
+          setRankingsFailed(false);
         } else if (rankingsResult.status === 'rejected') {
           if (contextChanged) setEventRankings(null);
+          setRankingsFailed(true);
           errors.push(`Rankings: ${rankingsResult.reason instanceof Error ? rankingsResult.reason.message : 'failed'}`);
         }
 
@@ -826,6 +836,7 @@ export function EventsPage() {
           setEventAwardsError(awardsMessage);
           errors.push(`Awards: ${awardsMessage}`);
         }
+        staticFailedRef.current = [rankingsResult, teamsResult, awardsResult].some((result) => result.status === 'rejected');
       }
 
       const shouldAutoOpenTeams = scheduleCount === 0 && teamCount > 0;
@@ -1775,6 +1786,13 @@ export function EventsPage() {
   }
 
   const eventHeaderName = eventScheduleName || eventTeams?.event_name || selectedEventKey || 'Event Center';
+  // Where and when, instead of the raw event key under the name.
+  const eventHeaderSubtitle = useMemo(() => {
+    if (!selectedEventKey) return 'Select an event from Finder';
+    const known = mergeEventLists(calendarSeasonEvents, suggestedEvents).find((event) => event.event_key === selectedEventKey);
+    const place = [known?.city, known?.state_prov, known?.country].filter(Boolean).join(', ');
+    return place || undefined;
+  }, [calendarSeasonEvents, selectedEventKey, suggestedEvents]);
   const mobileSidebarOpen = isMobileLayout && mobilePanel !== 'center';
 
   return (
@@ -1822,9 +1840,6 @@ export function EventsPage() {
               {loadingSearch ? 'Searching...' : 'Find Event'}
             </button>
           </form>
-          <p className="center-callout muted helper-text">
-            Typos and aliases supported.
-          </p>
 
 
           {eventQuery.trim().length > 0 ? (
@@ -1851,7 +1866,7 @@ export function EventsPage() {
                   title={`Switch to ${event.name}`}
                 >
                   <strong>{event.name}</strong>
-                  <small>{event.year} · {eventTypeTags(event).join(' · ')}</small>
+                  <small>{[String(event.year), ...eventTypeTags(event)].join(' · ')}</small>
                   <small>{eventLabel(event)}</small>
                 </button>
               ))}
@@ -1877,7 +1892,7 @@ export function EventsPage() {
                   title={`Switch to ${event.name}`}
                 >
                   <strong>{event.name}</strong>
-                  <small>{event.year} · {eventTypeTags(event).join(' · ')}</small>
+                  <small>{[String(event.year), ...eventTypeTags(event)].join(' · ')}</small>
                   <small>{eventLabel(event)}</small>
                 </button>
               ))}
@@ -2021,7 +2036,7 @@ export function EventsPage() {
         {!isMobileLayout ? (
         <SurfaceCard
           title={eventHeaderName}
-          subtitle={selectedEventKey ? selectedEventKey : 'Select an event from Finder'}
+          subtitle={eventHeaderSubtitle}
           right={
             <div className="center-actions-row primary-actions">
               {canSyncEvent ? (
@@ -2037,7 +2052,9 @@ export function EventsPage() {
           }
         >
           <div className="center-status-row">
-            <span className="center-chip"><TagIcon className="icon-inline icon-muted" /> {statusText}</span>
+            {statusText !== 'Up to date' ? (
+              <span className="center-chip"><TagIcon className="icon-inline icon-muted" /> {statusText}</span>
+            ) : null}
             <span className="center-chip"><ClockIcon className="icon-inline icon-muted" /> Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
             <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {eventSchedule.length} match{eventSchedule.length === 1 ? '' : 'es'} · {effectiveTeamCount} team{effectiveTeamCount === 1 ? '' : 's'}</span>
             {liveMatchCount > 0 ? (
@@ -2112,7 +2129,7 @@ export function EventsPage() {
                     <p>Current leaderboard</p>
                   </div>
                   {rankingRows.length === 0 ? (
-                    <EmptyState compact title="Rankings unavailable" description="Rankings are not published yet." />
+                    <RankingsEmpty failed={rankingsFailed} loading={loadingEventData && !eventRankings} />
                   ) : (
                     <ul className="fm-top-list">
                       {rankingRows.slice(0, 6).map((row) => (
@@ -2800,7 +2817,7 @@ export function EventsPage() {
               </div>
             ) : null}
             {!loadingEventData && rankingRows.length === 0 ? (
-              <EmptyState compact title="Rankings unavailable" description="Rankings are not published yet." />
+              <RankingsEmpty failed={rankingsFailed} loading={false} />
             ) : null}
             {rankingRows.length > 0 ? (
               <>
@@ -2852,8 +2869,8 @@ export function EventsPage() {
                         <span>Team</span>
                         <span>PL</span>
                         <span>Rec</span>
-                        <span>{rankingSortLabels[0]?.slice(0, 4) || 'S1'}</span>
-                        <span>{rankingSortLabels[1]?.slice(0, 4) || 'S2'}</span>
+                        <span title={rankingSortLabels[0] || undefined}>{shortSortLabel(rankingSortLabels[0], 'S1')}</span>
+                        <span title={rankingSortLabels[1] || undefined}>{shortSortLabel(rankingSortLabels[1], 'S2')}</span>
                       </div>
                       {narrowRows.map((row) => (
                         <button

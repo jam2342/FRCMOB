@@ -44,6 +44,26 @@ describe('EventPicker', () => {
     vi.useRealTimers();
   });
 
+  it('keeps inline event choices in the picker with a visible selected state', async () => {
+    const { container } = render(<EventPicker inlineResults value="2026arc" inputValue="2026arc" onInputChange={vi.fn()} onSelect={vi.fn()} />);
+    await act(async () => { await Promise.resolve(); });
+    const choices = screen.getByRole('group', { name: 'Event suggestions' });
+    expect(container).toContainElement(choices);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archimedes Division/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('does not change the event input after a rejected selection', async () => {
+    const onInputChange = vi.fn();
+    const onSelect = vi.fn(() => false);
+    render(<EventPicker inlineResults value="2026arc" inputValue="2026arc" onInputChange={onInputChange} onSelect={onSelect} />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole('button', { name: /Lake Superior Regional/ }));
+    expect(onSelect).toHaveBeenCalledWith('2026mndu');
+    expect(onInputChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Search events')).toHaveValue('Archimedes Division');
+  });
+
   it('shows the chosen event by name, with no load button', async () => {
     render(<Harness onSelect={vi.fn()} onSubmit={vi.fn()} />);
     await act(async () => {
@@ -75,7 +95,7 @@ describe('EventPicker', () => {
     function AddHarness() {
       const [input, setInput] = useState('');
       return (
-        <EventPicker value="" inputValue={input} onInputChange={setInput} onSelect={(key) => added.push(key)} actionLabel="Add event" clearOnSelect />
+        <EventPicker value="" inputValue={input} onInputChange={setInput} onSelect={(key) => { added.push(key); }} actionLabel="Add event" clearOnSelect />
       );
     }
     render(<AddHarness />);

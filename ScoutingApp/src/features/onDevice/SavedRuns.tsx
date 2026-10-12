@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useEventNames } from '../../hooks/useEventNames';
+import { scoutingMatchLabel } from '../../pages/scoutDraftDisplay';
 import { SurfaceCard } from '../../components/ui/SurfaceCard';
 import { RunResults } from './RunResults';
 import { useSavedRuns } from './useSavedRuns';
@@ -9,6 +11,7 @@ function requestedRun() {
 
 export function SavedRuns() {
   const { sessions, error, loading } = useSavedRuns();
+  const eventDisplayName = useEventNames();
   const [selectedId, setSelectedId] = useState<string | null>(requestedRun);
   const resultsRef = useRef<HTMLDivElement>(null);
   const selected = sessions.find((session) => session.id === selectedId);
@@ -31,8 +34,8 @@ export function SavedRuns() {
       <ul className="odr-saved-runs" aria-label="Saved runs">
         {sessions.map((session) => (
           <li key={session.id}>
-            <div><strong>{session.matchKey || 'Recording'}</strong><p className="odr-hint">{new Date(session.createdAt).toLocaleString()} · {session.synced ? 'Synced' : 'Saved locally'}</p></div>
-            <button type="button" className="center-btn" aria-label={`View results for ${session.matchKey || 'recording'} from ${new Date(session.createdAt).toLocaleString()}`} aria-expanded={selectedId === session.id} aria-controls="saved-run-results" onClick={() => setSelectedId(session.id)}>View results</button>
+            <div><strong>{scoutingMatchLabel(session.matchKey || '')}{session.eventKey ? ` · ${eventDisplayName(session.eventKey)}` : ''}</strong><p className="odr-hint">{new Date(session.createdAt).toLocaleString()} · {session.synced ? 'Synced' : 'Saved locally'}</p></div>
+            <button type="button" className="center-btn" aria-label={`View results for ${scoutingMatchLabel(session.matchKey || '')} from ${new Date(session.createdAt).toLocaleString()}`} aria-expanded={selectedId === session.id} aria-controls="saved-run-results" onClick={() => setSelectedId(session.id)}>View results</button>
           </li>
         ))}
       </ul>

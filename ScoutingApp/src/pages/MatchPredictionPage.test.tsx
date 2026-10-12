@@ -56,3 +56,24 @@ it('shows a phone 20 matches at a time', async () => {
   expect(screen.getByText('Qual 25')).toBeInTheDocument();
   expect(screen.queryByRole('button',{name:/Show \d+ more/})).not.toBeInTheDocument();
 });
+
+it.each([
+  { winners: ['red', 'red', 'tie'], count: '2 of 2 completed matches', ties: '1 tied match excluded from accuracy.' },
+  { winners: ['red', 'tie', 'tie'], count: '1 of 1 completed match', ties: '2 tied matches excluded from accuracy.' },
+  { winners: ['tie'], count: '0 of 0 completed matches', ties: '1 tied match excluded from accuracy.' },
+])('uses the non-tie accuracy denominator: $count', async ({ winners, count, ties }) => {
+  const alliance = { teams: [], synergy: { available: false, pair_breakdown: [] } };
+  vi.mocked(getEventScheduleWithSynergy).mockResolvedValue({ matches: winners.map((_, i) => ({
+    match_key: `2026old_qm${i + 1}`, comp_level: 'qm', match_number: i + 1, set_number: 1,
+    red: alliance, blue: alliance,
+    prediction: { available: true, red_win_prob: 0.9, blue_win_prob: 0.1, source_label: 'deterministic_fuel_v1' },
+  })) } as never);
+  vi.mocked(getEventSchedule).mockResolvedValue({ matches: winners.map((winner, i) => ({
+    match_key: `2026old_qm${i + 1}`, is_completed: true, winner_alliance: winner,
+  })) } as never);
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><MatchPredictionPage /></MemoryRouter>);
+  await screen.findByText(count);
+  expect(screen.getByText(ties)).toBeInTheDocument();
+  if (winners.some(winner => winner !== 'tie')) expect(screen.getByText('100.0%')).toBeInTheDocument();
+  else expect(screen.queryByText('100.0%')).not.toBeInTheDocument();
+});

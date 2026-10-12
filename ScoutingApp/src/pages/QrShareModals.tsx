@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEventNames } from '../hooks/useEventNames';
 import QRCode from 'qrcode';
 import { Button, Chip, FieldTextarea, Modal } from '../components/ui/primitives';
 import type { SavedScoutingEntry } from './scoutingPage.types';
-import { normalizeEntry } from './scoutingPage.helpers';
+import { copyToClipboard, normalizeEntry, scoutingTeamLabel } from './scoutingPage.helpers';
 import {
   encodeEntryForQr,
   decodeEntryFromQr,
@@ -32,21 +33,6 @@ type WindowWithBarcodeDetector = Window & typeof globalThis & {
   BarcodeDetector?: BarcodeDetectorCtor;
 };
 
-// Clipboard access is blocked outside a secure context and on some in-app
-// browsers, so the temporary-textarea path is a real fallback, not legacy.
-async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const area = document.createElement('textarea');
-    area.value = text;
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand('copy');
-    document.body.removeChild(area);
-  }
-}
-
 function useCopyFlag() {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,10 +41,10 @@ function useCopyFlag() {
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  const flag = useCallback(() => {
-    setCopied(true);
+  const flag = useCallback((success: boolean) => {
+    setCopied(success);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), 2000);
+    timer.current = success ? setTimeout(() => setCopied(false), 2000) : null;
   }, []);
 
   return [copied, flag] as const;
@@ -75,10 +61,12 @@ export function QrShareModal({
   entry: SavedScoutingEntry;
   onClose: () => void;
 }) {
+  const eventDisplayName = useEventNames();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [errorText, setErrorText] = useState('');
   const [payloadSize, setPayloadSize] = useState(0);
   const [copied, flagCopied] = useCopyFlag();
+  const [copyFailed, setCopyFailed] = useState(false);
   const encodedRef = useRef('');
 
   useEffect(() => {
@@ -106,8 +94,9 @@ export function QrShareModal({
 
   const handleCopyText = useCallback(async () => {
     if (!encodedRef.current) return;
-    await copyToClipboard(encodedRef.current);
-    flagCopied();
+    const ok = await copyToClipboard(encodedRef.current);
+    setCopyFailed(!ok);
+    flagCopied(ok);
   }, [flagCopied]);
 
   return (
@@ -125,9 +114,9 @@ export function QrShareModal({
       }
     >
       <div className={styles.meta}>
-        <Chip>{entry.team_label}</Chip>
+        <Chip>{scoutingTeamLabel(entry.team_key)}</Chip>
         <Chip>{entry.match_display}</Chip>
-        <Chip tone="accent">{entry.event_key}</Chip>
+        <Chip tone="accent">{eventDisplayName(entry.event_key)}</Chip>
       </div>
 
       {errorText ? (
@@ -137,6 +126,8 @@ export function QrShareModal({
           <canvas ref={canvasRef} />
         </div>
       )}
+
+      {copyFailed ? <><p role="alert">Copying was blocked. Select the text below and copy it.</p><FieldTextarea label="Shared entry text" readOnly value={encodedRef.current} onFocus={(event) => event.target.select()} /></> : null}
 
       <p className={styles.hint}>
         Point another device's camera at this QR code, or use the "Import via QR" button.
@@ -160,6 +151,7 @@ export function RoomQrModal({
   const [errorText, setErrorText] = useState('');
   const [payloadText, setPayloadText] = useState('');
   const [copied, flagCopied] = useCopyFlag();
+  const [copyFailed, setCopyFailed] = useState(false);
   const normalizedRoomKey = String(roomKey || '').trim().toLowerCase();
 
   useEffect(() => {
@@ -189,8 +181,9 @@ export function RoomQrModal({
 
   const handleCopyText = useCallback(async () => {
     if (!payloadText) return;
-    await copyToClipboard(payloadText);
-    flagCopied();
+    const ok = await copyToClipboard(payloadText);
+    setCopyFailed(!ok);
+    flagCopied(ok);
   }, [payloadText, flagCopied]);
 
   return (
@@ -215,6 +208,8 @@ export function RoomQrModal({
           <canvas ref={canvasRef} />
         </div>
       )}
+
+      {copyFailed ? <><p role="alert">Copying was blocked. Select the text below and copy it.</p><FieldTextarea label="Room code text" readOnly value={payloadText} onFocus={(event) => event.target.select()} /></> : null}
 
       <p className={styles.hint}>
         Teammates can use <strong>Scan QR Code</strong> in Scouting Room to join this room.

@@ -82,6 +82,8 @@ export function useTeamRoom(eventKey: string | null | undefined) {
   const event = String(eventKey || '').trim().toLowerCase();
   const [snapshot, setSnapshot] = useState<TeamRoomSnapshot | null>(null);
   const [schedule, setSchedule] = useState<EventScheduleItem[] | null>(null);
+  const [scheduleError, setScheduleError] = useState('');
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [eventName, setEventName] = useState('');
   const [status, setStatus] = useState<TeamRoomStatus>('idle');
   const [error, setError] = useState('');
@@ -98,7 +100,7 @@ export function useTeamRoom(eventKey: string | null | undefined) {
   // Saves run one at a time, so the order they start in is the order the server
   // commits them, and the last response really is the newest state.
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
-  const refetchRef = useRef<(() => Promise<void>) | null>(null);
+  const refetchRef = useRef<((retryOpen?: boolean) => Promise<void>) | null>(null);
   // Polls usually return exactly what we have. Setting it again re-rendered the
   // whole Scouting page every 5 s on a phone, so unchanged answers are dropped.
   const snapshotJsonRef = useRef('');
@@ -138,6 +140,8 @@ export function useTeamRoom(eventKey: string | null | undefined) {
     scopeRef.current = scope;
     appliedSeqRef.current = requestSeqRef.current;
     setError('');
+    setScheduleError('');
+    setScheduleLoading(false);
     if (!scope || !workspaceId || !memberId) {
       setSnapshot(null);
       setSchedule(null);
@@ -161,20 +165,22 @@ export function useTeamRoom(eventKey: string | null | undefined) {
     const loadSchedule = async () => {
       if (cancelled || document.visibilityState !== 'visible' || scheduleInFlight) return;
       scheduleInFlight = true;
+      setScheduleLoading(true);
       try {
         const result = await getEventSchedule(event);
         if (cancelled || scopeRef.current !== scope) return;
-        setEventName(result.event_name || event);
+        setEventName(result.event_name || 'Event');
+        setScheduleError('');
         const json = JSON.stringify(result.matches);
         if (json === scheduleJsonRef.current) return;
         scheduleJsonRef.current = json;
         setSchedule(result.matches);
-      } catch (err) {
+      } catch {
         if (cancelled || scopeRef.current !== scope) return;
-        setSchedule((current) => current ?? []);
-        setError((current) => current || errorText(err));
+        setScheduleError('Could not load the match schedule.');
       } finally {
         scheduleInFlight = false;
+        if (!cancelled && scopeRef.current === scope) setScheduleLoading(false);
       }
     };
     // Until the room opens, the 5 s poll retries it on a growing delay instead
@@ -224,7 +230,8 @@ export function useTeamRoom(eventKey: string | null | undefined) {
         }
       }
     };
-    const refetch = async () => {
+    const refetch = async (retryOpen = false) => {
+      if (retryOpen) { nextOpenAt = 0; void loadSchedule(); }
       if (pollInFlight) { refreshQueued = true; return; }
       await poll();
     };
@@ -286,6 +293,8 @@ export function useTeamRoom(eventKey: string | null | undefined) {
     return result;
   }, [accept, event, nextSeq, online, scope]);
 
+  const retry = useCallback(() => { void refetchRef.current?.(true); }, []);
+
   const isLeader = (snapshot?.me.role ?? session?.me.role) === 'leader';
 
   return {
@@ -294,11 +303,14 @@ export function useTeamRoom(eventKey: string | null | undefined) {
     eventName,
     snapshot,
     schedule,
+    scheduleError,
+    scheduleLoading,
     status,
     error,
     online,
     fromSavedCopy,
     isLeader,
     saveChanges,
+    retry,
   } as const;
 }

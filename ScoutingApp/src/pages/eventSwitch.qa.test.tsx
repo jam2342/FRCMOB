@@ -64,10 +64,11 @@ describe('QA: changing events while a request is pending', () => {
       : Promise.reject(new Error('New event schedule unavailable')));
     vi.mocked(getEventScheduleWithSynergy).mockResolvedValue({ matches: [] } as never);
     render(<MemoryRouter initialEntries={['/?event=2026old']}><StrategyBriefingPage /></MemoryRouter>);
-    await screen.findByText('Old Event');
+    // The old event's (empty) schedule is on screen, then must be gone once the new one fails.
+    await screen.findByText('No schedule published yet.');
     fireEvent.click(screen.getByRole('button', { name: 'New event' }));
-    await screen.findByText('New event schedule unavailable');
+    await screen.findByText('Could not refresh the schedule. Try loading the event again.');
     expect(screen.getByTestId('selected-event')).toHaveTextContent('2026new');
-    expect(screen.queryByText('Old Event')).toBeNull();
+    expect(screen.queryByText('No schedule published yet.')).toBeNull();
   });
 });

@@ -171,6 +171,7 @@ export function MatchCenterPage() {
     readMatchCenterRecentMatches(),
   );
   const lastEventContextRef = useRef('');
+  const staticFailedRef = useRef(false);
   const currentEventKeyRef = useRef(selectedEventKey);
   currentEventKeyRef.current = selectedEventKey;
   const lastAutoJumpMatchKeyRef = useRef('');
@@ -290,12 +291,13 @@ export function MatchCenterPage() {
     setEventError('');
     setStatusText(
       contextChanged || reason === 'initial'
-        ? `Loading ${selectedEventKey}...`
-        : `Refreshing ${selectedEventKey}...`,
+        ? 'Loading event…'
+        : 'Refreshing…',
     );
 
     try {
-      const shouldRefreshStatic = contextChanged || reason !== 'poll';
+      // A failed stream or synergy load retries on the next poll.
+      const shouldRefreshStatic = contextChanged || reason !== 'poll' || staticFailedRef.current;
       const shouldBypassLiveCache = reason === 'poll' && eventHasLiveMatch;
       const liveRequestOptions = shouldBypassLiveCache
         ? { bypassCache: true, cacheTtlMs: 0, staleWhileRevalidateMs: 0 }
@@ -366,6 +368,9 @@ export function MatchCenterPage() {
         errors.push(`Synergy: ${synergyResult.reason instanceof Error ? synergyResult.reason.message : 'failed'}`);
       }
 
+      if (shouldRefreshStatic) {
+        staticFailedRef.current = streamResult.status === 'rejected' || synergyResult.status === 'rejected';
+      }
       setEventError(errors.join(' | '));
       setLastUpdatedAt(Date.now());
       setStatusText(
@@ -715,7 +720,7 @@ export function MatchCenterPage() {
     if (isMobileLayout) setMobileFinderOpen(false);
   }
 
-  function renderLiveStreamCard(title = 'Live Stream', subtitle = 'Event stream embed and links.') {
+  function renderLiveStreamCard(title = 'Live Stream', subtitle?: string) {
     return (
       // Fullscreen and minimize remount the card's content, which stopped a playing video.
       <SurfaceCard title={title} subtitle={subtitle} expandable={false} mobileCollapsible={false}>
@@ -785,7 +790,7 @@ export function MatchCenterPage() {
             }}
           />
           <div className="center-status-row compact">
-            <span className="center-chip">{statusText}</span>
+            {statusText !== 'Up to date' ? <span className="center-chip">{statusText}</span> : null}
             <span className="center-chip" title={`Refreshes every ${effectiveRefreshSec}s`}>Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
           </div>
           {eventError ? <p className="center-callout warning" title={eventError}>Some of this event's data didn't load. It retries on its own.</p> : null}
@@ -975,7 +980,7 @@ export function MatchCenterPage() {
                       : '-- : --'}
                   </strong>
                   <span className={`fm-status-badge ${selectedCompleted ? 'ended' : selectedMatchTimer.state}`}>
-                    {selectedCompleted ? 'FT' : `${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
+                    {selectedCompleted ? 'Final' : `${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
                   </span>
                 </div>
                 <div className="fm-alliance fm-blue">
@@ -984,11 +989,11 @@ export function MatchCenterPage() {
                 </div>
               </div>
               {selectedCompleted && selectedWinner && selectedWinner !== 'tie' ? (
-                <span className="fm-winner-badge">
+                <span className={`fm-winner-badge ${selectedWinner}`}>
                   {titleizeKey(selectedWinner)} alliance wins{selectedMatch.winning_score != null ? ` · ${selectedMatch.winning_score} pts` : ''}
                 </span>
               ) : null}
-              {selectedMatchProgress !== null ? (
+              {selectedMatchProgress !== null && !selectedCompleted ? (
                 <div className="fm-progress-bar">
                   <div
                     className={`fm-progress-fill ${selectedMatchTimer.state}`}
@@ -1050,7 +1055,8 @@ export function MatchCenterPage() {
               }))}
             />
           </div>
-          {selectedMatch && selectedMatchProgress !== null ? (
+          {/* A finished match already says "Final: score" in the header chip. */}
+          {selectedMatch && selectedMatchProgress !== null && !selectedCompleted ? (
             <div className="center-timer-progress" aria-label="Estimated match progress">
               <span className={`center-status-pill ${selectedMatchTimer.state}`}>
                 {selectedCompleted ? 'Final' : `${Math.round(selectedMatchProgress)}% elapsed`}
@@ -1090,7 +1096,7 @@ export function MatchCenterPage() {
             {!isMobileLayout ? (
             <SurfaceCard
               title={selectedIsLive ? 'Live Match View' : 'Match Snapshot'}
-              subtitle={selectedIsLive ? 'Realtime score + timer.' : 'Match status summary.'}
+              subtitle={selectedIsLive ? `Updates every ${effectiveRefreshSec}s.` : undefined}
               compactable
             >
               <div className="match-live-hero">
@@ -1104,10 +1110,11 @@ export function MatchCenterPage() {
                       ? `${metric(selectedMatch.red_score, 0)} - ${metric(selectedMatch.blue_score, 0)}`
                       : '-- : --'}
                   </strong>
-                  <span className={`center-chip timer ${selectedCompleted ? 'ended' : selectedMatchTimer.state}`}>
-                    {selectedCompleted ? 'Final' : `${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
-                  </span>
-                  <small>Realtime polling: {effectiveRefreshSec}s</small>
+                  {selectedCompleted ? null : (
+                    <span className={`center-chip timer ${selectedMatchTimer.state}`}>
+                      {`${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
+                    </span>
+                  )}
                 </div>
                 <div className={`match-live-alliance blue ${resolvedWinner === 'blue' ? 'winner' : ''}`.trim()}>
                   <span>Blue Alliance</span>
@@ -1338,7 +1345,7 @@ export function MatchCenterPage() {
                     <article className="center-kpi-card">
                       <span><RobotIcon className="icon-inline" /> Auto</span>
                       <strong>
-                        {metric(matchPhases.windows.auto.duration_sec, 0)}s ({metric(matchPhases.windows.auto.confidence_0_1 ?? null, 2)})
+                        {metric(matchPhases.windows.auto.duration_sec, 0)}s
                       </strong>
                     </article>
                     <article className="center-kpi-card">

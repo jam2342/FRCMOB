@@ -10,7 +10,7 @@ vi.mock('../components/EventPicker', () => ({ EventPicker: ({ onSelect, value }:
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 import { AutoPathPage } from './AutoPathPage';
 import { getTeamBreakdown } from '../api';
-vi.mock('../api', () => ({ getTeamBreakdown: vi.fn() }));
+vi.mock('../api', () => ({ getTeamBreakdown: vi.fn(), getEventSchedule: vi.fn(async () => ({event_name:'Test event',matches:[]})) }));
 vi.mock('../hooks/useCanvasTokens', () => ({ useCanvasTokens: () => ({}) }));
 function path(id: string, eventKey?: string, teamKey = 'frc254') { return { id, eventKey, teamKey, matchKey: 'qm1', label: id, color: 'red', points: [], createdAt: 1 }; }
 it('reads handoff scope, labels old paths, and clears only visible paths after confirmation', async () => {
@@ -71,5 +71,5 @@ it('stores the selected event on a newly drawn path', async () => {
   fireEvent.pointerUp(canvas,{clientX:100,clientY:40});
   vi.unstubAllGlobals();
   await waitFor(() => expect(JSON.parse(localStorage.getItem('autopath_saved_v1')!)).toEqual([expect.objectContaining({eventKey:'2026old',teamKey:'frc254',matchKey:'qm1'})]));
-  expect(screen.getByText(/254 - qm1 - 2026old/)).toBeInTheDocument();
+  expect(screen.getByText(/#254 · Qual 1 · 2026 OLD/)).toBeInTheDocument();
 });

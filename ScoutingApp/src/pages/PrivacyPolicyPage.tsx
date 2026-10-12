@@ -66,9 +66,10 @@ export function PrivacyPolicyPage() {
               </li>
             </ul>
             <p>
-              You can erase all of it at any time from{' '}
-              <Link to="/settings">Settings → Maintenance</Link>, or by clearing site data in your
-              browser. Nothing on the server depends on it.
+              <Link to="/settings">Settings → Maintenance</Link> lets you clear favorites and saved
+              comparisons, or reset settings to their defaults. To erase all local data, use your
+              browser's site-data controls. This also removes offline scouting drafts. Nothing on
+              the server depends on it.
             </p>
           </section>
 
@@ -202,7 +203,7 @@ export function PrivacyPolicyPage() {
               <li>Decline camera access — on-device recording is optional.</li>
               <li>Decline or revoke push notifications at any time.</li>
               <li>Use initials or a role instead of a full name as your scout profile.</li>
-              <li>Clear all local data from Settings → Maintenance.</li>
+              <li>Clear all local data using your browser's site-data controls.</li>
               <li>Ask us to delete server-side data associated with your team.</li>
             </ul>
           </section>

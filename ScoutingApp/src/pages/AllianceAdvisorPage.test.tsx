@@ -41,3 +41,21 @@ it('drops alliance analysis after a slot changes', async () => {
   await act(async () => { finish({ alliance: { team_keys: [] } } as never); });
   expect(screen.queryByText('Alliance Analysis')).not.toBeInTheDocument();
 });
+it('uses readable sources and signals and omits unlabeled objects', async () => {
+  vi.mocked(getEventTeamsIntel).mockResolvedValue(teams(2000) as never);
+  vi.mocked(getTheoreticalAlliance).mockResolvedValue({
+    weighted_total_score_0_100: 80,
+    compatibility: { confidence_0_1: 0.8, compatibility_score_0_100: 80, alliance_synergy_points: 8,
+      pair_breakdown: ['projection', 'blended', 'measured'].map(source => ({ team_key_a: 'frc2000', team_key_b: 'frc2001', source })),
+    },
+    pros_cons: {},
+    teams: [{ team_key: 'frc2000', pros_top: [{ label: 'Throughput elite' }, { secret_field: 'hidden-value' }], cons_top: [{ label: 'Weak autonomous output' }, { label: '' }] }],
+  } as never);
+  render(<MemoryRouter initialEntries={['/?event=2026new&teams=frc2000,frc2001,frc2002']}><AllianceAdvisorPage /></MemoryRouter>);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Alliance' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Analyze Alliance' }));
+  await screen.findByText('Elite scorer');
+  expect(screen.getByText('Weak autonomous')).toBeInTheDocument();
+  for (const label of ['Estimated', 'Results + estimates', 'Scouted']) expect(screen.getByText(label)).toBeInTheDocument();
+  expect(screen.queryByText(/hidden-value|secret_field|projection|blended/)).not.toBeInTheDocument();
+});

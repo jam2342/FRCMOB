@@ -111,8 +111,20 @@
 }
 
 .pit-photo-add input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
+
+.pit-photo-add:focus-within {
+  outline: 2px solid var(--color-text);
+  outline-offset: 3px;
+}
+
+.pit-field select { min-height: 44px; }
 
 .pit-section {
   border: var(--border-default);

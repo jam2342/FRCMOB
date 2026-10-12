@@ -12,6 +12,13 @@ import { Button } from '../../components/ui/primitives';
 import { SurfaceCard } from '../../components/ui/SurfaceCard';
 import { clearSyncIssue, lastConfirmedSync, lastSyncIssue } from './syncReceipt';
 
+function recoveryLabel(label: string): string {
+  if (!/^(POST|PUT|PATCH|DELETE)\s/i.test(label)) return label;
+  if (label.includes('pit-scouting')) return 'Pit notes';
+  if (label.includes('picklist')) return 'Picklist changes';
+  return 'Scouting changes';
+}
+
 export function SyncStatusCard() {
   const { online, queueSize } = useOnlineStatus();
   const [recordings, setRecordings] = useState<StoredSession[] | null>(null);
@@ -93,7 +100,7 @@ export function SyncStatusCard() {
     <SurfaceCard title="Saved on this phone" subtitle="Changes and recordings stay here until the server confirms them." expandable={false} mobileCollapsible={false}>
       <p>{queueSize} scouting change{queueSize === 1 ? '' : 's'} waiting · {recordings === null ? (readError ? 'Could not read recordings' : 'Checking recordings…') : `${recordings.length} recording${recordings.length === 1 ? '' : 's'} waiting`}</p>
       <p>{lastSync ? `Last confirmed sync: ${new Date(lastSync).toLocaleString()}` : 'No confirmed sync on this phone yet'}</p>
-      {issue ? <p role="alert">Needs attention: {issue.count} change{issue.count === 1 ? '' : 's'} {issue.reason === 'conflict' ? 'conflicted with a teammate' : issue.reason === 'server-rejected' ? 'were rejected' : 'could not be saved'}. {issue.labels.slice(0, 3).join(', ')} <button type="button" onClick={clearSyncIssue}>Dismiss</button></p> : null}
+      {issue ? <p role="alert">Needs attention: {issue.count} change{issue.count === 1 ? '' : 's'} {issue.reason === 'conflict' ? 'conflicted with a teammate' : issue.reason === 'server-rejected' ? 'were rejected' : 'could not be saved'}. {issue.labels.slice(0, 3).map(recoveryLabel).join(', ')} <button type="button" className="center-btn ghost" onClick={clearSyncIssue}>Dismiss</button></p> : null}
       {failedChanges > 0 ? <p role="alert">{failedChanges} change{failedChanges === 1 ? '' : 's'} {failedChanges === 1 ? 'needs' : 'need'} attention. The original edits are still saved here. Export a copy, then check the current scouting entry or picklist before saving your correction. <Button onClick={() => void downloadRecovery()}>Export unsynced changes</Button></p> : null}
       {recordings?.length ? (
         <ul className="sync-recordings" aria-label="Waiting recordings">
@@ -115,7 +122,7 @@ export function SyncStatusCard() {
       {readError ? <p role="alert">{readError}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {/* With nothing waiting, "Sync now" was a button that did nothing. */}
-      {queueSize > 0 || failedChanges > 0 || (recordings?.length ?? 0) > 0 || readError || busy ? (
+      {queueSize > 0 || (recordings?.length ?? 0) > 0 || readError || busy ? (
         <Button onClick={() => void sync()} disabled={!online || busy} loading={busy}>Sync now</Button>
       ) : null}
       {!online ? <p>Reconnect to send waiting work. Keep this app installed until waiting work is synced and changes needing attention are recovered.</p> : null}

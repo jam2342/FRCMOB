@@ -20,9 +20,9 @@ it('drops old event ratings and retries the same event', async () => {
   render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
   await waitFor(() => expect(finish).toBeDefined());
   fireEvent.click(screen.getByText('New event'));
-  await waitFor(() => expect(screen.getAllByText('2222').length).toBeGreaterThan(0));
+  await waitFor(() => expect(screen.getAllByText('#2222').length).toBeGreaterThan(0));
   await act(async () => { finish(ratings(1111) as never); });
-  expect(screen.queryAllByText('1111')).toHaveLength(0);
+  expect(screen.queryAllByText('#1111')).toHaveLength(0);
   const calls = vi.mocked(getEventRatings).mock.calls.length;
   fireEvent.click(screen.getByText('Load event'));
   await waitFor(() => expect(getEventRatings).toHaveBeenCalledTimes(calls + 1));
@@ -47,4 +47,39 @@ it('clears old team charts, rejects late breakdowns, and uses percentage axes an
   fireEvent.change(team, { target: { value: '3333' } });
   await screen.findByText('Could not load team data. Try loading the event again.');
   expect(screen.queryByText('70.0%')).not.toBeInTheDocument();
+});
+
+it('uses field-position labels and leaves unavailable radar dimensions empty', async () => {
+  const payload = ratings(254);
+  payload.ratings[0].pros = [{ label: 'Throughput elite', percentile: 99.53, metric_value: 10 }] as never;
+  payload.ratings[0].cons = [{ label: 'Weak autonomous output', percentile: 4.5, metric_value: 0 }] as never;
+  vi.mocked(getEventRatings).mockResolvedValue(payload as never);
+  vi.mocked(getTeamBreakdown).mockResolvedValue({ ok: true } as never);
+  const { container } = render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
+  await screen.findByText('#254');
+  const autoCell = container.querySelector('tbody tr')?.children[6];
+  expect(autoCell?.textContent).toBe('—');
+  fireEvent.change(screen.getByPlaceholderText('Team number — e.g. 254'), { target: { value: '254' } });
+  fireEvent.click(screen.getByText('Team Deep Dive'));
+  expect(screen.getByText('Top 1%')).toBeInTheDocument();
+  expect(screen.getByText('Bottom 5%')).toBeInTheDocument();
+  expect(container.querySelector('.dviz-radar-shape')).toBeNull();
+  expect(container.querySelectorAll('.dviz-radar-dot')).toHaveLength(3);
+  expect(container.querySelectorAll('.dviz-radar-legend-val')).toHaveLength(10);
+  expect(Array.from(container.querySelectorAll('.dviz-radar-legend-val')).filter(node => node.textContent === '—')).toHaveLength(7);
+  expect(screen.getByText('Missing scores are shown as gaps.')).toBeInTheDocument();
+});
+it.each(['ratings', 'breakdown'])('keeps the loading banner until %s also finishes', async pending => {
+  let finish!: (payload: never) => void;
+  vi.mocked(getEventRatings).mockImplementation(() => pending === 'ratings'
+    ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(ratings(254) as never));
+  vi.mocked(getTeamBreakdown).mockImplementation(() => pending === 'breakdown'
+    ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ ok: true } as never));
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
+  fireEvent.change(screen.getByPlaceholderText('Team number — e.g. 254'), { target: { value: '254' } });
+  await waitFor(() => expect(getTeamBreakdown).toHaveBeenCalled());
+  await act(async () => {});
+  expect(screen.getByText('Loading data...')).toBeInTheDocument();
+  await act(async () => { finish((pending === 'ratings' ? ratings(254) : { ok: true }) as never); });
+  await waitFor(() => expect(screen.queryByText('Loading data...')).not.toBeInTheDocument());
 });

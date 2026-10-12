@@ -244,7 +244,7 @@ export async function enqueue(mutation: Omit<QueuedMutation, 'id' | 'queuedAt' |
   try {
     await saveQueuedItem(item);
   } catch {
-    emitDropped({ reason: 'storage-failure', count: 1, labels: [item.label ?? `${item.method} ${item.url}`] });
+    emitDropped({ reason: 'storage-failure', count: 1, labels: [item.label ?? 'Scouting changes'] });
     throw new Error('This change could not be saved on this phone. Keep your form open and try again.');
   }
   emitChange((await readQueue()).filter((item) => !item.failure).length);
@@ -366,7 +366,7 @@ async function flushQueue(): Promise<number> {
     } else {
       const reason = conflict ? 'conflict' : 'server-rejected';
       await saveQueuedItem({ ...item, attempts: item.attempts + 1, failure: { reason, status: res.status } });
-      emitDropped({ reason, count: 1, labels: [item.label ?? `${item.method} ${item.url}`] });
+      emitDropped({ reason, count: 1, labels: [item.label ?? 'Scouting changes'] });
     }
   }
 

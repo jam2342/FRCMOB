@@ -1442,22 +1442,28 @@ export function floatingTimerBounds(): FloatingTimerBounds {
   return { minX, maxX, minY, maxY };
 }
 
-export function copyToClipboard(text: string): Promise<boolean> {
-  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    return navigator.clipboard
-      .writeText(text)
-      .then(() => true)
-      .catch(() => false);
+// Clipboard access is blocked outside a secure context and on some in-app
+// browsers, so the temporary-textarea path is a real fallback, not legacy.
+// Resolves false when both fail, so callers never claim "Copied!".
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.left = '-99999px';
+    document.body.appendChild(area);
+    try {
+      area.select();
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+    }
   }
-  const area = document.createElement('textarea');
-  area.value = text;
-  area.style.position = 'fixed';
-  area.style.left = '-99999px';
-  document.body.appendChild(area);
-  area.select();
-  const ok = document.execCommand('copy');
-  document.body.removeChild(area);
-  return Promise.resolve(ok);
 }
 
 export function apiSnapshotFromIntel(intelPayload: unknown, selectedEventKey: string): ApiTeamSnapshot | null {
@@ -1523,4 +1529,9 @@ export function readScoutDraft<F, R>(key: string): ScoutDraft<F, R> | null {
 
 export function writeScoutDraft<F, R>(key: string, draft: ScoutDraft<F, R> | null): boolean {
   return persistRecoverableScoutDraft(key, draft ? JSON.stringify(draft) : null);
+}
+
+export function scoutingTeamLabel(key: string): string {
+  const number = teamNumberFromTeamKey(key);
+  return number !== null ? `#${number}` : 'Team';
 }

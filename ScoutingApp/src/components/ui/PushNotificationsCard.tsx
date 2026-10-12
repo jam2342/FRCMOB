@@ -92,6 +92,8 @@ export function PushNotificationsCard() {
       : readLocalPrefs(),
   );
 
+  const [leadTime, setLeadTime] = useState(() => String(prefs.match_lead_minutes));
+
   useEffect(() => {
     if (!supported) return;
     let cancelled = false;
@@ -348,12 +350,13 @@ export function PushNotificationsCard() {
                 type="number"
                 min={1}
                 max={60}
-                value={prefs.match_lead_minutes}
-                onChange={(event) =>
-                  updatePrefs({
-                    match_lead_minutes: Math.max(1, Math.min(60, Number(event.target.value) || 15)),
-                  })
-                }
+                value={leadTime}
+                onChange={(event) => setLeadTime(event.target.value)}
+                onBlur={() => {
+                  const value = Math.max(1, Math.min(60, Number(leadTime) || 15));
+                  setLeadTime(String(value));
+                  updatePrefs({ match_lead_minutes: value });
+                }}
               />
             </label>
             <label className="push-alerts-checkbox">

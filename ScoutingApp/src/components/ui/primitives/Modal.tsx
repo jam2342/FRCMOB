@@ -1,5 +1,6 @@
 import { cx } from './cx';
 import { useCallback, useEffect, useId, useRef, type ReactNode } from 'react';
+import { useFocusTrap } from '../../../hooks/useFocusTrap';
 import { createPortal } from 'react-dom';
 import styles from './Modal.module.css';
 
@@ -16,15 +17,6 @@ export type ModalProps = {
   footer?: ReactNode;
   className?: string;
 };
-
-const FOCUSABLE = [
-  'a[href]',
-  'button:not(:disabled)',
-  'input:not(:disabled)',
-  'select:not(:disabled)',
-  'textarea:not(:disabled)',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',');
 
 // Scroll lock is refcounted: two stacked modals both lock, and the page only
 // regains its scrollbar when the last one closes. A plain boolean here means
@@ -61,80 +53,27 @@ export function Modal({
   className,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const restoreFocusTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
 
   const requestClose = useCallback(() => {
     if (dismissible) onClose();
   }, [dismissible, onClose]);
 
-  // Remember where focus came from before the dialog steals it, and put it
-  // back on close — otherwise the keyboard user lands at the top of the page.
+  useFocusTrap(dialogRef, open);
+
   useEffect(() => {
     if (!open) return undefined;
-    restoreFocusTo.current = document.activeElement as HTMLElement | null;
     lockScroll();
-
-    const focusFirst = () => {
-      const node = dialogRef.current;
-      if (!node) return;
-      const target = node.querySelector<HTMLElement>(FOCUSABLE) ?? node;
-      target.focus();
-    };
-    // One frame later: the portal content is in the DOM but not yet laid out
-    // on the same tick, and focusing an unlaid-out element can scroll the page.
-    const raf = requestAnimationFrame(focusFirst);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      releaseScroll();
-      restoreFocusTo.current?.focus?.();
-    };
+    return releaseScroll;
   }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
-
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        requestClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      const node = dialogRef.current;
-      if (!node) return;
-      // Filter on attributes, not on layout. `offsetParent` is null for any
-      // position:fixed element — which the backdrop is — and is null for
-      // everything under jsdom, where there is no layout at all. Either way it
-      // empties the list and the trap silently stops trapping. The browser
-      // already skips display:none elements on a real Tab; the only thing this
-      // needs to catch is content deliberately hidden from assistive tech.
-      const focusable = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true',
-      );
-      if (focusable.length === 0) {
-        event.preventDefault();
-        node.focus();
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-
-      // Wrap at both ends, and also catch the case where focus has escaped the
-      // dialog entirely (a stray programmatic focus, or the initial body focus).
-      if (event.shiftKey && (active === first || !node.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (active === last || !node.contains(active))) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      requestClose();
     };
-
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [open, requestClose]);

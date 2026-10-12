@@ -300,7 +300,10 @@ export function summarizeFreshness(payload: unknown): FreshnessSummary {
   const unscouted = typeof row.unscouted === 'boolean'
     ? row.unscouted
     : ageDays === null && scoutedMatches === 0 && ('accepted_matches' in row || 'raw_matches' in row);
-  if (unscouted) {
+  // Rows the quality gate rejected leave the backend saying "outdated" with no
+  // match date; with nothing accepted there is nothing to be stale.
+  const acceptedMatches = parseNumber(row.accepted_matches);
+  if (unscouted || (ageDays === null && acceptedMatches === 0)) {
     return { state: 'unknown', label: 'Not scouted yet', detail: warnings[0] || null };
   }
 

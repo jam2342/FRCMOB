@@ -114,7 +114,7 @@
 }
 .odr-error {
   margin: 0;
-  color: #f08a8a;
+  color: var(--color-danger-text);
   font-size: var(--type-body-size);
 }
 
@@ -180,10 +180,10 @@
   width: 40px;
 }
 .odr-alliance--red .odr-alliance__label {
-  color: #d98a93;
+  color: var(--color-alliance-red-text);
 }
 .odr-alliance--blue .odr-alliance__label {
-  color: #8aa9d9;
+  color: var(--color-alliance-blue-text);
 }
 .odr-team-chip {
   display: inline-flex;
@@ -437,7 +437,7 @@
 .field-calibration__error {
   margin: 0;
   font-size: var(--type-caption-size);
-  color: #d98a93;
+  color: var(--color-danger-text);
 }
 .field-calibration canvas {
   border-radius: var(--radius-md);
@@ -475,7 +475,8 @@
 }
 
 .odr-offline--ready {
-  color: var(--color-success);
+  /* --color-success is a fill colour (2.3:1 as text on the light page). */
+  color: var(--color-success-text);
 }
 
 .odr-suggestion {

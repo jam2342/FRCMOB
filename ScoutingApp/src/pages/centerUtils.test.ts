@@ -56,6 +56,19 @@ describe('centerUtils', () => {
     expect(none.detail).toBe('Nobody has scouted this team in 2026 yet.');
   });
 
+  it('calls a team with only rejected scouting rows unscouted, not stale', () => {
+    const rejected = summarizeFreshness({
+      is_outdated: true,
+      unscouted: false,
+      latest_match_age_days: null,
+      accepted_matches: 0,
+      raw_matches: 2,
+      warnings: ['No scouted matches for 2026 yet.'],
+    });
+    expect(rejected.state).toBe('unknown');
+    expect(rejected.label).toBe('Not scouted yet');
+  });
+
   it("trusts the backend's unscouted flag when it sends one", () => {
     expect(summarizeFreshness({ is_outdated: false, unscouted: true, latest_match_age_days: null, warnings: [] }).label)
       .toBe('Not scouted yet');

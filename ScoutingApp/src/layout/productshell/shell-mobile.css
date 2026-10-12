@@ -18,7 +18,7 @@
   flex-wrap: nowrap;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  touch-action: manipulation;
   scroll-snap-type: x proximity;
   padding-bottom: 2px;
 }
@@ -34,7 +34,7 @@
   gap: 8px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  touch-action: manipulation;
   margin-bottom: 8px;
 }
 
@@ -1439,7 +1439,7 @@
 
   .fm-standings-header {
     display: grid;
-    grid-template-columns: 32px 1fr 40px 36px 40px 40px;
+    grid-template-columns: 32px minmax(0, 1fr) 40px 36px 40px 40px;
     padding: 10px 12px 6px;
     border-bottom: 1px solid rgba(40, 56, 70, 0.4);
     gap: 4px;
@@ -1460,7 +1460,7 @@
 
   .fm-standings-row {
     display: grid;
-    grid-template-columns: 32px 1fr 40px 36px 40px 40px;
+    grid-template-columns: 32px minmax(0, 1fr) 40px 36px 40px 40px;
     padding: 8px 12px;
     gap: 4px;
     align-items: center;
@@ -1476,6 +1476,23 @@
 
   .fm-standings-row:last-child {
     border-bottom: none;
+  }
+
+  /* Six columns need ~232px before the team gets any room; on the narrowest
+     phones keep rank, team, record and the main sort value. */
+  @media (max-width: 359px) {
+    .fm-standings-header,
+    .fm-standings-row {
+      grid-template-columns: 24px minmax(0, 1fr) 46px 40px;
+      padding-inline: 8px;
+    }
+
+    .fm-standings-header span:nth-child(3),
+    .fm-standings-header span:nth-child(6),
+    .fm-standings-row > :nth-child(3),
+    .fm-standings-row > :nth-child(6) {
+      display: none;
+    }
   }
 
   .fm-standings-row:active {
@@ -1621,6 +1638,9 @@
     font-weight: 600;
     padding: 4px 0 2px;
   }
+
+  .fm-winner-badge.red { color: var(--color-alliance-red-text); }
+  .fm-winner-badge.blue { color: var(--color-alliance-blue-text); }
 
   /* ── Match Breakdown mobile tweaks ─────────────────────────────────────
      Make breakdown tab also feel cleaner on mobile.
