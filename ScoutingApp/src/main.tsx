@@ -12,6 +12,10 @@ import { startAutoFlush } from './utils/offlineQueue';
 import { startOnDeviceSyncAutoFlush } from './features/onDevice/sync';
 import { preloadEventSearchIndex } from './utils/eventSearchIndex';
 import { scheduleIdleWork } from './utils/idle';
+import { startRum } from './perf/rum';
+import { startIntentPrefetch } from './features/prefetch/intentPrefetch';
+import { startMatchPreload } from './features/prefetch/matchPreload';
+import { resolveApiBaseUrl } from './platform/runtime';
 
 // Register service worker only in production. In local dev, proactively
 // unregister any stale worker/caches to avoid serving outdated Vite modules.
@@ -57,6 +61,9 @@ async function bootstrap() {
   );
 
   void startNativeLifecycle().catch(() => { console.warn('Native navigation could not initialize.'); });
+  startRum(resolveApiBaseUrl());
+  startIntentPrefetch();
+  startMatchPreload();
 }
 void bootstrap().catch(() => {
   const root = document.getElementById('root')!;

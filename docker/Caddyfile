@@ -3,5 +3,8 @@
 # default host is an sslip.io name, which resolves to the IP spelled inside it, so
 # no domain is needed; moving to a real domain is a BACKEND_TLS_HOST change.
 {$BACKEND_TLS_HOST} {
+	# Compression here instead of in the Python workers (RESPONSE_COMPRESSION_ENABLED
+	# can then be false). Responses that arrive already compressed pass through.
+	encode zstd gzip
 	reverse_proxy backend:8000
 }

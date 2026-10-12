@@ -1668,6 +1668,13 @@ select.center-input option,
   min-width: 0;
 }
 
+/* Team Center's Robot Stats tiles keep their loaded height while the team loads:
+   an "Official" chip and a note arrive with the data, and the tiles growing then
+   pushed the rest of the page down (layout shift 0.14). */
+.team-stats-grid .center-kpi-card {
+  min-height: 94px;
+}
+
 .center-kpi-card span {
   color: var(--color-text-muted);
   font-size: var(--font-size-legacy-11);

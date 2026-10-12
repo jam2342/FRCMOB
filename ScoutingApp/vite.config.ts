@@ -2,9 +2,10 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { validateOnDeviceModel } from './build/modelAssets'
 import { isolateRecorderPage } from './build/isolateRecorder'
+import { bootPrefetch } from './build/bootPrefetch'
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), validateOnDeviceModel(), isolateRecorderPage(), {
+  plugins: [react(), validateOnDeviceModel(), isolateRecorderPage(), bootPrefetch(), {
     name: 'native-safe-area-viewport',
     transformIndexHtml: (html) => mode === 'native'
       ? html.replace('width=device-width, initial-scale=1.0', 'width=device-width, initial-scale=1.0, viewport-fit=cover')

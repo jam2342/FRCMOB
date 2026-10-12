@@ -149,6 +149,15 @@ class Settings(BaseSettings):
     statbotics_circuit_breaker_enabled: bool = True
     statbotics_circuit_failure_threshold: int = 4
     statbotics_circuit_cooldown_sec: int = 90
+    # Cooldown doubles each time the breaker reopens during one outage, up to this.
+    statbotics_circuit_max_cooldown_sec: int = 1800
+    # How long a team/event intel request waits for Statbotics before answering
+    # without EPA (the page treats it as a note, not a failure).
+    intel_statbotics_budget_sec: float = 2.5
+    # Caching headers on GET responses (app/api/edge_cache.py). The CDN rule goes in
+    # this header; a host that only reads another one is a config change here.
+    edge_cache_enabled: bool = True
+    edge_cache_header: str = "CDN-Cache-Control"
     game_config_path: str = "game_config/season_template.json"
     push_notifications_enabled: bool = True
     vapid_public_key: str = ""

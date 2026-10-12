@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import re
+import threading
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -551,6 +552,63 @@ def _local_events_most_teams(
         source if rows_sorted else "none",
     )
 
+# The answer comes from TBA's full event lists, which took 2-3.4 s per call on the
+# request path. Each parameter combination is kept in Redis: fresh for 10 min, then
+# still served at once while one background refresh rebuilds it.
+_SUGGESTED_FRESH_SEC = 600
+_SUGGESTED_STALE_SEC = 86400
+# A local fallback (TBA unreachable) is retried after a minute instead of 10.
+_SUGGESTED_FALLBACK_FRESH_SEC = 60
+_SUGGESTED_CACHE_PREFIX = "events:suggested:v1:"
+
+
+def _suggested_cache_key(params: dict) -> str:
+    return _SUGGESTED_CACHE_PREFIX + json.dumps(params, sort_keys=True)
+
+
+def _read_suggested_cache(cache_key: str) -> tuple[dict, float] | None:
+    raw = get_cache().get(cache_key)
+    if not raw:
+        return None
+    try:
+        envelope = json.loads(raw)
+        return envelope["payload"], float(envelope["fresh_until"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _store_suggested_cache(cache_key: str, payload: dict) -> None:
+    remote = str(payload.get("source") or "").startswith("remote")
+    fresh_for = _SUGGESTED_FRESH_SEC if remote else _SUGGESTED_FALLBACK_FRESH_SEC
+    envelope = {"payload": payload, "fresh_until": time.time() + fresh_for}
+    get_cache().set(cache_key, json.dumps(envelope, default=str), ttl=_SUGGESTED_STALE_SEC)
+
+
+def _refresh_suggested_in_background(cache_key: str, params: dict) -> None:
+    cache = get_cache()
+    client = cache.redis_client
+    if client is not None:
+        try:
+            if not client.set(f"{cache_key}:refreshing", "1", nx=True, ex=120):
+                return
+        except Exception:
+            return
+
+    def _run() -> None:
+        from app.db.session import SessionLocal
+
+        db = SessionLocal()
+        try:
+            _store_suggested_cache(cache_key, _compute_suggested_events(db, **params))
+        except Exception:
+            logger.exception("events.suggested background refresh failed")
+        finally:
+            db.close()
+            cache.delete(f"{cache_key}:refreshing")
+
+    threading.Thread(target=_run, name="suggested-events-refresh", daemon=True).start()
+
+
 @router.get("/suggested")
 def suggested_events(
     preferred_year: int = CURRENT_SEASON_YEAR,
@@ -560,6 +618,34 @@ def suggested_events(
     team_count_fetch_limit: int | None = Query(default=None, ge=0, le=500),
     db: Session = Depends(get_db),
 ):
+    params = {
+        "preferred_year": int(preferred_year),
+        "fallback_year": int(fallback_year),
+        "limit": int(limit),
+        "prioritize_running": bool(prioritize_running),
+        "team_count_fetch_limit": team_count_fetch_limit,
+    }
+    cache_key = _suggested_cache_key(params)
+    cached = _read_suggested_cache(cache_key)
+    if cached is not None:
+        payload, fresh_until = cached
+        if time.time() >= fresh_until:
+            _refresh_suggested_in_background(cache_key, params)
+        return payload
+    payload = _compute_suggested_events(db, **params)
+    _store_suggested_cache(cache_key, payload)
+    return payload
+
+
+def _compute_suggested_events(
+    db: Session,
+    *,
+    preferred_year: int,
+    fallback_year: int,
+    limit: int,
+    prioritize_running: bool,
+    team_count_fetch_limit: int | None,
+) -> dict:
     capped_limit = max(1, min(limit, 250))
     years = [preferred_year] + ([fallback_year] if fallback_year != preferred_year else [])
     now_date = datetime.now(timezone.utc).date()

@@ -3,7 +3,7 @@ from contextlib import suppress
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -329,6 +329,9 @@ def get_event_ratings(
     request: Request,
     refresh: bool = False,
     include_trend: bool = False,
+    # "summary" leaves out details and evidence: 2/3 of the payload (864 KB for a
+    # 75-team event), and no list screen reads them.
+    view: str = Query(default="full", pattern="^(full|summary)$"),
     db: Session = Depends(get_db),
 ):
     event = db.get(models.Event, event_key)
@@ -354,6 +357,10 @@ def get_event_ratings(
         source = "local_missing"
 
     payload = [_serialize_rating_row(row, team) for row, team in rows]
+    if view == "summary":
+        for item in payload:
+            item["details"] = {}
+            item["evidence"] = []
 
     # The live view requests include_trend=true to get sparkline/momentum data
     # without a second round trip; the default response stays unchanged.

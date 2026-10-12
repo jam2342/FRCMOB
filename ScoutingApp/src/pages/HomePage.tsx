@@ -8,6 +8,7 @@ import {
   getEventLiveStream,
   getEventRankings,
   getEventSchedule,
+  getEventSchedules,
 } from '../api';
 import type {
   EventLiveStreamResponse,
@@ -116,7 +117,6 @@ const HOME_EVENT_INITIAL_PRELOAD_LIMIT = 6;
 const HOME_EVENT_DAY_FETCH_LIMIT = 24;
 const HOME_EVENT_REFRESH_LIMIT = 4;
 const HOME_EVENT_LIVE_REFRESH_LIMIT = 3;
-const HOME_SCHEDULE_FETCH_BATCH = 8;
 const HOME_MIN_SUGGESTED_EVENT_TARGET = 24;
 const HOME_TRENDING_TEAM_COUNT_FETCH_LIMIT = 12;
 const HOME_CALENDAR_EVENT_LIMIT = 700;
@@ -509,30 +509,19 @@ export function HomePage() {
           options?: { pushPartial?: boolean },
         ): Promise<Record<string, HomeEventSchedule>> {
           const nextScheduleMap: Record<string, HomeEventSchedule> = {};
-          for (let offset = 0; offset < eventKeys.length; offset += HOME_SCHEDULE_FETCH_BATCH) {
-            const chunk = eventKeys.slice(offset, offset + HOME_SCHEDULE_FETCH_BATCH);
-            if (chunk.length === 0) break;
-            const chunkResults = await Promise.allSettled(
-              chunk.map((eventKey) => getEventSchedule(eventKey, false)),
-            );
-            if (cancelled) return nextScheduleMap;
-            const chunkMap: Record<string, HomeEventSchedule> = {};
-            chunkResults.forEach((result, idx) => {
-              const key = chunk[idx];
-              if (result.status === 'fulfilled') {
-                chunkMap[key] = {
-                  event_name: result.value.event_name || null,
-                  matches: result.value.matches || [],
-                };
-              }
-            });
-            if (Object.keys(chunkMap).length > 0) {
-              Object.assign(nextScheduleMap, chunkMap);
-              if (options?.pushPartial) {
-                setScheduleByEvent((previous) => ({ ...previous, ...chunkMap }));
-                setLastUpdatedAt(Date.now());
-              }
+          if (eventKeys.length === 0) return nextScheduleMap;
+          // One request for the whole list (it was one per event, in waves of 8).
+          const results = await getEventSchedules(eventKeys);
+          if (cancelled) return nextScheduleMap;
+          for (const key of eventKeys) {
+            const result = results[key];
+            if (result && !(result instanceof Error)) {
+              nextScheduleMap[key] = { event_name: result.event_name || null, matches: result.matches || [] };
             }
+          }
+          if (Object.keys(nextScheduleMap).length > 0 && options?.pushPartial) {
+            setScheduleByEvent((previous) => ({ ...previous, ...nextScheduleMap }));
+            setLastUpdatedAt(Date.now());
           }
           return nextScheduleMap;
         }
@@ -737,29 +726,26 @@ export function HomePage() {
     missing.forEach((key) => dayFetchRequestedRef.current.add(key));
     // Not cancelled when schedules arrive (that re-runs this effect); only on unmount.
     void (async () => {
-      for (let offset = 0; offset < missing.length; offset += HOME_SCHEDULE_FETCH_BATCH) {
-        const chunk = missing.slice(offset, offset + HOME_SCHEDULE_FETCH_BATCH);
-        const results = await Promise.allSettled(chunk.map((key) => getEventSchedule(key, false)));
-        if (!homeMountedRef.current) return;
-        const failed = chunk.filter((_, idx) => results[idx].status === 'rejected');
-        const loaded = chunk.filter((_, idx) => results[idx].status === 'fulfilled');
-        setFailedScheduleKeys((previous) => {
-          const next = previous.filter((key) => !loaded.includes(key));
-          failed.forEach((key) => { if (!next.includes(key)) next.push(key); });
-          return next.length === previous.length && next.every((key, i) => key === previous[i]) ? previous : next;
-        });
-        setScheduleByEvent((previous) => {
-          const next = { ...previous };
-          results.forEach((result, idx) => {
-            // A failed fetch still settles the event, so the day stops reading "loading".
-            next[chunk[idx]] =
-              result.status === 'fulfilled'
-                ? { event_name: result.value.event_name || null, matches: result.value.matches || [] }
-                : previous[chunk[idx]] || { event_name: null, matches: [] };
-          });
-          return next;
-        });
-      }
+      const results = await getEventSchedules(missing);
+      if (!homeMountedRef.current) return;
+      const failed = missing.filter((key) => !results[key] || results[key] instanceof Error);
+      const loaded = missing.filter((key) => results[key] && !(results[key] instanceof Error));
+      setFailedScheduleKeys((previous) => {
+        const next = previous.filter((key) => !loaded.includes(key));
+        failed.forEach((key) => { if (!next.includes(key)) next.push(key); });
+        return next.length === previous.length && next.every((key, i) => key === previous[i]) ? previous : next;
+      });
+      setScheduleByEvent((previous) => {
+        const next = { ...previous };
+        for (const key of missing) {
+          const result = results[key];
+          // A failed fetch still settles the event, so the day stops reading "loading".
+          next[key] = result && !(result instanceof Error)
+            ? { event_name: result.event_name || null, matches: result.matches || [] }
+            : previous[key] || { event_name: null, matches: [] };
+        }
+        return next;
+      });
     })();
   }, [scheduleByEvent, selectedDayMs, suggestedEvents]);
 

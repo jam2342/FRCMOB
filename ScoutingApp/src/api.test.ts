@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('scoutingRoomWebSocketUrl', () => {
   afterEach(() => {
@@ -417,6 +417,104 @@ describe('scoutingRoomWebSocketUrl', () => {
     const again = await api.getEventScheduleWithSynergy('2026x', { include_pair_breakdown: false });
     expect(again.event_key).toBe('2026x');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('request sharing', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    localStorage.clear();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+  it('serves every suggested-events length from one shared request', async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const events = Array.from({ length: 30 }, (_, i) => ({ event_key: `2026e${i}`, name: `E${i}`, year: 2026 }));
+    const fetchMock = vi.fn(() => Promise.resolve(json({ ok: true, source: 'remote_most_teams', count: 30, events })));
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    const [short, long] = await Promise.all([
+      api.getSuggestedEvents(2026, 2025, 5, { remoteTeamCountFetchLimit: 0 }),
+      api.getSuggestedEvents(2026, 2025, 25, { remoteTeamCountFetchLimit: 12 }),
+    ]);
+    const later = await api.getSuggestedEvents(2026, 2025, 10);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(short.events.map((e) => e.event_key)).toEqual(events.slice(0, 5).map((e) => e.event_key));
+    expect(long.events).toHaveLength(25);
+    expect(later.count).toBe(10);
+  });
+
+  it('loads many schedules in one request and stores each under its own URL', async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const schedule = (key: string) => ({ ok: true, event_key: key, event_name: key, source: 'local', published: true, times_published: true, count: 0, matches: [] });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'https://example.test');
+      if (url.pathname === '/api/matches/schedules') {
+        return Promise.resolve(json({
+          ok: true,
+          count: 3,
+          schedules: {
+            '2026a': schedule('2026a'),
+            '2026b': schedule('2026b'),
+            '2026c': { ok: false, status: 502, detail: "This schedule couldn't be loaded right now." },
+          },
+        }));
+      }
+      return Promise.resolve(json({ detail: 'unexpected' }, 404));
+    });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    const results = await api.getEventSchedules(['2026a', '2026B', '2026c']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((results['2026a'] as { event_key: string }).event_key).toBe('2026a');
+    expect(results['2026c']).toBeInstanceOf(Error);
+
+    const single = await api.getEventSchedule('2026b', false);
+    expect(single.event_key).toBe('2026b');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the request index.html started instead of fetching again', async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const { bootSuggestedEventsPath } = await import('./bootPath');
+    const events = [{ event_key: '2026a', name: 'A', year: 2026 }];
+    const url = `/api${bootSuggestedEventsPath()}`;
+    (window as unknown as { __frcmobBoot: Record<string, Promise<Response>> }).__frcmobBoot = {
+      [url]: Promise.resolve(json({ ok: true, source: 'remote_most_teams', count: 1, events })),
+    };
+    const fetchMock = vi.fn(() => Promise.resolve(json({ detail: 'should not be called' }, 500)));
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    const result = await api.getSuggestedEvents(2026, 2025, 25);
+    expect(result.events.map((e) => e.event_key)).toEqual(['2026a']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to one request per event when the batch call fails', async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'https://example.test');
+      if (url.pathname === '/api/matches/schedules') return Promise.resolve(json({ detail: 'Not Found' }, 404));
+      const key = url.pathname.split('/')[4];
+      return Promise.resolve(json({ ok: true, event_key: key, event_name: key, source: 'local', published: true, times_published: true, count: 0, matches: [] }));
+    });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    const results = await api.getEventSchedules(['2026a', '2026b']);
+    expect(Object.keys(results)).toEqual(['2026a', '2026b']);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 from typing import Any
@@ -1014,6 +1015,75 @@ def get_match_phases(
         "time": match.time,
         **phase_data,
     }
+
+
+# Home shows every event running on a day: up to 24 schedules, which it fetched one
+# request each (31 requests, ~11 s on a throttled phone). One call, built six at a
+# time here, with each answer exactly what the single-event route returns.
+SCHEDULE_BATCH_MAX_EVENTS = 24
+SCHEDULE_BATCH_WORKERS = 6
+_EVENT_KEY_PATTERN = re.compile(r"^\d{4}[a-z0-9]{1,16}$")
+
+
+@router.get("/schedules")
+def get_event_schedules(
+    request: Request,
+    response: Response,
+    event_keys: str = Query(..., min_length=1, max_length=600),
+):
+    keys: list[str] = []
+    for raw in event_keys.split(","):
+        key = raw.strip().lower()
+        if key and key not in keys:
+            keys.append(key)
+    if not keys:
+        raise HTTPException(status_code=400, detail="Give at least one event key.")
+    if len(keys) > SCHEDULE_BATCH_MAX_EVENTS:
+        raise HTTPException(status_code=400, detail=f"At most {SCHEDULE_BATCH_MAX_EVENTS} events per request.")
+    bad = [key for key in keys if not _EVENT_KEY_PATTERN.match(key)]
+    if bad:
+        raise HTTPException(status_code=400, detail=f"Not an event key: {bad[0]}")
+
+    from app.db.session import SessionLocal
+
+    def _one(event_key: str) -> tuple[str, dict]:
+        db = SessionLocal()
+        try:
+            payload = get_event_schedule(
+                event_key,
+                request,
+                Response(),
+                refresh=False,
+                include_live_results=True,
+                include_teams=True,
+                include_team_nicknames=True,
+                source="auto",
+                tournament_level=None,
+                team_number=None,
+                start=None,
+                end=None,
+                if_modified_since=None,
+                only_modified_since=None,
+                limit=None,
+                offset=0,
+                db=db,
+            )
+            return event_key, ScheduleResponse.model_validate(payload).model_dump(mode="json")
+        except HTTPException as exc:
+            return event_key, {"ok": False, "status": exc.status_code, "detail": str(exc.detail)}
+        except Exception:
+            logger.exception("matches.schedules failed event_key=%s", event_key)
+            return event_key, {"ok": False, "status": 502, "detail": "This schedule couldn't be loaded right now."}
+        finally:
+            db.close()
+
+    with ThreadPoolExecutor(max_workers=min(SCHEDULE_BATCH_WORKERS, len(keys))) as pool:
+        results = dict(pool.map(_one, keys))
+    live_ttl_sec = max(1, int(getattr(settings, "matches_live_results_cache_ttl_sec", 5) or 5))
+    response.headers["Cache-Control"] = (
+        f"public, max-age={live_ttl_sec}, stale-while-revalidate={max(15, live_ttl_sec * 3)}"
+    )
+    return {"ok": True, "count": len(keys), "schedules": {key: results[key] for key in keys}}
 
 
 @router.get("/event/{event_key}/schedule", response_model=ScheduleResponse)

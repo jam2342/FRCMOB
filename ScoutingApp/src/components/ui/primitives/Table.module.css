@@ -194,6 +194,10 @@
 .card {
   display: flex;
   flex-direction: column;
+  /* A long phone list (an event's 70+ teams) lays out and paints only the cards
+     near the screen. overflow is already hidden, so this clips nothing new. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
 
   border: var(--border-width-1) solid var(--color-border);
   border-radius: var(--radius-md);
