@@ -1106,7 +1106,11 @@ export function HomePage() {
       .some((event) => !scheduleByEvent[normalizeEventKey(event.event_key)]);
   }, [loadingHome, scheduleByEvent, selectedDayMs, suggestedEvents]);
 
-  const showTodayEventsCard = loadingHome || liveEvents.length > 0 || Boolean(errorText);
+  // Whether events run today is known once the event list is in (~0.3 s), long
+  // before the schedules: holding the column open until those loaded, then
+  // dropping it on an event-free day, slid the whole feed sideways (layout shift).
+  const showTodayEventsCard =
+    liveEvents.length > 0 || Boolean(errorText) || (loadingHome && Object.keys(eventByKey).length === 0);
 
   const nearestEventDay = useMemo((): { ms: number; hasMatches: boolean } | null => {
     const emptyEventKeys = new Set(
@@ -1972,6 +1976,7 @@ export function HomePage() {
         ) : null}
         {errorText ? (
           <EmptyState
+            className="home-feed-state es--top"
             type="offline"
             title="Couldn't load matches"
             description="Check your connection and try again."
@@ -1982,9 +1987,10 @@ export function HomePage() {
             )}
           />
         ) : !hasAnySelectedDayMatches && selectedDaySchedulesPending ? (
-          <EmptyState title="Loading matches" description={`Getting ${selectedDayDateLabel}'s schedules…`} />
+          <EmptyState className="home-feed-state es--top" title="Loading matches" description={`Getting ${selectedDayDateLabel}'s schedules…`} />
         ) : !hasAnySelectedDayMatches && selectedDayFailedKeys.length > 0 ? (
           <EmptyState
+            className="home-feed-state es--top"
             type="offline"
             title="Couldn't load this day's matches"
             description="Check your connection and try again."
@@ -1996,6 +2002,7 @@ export function HomePage() {
           />
         ) : !hasAnySelectedDayMatches ? (
           <EmptyState
+            className="home-feed-state es--top"
             title="No matches on this day"
             description={
               nearestEventDay !== null
@@ -2259,7 +2266,11 @@ export function HomePage() {
             </p>
           ) : (
             <div id={cardContentId('live-stream')} className="home-card-panel-body">
-              {loadingSelectedContext ? <p className="center-callout muted">Loading stream...</p> : null}
+              {loadingSelectedContext ? (
+                <div className="home-stream-loading">
+                  <p className="center-callout muted">Loading stream...</p>
+                </div>
+              ) : null}
               {!loadingSelectedContext && !selectedEventStream ? (
                 <p className="center-callout muted">No stream data available.</p>
               ) : null}

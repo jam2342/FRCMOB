@@ -1013,6 +1013,16 @@ export function ComparePage() {
 
         {activeTab === 'summary' && compareTeamKeys.length > 0 ? (
             <SurfaceCard title="Summary" className="compare-summary-card" compactable>
+            {/* Highlights below the teams: they need every team's data, and arriving
+                above the list they pushed it ~300 px down on a phone. */}
+            <Table
+              columns={summaryColumns}
+              rows={compareRows}
+              rowKey={(row) => `compare-summary-row-${row.team_key}`}
+              cardBreakpoint={COMPARE_CARD_BREAKPOINT}
+              renderCards={renderSummaryCards}
+              empty="Pick teams to compare."
+            />
             {metricHighlights.length > 0 ? (
               <div className="compare-highlights-grid">
                 {metricHighlights.map((highlight) => (
@@ -1031,18 +1041,11 @@ export function ComparePage() {
                   </article>
                 ))}
               </div>
-            ) : (
+            ) : compareRows.length < 2 ? (
               <p className="center-callout muted">Add at least 2 teams for highlights.</p>
+            ) : compareRows.some((row) => row.loading) ? null : (
+              <p className="center-callout muted">No differences to highlight between these teams yet.</p>
             )}
-
-            <Table
-              columns={summaryColumns}
-              rows={compareRows}
-              rowKey={(row) => `compare-summary-row-${row.team_key}`}
-              cardBreakpoint={COMPARE_CARD_BREAKPOINT}
-              renderCards={renderSummaryCards}
-              empty="Pick teams to compare."
-            />
             </SurfaceCard>
 
         ) : null}

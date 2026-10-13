@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { eventDisplayName } from '../../utils/eventSearchIndex';
 
 import {
   getEventSchedule,
@@ -788,7 +789,7 @@ export function OnDeviceRun() {
           {showMatchPicker && pickerMatches ? (
           <div className="odr-form">
             <label className="odr-field">
-              <span className="odr-label">Match at {scheduleEventKey}</span>
+              <span className="odr-label">Match at {eventDisplayName(scheduleEventKey)}</span>
               <select
                 className="odr-select"
                 value={pickerMatches.some((m) => m.match_key === normalizedMatchKey) ? normalizedMatchKey : ''}

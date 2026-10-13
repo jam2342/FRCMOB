@@ -26,6 +26,8 @@ import type {
 } from '../api';
 import { FieldHeatmap } from '../components/cv/FieldHeatmap';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
+import { MediaImage } from '../components/ui/MediaImage';
+import { eventDisplayName } from '../utils/eventSearchIndex';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
@@ -1364,11 +1366,16 @@ export function TeamCenterPage() {
                 <div className="fm-team-hero">
                   <div className="fm-team-hero-top">
                     {teamLogo?.available && teamLogo.image_url ? (
-                      <img
+                      <MediaImage
                         src={teamLogo.image_url}
                         alt={`Logo for ${selectedTeamKey}`}
                         className="fm-team-hero-logo"
                         decoding="async"
+                        fallback={(
+                          <span className="fm-team-hero-logo-fallback" aria-hidden="true">
+                        {String(teamNumber).slice(0, 2)}
+                      </span>
+                        )}
                       />
                     ) : (
                       <span className="fm-team-hero-logo-fallback" aria-hidden="true">
@@ -1384,7 +1391,7 @@ export function TeamCenterPage() {
                       {selectedEventKey ? (
                         <span className="fm-team-hero-event">{eventNameFor(selectedEventKey)}</span>
                       ) : skippedEventKey ? (
-                        <span className="fm-team-hero-event">Didn't compete at {skippedEventKey}; showing the whole season</span>
+                        <span className="fm-team-hero-event">Didn't compete at {eventDisplayName(skippedEventKey)}; showing the whole season</span>
                       ) : null}
                     </div>
                   </div>
@@ -1431,16 +1438,21 @@ export function TeamCenterPage() {
             ) : (
             <SurfaceCard
               title={`Team ${teamNumber}`}
-              subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Didn't compete at ${skippedEventKey}; showing the whole season` : ''}`}
+              subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Didn't compete at ${eventDisplayName(skippedEventKey)}; showing the whole season` : ''}`}
             >
               <div className="center-team-hero">
                 <div className="center-team-identity">
                   {teamLogo?.available && teamLogo.image_url ? (
-                    <img
+                    <MediaImage
                       src={teamLogo.image_url}
                       alt={`Logo for ${selectedTeamKey}`}
                       className="center-team-logo"
                       decoding="async"
+                      fallback={(
+                        <span className="center-team-logo-fallback" aria-hidden="true">
+                      {String(teamNumber).slice(0, 2)}
+                    </span>
+                      )}
                     />
                   ) : (
                     <span className="center-team-logo-fallback" aria-hidden="true">
@@ -1935,13 +1947,14 @@ export function TeamCenterPage() {
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
                   <SurfaceCard title="Team Logo" compactable>
                     {teamLogo?.available && teamLogo.image_url ? (
-                      <img
+                      <MediaImage
                         src={teamLogo.image_url}
                         alt={`Team logo for ${selectedTeamKey}`}
                         className="center-media-image"
                         loading="lazy"
                         decoding="async"
                         fetchPriority="low"
+                        fallback={<p className="center-callout muted">The team logo couldn&apos;t be loaded from its source.</p>}
                       />
                     ) : (
                       <p className="center-callout muted">{teamLogo?.reason || 'No team logo available.'}</p>
@@ -1960,13 +1973,14 @@ export function TeamCenterPage() {
                       </div>
                     ) : teamRobotImage?.available && teamRobotImage.image_url ? (
                       <>
-                        <img
+                        <MediaImage
                           src={teamRobotImage.image_url}
                           alt={`Robot picture for ${selectedTeamKey}`}
                           className="center-media-image"
                           loading="lazy"
                           decoding="async"
                           fetchPriority="low"
+                          fallback={<p className="center-callout muted">This robot picture is no longer available at its source.</p>}
                         />
                         {teamRobotImage.year !== null && teamRobotImage.year !== CURRENT_SEASON_YEAR ? (
                           <p className="center-callout warning">

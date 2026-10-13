@@ -1301,7 +1301,6 @@
 }
 
 .product-shell .scout-control-card,
-.product-shell .scout-rp-btn,
 .product-shell .scout-driver-score,
 .product-shell .scout-driver-breakdown > div,
 .product-shell .scout-score-card,
@@ -1779,19 +1778,6 @@
     gap: 6px;
   }
 
-  .mobile-finder-layout .scout-rp-btn {
-    padding: 7px;
-    gap: 2px;
-  }
-
-  .mobile-finder-layout .scout-rp-btn strong {
-    font-size: var(--font-size-2xs);
-  }
-
-  .mobile-finder-layout .scout-rp-btn small {
-    font-size: var(--font-size-legacy-11);
-  }
-
   .mobile-finder-layout .scout-team-grid,
   .mobile-finder-layout .scout-opponent-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1895,11 +1881,6 @@
 
   .scouting-mobile-compact .scout-control-card {
     gap: 8px;
-  }
-
-  .scouting-mobile-compact .scout-rp-btn {
-    min-height: 38px;
-    padding: 5px 7px;
   }
 }
 

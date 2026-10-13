@@ -218,7 +218,6 @@ export function ProductShell() {
     contextSnapshot,
     contextStripCollapsed,
     setContextStripCollapsed,
-    hasContextStripContent,
     contextMatchLabel,
     contextPins,
     recentEventQuickPicks,
@@ -688,7 +687,9 @@ export function ProductShell() {
         {/* Desktop only. On a phone it stacked Event/Match/Team chips, pins and recents above
             pages that already show their own event and team: up to ~200 of 450px on a small
             phone before any content. Search and each page's own picker cover switching there. */}
-        {isDesktopSidebarViewport && hasContextStripContent ? (
+        {/* Always there on desktop, even before an event is chosen ("Choose event"):
+            appearing once Home picked one moved every page down after it had painted. */}
+        {isDesktopSidebarViewport ? (
         <section
           className={cx('ps-context-strip', contextStripCollapsed && 'collapsed')}
           aria-label="Active context and quick picks"
@@ -818,6 +819,13 @@ export function ProductShell() {
                     {formatTeamDisplay(teamKey)}
                   </button>
                 ))}
+              </div>
+            ) : contextPins.event.length === 0 && contextPins.team.length === 0 ? (
+              // Keeps the row's height before anything is recent, so the first
+              // event a visitor opens doesn't push the page down.
+              <div className="ps-context-quick-row">
+                <span className="ps-context-quick-label">Recent</span>
+                <span className="ps-context-quick-empty">Events and teams you open show up here.</span>
               </div>
             ) : null}
           </div>

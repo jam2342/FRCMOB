@@ -537,6 +537,10 @@ export function StrategyBriefingPage() {
                 ? eventOver ? 'No upcoming matches. This event is over.' : 'No upcoming matches published yet.'
                 : `${upcomingCount} upcoming match${upcomingCount === 1 ? '' : 'es'}`}
             </p>
+          ) : eventKey && loading ? (
+            // Holds the line's place while the schedule loads, so the rest of the page
+            // doesn't move down when the count arrives.
+            <p className="center-event-status">Loading this event&apos;s schedule…</p>
           ) : null}
 
           {errorText ? <p className="center-callout warning">{errorText}</p> : null}

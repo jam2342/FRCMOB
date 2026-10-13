@@ -152,3 +152,17 @@
     inset: -10px;
   }
 }
+
+/* On a touchscreen the 16px x gets a 44px tap area around it; the chip's size
+   and the icon don't change. */
+@media (pointer: coarse) {
+  .remove {
+    position: relative;
+  }
+
+  .remove::before {
+    content: '';
+    position: absolute;
+    inset: -14px;
+  }
+}

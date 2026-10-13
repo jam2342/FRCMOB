@@ -52,13 +52,6 @@ export type ScoutFormState = {
   endgame_mode: EndgameMode;
 };
 
-export type RpState = {
-  energized: boolean;
-  supercharged: boolean;
-  traversal: boolean;
-  coop: boolean;
-};
-
 export type DriverCompetency = {
   score_0_100: number;
   level_1_5: number;
@@ -227,7 +220,6 @@ export type SavedScoutingEntry = {
     endgame: number;
     total: number;
   };
-  rp: RpState;
   form: ScoutFormState;
   driver_competency: DriverCompetency;
   manual_rating: ManualScoutingRating;

@@ -70,8 +70,20 @@ textarea {
   [role="button"],
   [role="tab"],
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  select {
+  select,
+  /* Loading rows stand in for buttons (Events' top lists): same height. */
+  .fm-top-placeholder,
+  /* Page tabs (Live Scouting / Pit Scouting / ...) are links, so the button rule above missed them. */
+  .page-view-tab {
     min-height: var(--touch-target-min);
+  }
+
+  /* Width too: the header search icon was 28-36px wide, and short inline links
+     ("QM 1") about 33px. */
+  .ps-mobile-search-trigger,
+  button.center-inline-link,
+  .center-btn {
+    min-width: var(--touch-target-min);
   }
 }
 

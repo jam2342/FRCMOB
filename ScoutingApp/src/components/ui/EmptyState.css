@@ -9,6 +9,12 @@
   gap: var(--space-3);
 }
 
+/* Top-aligned, for a state that is replaced in place by another of a different
+   length (Home's feed): centred, the text jumped when the swap happened. */
+.es--top {
+  justify-content: flex-start;
+}
+
 .es--compact {
   padding: var(--space-6) var(--space-4);
   gap: var(--space-2);
