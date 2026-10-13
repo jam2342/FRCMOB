@@ -10,7 +10,7 @@
  *   QR string → base64url → inflate → JSON → normalizeEntry
  */
 
-import type { SavedScoutingEntry, ScoutFormState, RpState } from './scoutingPage.types';
+import type { SavedScoutingEntry, ScoutFormState } from './scoutingPage.types';
 
 /* ------------------------------------------------------------------ */
 /*  Compact key mapping – keeps QR payload small                      */
@@ -42,7 +42,8 @@ type CompactEntry = {
   st: string | null;
   /** form — flattened to array of values in canonical order */
   f: (number | boolean | string)[];
-  /** rp state — 4 booleans packed as bitmask */
+  /** Was the scout's RP checks (removed). Always 0; kept so older app versions
+   *  can still read codes from newer ones. */
   rp: number;
   /** notes */
   n: string;
@@ -80,8 +81,6 @@ const FORM_KEYS: (keyof ScoutFormState)[] = [
   'endgame_mode',
 ];
 
-const RP_KEYS: (keyof RpState)[] = ['energized', 'supercharged', 'traversal', 'coop'];
-
 /* ------------------------------------------------------------------ */
 /*  Encode / decode                                                    */
 /* ------------------------------------------------------------------ */
@@ -94,22 +93,6 @@ function unpackForm(values: (number | boolean | string)[]): Record<string, unkno
   const out: Record<string, unknown> = {};
   for (let i = 0; i < FORM_KEYS.length && i < values.length; i++) {
     out[FORM_KEYS[i]] = values[i];
-  }
-  return out;
-}
-
-function packRp(rp: RpState): number {
-  let bits = 0;
-  for (let i = 0; i < RP_KEYS.length; i++) {
-    if (rp[RP_KEYS[i]]) bits |= 1 << i;
-  }
-  return bits;
-}
-
-function unpackRp(bits: number): Record<string, boolean> {
-  const out: Record<string, boolean> = {};
-  for (let i = 0; i < RP_KEYS.length; i++) {
-    out[RP_KEYS[i]] = Boolean(bits & (1 << i));
   }
   return out;
 }
@@ -128,7 +111,7 @@ function entryToCompact(entry: SavedScoutingEntry): CompactEntry {
     al: entry.alliance,
     st: entry.station,
     f: packForm(entry.form),
-    rp: packRp(entry.rp),
+    rp: 0,
     n: entry.notes,
   };
 }
@@ -151,7 +134,6 @@ function compactToRaw(compact: CompactEntry): Record<string, unknown> {
     alliance: compact.al,
     station: compact.st,
     form: unpackForm(compact.f),
-    rp: unpackRp(compact.rp),
     notes: compact.n,
     // id and ratings are intentionally omitted —
     // normalizeEntry() will assign new id and recompute ratings

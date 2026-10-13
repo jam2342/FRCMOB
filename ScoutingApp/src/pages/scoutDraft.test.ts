@@ -10,8 +10,8 @@ describe('scout drafts', () => {
     const otherWorkspace = scoutDraftKey(4, '2026arc_qm12', 'frc254');
     expect(a).toBe(scoutDraftKey(3, '2026arc_qm12', 'FRC254'));
 
-    writeScoutDraft(a, { form: { auto_scored: 3 }, rp: {}, notes: 'fast intake', saved_at_ms: 1 });
-    expect(readScoutDraft<{ auto_scored: number }, object>(a)?.form.auto_scored).toBe(3);
+    writeScoutDraft(a, { form: { auto_scored: 3 }, notes: 'fast intake', saved_at_ms: 1 });
+    expect(readScoutDraft<{ auto_scored: number }>(a)?.form.auto_scored).toBe(3);
     expect(readScoutDraft(otherTeam)).toBeNull();
     expect(readScoutDraft(otherWorkspace)).toBeNull();
 

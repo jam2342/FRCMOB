@@ -18,7 +18,6 @@ import type {
   MobileCapturePanel,
   MobileScorePanel,
   OverallScoutRating,
-  RpState,
   SavedScoutingEntry,
   ScoutFormState,
   ScoutingApiRating,
@@ -137,13 +136,6 @@ export const EMPTY_FORM: ScoutFormState = {
   endgame_mode: 'none',
 };
 
-export const EMPTY_RP: RpState = {
-  energized: false,
-  supercharged: false,
-  traversal: false,
-  coop: false,
-};
-
 export function normalizeEventKeyInput(raw: string): string {
   return raw.trim().toLowerCase();
 }
@@ -222,16 +214,6 @@ function normalizeForm(raw: Record<string, unknown> | null): ScoutFormState {
     climbed_under_pressure: toBool(raw.climbed_under_pressure),
     protected_zone_risk: toBool(raw.protected_zone_risk),
     endgame_mode: endgameMode,
-  };
-}
-
-function normalizeRp(raw: Record<string, unknown> | null): RpState {
-  if (!raw) return { ...EMPTY_RP };
-  return {
-    energized: toBool(raw.energized),
-    supercharged: toBool(raw.supercharged),
-    traversal: toBool(raw.traversal),
-    coop: toBool(raw.coop),
   };
 }
 
@@ -1029,7 +1011,6 @@ export function buildSavedScoutingEntry(payload: {
   alliance: SavedScoutingEntry['alliance'];
   station: string | null;
   points: SavedScoutingEntry['points'];
-  rp: RpState;
   form: ScoutFormState;
   driver_competency: DriverCompetency;
   manual_rating: ManualScoutingRating;
@@ -1056,7 +1037,6 @@ export function buildSavedScoutingEntry(payload: {
     alliance: payload.alliance === 'blue' ? 'blue' : 'red',
     station: payload.station ?? null,
     points: payload.points,
-    rp: payload.rp,
     form: normalizeForm(payload.form),
     driver_competency: payload.driver_competency,
     manual_rating: payload.manual_rating,
@@ -1122,7 +1102,6 @@ export function normalizeEntry(value: unknown): SavedScoutingEntry | null {
     alliance: row.alliance === 'blue' ? 'blue' : 'red',
     station: typeof row.station === 'string' ? row.station : null,
     points,
-    rp: normalizeRp(asRecord(row.rp)),
     form,
     driver_competency: driverScore,
     manual_rating: manual,
@@ -1510,24 +1489,25 @@ export function apiSnapshotFromIntel(intelPayload: unknown, selectedEventKey: st
 // doesn't throw away a half-scouted match. One draft per workspace/match/team.
 const SCOUT_DRAFT_PREFIX = 'frcmob_scout_draft_v1:';
 
-export type ScoutDraft<F, R> = { form: F; rp: R; notes: string; saved_at_ms: number };
+// Drafts saved before the RP checks were removed still carry an "rp" field; it is ignored.
+export type ScoutDraft<F> = { form: F; notes: string; saved_at_ms: number };
 
 export function scoutDraftKey(workspaceId: number | null, matchKey: string, teamKey: string): string {
   return `${SCOUT_DRAFT_PREFIX}w${workspaceId ?? 0}:${matchKey.toLowerCase()}:${teamKey.toLowerCase()}`;
 }
 
-export function readScoutDraft<F, R>(key: string): ScoutDraft<F, R> | null {
+export function readScoutDraft<F>(key: string): ScoutDraft<F> | null {
   try {
     const raw = readRecoverableScoutDraft(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as ScoutDraft<F, R>;
+    const parsed = JSON.parse(raw) as ScoutDraft<F>;
     return parsed && typeof parsed === 'object' && parsed.form ? parsed : null;
   } catch {
     return null;
   }
 }
 
-export function writeScoutDraft<F, R>(key: string, draft: ScoutDraft<F, R> | null): boolean {
+export function writeScoutDraft<F>(key: string, draft: ScoutDraft<F> | null): boolean {
   return persistRecoverableScoutDraft(key, draft ? JSON.stringify(draft) : null);
 }
 

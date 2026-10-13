@@ -120,14 +120,12 @@ it.each([{actual:5, expected:'02:35'}, {actual:null, expected:'02:30'}])('uses a
   expect(screen.getAllByText(expected).length).toBeGreaterThan(0);
   clock.mockRestore();
 });
-it('announces RP selection and shows its selected indicator', async () => {
+it('has no RP checks: the scouting questions cover them', async () => {
   vi.stubGlobal('matchMedia', () => ({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
   mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
-  const rp = await screen.findByRole('button', {name:/Energized RP/});
-  expect(rp).toHaveAttribute('aria-pressed','false');
-  fireEvent.click(rp);
-  expect(rp).toHaveAttribute('aria-pressed','true');
-  expect(rp).toHaveTextContent('✓');
+  await screen.findByText('Point Summary');
+  expect(screen.queryByText('RP Checks')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name:/Energized RP|Apply Suggested RP/})).not.toBeInTheDocument();
 });
 it('gives an anonymous phone visitor one scout-name label and no unrelated room status', async () => {
   signOutTestWorkspace();

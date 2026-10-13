@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -77,8 +78,32 @@ def _cached_live_results_for_event(tba: TBAClient, event_key: str) -> dict[str, 
         result_by_match_key = {}
 
     ttl_sec = max(1, int(settings.matches_live_results_cache_ttl_sec or 5))
+    if _event_results_settled(result_by_match_key):
+        ttl_sec = SETTLED_RESULTS_CACHE_TTL_SEC
     cache.set(redis_key, json.dumps(result_by_match_key), ttl=ttl_sec)
     return result_by_match_key
+
+
+# A finished event's results never change, but the 5 s live TTL sent every Home
+# load (up to 24 schedules in one batch) back to TBA for each of them: the batch
+# averaged 2.3 s and TBA timed out 59 times in a day. Settled = every match has
+# a result and the last one ended over a day ago, so an event between its
+# qualifications and playoffs still refreshes every few seconds.
+SETTLED_RESULTS_CACHE_TTL_SEC = 6 * 3600
+_SETTLED_AFTER_SEC = 86400
+
+
+def _event_results_settled(result_by_match_key: dict[str, dict[str, Any]]) -> bool:
+    if not result_by_match_key:
+        return False
+    latest = 0
+    for result in result_by_match_key.values():
+        if not result.get("is_completed"):
+            return False
+        actual = result.get("actual_time")
+        if isinstance(actual, (int, float)):
+            latest = max(latest, int(actual))
+    return latest > 0 and latest < int(time.time()) - _SETTLED_AFTER_SEC
 
 
 def _event_team_nickname_overrides(

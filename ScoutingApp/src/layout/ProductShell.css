@@ -625,6 +625,15 @@ button.ps-context-chip:disabled {
   color: var(--color-text-dim);
 }
 
+/* Same height as a chip, so the row doesn't change size when the first one appears. */
+.ps-context-quick-empty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-dim);
+}
+
 .ps-context-quick-chip {
   flex: 0 0 auto;
   min-height: 32px;
@@ -745,6 +754,10 @@ button.ps-context-chip:disabled {
 
   .ps-context-quick-label {
     font-size: var(--font-size-legacy-11);
+  }
+
+  .ps-context-quick-empty {
+    min-height: 28px;
   }
 
   .ps-context-quick-chip {
@@ -939,10 +952,11 @@ button.ps-context-chip:disabled {
     gap: 7px;
   }
 
+  /* 44px: the platform's minimum for a finger (these were 36). */
   .product-shell .home-day-nav-btn {
-    flex: 0 0 36px;
-    min-width: 36px;
-    min-height: 36px;
+    flex: 0 0 var(--touch-target-min);
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
   }
 
   .product-shell .home-day-picker-btn {
@@ -1542,7 +1556,15 @@ button.ps-context-chip:disabled {
   }
 
   .product-shell .home-day-picker-btn {
-    min-height: 38px;
+    min-height: var(--touch-target-min);
+  }
+
+  /* On the narrowest phones the two 44px arrows leave too little room for
+     "Today" next to its calendar icon; the chevron still says it opens a picker. */
+  @media (max-width: 300px) {
+    .product-shell .home-day-picker-btn > .icon-inline:first-child {
+      display: none;
+    }
   }
 
   .product-shell .home-event-search-trigger,
@@ -1550,7 +1572,7 @@ button.ps-context-chip:disabled {
   .product-shell .home-card-collapse-btn,
   .product-shell .home-fotmob-btn,
   .product-shell .home-match-link-btn {
-    min-height: 36px;
+    min-height: var(--touch-target-min);
   }
 
   .product-shell .home-fotmob-toolbar-actions > * {

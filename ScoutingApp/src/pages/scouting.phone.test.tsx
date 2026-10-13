@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ScoutingPage } from './ScoutingPage';
 import { getEventSchedule } from '../api';
-import { EMPTY_FORM, EMPTY_RP, readScoutDraft, scoutDraftKey, writeScoutDraft } from './scoutingPage.helpers';
+import { EMPTY_FORM, readScoutDraft, scoutDraftKey, writeScoutDraft } from './scoutingPage.helpers';
 import { signInTestWorkspace } from '../test/workspace';
 
 vi.mock('../api', () => ({
@@ -109,7 +109,7 @@ beforeEach(() => {
 afterEach(() => {cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
 it('starts the next assignment on Auto with its robot, station and existing draft', async () => {
   const key = scoutDraftKey(1,'2026week0_qm2','frc254');
-  writeScoutDraft(key,{form:{...EMPTY_FORM,auto_scored:7},rp:EMPTY_RP,notes:'Keep this draft',saved_at_ms:1});
+  writeScoutDraft(key,{form:{...EMPTY_FORM,auto_scored:7},notes:'Keep this draft',saved_at_ms:1});
   mount();
   const heading = await screen.findByText('Your next assignment');
   expect(heading.closest('section')).toHaveTextContent('Qual 2 · Team 254');
@@ -123,7 +123,7 @@ it('starts the next assignment on Auto with its robot, station and existing draf
   expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254');
   // The editor shows the resumed counter, not just the stored copy.
   await waitFor(() => expect(screen.getAllByLabelText(/Auto fuel scored/i).find((el) => el.tagName === 'INPUT')).toHaveValue(7));
-  await waitFor(() => expect(readScoutDraft<typeof EMPTY_FORM,typeof EMPTY_RP>(key)?.form.auto_scored).toBe(7));
+  await waitFor(() => expect(readScoutDraft<typeof EMPTY_FORM>(key)?.form.auto_scored).toBe(7));
   fireEvent.click(screen.getByRole('tab',{name:'Robot'}));
   fireEvent.click(screen.getByRole('button',{name:'Choose another robot'}));
   expect(screen.getByRole('button', {name:'Qual 1'})).toBeInTheDocument();
@@ -172,7 +172,7 @@ it('groups Auto, Teleop, Endgame and Review fields in their phone phases', async
   expect(screen.getByRole('group',{name:'Endgame result'})).toBeInTheDocument();
   expect(screen.getByRole('switch',{name:/Climbed while defended/})).toBeInTheDocument();
   expect(screen.getByRole('switch',{name:/Protected-zone risk/})).toBeInTheDocument();
-  expect(screen.getByRole('button',{name:/Apply Suggested RP/})).toBeInTheDocument();
+  expect(screen.queryByText('RP Checks')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab',{name:'Review'}));
   const points = screen.getByText('Point Summary');
   const live = screen.getByText('Live Robot Rating');
@@ -202,7 +202,7 @@ it('retains an unsaved report while switching all three phone tabs and phases', 
   expect(screen.getByLabelText('Auto fuel scored')).toHaveValue(12);
   fireEvent.click(screen.getByRole('tab',{name:'Teleop'}));
   expect(screen.getByLabelText('Trench crossings')).toHaveValue(4);
-  await waitFor(() => expect(readScoutDraft<typeof EMPTY_FORM,typeof EMPTY_RP>(scoutDraftKey(1,'2026week0_qm1','frc254'))?.notes).toBe('Keep my report'));
+  await waitFor(() => expect(readScoutDraft<typeof EMPTY_FORM>(scoutDraftKey(1,'2026week0_qm1','frc254'))?.notes).toBe('Keep my report'));
 },20000);
 
 it('asks a solo scout for their missing name in Setup without interrupting typing', async () => {

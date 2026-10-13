@@ -149,19 +149,6 @@
   line-height: 1.45;
 }
 
-.product-shell .scout-rp-btn {
-  min-height: 70px;
-  align-content: start;
-}
-
-.product-shell .scout-rp-btn strong {
-  line-height: 1.2;
-}
-
-.product-shell .scout-rp-btn small {
-  line-height: 1.35;
-}
-
 .product-shell .scout-notes-shell {
   gap: 10px;
 }
@@ -654,11 +641,6 @@
   .product-shell .scout-control-card {
     padding: 9px;
     gap: 7px;
-  }
-
-  .product-shell .scout-rp-btn {
-    min-height: 58px;
-    padding: 7px;
   }
 
   .product-shell .scout-profile-chip {

@@ -168,6 +168,22 @@ function shortSortLabel(label: string | undefined, fallback: string): string {
   return label.slice(0, 4);
 }
 
+// Rows shaped like the loaded list (same markup, same count), so the list fills
+// in without pushing the cards below it down.
+function TopListPlaceholder({ rows, label }: { rows: number; label: string }) {
+  return (
+    <ul className="fm-top-list fm-top-list--loading" aria-label={label} aria-busy="true">
+      {Array.from({ length: rows }, (_, index) => (
+        <li key={index} aria-hidden="true">
+          <span className="fm-top-rank">{index + 1}</span>
+          <span className="fm-top-team-btn fm-top-placeholder" />
+          <span className="fm-top-value fm-top-placeholder" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function RankingsEmpty({ failed, loading }: { failed: boolean; loading: boolean }) {
   if (loading) return <EmptyState compact title="Loading rankings" description="Getting the latest standings." />;
   if (failed) return <EmptyState compact type="offline" title="Couldn't load rankings" description="They load again on the next refresh." />;
@@ -985,6 +1001,9 @@ export function EventsPage() {
   const hasClientAdminKey = clientAdminKeyAvailable();
   const canSyncEvent = useMemo(() => {
     if (publicReadonlyMode === true) return false;
+    // Until the server's settings arrive, only someone with an admin key sees Sync:
+    // assuming writes were open, it flashed into every visitor's header and vanished.
+    if (publicReadonlyMode === null && !hasClientAdminKey) return false;
     if (writeAuthEnforced && !hasClientAdminKey) return false;
     if (writeAuthEnforced && adminKeyConfigured === false) return false;
     return true;
@@ -2018,7 +2037,9 @@ export function EventsPage() {
                 </div>
               </div>
               {eventError ? <p className="fm-event-header-error" title={eventError}>Some of this event's data didn't load. It retries on its own.</p> : null}
-              {usingScheduleFallbackTeams ? (
+              {/* Only once loading is done: the schedule arrives before the team list,
+                  so the notice flashed in and out on every load. */}
+              {usingScheduleFallbackTeams && !loadingEventData ? (
                 <p className="fm-event-header-notice">Using roster from published match schedule.</p>
               ) : null}
               <SegmentedTabs
@@ -2078,7 +2099,7 @@ export function EventsPage() {
             </p>
           ) : null}
           {eventError ? <EmptyState compact type="offline" title="Couldn't load everything" description="Some of this event&apos;s data didn&apos;t load. It retries on its own." /> : null}
-          {usingScheduleFallbackTeams ? (
+          {usingScheduleFallbackTeams && !loadingEventData ? (
             <p className="center-callout muted helper-text">Team history unavailable, using roster from published match schedule.</p>
           ) : null}
           <div className="center-tabs-header">
@@ -2105,12 +2126,6 @@ export function EventsPage() {
           </SurfaceCard>
         ) : null}
 
-        {selectedEventKey && loadingEventData && eventSchedule.length === 0 && effectiveTeamCount === 0 ? (
-          <SurfaceCard title="Loading" compactable>
-            <SkeletonBlock rows={6} />
-          </SurfaceCard>
-        ) : null}
-
         {!isMobileLayout && !selectedEventKey ? (
           <SurfaceCard title="No Event Selected" subtitle="Pick an event in the Finder.">
             <EmptyState compact title="No event selected" description={`${CURRENT_SEASON_YEAR} first, ${FALLBACK_SEASON_YEAR} fallback.`} />
@@ -2121,19 +2136,23 @@ export function EventsPage() {
             {/* ── Mobile: FotMob-style overview ── */}
             {isMobileLayout ? (
               <div className="fm-content-stack">
-                {loadingEventData ? (
-                  <div className="center-loading-state">
-                    <SkeletonBlock rows={3} compact />
-                  </div>
-                ) : null}
-                {/* Matches / Teams / Status are already in the event header right above. */}
+                {/* Matches / Teams / Status are already in the event header right above.
+                    Each card shows its own loading state; a skeleton strip above them
+                    vanished when data came and jolted the page. */}
                 <div className="fm-top-card">
                   <div className="fm-top-card-header">
                     <h4>Top Rankings</h4>
                     <p>Current leaderboard</p>
                   </div>
-                  {rankingRows.length === 0 ? (
-                    <RankingsEmpty failed={rankingsFailed} loading={loadingEventData && !eventRankings} />
+                  {rankingRows.length === 0 && loadingEventData && !eventRankings ? (
+                    <>
+                      <TopListPlaceholder rows={6} label="Loading rankings" />
+                      <div className="center-actions-row compact" style={{ padding: '8px 12px 10px' }} aria-hidden="true">
+                        <button type="button" className="center-btn ghost" disabled tabIndex={-1}>Open Rankings</button>
+                      </div>
+                    </>
+                  ) : rankingRows.length === 0 ? (
+                    <RankingsEmpty failed={rankingsFailed} loading={false} />
                   ) : (
                     <ul className="fm-top-list">
                       {rankingRows.slice(0, 6).map((row) => (
@@ -2161,7 +2180,9 @@ export function EventsPage() {
                     <h4>Top Fuel Rate</h4>
                     <p>Teleop fuel per active-hub minute</p>
                   </div>
-                  {topFuelTeams.length === 0 ? (
+                  {topFuelTeams.length === 0 && loadingEventData ? (
+                    <TopListPlaceholder rows={5} label="Loading fuel rates" />
+                  ) : topFuelTeams.length === 0 ? (
                     <EmptyState compact title="No fuel metrics yet" description="Fuel rates show up once matches are played." />
                   ) : (
                     <ul className="fm-top-list">
@@ -2232,7 +2253,9 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'schedule' ? (
             <SurfaceCard title="Schedule" compactable>
-            {loadingEventData ? (
+            {/* Only until rows exist: shown alongside them, it pushed the list down
+                and then vanished while the rest of the event was still loading. */}
+            {loadingEventData && eventSchedule.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
               </div>
@@ -2815,7 +2838,7 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'rankings' ? (
             <SurfaceCard title="Rankings" compactable>
-            {loadingEventData ? (
+            {loadingEventData && rankingRows.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
               </div>

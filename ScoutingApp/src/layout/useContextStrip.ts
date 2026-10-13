@@ -137,9 +137,16 @@ export function useContextStrip(locationSearch: string) {
   const [contextPins, setContextPins] = useState<ContextQuickPickState>(
     () => readContextQuickPickState(CONTEXT_PINS_STORAGE, CONTEXT_PIN_LIMIT),
   );
-  const [contextRecents, setContextRecents] = useState<ContextQuickPickState>(
-    () => readContextQuickPickState(CONTEXT_RECENTS_STORAGE, CONTEXT_RECENTS_LIMIT),
-  );
+  // Includes the current event/team from the first render: added in the effect below
+  // instead, a "Recent" row popped in after the first paint and pushed every page
+  // down 34 px (Home's layout shift on desktop).
+  const [contextRecents, setContextRecents] = useState<ContextQuickPickState>(() => {
+    const snapshot = buildContextSnapshot(locationSearch);
+    let recents = readContextQuickPickState(CONTEXT_RECENTS_STORAGE, CONTEXT_RECENTS_LIMIT);
+    if (snapshot.eventKey) recents = pushRecent(recents, 'event', snapshot.eventKey);
+    if (snapshot.teamKey) recents = pushRecent(recents, 'team', snapshot.teamKey);
+    return recents;
+  });
   const [contextStripCollapsed, setContextStripCollapsed] = useState<boolean>(() => {
     const stored = window.localStorage.getItem(CONTEXT_STRIP_COLLAPSED_STORAGE);
     if (stored === '1') return true;
@@ -207,15 +214,6 @@ export function useContextStrip(locationSearch: string) {
     [contextRecents.team, pinnedTeamSet],
   );
 
-  const hasContextStripContent = Boolean(
-    contextSnapshot.eventKey ||
-    contextSnapshot.matchKey ||
-    contextSnapshot.teamKey ||
-    contextPins.event.length > 0 ||
-    contextPins.team.length > 0 ||
-    recentEventQuickPicks.length > 0 ||
-    recentTeamQuickPicks.length > 0,
-  );
 
   const contextMatchLabel = useMemo(
     () => formatContextMatch(contextSnapshot.matchKey, contextSnapshot.eventKey),
@@ -255,7 +253,6 @@ export function useContextStrip(locationSearch: string) {
     contextSnapshot,
     contextStripCollapsed,
     setContextStripCollapsed,
-    hasContextStripContent,
     contextMatchLabel,
     contextPins,
     contextRecents,
