@@ -164,7 +164,8 @@ describe('OnDeviceRun match lifecycle', () => {
     } as never);
     try {
       render(<OnDeviceRun />);
-      const picker = await screen.findByRole('combobox', { name: 'Match at 2026test' }, { timeout: 2000 });
+      // The label names the event (a readable code when its name isn't known), never the raw key.
+      const picker = await screen.findByRole('combobox', { name: 'Match at 2026 TEST' }, { timeout: 2000 });
       await waitFor(() => expect(picker).toHaveValue('2026test_qm2'));
       expect(screen.getByRole('option', { name: 'QM 1 (played)' })).toBeInTheDocument();
       expect(document.querySelector('.odr-teams')).toHaveTextContent('RED3BLUE4');

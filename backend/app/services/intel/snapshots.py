@@ -194,18 +194,30 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
 
     try:
         # Prioritize events with recent match activity and non-empty team rosters.
+        # Each total comes from its own grouped subquery: joining matches and teams in
+        # one query multiplied the rows (matches x teams per event) and ran ~240 ms
+        # every two minutes, with an inflated team count.
+        last_match = (
+            db.query(models.Match.event_key, func.max(models.Match.time).label("last_match_time"))
+            .group_by(models.Match.event_key)
+            .subquery()
+        )
+        team_counts = (
+            db.query(models.EventTeam.event_key, func.count(models.EventTeam.team_key).label("team_count"))
+            .group_by(models.EventTeam.event_key)
+            .subquery()
+        )
         event_rows = (
             db.query(
                 models.Event.event_key,
                 models.Event.year,
-                func.max(models.Match.time).label("last_match_time"),
-                func.count(models.EventTeam.team_key).label("team_count"),
+                last_match.c.last_match_time,
+                func.coalesce(team_counts.c.team_count, 0).label("team_count"),
             )
-            .outerjoin(models.Match, models.Match.event_key == models.Event.event_key)
-            .outerjoin(models.EventTeam, models.EventTeam.event_key == models.Event.event_key)
-            .group_by(models.Event.event_key, models.Event.year)
+            .outerjoin(last_match, last_match.c.event_key == models.Event.event_key)
+            .outerjoin(team_counts, team_counts.c.event_key == models.Event.event_key)
             .order_by(
-                func.coalesce(func.max(models.Match.time), 0).desc(),
+                func.coalesce(last_match.c.last_match_time, 0).desc(),
                 models.Event.year.desc(),
                 models.Event.event_key.asc(),
             )

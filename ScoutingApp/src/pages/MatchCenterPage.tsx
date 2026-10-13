@@ -46,6 +46,7 @@ import {
   normalizeMatchKey,
   relativeFromTimestamp,
   titleizeKey,
+  teamNumberFromTeamKey,
 } from './centerUtils';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { SEASON } from '../config/season';
@@ -114,6 +115,12 @@ function readMatchCenterRecentMatches(): MatchCenterRecentMatchesMap {
 
 function writeMatchCenterRecentMatches(next: MatchCenterRecentMatchesMap) {
   window.localStorage.setItem(MATCH_CENTER_RECENT_STORAGE, JSON.stringify(next));
+}
+
+// '#1912', the way the rest of the app writes a team, not the raw 'frc1912' key.
+function pairTeamLabel(teamKey: string): string {
+  const number = teamNumberFromTeamKey(teamKey);
+  return number !== null ? `#${number}` : teamKey;
 }
 
 export function MatchCenterPage() {
@@ -594,7 +601,7 @@ export function MatchCenterPage() {
     {
       key: 'pair',
       label: 'Pair',
-      render: (pair) => `${pair.team_key_a} + ${pair.team_key_b}`,
+      render: (pair) => `${pairTeamLabel(pair.team_key_a)} + ${pairTeamLabel(pair.team_key_b)}`,
     },
     {
       key: 'alliance',

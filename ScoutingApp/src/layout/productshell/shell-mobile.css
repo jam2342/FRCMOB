@@ -1616,6 +1616,25 @@
     white-space: nowrap;
   }
 
+  /* Loading rows (TopListPlaceholder): a soft bar where the name and value go,
+     as tall as a loaded row's button so nothing moves when data arrives. */
+  .fm-top-placeholder {
+    display: block;
+    min-height: 1.4em;
+    border-radius: 6px;
+    background: linear-gradient(
+      to bottom,
+      transparent calc(50% - 6px),
+      var(--color-surface-soft) calc(50% - 6px),
+      var(--color-surface-soft) calc(50% + 6px),
+      transparent calc(50% + 6px)
+    );
+  }
+
+  .fm-top-value.fm-top-placeholder {
+    flex: 0 0 64px;
+  }
+
   .fm-top-team-btn:active {
     color: var(--color-info-text);
   }

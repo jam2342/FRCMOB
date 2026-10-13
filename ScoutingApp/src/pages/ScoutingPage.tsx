@@ -64,7 +64,7 @@ import {
   PlayIcon, PauseIcon, ResetIcon, SettingsIcon, ClipboardIcon,
   ClipboardCheckIcon, ZapIcon, ClockIcon,
   RobotIcon, PenIcon,
-  TargetIcon, SaveIcon,
+  SaveIcon,
   WifiIcon, WifiOffIcon, CopyIcon, RefreshIcon, LogOutIcon,
   TrashIcon, DownloadIcon, QrCodeIcon,
   CalendarIcon, ScoreboardIcon,
@@ -98,7 +98,6 @@ import type {
   MobileScorePanel,
   MobileScoutSection,
   RoomConnectionState,
-  RpState,
   SavedScoutingEntry,
   ScoutFormState,
   ScoutingMode,
@@ -115,7 +114,6 @@ import {
   defaultFloatingTimerPosition,
   driverCompetency,
   EMPTY_FORM,
-  EMPTY_RP,
   ENDGAME_LABELS,
   ENDGAME_POINTS,
   entriesFromRoomRecords,
@@ -357,7 +355,6 @@ export function ScoutingPage() {
   const [selectedTeamKey, setSelectedTeamKey] = useState(defaultTeamKey);
   const [myTeamKey, setMyTeamKey] = useState(defaultMyTeamKey);
   const [form, setForm] = useState<ScoutFormState>(EMPTY_FORM);
-  const [rpState, setRpState] = useState<RpState>(EMPTY_RP);
   const [scoutNotes, setScoutNotes] = useState('');
   const [entries, setEntries] = useState<SavedScoutingEntry[]>(() =>
     readStoredEntries(getWorkspaceSession()?.workspace.id ?? null),
@@ -783,15 +780,6 @@ export function ScoutingPage() {
 
   const pointsSummary = useMemo(() => pointsFromForm(form), [form]);
   const hasScoutProfile = scoutProfile.trim().length > 0;
-
-  const rpSuggested = useMemo(
-    () => ({
-      energized: pointsSummary.total >= 34,
-      supercharged: pointsSummary.total >= 120,
-      traversal: pointsSummary.endgame >= 17,
-    }),
-    [pointsSummary.endgame, pointsSummary.total],
-  );
 
   const driverScore = useMemo(() => driverCompetency(form), [form]);
   const liveManualRating = useMemo(() => manualScoutingRating(form, driverScore), [form, driverScore]);
@@ -2252,10 +2240,9 @@ export function ScoutingPage() {
     : null;
   const [loadedDraftKey, setLoadedDraftKey] = useState<string | null>(null);
   useEffect(() => {
-    const draft = selectedDraftKey ? readScoutDraft<ScoutFormState, RpState>(selectedDraftKey) : null;
+    const draft = selectedDraftKey ? readScoutDraft<ScoutFormState>(selectedDraftKey) : null;
     setLoadedDraftKey(selectedDraftKey);
     setForm(draft ? { ...EMPTY_FORM, ...draft.form } : EMPTY_FORM);
-    setRpState(draft ? { ...EMPTY_RP, ...draft.rp } : EMPTY_RP);
     setScoutNotes(draft?.notes ?? '');
     setCountdown(MATCH_DURATION_SEC);
     if (draft) setStatusText('Picked up your unsaved report for this match.');
@@ -2265,11 +2252,11 @@ export function ScoutingPage() {
     // Wait for the new scope's form to load before writing. Persist each edit:
     // a debounce discarded the final tap when the scout immediately navigated.
     if (!selectedDraftKey || loadedDraftKey !== selectedDraftKey) return;
-    const empty = form === EMPTY_FORM && rpState === EMPTY_RP && !scoutNotes.trim();
+    const empty = form === EMPTY_FORM && !scoutNotes.trim();
     setDraftStorageFailed(!writeScoutDraft(selectedDraftKey, empty ? null : {
-      form, rp: rpState, notes: scoutNotes, saved_at_ms: Date.now(),
+      form, notes: scoutNotes, saved_at_ms: Date.now(),
     }));
-  }, [form, rpState, scoutNotes, selectedDraftKey, loadedDraftKey]);
+  }, [form, scoutNotes, selectedDraftKey, loadedDraftKey]);
 
   function updateCounter(field: CounterField, nextValue: number) {
     const safe = Math.max(0, Math.floor(nextValue));
@@ -2286,15 +2273,6 @@ export function ScoutingPage() {
       }
       return next;
     });
-  }
-
-  function applySuggestedRp() {
-    setRpState((current) => ({
-      ...current,
-      energized: rpSuggested.energized,
-      supercharged: rpSuggested.supercharged,
-      traversal: rpSuggested.traversal,
-    }));
   }
 
   function confirmDraftScopeChange(changing: boolean) {
@@ -2892,7 +2870,6 @@ export function ScoutingPage() {
         alliance: selectedTeam.alliance,
         station: selectedTeam.station,
         points: pointsSummary,
-        rp: rpState,
         form,
         driver_competency: driverScore,
         manual_rating: manualRating,
@@ -2934,7 +2911,6 @@ export function ScoutingPage() {
       setStatusText(`${label} ${roomKey ? 'Saved on this phone; syncing to your team…' : 'Saved on this phone.'}`);
       if (!isMobileLayout && scoutingMode === 'rapid') {
         setForm(EMPTY_FORM);
-        setRpState(EMPTY_RP);
         setScoutNotes('');
         setCountdown(MATCH_DURATION_SEC);
       }
@@ -4732,45 +4708,7 @@ export function ScoutingPage() {
           </div>
         ) : null}
 
-        {showCaptureSection ? (
-          <div className={`scout-main-grid scout-secondary-grid ${isMobileLayout ? 'fm-scout-cards' : ''}`.trim()}>
-          {showCaptureStrategyCards ? strategyCard : null}
-
-          {showCaptureStrategyCards || (isMobileLayout && mobileCapturePanel === 'endgame') ? (
-          <SurfaceCard title="RP Checks" subtitle="Suggestions + manual override.">
-            <div className="center-actions-row">
-              <button type="button" className="center-btn ghost" onClick={applySuggestedRp}>
-                <TargetIcon className="icon-inline" /> Apply Suggested RP
-              </button>
-            </div>
-            <p className="center-callout muted">
-              RP predictions from scout inputs. Toggle manually before save.
-            </p>
-            <div className="scout-rp-grid">
-              {(
-                [
-                  ['energized', 'Energized RP', rpSuggested.energized],
-                  ['supercharged', 'Supercharged RP', rpSuggested.supercharged],
-                  ['traversal', 'Traversal RP', rpSuggested.traversal],
-                  ['coop', 'Co-op RP', false],
-                ] as Array<[keyof RpState, string, boolean]>
-              ).map(([key, label, suggested]) => (
-                <button
-                  key={`rp-${key}`}
-                  type="button"
-                  aria-pressed={rpState[key]}
-                  className={`scout-rp-btn ${rpState[key] ? 'active' : ''}`.trim()}
-                  onClick={() => setRpState((current) => ({ ...current, [key]: !current[key] }))}
-                >
-                  <strong>{label}{rpState[key] ? ' ✓' : ''}</strong>
-                  <small>{suggested ? 'Suggested by points model' : 'Manual toggle'}</small>
-                </button>
-              ))}
-            </div>
-          </SurfaceCard>
-          ) : null}
-          </div>
-        ) : null}
+        {showCaptureSection && showCaptureStrategyCards ? strategyCard : null}
 
         {showScoreSection ? (
           <div className={`scout-main-grid scout-secondary-grid scout-tertiary-grid ${isMobileLayout ? 'fm-scout-cards' : ''}`.trim()}>
