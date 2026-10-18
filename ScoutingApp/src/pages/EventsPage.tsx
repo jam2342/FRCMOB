@@ -3,7 +3,7 @@ import { useCalendarExpansion, useEventCalendar } from './useEventCalendar';
 import { mergeEventLists } from '../utils/mergeEventLists';
 import { downloadCsv } from '../utils/csvExport';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   clientAdminKeyAvailable,
   getApiHealth,
@@ -66,7 +66,7 @@ import {
   BarChartIcon, GridIcon, ListIcon, PieChartIcon, TrophyIcon, UsersIcon,
   LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, RefreshIcon, CloudSyncIcon,
   CopyIcon, DownloadIcon,
-  ScoreboardIcon, BracketIcon, ChevronDownIcon,
+  ScoreboardIcon, BracketIcon,
   TargetIcon, DeltaIcon,
   CalendarIcon, ChevronLeftIcon, ChevronRightIcon,
 } from '../components/ui/Icons';
@@ -563,7 +563,6 @@ export function EventsPage() {
   const [rankingsSortMode, setRankingsSortMode] = useState<RankingsSortMode>('rank');
   const [eventTeamsSortMode, setEventTeamsSortMode] = useState<EventTeamsSortMode>('team');
   const [expandedKnockoutSeries, setExpandedKnockoutSeries] = useState<Record<string, boolean>>({});
-  const [mobileExpandedScheduleMatches, setMobileExpandedScheduleMatches] = useState<Record<string, boolean>>({});
   const [mobilePanel, setMobilePanel] = useState<EventsMobilePanel>(() => (!defaultEventKey ? 'finder' : 'center'));
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -589,7 +588,6 @@ export function EventsPage() {
   }, [isMobileLayout]);
 
   useEffect(() => {
-    setMobileExpandedScheduleMatches({});
   }, [activeTab, isMobileLayout, selectedEventKey]);
 
   useEffect(() => {
@@ -1768,29 +1766,6 @@ export function EventsPage() {
     navigate(buildMatchCenterPath(normalizedEventKey, matchKey));
   }
 
-  function scheduleMobileRowKey(matchKey: string): string {
-    return `${selectedEventKey || 'event'}::${matchKey}`;
-  }
-
-  function isMobileScheduleMatchExpanded(matchKey: string): boolean {
-    return Boolean(mobileExpandedScheduleMatches[scheduleMobileRowKey(matchKey)]);
-  }
-
-  function expandMobileScheduleMatch(matchKey: string) {
-    const key = scheduleMobileRowKey(matchKey);
-    setMobileExpandedScheduleMatches((previous) => ({ ...previous, [key]: true }));
-  }
-
-  function collapseMobileScheduleMatch(matchKey: string) {
-    const key = scheduleMobileRowKey(matchKey);
-    setMobileExpandedScheduleMatches((previous) => {
-      if (!previous[key]) return previous;
-      const next = { ...previous };
-      delete next[key];
-      return next;
-    });
-  }
-
   function renderKnockoutSeriesCard(series: KnockoutSeriesRow, keyPrefix: string) {
     const isExpanded = Boolean(expandedKnockoutSeries[series.key]);
     const winnerSummary = seriesWinnerLineup(series);
@@ -2346,7 +2321,6 @@ export function EventsPage() {
                       ? 'Tie'
                       : `${titleizeKey(winner)} wins ${match.winning_score ?? ''}`.trim()
                     : null;
-                const mobileExpanded = isMobileLayout ? isMobileScheduleMatchExpanded(match.match_key) : false;
                 const compactRed = compactAllianceLabel(match.red);
                 const compactBlue = compactAllianceLabel(match.blue);
                 const allianceSplit = (
@@ -2411,95 +2385,33 @@ export function EventsPage() {
                     key={match.match_key}
                     className={
                       isMobileLayout
-                        ? `home-match-row event-schedule-mobile-row ${winnerClass} ${mobileExpanded ? 'mobile-expanded' : 'mobile-compact'}`.trim()
+                        ? `home-match-row event-schedule-mobile-row ${winnerClass} mobile-compact`.trim()
                         : `center-match-row ${winnerClass}`.trim()
                     }
                   >
                     {isMobileLayout ? (
-                      <>
-                        <button
-                          type="button"
-                          className="home-match-main event-schedule-mobile-main"
-                          onClick={() => {
-                            if (!mobileExpanded) {
-                              expandMobileScheduleMatch(match.match_key);
-                              return;
-                            }
-                            openMatchCenter(match.match_key);
-                          }}
-                          title={
-                            mobileExpanded
-                              ? `Open ${match.display_name} in Match Center`
-                              : `Expand ${match.display_name}`
-                          }
-                          aria-expanded={mobileExpanded}
-                        >
-                          {!mobileExpanded ? (
-                            <div className="home-match-compact-body">
-                              <div className="home-match-compact-head">
-                                <strong>{match.display_name}</strong>
-                                <span className={`home-match-compact-state ${effectiveState}`}>{compactStateLabel(effectiveState)}</span>
-                              </div>
-                              <div className="home-match-compact-line">
-                                <span className="home-match-compact-side red">{compactRed}</span>
-                                <span className="home-match-compact-score">{scoreboard}</span>
-                                <span className="home-match-compact-side blue">{compactBlue}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="fm-match-header-row">
-                                <div className="home-match-center-col">
-                                  <strong>{match.display_name}</strong>
-                                  <small>{fmtDateShort(matchStartTime(match))}</small>
-                                </div>
-                                <div className="fm-match-status-right">
-                                  <span className={`home-match-state ${effectiveState}`}>
-                                    {isCompleted ? 'Final' : timer.label}
-                                  </span>
-                                  <span className="fm-match-score-timer">{scoreboard}</span>
-                                </div>
-                              </div>
-                              {winnerText ? (
-                                <span className="home-winner-chip">{winnerText}</span>
-                              ) : null}
-                              <small className="home-match-open-hint">Tap again to open Match Center</small>
-                            </>
-                          )}
-                        </button>
-
-                        {mobileExpanded ? (
-                          <>
-                            {allianceSplit}
-                            <footer className="center-match-actions event-schedule-mobile-actions">
-                              <button
-                                type="button"
-                                className="center-btn ghost"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  collapseMobileScheduleMatch(match.match_key);
-                                }}
-                                title="Collapse match details"
-                              >
-                                <ChevronDownIcon className="icon-inline" /> Collapse
-                              </button>
-                              <button
-                                type="button"
-                                className="center-btn"
-                                onClick={() => openMatchCenter(match.match_key)}
-                                title={`Open ${match.display_name} details`}
-                              >
-                                Match Details
-                              </button>
-                            </footer>
-                          </>
-                        ) : null}
-                      </>
+                      <Link
+                        className="home-match-main event-schedule-mobile-main"
+                        to={buildMatchCenterPath(selectedEventKey, match.match_key)}
+                        title={`Open ${match.display_name} in Match Center`}
+                      >
+                        <div className="home-match-compact-body">
+                          <div className="home-match-compact-head">
+                            <strong title={match.display_name}>{match.display_name}</strong>
+                            <span className={`home-match-compact-state ${effectiveState}`}>{compactStateLabel(effectiveState)}</span>
+                          </div>
+                          <div className="home-match-compact-line">
+                            <span className="home-match-compact-side red" title={match.red.map(team => `#${team.team_number}`).join(' · ')}>{compactRed}</span>
+                            <span className="home-match-compact-score">{scoreboard}</span>
+                            <span className="home-match-compact-side blue" title={match.blue.map(team => `#${team.team_number}`).join(' · ')}>{compactBlue}</span>
+                          </div>
+                        </div>
+                      </Link>
                     ) : (
                       <>
                         <header className="center-match-head">
                           <div>
-                            <strong>{match.display_name}</strong>
+                            <strong><Link className="entity-link" to={buildMatchCenterPath(selectedEventKey, match.match_key)}>{match.display_name}</Link></strong>
                           </div>
                           <div className="center-match-state-block">
                             <span className={`center-status-pill ${effectiveState}`}>
@@ -2519,11 +2431,6 @@ export function EventsPage() {
 
                         {allianceSplit}
 
-                        <footer className="center-match-actions">
-                          <button type="button" className="center-btn" onClick={() => openMatchCenter(match.match_key)} title={`Open ${match.display_name} details`}>
-                            Match Details
-                          </button>
-                        </footer>
                       </>
                     )}
                   </article>

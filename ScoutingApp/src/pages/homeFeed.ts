@@ -89,6 +89,41 @@ export function filterHomeWindowMatches(
   });
 }
 
+// Keep the action at the top without making viewers scroll past the morning's results
+// or the rest of the afternoon's schedule. Only Home uses this order.
+export function sortHomeFeedMatches(matches: EventScheduleItem[], nowMs: number): EventScheduleItem[] {
+  const groups: Record<ReturnType<typeof resolveHomeMatchState>, EventScheduleItem[]> = {
+    live: [], upcoming: [], ended: [], unknown: [],
+  };
+  for (const match of matches) groups[resolveHomeMatchState(match, nowMs)].push(match);
+
+  const compare = (newestFirst: boolean) => (a: EventScheduleItem, b: EventScheduleItem): number => {
+    const aTime = matchStartTime(a);
+    const bTime = matchStartTime(b);
+    const aTimed = aTime !== null && Number.isFinite(aTime);
+    const bTimed = bTime !== null && Number.isFinite(bTime);
+    if (aTimed !== bTimed) return aTimed ? -1 : 1;
+    const stages = ['qm', 'ef', 'qf', 'sf', 'f'];
+    const order = (aTimed && bTimed ? aTime - bTime : 0)
+      || stages.indexOf(a.comp_level) - stages.indexOf(b.comp_level)
+      || a.set_number - b.set_number
+      || a.match_number - b.match_number
+      || a.match_key.localeCompare(b.match_key, undefined, { numeric: true });
+    return newestFirst ? -order : order;
+  };
+  groups.live.sort(compare(true));
+  groups.upcoming.sort(compare(false));
+  groups.ended.sort(compare(true));
+  groups.unknown.sort(compare(false));
+  return [
+    ...groups.live,
+    ...groups.upcoming.slice(0, 1),
+    ...groups.ended,
+    ...groups.upcoming.slice(1),
+    ...groups.unknown,
+  ];
+}
+
 export function buildHomeFilterCounts(
   feedEventKeys: string[],
   scheduleByEvent: Record<string, { matches?: EventScheduleItem[] | null }>,

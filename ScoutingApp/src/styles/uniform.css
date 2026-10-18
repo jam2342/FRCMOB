@@ -96,3 +96,61 @@ input[type='search']::-webkit-search-decoration {
     text-wrap: balance;
   }
 }
+
+/* ================================================================== */
+/*  A scrolling list never squeezes its rows                           */
+/* ================================================================== */
+/* A list capped to the window's height scrolls; its rows keep their own height. Rows that hide
+   their overflow may otherwise be shrunk to fit the cap, and they were: on a short window every
+   row in Home's Today's Events lost its bottom chip, and the Events finder sliced each row's
+   last line. guard-uniformity's box-cut check (run on a short laptop window too) finds new ones. */
+:where(.home-board-event-list, .center-list-scroll, .home-ranking-list, .event-picker-dropdown) {
+  grid-auto-rows: max-content;
+  align-content: start;
+}
+
+:where(.home-board-event-list, .center-list-scroll, .home-ranking-list, .event-picker-dropdown) > * {
+  flex-shrink: 0;
+}
+
+/* Names that open an event, team, or match are ordinary links: keyboard, Back,
+   and opening a new tab work without a second "View details" control. */
+.product-shell .entity-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.product-shell .entity-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.product-shell a.home-next-hero {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.product-shell .home-event-item-links {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.product-shell .home-event-item-links > a:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.product-shell .home-event-item-links > a:last-child {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+}
+
+.product-shell .home-drawer-event-links {
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}

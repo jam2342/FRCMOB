@@ -1067,19 +1067,20 @@ button.ps-context-chip:disabled {
   min-width: 0;
 }
 
-/* Rail event cards: enforce readable stacked spacing (prevents line overlap). */
+/* Rail event cards: a column that grows with its content. It was a grid with min-content rows
+   and overflow hidden: when the chips wrapped to a second line ("Running today · 65 matches"
+   under "Today"), Chrome sized that row for one line and the hidden overflow sliced the second.
+   The title clamps and the location truncates on their own, so nothing here needs hiding. */
 .product-shell .home-event-item.home-event-item-rail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-auto-rows: min-content;
+  display: flex;
+  flex-direction: column;
   row-gap: 6px;
-  align-content: start;
   min-height: 98px;
   padding: 11px 12px 12px;
-  overflow: hidden;
 }
 
 .product-shell .home-event-item.home-event-item-rail > * {
+  flex-shrink: 0;
   margin: 0;
 }
 
@@ -1348,6 +1349,90 @@ button.ps-context-chip:disabled {
   overflow: hidden;
 }
 
+/* Compact Home cards keep team links inside the score bars rather than repeating
+   both alliances, the result, and a separate row of pills below the match. */
+.product-shell .home-match-row.desktop-compact {
+  padding: 8px 10px;
+  gap: 4px;
+}
+
+.product-shell .desktop-compact .home-match-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-shell .desktop-compact .home-match-main {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: none;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.product-shell .desktop-compact .home-match-main > * {
+  grid-area: auto;
+}
+
+.product-shell .desktop-compact .home-match-link-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.product-shell .desktop-compact .home-alliance-line {
+  gap: 6px;
+  padding: 1px 6px;
+}
+
+.product-shell .home-alliance-teams {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.product-shell .desktop-compact .home-team-pill {
+  min-height: 28px;
+  padding: 2px 4px;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.product-shell .home-match-score {
+  align-self: stretch;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.product-shell .home-match-countdown {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.product-shell .home-match-row.is-live {
+  border-left: 3px solid var(--status-live-color);
+  background: color-mix(in srgb, var(--status-live-color) 9%, var(--color-surface));
+}
+
+.product-shell .home-match-row.is-next {
+  border-left: 3px solid var(--color-info-text);
+}
+
+.product-shell .home-match-row.mobile-compact {
+  padding: 0;
+  gap: 0;
+}
+
 .product-shell .home-match-team-pills {
   padding: 8px 10px 10px;
   border-top: 1px solid color-mix(in srgb, var(--ui-border) 72%, transparent);
@@ -1516,7 +1601,7 @@ button.ps-context-chip:disabled {
   }
 
   .product-shell .home-match-row.mobile-compact .home-match-main {
-    padding: 9px 10px;
+    padding: 7px 10px;
   }
 
   .product-shell .home-match-compact-score {
@@ -1536,6 +1621,13 @@ button.ps-context-chip:disabled {
     width: min(390px, calc(100vw - 8px));
     border-top-left-radius: 18px;
     border-bottom-left-radius: 18px;
+  }
+
+  /* Keep the drawer's close control below the fixed phone header. */
+  .product-shell .home-event-info-drawer {
+    top: var(--ps-topbar-height);
+    max-height: calc(100dvh - var(--ps-topbar-height) - var(--bottom-bar-height));
+    grid-auto-rows: max-content;
   }
 
   .product-shell .home-calendar-drawer {

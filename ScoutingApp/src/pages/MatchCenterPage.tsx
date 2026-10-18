@@ -1010,7 +1010,7 @@ export function MatchCenterPage() {
           <>
             <div className={`fm-score-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
               <span className="fm-match-label">{selectedMatch.display_name}</span>
-              <span className="fm-event-label">{eventTitle}</span>
+              <Link className="fm-event-label entity-link" to={`/events?event=${encodeURIComponent(selectedEventKey)}&tab=schedule`}>{eventTitle}</Link>
               <div className="fm-score-row">
                 <div className={`fm-alliance fm-red ${revealClass('red')}`.trim()}>
                   <strong>RED</strong>

@@ -3364,7 +3364,7 @@ select.center-input option,
   border-left: 3px solid color-mix(in srgb, var(--color-alliance-blue) 85%, transparent);
 }
 
-.home-match-alliances span {
+.home-alliance-line > span {
   min-width: 34px;
   font-size: var(--font-size-2xs);
   font-weight: 700;

@@ -251,6 +251,9 @@ class Settings(BaseSettings):
     # be present before ordinary acceptance. Legacy payloads always score zero.
     on_device_sync_min_quality_score: float = 0.8
     matches_live_results_cache_ttl_sec: int = 5
+    # FRC Events has a result ~10 s after the field posts it; TBA takes 1-3 min. While a
+    # match waits on TBA, its result comes from FRC Events (services/events/first_live_results.py).
+    first_live_results_enabled: bool = True
 
     @field_validator(
         "tba_auth_key",

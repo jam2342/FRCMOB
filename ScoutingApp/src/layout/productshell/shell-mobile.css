@@ -2362,7 +2362,7 @@
 
   .home-match-compact-state.upcoming {
     border-color: color-mix(in srgb, var(--color-info-text) 40%, transparent);
-    color: #93bbf0;
+    color: var(--color-info-text);
   }
 
   .home-match-compact-state.ended {

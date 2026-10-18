@@ -20,6 +20,9 @@
  *                same: an event's name was 14px and cut to one line, a team's 19px and wrapped.
  *   cut-text     Text cut with "…" or a line clamp carries its full text (a title). Live Ratings'
  *                team names and Compare's team pool were cut with no way to read them.
+ *   box-cut      A box that hides overflow is big enough for its content. Rows in lists capped to
+ *                the window's height were squeezed and their last line sliced (Home's Today's
+ *                Events, the Events finder). Checked on a short laptop window too.
  *   table-fits   A table never scrolls sideways inside its card; the Table primitive turns rows
  *                into cards when the columns don't fit. Four did on a 1366px desktop.
  *   values       A missing value reads "—" and a change never reads "-0.0". Pages said "N/A"
@@ -52,6 +55,9 @@ const PAGES = [...ROUTES.filter((route) => !route.startsWith('/primitives')), ..
 const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844 },
   { name: 'desktop', width: 1366, height: 900 },
+  // A short laptop window. Lists capped to the window's height squeezed their rows here, which
+  // a 900px-tall check never saw (Home's Today's Events cut the bottom chip off every row).
+  { name: 'laptop', width: 1280, height: 640 },
 ];
 
 // Controls that are a different kind of thing on purpose, each with its own module: the big
@@ -73,7 +79,7 @@ function measure(BARE_CONTROL) {
     }
     return bits.join(' > ');
   };
-  const out = { boxes: [], tablists: [], tabs: [], titles: [], heroes: [], cut: [], tables: [], values: [] };
+  const out = { boxes: [], tablists: [], tabs: [], titles: [], heroes: [], cut: [], clipped: [], tables: [], values: [] };
 
   for (const el of document.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]):not([type=hidden]):not([type=submit]):not([type=button]), select')) {
     if (!visible(el) || el.matches(BARE_CONTROL)) continue;
@@ -122,6 +128,31 @@ function measure(BARE_CONTROL) {
     if (!named) out.cut.push({ text: text.slice(0, 50), at: where(el) });
   }
 
+  // A box that hides its overflow (and is not a scroller or a deliberate "…") must be big
+  // enough for what's inside it. Rows in capped lists were squeezed and their last line sliced.
+  for (const el of document.querySelectorAll('.ps-content *')) {
+    if (!visible(el) || ['INPUT', 'SELECT', 'TEXTAREA', 'svg', 'IMG', 'VIDEO', 'CANVAS', 'IFRAME'].includes(el.tagName)) continue;
+    const cs = getComputedStyle(el);
+    const clipsY = cs.overflowY === 'hidden' || cs.overflowY === 'clip';
+    const clipsX = cs.overflowX === 'hidden' || cs.overflowX === 'clip';
+    if (!clipsY && !clipsX) continue;
+    if (cs.textOverflow === 'ellipsis' || (cs.webkitLineClamp && cs.webkitLineClamp !== 'none')) continue;
+    if (el.clientWidth <= 1 || el.clientHeight <= 1 || cs.clip !== 'auto' || cs.position === 'absolute' && el.clientWidth <= 2) continue;
+    // Only content that is really there counts: a visible descendant poking past the box.
+    const box = el.getBoundingClientRect();
+    const bottom = box.top + el.clientTop + el.clientHeight;
+    const right = box.left + el.clientLeft + el.clientWidth;
+    const cutChild = [...el.querySelectorAll('*')].find((child) => {
+      if (!visible(child) || !(child.textContent || '').trim() && !child.querySelector('svg,img')) return false;
+      const r = child.getBoundingClientRect();
+      if (r.height < 4 || r.width < 4) return false;
+      const overY = clipsY && r.bottom > bottom + 2 && r.top < bottom - 2;
+      const overX = clipsX && r.right > right + 2 && r.left < right - 2;
+      return (overY || overX) && child.children.length === 0;
+    });
+    if (cutChild) out.clipped.push({ text: cutChild.textContent.trim().slice(0, 40), at: where(el) });
+  }
+
   for (const table of document.querySelectorAll('.ps-content table')) {
     if (!visible(table)) continue;
     const box = table.parentElement;
@@ -167,6 +198,7 @@ async function main() {
       }
       for (const list of m.tablists) if (!list.shared) failures.push(['tabs', `${at}  a tab strip that is not SegmentedTabs: ${list.at}`]);
       for (const cut of m.cut) failures.push(['cut-text', `${at}  "${cut.text}" is cut with no title  ${cut.at}`]);
+      for (const box of m.clipped) failures.push(['box-cut', `${at}  "${box.text}" is sliced by its box  ${box.at}`]);
       for (const table of m.tables) failures.push(['table-fits', `${at}  table needs ${table.need}px in ${table.have}px  ${table.at}`]);
       for (const value of m.values) failures.push(['values', `${at}  "${value.text.trim()}"`]);
     }

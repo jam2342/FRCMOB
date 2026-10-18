@@ -3,8 +3,10 @@
 import { BASE, bodyText, check, desktop, phone, sleep, storedJson, until } from './lib.mjs';
 
 const HTML_502 = '<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>';
-// Home always shows its selected event's card once it has events.
-const HOME_LOADED = /View Event/;
+// Home always shows its selected event's card once it has events, and each card has its
+// own Minimize/Expand button (not the toolbar's "Minimize All"). It used to be the card's
+// "View Event" button, which #212 replaced with a link on the event name.
+const HOME_LOADED = /\b(?:Minimize|Expand)\b(?! All)/;
 
 export default [
   {
