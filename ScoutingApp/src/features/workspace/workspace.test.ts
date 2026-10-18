@@ -14,7 +14,7 @@ function json(body: unknown, status = 200) {
 
 const workspaceBody = (id: number, name: string, token?: string, joinCode?: string) => ({
   ok: true,
-  workspace: { id, name, frc_team_number: 118, join_code_rotated_at: null, created_at: null },
+  workspace: { id, name, frc_team_number: 5417, join_code_rotated_at: null, created_at: null },
   me: { id: 10, display_name: 'Ann', role: 'leader', joined_at: null, last_seen_at: null },
   members: [],
   ...(joinCode ? { join_code: joinCode } : {}),
@@ -34,14 +34,14 @@ describe('team workspace session', () => {
   });
 
   it('creating a workspace signs the device in and keeps the issued code for the team view', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(json(workspaceBody(7, 'Robonauts', 'tok-7', 'ABCDE-12345')));
+    const fetchMock = vi.fn().mockResolvedValue(json(workspaceBody(7, 'Eagle Robotics', 'tok-7', 'ABCDE-12345')));
     vi.stubGlobal('fetch', fetchMock);
     const { session, api } = await load();
 
-    await api.createWorkspace({ name: 'Robonauts', display_name: 'Ann' });
+    await api.createWorkspace({ name: 'Eagle Robotics', display_name: 'Ann' });
 
     expect(session.getWorkspaceToken()).toBe('tok-7');
-    expect(session.getWorkspaceSession()?.workspace.name).toBe('Robonauts');
+    expect(session.getWorkspaceSession()?.workspace.name).toBe('Eagle Robotics');
     expect(session.issuedJoinCodeFor(7)).toBe('ABCDE-12345');
     expect(session.issuedJoinCodeFor(8)).toBeNull();
     // Stored for the next visit, but never the join code.

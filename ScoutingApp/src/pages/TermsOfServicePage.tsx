@@ -27,7 +27,6 @@ export function TermsOfServicePage() {
         <SurfaceCard
           title="Terms of Service"
           subtitle="The rules for using FRCMOB."
-          expandable={false}
           mobileCollapsible={false}
         >
           <div className="legal-meta">

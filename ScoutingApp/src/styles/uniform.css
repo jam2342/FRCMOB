@@ -1,0 +1,98 @@
+/* The app's "one look" rules: things that must look the same on every page. Each was set in
+   several stylesheets with page-specific overrides, and drifted one page at a time. These are
+   unlayered on purpose, so they outrank every layered shell rule, and guard-uniformity checks
+   the rendered result on every route at phone and desktop size. Change a look here or in its
+   tokens, never per page. */
+
+/* ================================================================== */
+/*  One text box                                                       */
+/* ================================================================== */
+/* Every text box, search box and select in the app looks the same: same height, corner, border,
+   fill, padding and text size. They were set in six places (two shell layers, the light-theme
+   overrides, the Field primitive, the phone search overlay and the header), so Favorites' box
+   had 16px text beside 13px ones, the phone search was white with an 11px corner while the rest
+   were grey with 6px, and the header search was a pill.
+
+   Unlayered on purpose: it outranks every layered shell rule. :where() keeps its specificity at
+   zero so a component that genuinely needs a different control (the scouting stepper's big
+   number, the ⌘K palette's borderless line) still says so in its own module. Change the look
+   here or in the --control-* tokens, never per page. guard-uniformity checks the result. */
+:where(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='hidden'], [type='submit'], [type='button'], [type='reset'], [type='image']),
+  select,
+  textarea
+) {
+  padding-inline: var(--control-padding-inline);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background-color: var(--control-bg);
+  color: var(--control-text);
+  font-family: inherit;
+  font-size: var(--control-font-size);
+}
+
+/* A single-line box is one control tall; a textarea sets its own height (notes are 96px). */
+:where(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='hidden'], [type='submit'], [type='button'], [type='reset'], [type='image']),
+  select
+) {
+  min-height: var(--control-min-height);
+}
+
+:where(input, select, textarea)::placeholder {
+  color: var(--color-text-dim);
+}
+
+:where(input, select, textarea):where(:focus-visible) {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+
+/* The browser's own search decorations (Chrome's blue ×) appeared on two search boxes and not
+   the others. A box that needs a clear button draws the app's own. */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  appearance: none;
+}
+
+:where(textarea) {
+  padding-block: var(--space-2);
+}
+
+/* ================================================================== */
+/*  One card title                                                     */
+/* ================================================================== */
+/* It came in four versions: weight 600 or 700 and two letter-spacings, depending on whether the
+   card sat in Team Center, the scouting grid, Compare or Favorites. */
+.surface-card-head h3 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-tight);
+  line-height: var(--line-height-tight);
+  color: var(--color-text);
+}
+
+@media (max-width: 1120px) {
+  .surface-card-head h3 {
+    font-size: var(--font-size-lg);
+  }
+}
+
+/* ================================================================== */
+/*  One page header title on phones                                    */
+/* ================================================================== */
+/* An event's name was 14px and cut to one line ("FIRST California Southern State Champ…") while
+   a team's was 19px and wrapped. Same job, same look: the thing this page is about. */
+@media (max-width: 1120px) {
+  .fm-event-header-info h2,
+  .fm-team-hero-info h2 {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: 800;
+    line-height: 1.15;
+    color: var(--color-text);
+    text-wrap: balance;
+  }
+}

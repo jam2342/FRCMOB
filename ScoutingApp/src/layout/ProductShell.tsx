@@ -126,11 +126,12 @@ function guessQuickJump(raw: string): QuickJumpGuess {
   return 'search';
 }
 
+// What Enter will do, in words: "Detected input type: Team" read like leftover debug output.
 function guessLabel(kind: QuickJumpGuess): string {
-  if (kind === 'team') return 'Team';
-  if (kind === 'event') return 'Event';
-  if (kind === 'match') return 'Match';
-  return 'Search';
+  if (kind === 'team') return 'Enter opens the team';
+  if (kind === 'event') return 'Enter opens the event';
+  if (kind === 'match') return 'Enter opens the match';
+  return 'Enter searches events';
 }
 
 function formatEventDisplay(raw: string): string {
@@ -625,7 +626,7 @@ export function ProductShell() {
   // the guess falls back to "Search", so the hint rendered as "Detected input
   // type: Search" on every page — uppercased by the stylesheet, which made a
   // real feature read like leftover debug output.
-  const helperLabel = !jumpInput.trim() ? '' : `Detected input type: ${guessLabel(guessedTarget)}`;
+  const helperLabel = !jumpInput.trim() ? '' : guessLabel(guessedTarget);
 
   const openTutorial = useCallback((scope: TutorialScope) => {
     markTutorialSeen(scope);

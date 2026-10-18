@@ -12,6 +12,7 @@ import {
   parseRoomKeyFromQr,
 } from './qrUtils';
 import styles from './QrShareModals.module.css';
+import { MISSING } from '../utils/formatValue';
 
 // These three modals are conditionally mounted by ScoutingPage, so `open` is
 // always true here and every prop signature is unchanged — nothing at the call
@@ -198,7 +199,7 @@ export function RoomQrModal({
       }
     >
       <div className={styles.meta}>
-        <Chip tone="accent" dot>Room: {normalizedRoomKey || 'N/A'}</Chip>
+        <Chip tone="accent" dot>Room: {normalizedRoomKey || MISSING}</Chip>
       </div>
 
       {errorText ? (

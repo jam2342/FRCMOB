@@ -32,7 +32,7 @@ it('clears old team charts, rejects late breakdowns, and uses percentage axes an
   vi.mocked(getEventRatings).mockResolvedValue(ratings(2222) as never);
   vi.mocked(getTeamBreakdown).mockImplementation(team => team === 'frc1111' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(breakdown(0.6) as never));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
-  const team = screen.getByPlaceholderText('Team number, e.g. 254');
+  const team = screen.getByPlaceholderText('Team number, e.g. 5417');
   fireEvent.change(team, { target: { value: '1111' } });
   fireEvent.click(screen.getByRole('tab', { name: 'Team Deep Dive' }));
   await waitFor(() => expect(finish).toBeDefined());
@@ -60,7 +60,7 @@ it('uses field-position labels and leaves unavailable radar dimensions empty', a
   await screen.findByText('#254');
   const autoCell = container.querySelector('tbody tr')?.children[6];
   expect(autoCell?.textContent).toBe('—');
-  fireEvent.change(screen.getByPlaceholderText('Team number, e.g. 254'), { target: { value: '254' } });
+  fireEvent.change(screen.getByPlaceholderText('Team number, e.g. 5417'), { target: { value: '254' } });
   fireEvent.click(screen.getByRole('tab', { name: 'Team Deep Dive' }));
   expect(screen.getByText('Top 1%')).toBeInTheDocument();
   expect(screen.getByText('Bottom 5%')).toBeInTheDocument();
@@ -78,7 +78,7 @@ it.each(['ratings', 'breakdown'])('keeps the loading banner until %s also finish
   vi.mocked(getTeamBreakdown).mockImplementation(() => pending === 'breakdown'
     ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ ok: true } as never));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
-  fireEvent.change(screen.getByPlaceholderText('Team number, e.g. 254'), { target: { value: '254' } });
+  fireEvent.change(screen.getByPlaceholderText('Team number, e.g. 5417'), { target: { value: '254' } });
   await waitFor(() => expect(getTeamBreakdown).toHaveBeenCalled());
   await act(async () => {});
   expect(screen.getByText('Loading data…')).toBeInTheDocument();

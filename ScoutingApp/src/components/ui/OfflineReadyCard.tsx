@@ -114,7 +114,6 @@ export function OfflineReadyCard({ compact = false }: { compact?: boolean }) {
     <SurfaceCard
       title="Ready for no signal"
       subtitle="Most event venues have little or no reception. Save what you need here while you have Wi-Fi."
-      expandable={false}
       mobileCollapsible={false}
       className={compact ? 'offline-ready offline-ready--compact' : 'offline-ready'}
     >

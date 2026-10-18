@@ -44,30 +44,15 @@
 /* ── Text / Select / Textarea ─────────────────────────────────────── */
 
 .control {
+  /* Height, corner, border, fill, padding and text size come from styles/uniform.css, the one
+     text-box rule for the whole app. */
   width: 100%;
   min-width: 0;
-  min-height: var(--control-min-height);
-  padding: 0 var(--control-padding-inline);
-  border: var(--border-width-1) solid var(--control-border);
-  border-radius: var(--control-radius);
-
-  background: var(--control-bg);
-  color: var(--color-text);
-
-  font-family: inherit;
-  /* 16px is the iOS zoom-on-focus threshold. Below it Safari zooms the page
-     when the field is tapped, which on a scouting phone loses the layout
-     mid-match. */
-  font-size: max(16px, var(--font-size-base));
   line-height: var(--line-height-base);
 
   transition:
     border-color var(--motion-fast) var(--motion-ease),
     background-color var(--motion-fast) var(--motion-ease);
-}
-
-.control::placeholder {
-  color: var(--color-text-dim);
 }
 
 .control:hover:not(:disabled) {
@@ -102,11 +87,6 @@
   cursor: pointer;
 }
 
-@media (pointer: coarse) {
-  .control {
-    min-height: max(var(--control-min-height), var(--touch-target-min));
-  }
-}
 
 /* ── Stepper ──────────────────────────────────────────────────────── */
 

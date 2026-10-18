@@ -35,9 +35,6 @@ const StrategyBriefingPage = lazy(() =>
 const DataVizPage = lazy(() =>
   import('./pages/DataVizPage').then((mod) => ({ default: mod.DataVizPage })),
 );
-const AutoPathPage = lazy(() =>
-  import('./pages/AutoPathPage').then((mod) => ({ default: mod.AutoPathPage })),
-);
 const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then((mod) => ({ default: mod.MyTeamPage })));
 const PicklistPage = lazy(() =>
   import('./pages/PicklistPage').then((mod) => ({ default: mod.PicklistPage })),
@@ -128,7 +125,7 @@ export default function RootApp() {
             <Route path="/my-team" element={withPageSuspense(<MyTeamPage />, 'My Team')} />
             <Route path="/scouting" element={withPageSuspense(<ScoutingPage />, 'Scouting')} />
             <Route path="/scouting/assignments" element={withPageSuspense(<ScoutingAssignPage />, 'Scouting Assignments')} />
-            <Route path="/scouting/auto-paths" element={withPageSuspense(<AutoPathPage />, 'Auto Paths')} />
+            <Route path="/scouting/auto-paths" element={<RedirectKeepingQuery to="/scouting" />} />
             <Route path="/scouting/pit" element={withPageSuspense(<PitScoutingPage />, 'Pit Scouting')} />
             <Route path="/scouting/coverage" element={withPageSuspense(<ScoutingCoveragePage />, 'Coverage')} />
             <Route path="/scouting/calibrate" element={withPageSuspense(<FieldCalibrationPage />, 'Field Calibration')} />

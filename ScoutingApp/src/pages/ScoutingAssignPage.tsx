@@ -221,7 +221,6 @@ function ScoutingAssignWorkspacePage() {
     <SurfaceCard
       title={scoutingViewTitle('/scouting/assignments')}
       subtitle="Who scouts which robot in each match. Your team sees changes as you make them."
-      expandable={false}
       mobileCollapsible={false}
     >
       <EventPicker
@@ -350,6 +349,7 @@ function ScoutingAssignWorkspacePage() {
       </SurfaceCard>
 
       <SurfaceCard
+        expandable
         title="Match Assignments"
         subtitle={`${visibleMatches.length} match${visibleMatches.length === 1 ? '' : 'es'}. Each change saves straight away.`}
       >

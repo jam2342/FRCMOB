@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "dev": "vite",
-    "guard": "npm run guard:colours && npm run guard:type && npm run guard:hierarchy && npm run guard:boxes && npm run guard:consistency && npm run guard:contrast && npm run guard:overflow && npm run guard:affordances",
+    "guard": "npm run guard:colours && npm run guard:type && npm run guard:hierarchy && npm run guard:boxes && npm run guard:consistency && npm run guard:contrast && npm run guard:overflow && npm run guard:affordances && npm run guard:uniformity",
     "guard:affordances": "node e2e/guard-affordances.mjs",
     "guard:boxes": "node e2e/guard-boxes.mjs",
     "guard:colours": "node e2e/guard-colours.mjs",
@@ -15,6 +15,7 @@
     "guard:hierarchy": "node e2e/guard-hierarchy.mjs",
     "guard:overflow": "node e2e/guard-overflow.mjs",
     "guard:type": "node e2e/guard-type.mjs",
+    "guard:uniformity": "node e2e/guard-uniformity.mjs",
     "e2e:regression": "node e2e/regression/run.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

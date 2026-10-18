@@ -113,9 +113,6 @@
   border-radius: 10px;
 }
 
-.product-shell .scouting-layout-grid .surface-card-head h3 {
-  letter-spacing: 0.012em;
-}
 
 .product-shell .scouting-layout-grid .surface-card-head p {
   line-height: 1.42;
@@ -558,7 +555,7 @@
 
 @media (max-width: 1120px) {
   /* Keep the scouting tool switcher reachable on mobile — every sub-view
-     (Pit, Coverage, Auto Paths, Field Calibration, On-Device) lives here, so
+     (Pit, Coverage, Field Calibration, On-Device) lives here, so
      hiding it stranded those tools. Centred like the Match Center and Compare
      tab rows, so a section's menu sits in the same place in every section. */
   .product-shell .scouting-page-view-bar {

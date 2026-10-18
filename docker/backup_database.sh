@@ -47,6 +47,24 @@ if [ ! -f "$DEST/$media" ]; then
   fi
 fi
 
+# Pit photos off the VM too: rclone adds new ones to the Object Storage bucket. The VM
+# signs in as itself (instance principal, no key on disk) and its policy lets it add and
+# read but never delete or overwrite, so a compromised VM can't wipe the copy. Hourly is
+# cheap: names are unique and only new photos upload. Full path because cron's PATH has
+# no /usr/local/bin. A failure here must not stop the Neon copy below.
+rclone="${FRCMOB_RCLONE:-/usr/local/bin/rclone}"
+remote="${FRCMOB_MEDIA_REMOTE:-oos:frcmob-media-backup}"
+media_root=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/media"}}{{.Source}}{{end}}{{end}}' "$BACKEND" || true)
+if [ ! -x "$rclone" ]; then
+  echo "photos offsite skipped: $rclone not installed" >&2
+elif [ -z "$media_root" ] || [ ! -d "$media_root/pit_photos" ]; then
+  echo "photos offsite skipped: no pit_photos under the backend's media volume" >&2
+elif "$rclone" copy "$media_root/pit_photos" "$remote/pit_photos" --immutable --log-level ERROR; then
+  echo "photos offsite ok $(find "$media_root/pit_photos" -type f | wc -l | tr -d ' ') files"
+else
+  echo "photos offsite FAILED" >&2
+fi
+
 # Off-site copy. Neon's direct endpoint, never the "-pooler" one: pg_restore sets
 # session state (search_path) that PgBouncer in transaction mode leaks onto shared
 # connections; on 2026-09-26 a pg_dump through it hid every table from the app.

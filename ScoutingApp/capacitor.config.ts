@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.frcmob.scouting',
+  appId: 'com.frcmob.app',
   appName: 'FRCMOB',
   webDir: 'dist-native',
   // Bridge debug logs can include request headers and credential arguments.

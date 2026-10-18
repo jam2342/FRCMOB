@@ -257,7 +257,7 @@
     "controls": [
       "input:Global quick jump",
       "input:Search events",
-      "input:Team number — e.g. 254"
+      "input:Team number — e.g. 5417"
     ]
   },
   "/scouting": {
@@ -750,7 +750,7 @@
       "input:Match — e.g. qm1",
       "input:Search events",
       "input:Show Tracks",
-      "input:Team # — e.g. 254"
+      "input:Team # — e.g. 5417"
     ]
   },
   "/scouting/calibrate": {

@@ -35,7 +35,6 @@ export function TeamScoutingCard() {
       <SurfaceCard
         title="Team scouting"
         subtitle="Pick the event your team is at. Assignments and scouting follow it."
-        expandable={false}
         mobileCollapsible={false}
       >
         <EventPicker
@@ -61,7 +60,6 @@ export function TeamScoutingCard() {
       title={title}
       subtitle={room.isLeader ? 'You can assign matches to everyone on your team.' : undefined}
       right={<Button size="sm" variant="quiet" onClick={() => setChangingEvent(true)}>Change event</Button>}
-      expandable={false}
       mobileCollapsible={false}
     >
       <div className={styles.body}>

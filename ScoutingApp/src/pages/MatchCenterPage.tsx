@@ -34,7 +34,7 @@ import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import {
   EyeIcon, PieChartIcon, UsersIcon, ClockIcon,
-  ChevronDownIcon, ChevronLeftIcon, VideoIcon, TrophyIcon,
+  ChevronDownIcon, VideoIcon, TrophyIcon,
   CalendarIcon, SignalIcon, ScoreboardIcon, RobotIcon, GamepadIcon,
   FlagIcon, TargetIcon, LinkIcon,
 } from '../components/ui/Icons';
@@ -65,6 +65,8 @@ import resultStyles from '../features/matchResult/MatchResult.module.css';
 import { ShareMatchDialog } from '../features/shareCard/ShareMatchDialog';
 import { eventDisplayName } from '../utils/eventSearchIndex';
 import { storageGet, storageSet } from '../platform/safeStorage';
+import { MISSING } from '../utils/formatValue';
+import { MobileViewActions } from '../components/ui/MobileViewActions';
 
 const MATCH_CENTER_VIEW_PREFS_STORAGE = 'scouting_match_center_view_prefs_v1';
 const MATCH_CENTER_RECENT_STORAGE = 'scouting_match_center_recent_matches_v1';
@@ -751,7 +753,7 @@ export function MatchCenterPage() {
   function renderLiveStreamCard(title = 'Live Stream', subtitle?: string) {
     return (
       // Fullscreen and minimize remount the card's content, which stopped a playing video.
-      <SurfaceCard title={title} subtitle={subtitle} expandable={false} mobileCollapsible={false}>
+      <SurfaceCard expandable title={title} subtitle={subtitle} mobileCollapsible={false}>
         {!liveStream ? <p className="center-callout muted">Stream unavailable.</p> : null}
         {liveStream && !liveStream.available ? (
           <p className="center-callout muted">{liveStream.detail || 'No webcast published.'}</p>
@@ -790,15 +792,20 @@ export function MatchCenterPage() {
     <div className="match-center-page">
     <div className={`center-layout center-layout-match mobile-finder-layout scouting-layout-grid ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
       {/* Phones used to get a Match Finder / Match Center toggle here, the
-          second of four stacked tab rows before any content. The finder now
-          opens from "Change match" in the score hero, and closes by picking
-          a match or with the button below. */}
+          second of four stacked tab rows before any content. "Change match" and
+          "Back to QM 1" now sit where every other page puts its change/back
+          actions; picking a match also closes the finder. */}
+      {isMobileLayout ? (
+        <MobileViewActions
+          label="Match views"
+          actions={
+            mobileFinderOpen
+              ? selectedMatch ? [{ label: `Back to ${selectedMatch.display_name}`, onClick: () => setMobileFinderOpen(false), back: true }] : []
+              : [{ label: 'Change match', onClick: () => { setMobileFinderOpen(true); window.scrollTo({ top: 0 }); } }]
+          }
+        />
+      ) : null}
       <aside className="center-sidebar">
-        {isMobileLayout && selectedMatch ? (
-          <button type="button" className="center-btn ghost mc-back-to-match" onClick={() => setMobileFinderOpen(false)}>
-            <ChevronLeftIcon className="icon-inline" /> Back to {selectedMatch.display_name}
-          </button>
-        ) : null}
         <SurfaceCard title="Match Finder" compactable>
           <EventPicker
             label="Event"
@@ -998,7 +1005,7 @@ export function MatchCenterPage() {
       </aside>
 
       <section className="center-main">
-        {/* ── Mobile: FotMob-style score hero ── */}
+        {/* ── Mobile: score hero ── */}
         {isMobileLayout && selectedMatch ? (
           <>
             <div className={`fm-score-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
@@ -1033,30 +1040,17 @@ export function MatchCenterPage() {
               {selectedMatchProgress !== null && !selectedCompleted ? (
                 <MatchClock progress={selectedMatchProgress} className="fm-match-clock" />
               ) : null}
-              <div className={resultStyles.heroActions}>
-                <button
-                  type="button"
-                  className="center-btn ghost mc-change-match"
-                  onClick={() => {
-                    setMobileFinderOpen(true);
-                    window.scrollTo({ top: 0 });
-                  }}
-                >
-                  Change match
-                </button>
-                {shareable ? (
+              {shareable ? (
+                <div className={resultStyles.heroActions}>
                   <button type="button" className="center-btn ghost" onClick={() => setShareOpen(true)}>
                     <ShareIcon /> Share
                   </button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
             <SegmentedTabs
-              className="fm-tab-bar"
               motion
               swipe
-              ink
-              itemClassName="fm-tab"
               ariaLabel="Match center tabs"
               value={activeTab}
               onChange={setActiveTab}
@@ -1093,9 +1087,7 @@ export function MatchCenterPage() {
         >
           <div className="center-tabs-header">
             <SegmentedTabs
-              className="center-tabs"
               motion
-              itemClassName="center-tab-btn"
               ariaLabel="Match center tabs"
               value={activeTab}
               onChange={setActiveTab}
@@ -1196,7 +1188,7 @@ export function MatchCenterPage() {
             </SurfaceCard>
             ) : null}
 
-            {/* ── Mobile: FotMob-style content stack ── */}
+            {/* ── Mobile: content stack ── */}
             {isMobileLayout ? (
               <div className="fm-content-stack">
                 {/* Video/Stream card */}
@@ -1373,7 +1365,7 @@ export function MatchCenterPage() {
                     <p className="center-callout muted">
                       {selectedWinner === 'tie'
                         ? 'Match ended in a tie.'
-                        : `${titleizeKey(selectedWinner)} alliance won with ${selectedMatch.winning_score ?? 'N/A'} points.`}
+                        : selectedMatch.winning_score != null ? `${titleizeKey(selectedWinner)} alliance won with ${selectedMatch.winning_score} points.` : `${titleizeKey(selectedWinner)} alliance won.`}
                     </p>
                   )}
                 </SurfaceCard>
@@ -1445,7 +1437,7 @@ export function MatchCenterPage() {
                 <strong>
                   {selectedHasScores
                     ? `${metric(selectedMatch.red_score, 0)} - ${metric(selectedMatch.blue_score, 0)}`
-                    : 'N/A'}
+                    : MISSING}
                 </strong>
               </article>
               <article className="center-kpi-card">
@@ -1488,7 +1480,7 @@ export function MatchCenterPage() {
                     <strong>
                       #{team.team_number} {team.nickname || team.team_key}
                     </strong>
-                    <small>{team.station ? `Station ${team.station}` : 'Station N/A'}</small>
+                    {team.station ? <small>Station {team.station}</small> : null}
                     {rating ? (
                       <small>
                         Rating {metric(rating.rating_0_100, 1)}

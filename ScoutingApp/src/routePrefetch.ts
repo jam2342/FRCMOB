@@ -19,7 +19,6 @@ const ROUTE_LOADERS: Array<() => Promise<unknown>> = [
   () => import('./pages/MatchPredictionPage'),
   () => import('./pages/StrategyBriefingPage'),
   () => import('./pages/ScoutingCoveragePage'),
-  () => import('./pages/AutoPathPage'),
   () => import('./pages/ComparePage'),
   () => import('./pages/FavoritesPage'),
   () => import('./pages/SettingsPage'),

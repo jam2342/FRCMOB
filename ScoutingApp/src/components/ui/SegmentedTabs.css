@@ -29,3 +29,25 @@
     transition: none;
   }
 }
+
+/* A strip with tabs past an edge fades at that edge, so a half-shown tab reads as "more this
+   way" rather than as a cut-off word. Masks use alpha only; currentColor is just "opaque". */
+.segmented-tabs[data-more='end'] {
+  mask-image: linear-gradient(to right, currentColor calc(100% - 36px), transparent);
+}
+
+.segmented-tabs[data-more='start'] {
+  mask-image: linear-gradient(to left, currentColor calc(100% - 36px), transparent);
+}
+
+.segmented-tabs[data-more='both'] {
+  mask-image: linear-gradient(to right, transparent, currentColor 36px, currentColor calc(100% - 36px), transparent);
+}
+
+/* A count beside a tab's name ("Live 3"). */
+.segmented-tabs__label small {
+  margin-inline-start: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+}

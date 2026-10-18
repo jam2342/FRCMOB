@@ -124,7 +124,6 @@ function SetUpTeam() {
       <SurfaceCard
         title="My Team"
         subtitle="A private space for your team's picklists, pit notes and scouting rooms. Events, ratings and predictions stay public for everyone."
-        expandable={false}
         mobileCollapsible={false}
       >
         {revoked ? (
@@ -139,7 +138,7 @@ function SetUpTeam() {
       </SurfaceCard>
 
       <div className="my-team__setup-grid">
-        <SurfaceCard title="Join your team" subtitle="Got a code from your team lead?" expandable={false} mobileCollapsible={false}>
+        <SurfaceCard title="Join your team" subtitle="Got a code from your team lead?" mobileCollapsible={false}>
           <form className="my-team__form" onSubmit={submitJoin}>
             <FieldText
               label="Join code"
@@ -167,11 +166,11 @@ function SetUpTeam() {
           </form>
         </SurfaceCard>
 
-        <SurfaceCard title="Create a workspace" subtitle="Starting fresh for your team?" expandable={false} mobileCollapsible={false}>
+        <SurfaceCard title="Create a workspace" subtitle="Starting fresh for your team?" mobileCollapsible={false}>
           <form className="my-team__form" onSubmit={submitCreate}>
             <FieldText
               label="Workspace name"
-              placeholder="Robonauts Scouting"
+              placeholder="Eagle Robotics Scouting"
               value={workspaceName}
               onChange={(event) => setWorkspaceName(event.target.value)}
               maxLength={80}
@@ -369,7 +368,6 @@ function TeamWorkspaceView() {
             ? `Team ${workspace.frc_team_number} · private workspace`
             : 'Private team workspace'
         }
-        expandable={false}
         mobileCollapsible={false}
       >
         {error || refreshError ? <p className="center-callout warning" role="alert">{error || refreshError}</p> : null}
@@ -439,7 +437,7 @@ function TeamWorkspaceView() {
         ) : null}
       </SurfaceCard>
 
-      <SurfaceCard title="Invite scouts" subtitle="Anyone with the code can join this workspace." expandable={false} mobileCollapsible={false}>
+      <SurfaceCard title="Invite scouts" subtitle="Anyone with the code can join this workspace." mobileCollapsible={false}>
         <JoinCodePanel
           code={freshCode}
           isLeader={isLeader}
@@ -451,7 +449,6 @@ function TeamWorkspaceView() {
       <SurfaceCard
         title={state ? `Members (${members.length})` : 'Members'}
         subtitle={isLeader ? 'Leaders can promote, demote and remove members.' : undefined}
-        expandable={false}
         mobileCollapsible={false}
       >
         {!state && !error ? <p className="my-team__note">Loading members…</p> : null}
@@ -495,7 +492,7 @@ function TeamWorkspaceView() {
         </ul>
       </SurfaceCard>
 
-      <SurfaceCard title="Leave workspace" expandable={false} mobileCollapsible={false}>
+      <SurfaceCard title="Leave workspace" mobileCollapsible={false}>
         <p className="my-team__note">
           This device stops seeing your team's picklists, pit notes and rooms. You can rejoin with a current code.
         </p>

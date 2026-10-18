@@ -8,7 +8,7 @@ import { matchLabel, matchLabelFromKey } from '../utils/matchLabel';
 import { FieldText } from './ui/primitives';
 import styles from './MatchSelect.module.css';
 
-// The one way to pick a match from a schedule. Live Scouting, the recorder and Auto Paths each
+// The one way to pick a match from a schedule. Live Scouting and the recorder each
 // did it differently (a button grid on phones and a dropdown on desktop, a dropdown with
 // "(played)", a free-text box). Now all three use this: tappable buttons with a search box on
 // phones, where phone scouting deliberately has no dropdowns, and a dropdown on desktop.

@@ -1,4 +1,4 @@
-package app.frcmob.scouting;
+package com.frcmob.app;
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;

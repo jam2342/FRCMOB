@@ -84,7 +84,7 @@ Publishing, uploading, adding testers, and invitations require owner approval.
 
 ## Owner setup needed
 
-1. Register `app.frcmob.scouting` under the Apple Developer and Google Play accounts;
+1. Register `com.frcmob.app` under the Apple Developer and Google Play accounts;
    confirm whether this is the final identifier before distributing it.
 2. Configure Apple signing/team and the Android upload key. Record the public
    certificate fingerprints and keep private signing files outside git.

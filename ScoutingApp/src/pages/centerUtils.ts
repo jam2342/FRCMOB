@@ -1,27 +1,30 @@
 import { SEASON } from '../config/season';
+import { MISSING } from '../utils/formatValue';
 
 export const CURRENT_SEASON_YEAR = SEASON.year;
 export const FALLBACK_SEASON_YEAR = SEASON.fallbackYear;
 const MATCH_DURATION_SEC = SEASON.matchSec;
 
-export function metric(value: number | null | undefined, digits = 2): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+// A stat shows at most one decimal ("67.3", never "67.30" on one page and "67.3" on the next).
+// TBA's ranking score is the exception: FRC publishes it with two, and so do we.
+export function metric(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return MISSING;
   return value.toFixed(digits);
 }
 
 /** Like metric(), but appends a unit only when there is a value ("12.5s", never "N/As"). */
 export function metricUnit(value: number | null | undefined, digits: number, unit: string): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+  if (value === null || value === undefined || Number.isNaN(value)) return MISSING;
   return `${value.toFixed(digits)}${unit}`;
 }
 
 export function pct(value: number | null | undefined, digits = 1): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+  if (value === null || value === undefined || Number.isNaN(value)) return MISSING;
   return `${(value * 100).toFixed(digits)}%`;
 }
 
 // Every team-number box asks the same way.
-export const TEAM_NUMBER_PLACEHOLDER = 'Team number, e.g. 254';
+export const TEAM_NUMBER_PLACEHOLDER = 'Team number, e.g. 5417';
 
 export function fmtDateShort(seconds: number | null): string {
   if (!seconds) return 'TBD';

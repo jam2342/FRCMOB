@@ -1,6 +1,6 @@
 import { getWorkspaceSession } from './workspaceSession';
 
-// "My team" for pages that tailor themselves to one team (Strategy, Auto Paths,
+// "My team" for pages that tailor themselves to one team (Strategy,
 // Data Viz). A team that joined a workspace already told us its number there,
 // and that wins: a per-device value used to override it, so two phones on the
 // same team could disagree about who "my team" was. The per-device value is for

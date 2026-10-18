@@ -39,7 +39,7 @@ export function BestNextPick({ eventKey, partners, onOpenTeam }: Props) {
     : 'Pick a captain above to see who fits best.';
 
   return (
-    <SurfaceCard title={partners.length > 1 ? 'Best Third Pick' : 'Best Next Pick'} subtitle={subtitle}>
+    <SurfaceCard expandable title={partners.length > 1 ? 'Best Third Pick' : 'Best Next Pick'} subtitle={subtitle}>
       {!partners.length ? <EmptyState compact title="No captain yet" description="Choose the captain (and first pick) in the builder." /> : null}
       {partners.length && !data && !failed ? <SkeletonBlock rows={5} compact /> : null}
       {failed ? <EmptyState compact type="offline" title="Couldn't load pick values" description="Try again in a moment." /> : null}

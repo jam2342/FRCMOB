@@ -194,7 +194,7 @@
   .surface-card-head-actions,
   .center-main,
   .center-main > *,
-  .home-fotmob-card,
+  .home-board-card,
   .home-card-head,
   .home-card-head > div,
   .home-card-head-actions {
@@ -205,10 +205,6 @@
   .surface-card-head {
     padding: 10px 12px;
     gap: 2px;
-  }
-
-  .surface-card-head h3 {
-    font-size: var(--font-size-lg);
   }
 
   .surface-card-head p {
@@ -260,7 +256,7 @@
   }
 
   .home-card-head-actions,
-  .home-fotmob-toolbar-actions {
+  .home-board-toolbar-actions {
     flex-wrap: wrap;
     row-gap: 6px;
   }
@@ -318,14 +314,6 @@
 
   .center-input-row-event-search .center-btn {
     justify-self: stretch;
-  }
-
-  /* Mobile filter chips row */
-  .center-filter-chips {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
   }
 
   /* Progress track more visible on mobile */
@@ -630,13 +618,13 @@
   }
 
   /* Simplified toolbar on mobile */
-  .home-fotmob-toolbar {
+  .home-board-toolbar {
     padding: 10px;
     gap: 8px;
     border-radius: 12px;
   }
 
-  .home-fotmob-toolbar-left h2 {
+  .home-board-toolbar-left h2 {
     font-size: var(--font-size-lg);
   }
 
@@ -648,13 +636,6 @@
 
   .home-match-main {
     gap: 8px;
-  }
-
-  /* Better touch targets for filter buttons */
-  .home-filter-btn {
-    min-height: 36px;
-    padding: 6px 14px;
-    font-size: var(--font-size-sm);
   }
 
   /* Cleaner event section headers on mobile */
@@ -669,7 +650,7 @@
   }
 
   /* Keep mobile toolbar actions visible (Calendar / Event Info). */
-  .home-fotmob-toolbar-actions .home-mini-tab-btn {
+  .home-board-toolbar-actions .home-mini-tab-btn {
     display: inline-flex;
   }
 }
@@ -827,7 +808,7 @@
   font-size: var(--font-size-sm);
 }
 
-.home-drawer-section .home-fotmob-btn {
+.home-drawer-section .home-board-btn {
   width: 100%;
   min-height: 40px;
   justify-content: center;
@@ -839,7 +820,7 @@
   gap: 8px;
 }
 
-.home-drawer-links .home-fotmob-btn {
+.home-drawer-links .home-board-btn {
   width: 100%;
   text-align: center;
 }
@@ -881,10 +862,10 @@
   background: color-mix(in srgb, var(--color-surface-muted) 45%, transparent);
 }
 
-/* ── fotmob-mobile ────────────────────────────────────── */
+/* ── mobile-cards ────────────────────────────────────── */
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   FotMob-Inspired Mobile Redesign — Score Hero + Clean Card Layout
+   Mobile Redesign — Score Hero + Clean Card Layout
    Only active at ≤1120px (mobile breakpoint).
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -993,7 +974,7 @@
   }
 
   /* ── Tab Bar ─────────────────────────────────────────────────────────────
-     FotMob-style minimal text tabs with underline active indicator.
+     Minimal text tabs with underline active indicator.
      ──────────────────────────────────────────────────────────────────────── */
 
   .fm-tab-bar {
@@ -1056,7 +1037,7 @@
      Horizontal button row under score hero.
      ──────────────────────────────────────────────────────────────────────── */
 
-  /* ── Alliance Card (FotMob style) ──────────────────────────────────────
+  /* ── Alliance Card ──────────────────────────────────────
      Clean card for displaying team lineups on mobile.
      ──────────────────────────────────────────────────────────────────────── */
 
@@ -1160,7 +1141,7 @@
     flex-shrink: 0;
   }
 
-  /* ── Video Card (FotMob style) ─────────────────────────────────────────
+  /* ── Video Card ─────────────────────────────────────────
      Clean dark card for video/stream embed.
      ──────────────────────────────────────────────────────────────────────── */
 
@@ -1221,7 +1202,7 @@
     border-top: 1px solid rgba(40, 56, 70, 0.35);
   }
 
-  /* ── Phase Card (FotMob style) ─────────────────────────────────────────
+  /* ── Phase Card ─────────────────────────────────────────
      Compact KPI row for match phases.
      ──────────────────────────────────────────────────────────────────────── */
 
@@ -1281,7 +1262,7 @@
   }
 
   /* ── Events: Compact Mobile Header ─────────────────────────────────────
-     FotMob league-view inspired header for Events page.
+     League-view header for the Events page.
      ──────────────────────────────────────────────────────────────────────── */
 
   .fm-event-header {
@@ -1309,16 +1290,6 @@
     min-width: 0;
   }
 
-  .fm-event-header-info h2 {
-    font-size: var(--font-size-base);
-    font-weight: 800;
-    color: var(--color-text);
-    margin: 0;
-    line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .fm-event-header-stats {
     display: flex;
@@ -1399,7 +1370,7 @@
      ──────────────────────────────────────────────────────────────────────── */
 
   /* ── Events: Standings Table (Rankings) ────────────────────────────────
-     FotMob-style clean standings rows.
+     Clean standings rows.
      ──────────────────────────────────────────────────────────────────────── */
 
   .fm-standings-card {
@@ -1547,7 +1518,7 @@
     text-align: center;
   }
 
-  /* ── Top Teams Card (FotMob-inspired) ─────────────────────────────────
+  /* ── Top Teams Card ─────────────────────────────────
      Clean list card for top analyzed/fuel teams.
      ──────────────────────────────────────────────────────────────────────── */
 
@@ -1676,7 +1647,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-     TEAM CENTER — FotMob Team Hero + Mobile Overrides
+     TEAM CENTER — Team Hero + Mobile Overrides
      ═══════════════════════════════════════════════════════════════════════ */
 
   /* ── Team Hero ───────────────────────────────────────────────────────── */
@@ -1728,11 +1699,6 @@
   }
 
   .fm-team-hero-info h2 {
-    font-size: var(--font-size-xl);
-    font-weight: 800;
-    color: var(--color-text);
-    margin: 0;
-    line-height: 1.15;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1841,12 +1807,6 @@
     background: var(--color-bg-elevated);
     border: 1px solid rgba(40, 56, 70, 0.5);
     border-radius: 14px;
-  }
-
-  .center-layout-team .center-main .fm-content-stack .surface-card .surface-card-head h3 {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
   }
 
   .center-layout-team .center-main .fm-content-stack .surface-card .surface-card-head p {
@@ -1972,7 +1932,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-     SCOUTING PAGE  — FotMob-Inspired Mobile Chrome
+     SCOUTING PAGE  — Mobile Chrome
      ═══════════════════════════════════════════════════════════════════════ */
 
   /* ── Scout Context Hero (replaces scouting-mobile-save) ─────────────── */
@@ -2046,18 +2006,12 @@
     color: var(--color-success-text);
   }
 
-  /* ── Scouting Cards FotMob Cleanup ──────────────────────────────────── */
+  /* ── Scouting Cards Cleanup ──────────────────────────────────── */
 
   .fm-scout-cards .surface-card {
     background: var(--color-bg-elevated);
     border: 1px solid rgba(40, 56, 70, 0.5);
     border-radius: 14px;
-  }
-
-  .fm-scout-cards .surface-card .surface-card-head h3 {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
   }
 
   .fm-scout-cards .surface-card .surface-card-head p {
@@ -2113,12 +2067,6 @@
     border-radius: 14px;
   }
 
-  .scouting-layout-grid .center-main > .surface-card .surface-card-head h3 {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-  }
-
   .scouting-layout-grid .center-main > .surface-card .surface-card-head p {
     font-size: var(--font-size-legacy-10);
     color: var(--color-text-dim);
@@ -2141,28 +2089,28 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-     HOME PAGE — FotMob-Inspired Mobile Chrome
-     Applies FotMob dark card aesthetic to toolbar, filters, match cards,
+     HOME PAGE — Mobile Chrome
+     Applies the dark card treatment to toolbar, filters, match cards,
      event sections, teams insights, drawer, and upcoming EPA.
      ═══════════════════════════════════════════════════════════════════════ */
 
   /* ── Layout: single column, full bleed ──────────────────────────────── */
 
-  .home-fotmob-layout {
+  .home-board-layout {
     grid-template-columns: 1fr !important;
     gap: 0 !important;
     padding: 0;
     min-height: auto;
   }
 
-  .home-fotmob-center {
+  .home-board-center {
     gap: 8px;
     padding: 0 2px;
   }
 
   /* ── Hero Toolbar ───────────────────────────────────────────────────── */
 
-  .home-fotmob-toolbar {
+  .home-board-toolbar {
     background: var(--color-bg-elevated);
     border: 1px solid rgba(40, 56, 70, 0.5);
     border-radius: 16px;
@@ -2173,13 +2121,13 @@
     max-width: 100%;
   }
 
-  .home-fotmob-toolbar-left {
+  .home-board-toolbar-left {
     flex-direction: column;
     gap: 0;
     align-items: flex-start;
   }
 
-  .home-fotmob-toolbar-left h2 {
+  .home-board-toolbar-left h2 {
     font-size: var(--font-size-xl);  /* section title */
     font-weight: 800;
     color: var(--color-text);
@@ -2187,7 +2135,7 @@
     line-height: 1.15;
   }
 
-  .home-fotmob-toolbar-left p {
+  .home-board-toolbar-left p {
     font-size: var(--font-size-2xs);
     color: var(--color-text-muted);
     margin: 0;
@@ -2212,85 +2160,11 @@
     padding: 6px 10px;
   }
 
-  /* ── Filter Tab Bar (FotMob underline style) ────────────────────────── */
-
-  .home-fotmob-filters {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(40, 56, 70, 0.5);
-    padding-bottom: 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .home-fotmob-filters::-webkit-scrollbar {
-    display: none;
-  }
-
-  .home-filter-btn {
-    flex: 1;
-    min-width: 0;
-    min-height: auto;
-    padding: 8px 4px 7px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    transition: color 0.15s ease, border-color 0.15s ease;
-    white-space: nowrap;
-  }
-
-  .home-filter-btn .icon-inline {
-    width: 12px;
-    height: 12px;
-  }
-
-  .home-filter-btn small {
-    border: none;
-    border-radius: 0;
-    min-width: auto;
-    min-height: auto;
-    padding: 0;
-    font-size: var(--font-size-legacy-11);
-    color: inherit;
-    opacity: 0.7;
-  }
-
-  .home-filter-btn.active {
-    color: var(--color-text);
-    border-bottom-color: var(--color-accent);
-    background: transparent;
-  }
-
-  .home-filter-btn.active small {
-    border: none;
-    color: inherit;
-    opacity: 0.85;
-  }
-
-  .home-filter-btn:hover {
-    background: transparent;
-    color: var(--color-text);
-    border-bottom-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
-  }
-
-  .home-filter-btn:hover small {
-    border: none;
-    color: inherit;
-  }
+  /* ── Filter Tab Bar (underline style) ────────────────────────── */
 
   /* ── Toolbar Actions ────────────────────────────────────────────────── */
 
-  .home-fotmob-toolbar-actions {
+  .home-board-toolbar-actions {
     justify-content: flex-start;
     padding-top: 2px;
   }
@@ -2318,63 +2192,6 @@
     display: inline;
   }
 
-  .home-event-search-expanded {
-    min-width: 0;
-    width: 100%;
-    max-width: 100%;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--color-bg) 95%, transparent);
-    border-color: color-mix(in srgb, var(--color-info-text) 50%, transparent);
-    box-sizing: border-box;
-  }
-
-  .home-event-search-input {
-    font-size: var(--font-size-2xs);
-  }
-
-  .home-event-search-dropdown {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    right: 0;
-    min-width: 0;
-    width: auto;
-    max-width: 100%;
-    border-radius: 10px;
-    background: var(--color-bg);
-    max-height: 260px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    box-sizing: border-box;
-    z-index: 60;
-  }
-
-  .home-event-search-result {
-    padding: 10px;
-    min-width: 0;
-  }
-
-  .home-event-search-result strong {
-    font-size: var(--font-size-2xs);
-    min-width: 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .home-event-search-result-meta {
-    min-width: 0;
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .home-event-search-result-meta small {
-    min-width: 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
   .home-mini-tab-btn {
     border: 1px solid rgba(40, 56, 70, 0.6);
     border-radius: 10px;
@@ -2397,7 +2214,7 @@
 
   /* ── Event Sections ─────────────────────────────────────────────────── */
 
-  .home-fotmob-feed {
+  .home-board-feed {
     gap: 8px;
   }
 
@@ -2431,7 +2248,7 @@
     gap: 6px;
   }
 
-  .home-card-head-actions .home-fotmob-btn.subtle {
+  .home-card-head-actions .home-board-btn.subtle {
     font-size: var(--font-size-legacy-11);
     min-height: 28px;
     padding: 4px 10px;
@@ -2452,7 +2269,7 @@
     font-size: var(--font-size-legacy-11);
   }
 
-  /* ── Match Cards (FotMob-style) ─────────────────────────────────────── */
+  /* ── Match Cards ─────────────────────────────────────── */
 
   .home-match-list {
     gap: 6px;
@@ -2662,7 +2479,7 @@
     color: var(--color-text);
   }
 
-  /* ── Alliance Lines (FotMob-style compact) ──────────────────────────── */
+  /* ── Alliance Lines (compact) ──────────────────────────── */
 
   .home-match-main .home-match-alliances {
     gap: 3px;
@@ -2855,18 +2672,7 @@
     gap: 6px;
   }
 
-  .home-teams-controls input,
-  .home-teams-controls select {
-    min-height: 32px;
-    border: 1px solid rgba(40, 56, 70, 0.6);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--color-bg) 70%, transparent);
-    color: var(--color-text);
-    font-size: var(--font-size-2xs);
-    padding: 4px 8px;
-  }
-
-  /* ── Teams Mobile Sort Chips (FotMob underline tabs) ────────────────── */
+  /* ── Teams Mobile Sort Chips (underline tabs) ────────────────── */
 
   /* ── Teams Mobile Data Cards ────────────────────────────────────────── */
 
@@ -2876,7 +2682,7 @@
 
   /* ── Upcoming EPA Section ───────────────────────────────────────────── */
 
-  /* ── Mobile Drawer (FotMob treatment) ───────────────────────────────── */
+  /* ── Mobile Drawer ───────────────────────────────── */
 
   .home-drawer-backdrop {
     background: color-mix(in srgb, var(--color-bg) 50%, transparent);
@@ -2979,7 +2785,7 @@
     color: var(--color-text-dim);
   }
 
-  .home-drawer-section .home-fotmob-btn {
+  .home-drawer-section .home-board-btn {
     min-height: 38px;
     border-radius: 10px;
     font-size: var(--font-size-2xs);
@@ -2990,7 +2796,7 @@
     gap: 6px;
   }
 
-  .home-drawer-links .home-fotmob-btn.subtle {
+  .home-drawer-links .home-board-btn.subtle {
     border: 1px solid rgba(40, 56, 70, 0.6);
     border-radius: 10px;
     background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent);
@@ -3003,7 +2809,7 @@
     gap: 6px;
   }
 
-  .home-drawer-links .home-fotmob-btn.subtle .icon-inline {
+  .home-drawer-links .home-board-btn.subtle .icon-inline {
     width: 14px;
     height: 14px;
     color: var(--color-accent-text);
@@ -3079,19 +2885,19 @@
 
   /* ── Embed Wrap (Live Stream) ───────────────────────────────────────── */
 
-  .home-fotmob-embed-wrap {
+  .home-board-embed-wrap {
     border: 1px solid rgba(40, 56, 70, 0.5);
     border-radius: 10px;
     min-height: 160px;
   }
 
-  .home-fotmob-embed-wrap iframe {
+  .home-board-embed-wrap iframe {
     min-height: 200px;
   }
 
   /* ── General Home Button Overrides ──────────────────────────────────── */
 
-  .home-fotmob-btn {
+  .home-board-btn {
     border-radius: 10px;
     font-size: var(--font-size-2xs);
     font-weight: 700;
@@ -3099,7 +2905,7 @@
     padding: 6px 12px;
   }
 
-  .home-fotmob-btn.subtle {
+  .home-board-btn.subtle {
     border-color: rgba(40, 56, 70, 0.6);
     background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent);
     color: var(--color-text);
@@ -3119,7 +2925,7 @@
 
   /* ── Callouts ───────────────────────────────────────────────────────── */
 
-  .home-fotmob-center .center-callout {
+  .home-board-center .center-callout {
     font-size: var(--font-size-2xs);
     color: var(--color-text-dim);
     text-align: center;
@@ -3266,8 +3072,6 @@
 /* At ~250px the four-way view toggle (Setup/Room/Data/Board) gives each
    button about 53px for an icon and a word, and the word clipped to "Setu",
    "Boar". The word is what tells them apart, so the icon goes. */
-@media (max-width: 300px) {
-}
 
 /* Five Team Center stats in one row left ~40px each at 250px, so the rating
    (the page's key number) read "2…". It gets its own row there. */
@@ -3287,26 +3091,6 @@
 
   .fm-team-hero-stat span {
     letter-spacing: 0;
-  }
-}
-
-/* ── match-center-finder-access ───────────────────────── */
-
-/* Replace the Match Finder / Match Center toggle on phones: the hero opens
-   the finder, and the finder offers the way back. */
-@media (max-width: 1120px) {
-  .product-shell .mc-change-match {
-    justify-self: center;
-    align-self: center;
-    min-height: 44px;
-    margin-top: var(--space-2);
-    padding-inline: var(--space-4);
-  }
-
-  .product-shell .mc-back-to-match {
-    min-height: 44px;
-    justify-self: start;
-    margin-bottom: var(--space-2);
   }
 }
 

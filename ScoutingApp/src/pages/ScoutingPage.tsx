@@ -42,7 +42,6 @@ import { AutoScoutReviewPanel } from '../components/scouting/AutoScoutReviewPane
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
-  CardEmpty,
   Chip,
   FieldCheckbox,
   FieldRadioGroup,
@@ -152,6 +151,7 @@ import {
   withReportsFromOtherTabs,
   teamAllianceForMatch,
 } from './scoutingPage.helpers';
+import { EmptyState } from '../components/ui/EmptyState';
 import { useScoutCountdown } from './scoutDraftTimer';
 import { listFailedMutations, listQueuedMutations } from '../utils/offlineQueue';
 import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
@@ -162,6 +162,7 @@ import { myAssignments as teamAssignmentsFor } from '../features/workspace/teamA
 import { NextAssignment } from '../features/workspace/NextAssignment';
 import { clearWorkspaceSession, getWorkspaceSession, getWorkspaceToken } from '../features/workspace/workspaceSession';
 import { MY_TEAM_STORAGE_KEY, workspaceTeamKey } from '../features/workspace/myTeam';
+import { MISSING } from '../utils/formatValue';
 
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
 const SCOUTING_ROOM_KEY_STORAGE = 'scouting_room_active_key_v1';
@@ -3173,7 +3174,7 @@ export function ScoutingPage() {
 
     const stars = (n: number | null) =>
       n === null
-        ? '<span style="color:#64748b;font-size:0.8em">N/A</span>'
+        ? '<span style="color:#64748b;font-size:0.8em">—</span>'
         : '★'.repeat(Math.max(0, Math.min(5, Math.round(n)))) + '☆'.repeat(Math.max(0, 5 - Math.min(5, Math.round(n))));
 
     const badge = (val: number, max: number) => {
@@ -3314,7 +3315,7 @@ export function ScoutingPage() {
     const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : '';
     const avgLevel = (arr: (number | null)[]) => {
       const valid = arr.filter((v): v is number => v !== null);
-      return valid.length ? (valid.reduce((s, v) => s + v, 0) / valid.length).toFixed(1) : 'N/A';
+      return valid.length ? (valid.reduce((s, v) => s + v, 0) / valid.length).toFixed(1) : MISSING;
     };
 
     const headers = [
@@ -3488,7 +3489,6 @@ export function ScoutingPage() {
           />
         ))}
       </div>
-      {isMobileLayout ? <Link className="center-btn ghost" to={`/scouting/auto-paths${searchParams.toString() ? `?${searchParams.toString()}` : ''}`}>Draw auto path ›</Link> : null}
     </SurfaceCard>
   ) : null;
 
@@ -3749,7 +3749,7 @@ export function ScoutingPage() {
                   </span>
                   <span className="center-chip">Members: {roomPresence.reduce((sum, member) => sum + member.connections, 0)}</span>
                   <span className="center-chip">
-                    Leader: {roomLeaderProfile || 'N/A'}
+                    Leader: {roomLeaderProfile || MISSING}
                   </span>
                 </div>
                 {roomPresence.length > 0 ? (
@@ -3852,7 +3852,7 @@ export function ScoutingPage() {
                   </div>
                 ) : (
                   <p className="center-callout muted" style={{ marginTop: '0.55rem' }}>
-                    No room assignments currently mapped to scout profile <strong>{scoutProfile || 'N/A'}</strong>.
+                    No room assignments currently mapped to scout profile <strong>{scoutProfile || MISSING}</strong>.
                   </p>
                 )}
                 <div className="center-actions-row">
@@ -4027,6 +4027,7 @@ export function ScoutingPage() {
 
   const savedMatchesCard = (
     <SurfaceCard
+            expandable
             title="Scouted Matches"
             right={<Chip tone={activeRoom?.room_key ? 'accent' : 'neutral'} dot>
               {activeRoom?.room_key ? `Room ${activeRoom.room_key}` : 'Not connected'}
@@ -4046,7 +4047,7 @@ export function ScoutingPage() {
                       ['Driver', entry.driver_competency.score_0_100],
                       ['Overall', entry.overall_scout_rating.score_0_100.toFixed(1)],
                       ['Manual', entry.manual_rating.score_0_100.toFixed(1)],
-                      ['Scout+API', entry.scouting_api_rating?.score_0_100.toFixed(1) ?? 'N/A'],
+                      ['Scout+API', entry.scouting_api_rating?.score_0_100.toFixed(1) ?? MISSING],
                     ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
                   </dl>
                   <p>{entryHeadUp(entry)}</p>
@@ -4080,7 +4081,7 @@ export function ScoutingPage() {
                 key: 'api',
                 label: 'Scout+API',
                 numeric: true,
-                render: (e) => (e.scouting_api_rating ? e.scouting_api_rating.score_0_100.toFixed(1) : 'N/A'),
+                render: (e) => (e.scouting_api_rating ? e.scouting_api_rating.score_0_100.toFixed(1) : MISSING),
               },
               { key: 'headup', label: 'Head-up', align: 'center', render: (e) => entryHeadUp(e) },
               {
@@ -4197,6 +4198,7 @@ export function ScoutingPage() {
       {isMobileLayout ? (
         <div ref={phoneNavRef} className={`mobile-view-toggle ${styles.phoneNav}`}>
           <SegmentedTabs
+            variant="board"
             className={styles.robotTabs}
             ariaLabel="Scouting mobile view switch"
             value={!mobileFinderOpen ? 'board' : sidebarSection === 'data' ? 'data' : 'setup'}
@@ -4267,6 +4269,7 @@ export function ScoutingPage() {
           </button>
 
           <SegmentedTabs
+            variant="board"
             className={`scout-sidebar-nav ${
               scoutingSidebarSideCollapsed
                 ? 'rail'
@@ -4323,8 +4326,7 @@ export function ScoutingPage() {
         <SurfaceCard title={isMobileLayout ? "Robot" : "Scouting Mode"} subtitle={isMobileLayout ? undefined : "Tap-first scouting with direct number entry."} collapsible>
           {!isMobileLayout ? (
           <SegmentedTabs
-            className={`center-tabs ${styles.modeTabs}`}
-            itemClassName="center-tab-btn"
+            className={styles.modeTabs}
             ariaLabel="Scouting mode"
             value={scoutingMode}
             onChange={setScoutingMode}
@@ -4354,8 +4356,6 @@ export function ScoutingPage() {
           {autoDraftAvailable ? (
             <>
           <SegmentedTabs
-            className="center-tabs"
-            itemClassName="center-tab-btn"
             ariaLabel="Entry capture mode"
             value={entryCaptureMode}
             onChange={setEntryCaptureMode}
@@ -4713,8 +4713,8 @@ export function ScoutingPage() {
                 </button>
               </div>
               <div className="fm-scout-hero-context" role="list" aria-label="Core scouting context">
-                <span className="fm-scout-hero-chip match" role="listitem"><strong>{selectedMatch?.display_name || 'N/A'}</strong></span>
-                <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? scoutingTeamLabel(selectedTeamKey) : 'N/A'}</strong></span>
+                <span className="fm-scout-hero-chip match" role="listitem"><strong>{selectedMatch?.display_name || MISSING}</strong></span>
+                <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? scoutingTeamLabel(selectedTeamKey) : MISSING}</strong></span>
                 {autoScoutEnabled ? <span className="fm-scout-hero-chip mode" role="listitem">Auto Draft</span> : null}
                 <span className="fm-scout-hero-chip points" role="listitem">Pts <strong>{pointsSummary.total}</strong></span>
                 <span className={`fm-scout-hero-chip timer ${timerPhaseState}`.trim()} role="listitem">
@@ -4733,6 +4733,7 @@ export function ScoutingPage() {
             {!mobileFinderOpen ? (
               <div className={styles.phoneCaptureNav}>
                 <SegmentedTabs
+                  variant="board"
                   className={styles.phaseTabs}
                   ariaLabel="Capture phases"
                   value={mobileScoutSection === 'capture' ? mobileCapturePanel : ''}
@@ -4883,7 +4884,7 @@ export function ScoutingPage() {
                   </div>
                   <div className="scout-score-card">
                     <span>Scout+API score</span>
-                    <strong>{latestSavedEntry.scouting_api_rating?.score_0_100.toFixed(1) || 'N/A'}</strong>
+                    <strong>{latestSavedEntry.scouting_api_rating?.score_0_100.toFixed(1) || MISSING}</strong>
                     <small>
                       {latestSavedEntry.scouting_api_rating
                         ? `${latestSavedEntry.scouting_api_rating.tier} · conf ${(latestSavedEntry.scouting_api_rating.confidence_0_1 * 100).toFixed(0)}%`
@@ -4916,10 +4917,11 @@ export function ScoutingPage() {
 
         {showHistorySection ? (
           <SurfaceCard
+            expandable
             title="Selected Team Match Performance"
           >
           {!selectedTeamKey ? (
-            <CardEmpty title="No team selected">Pick a team to load match rows.</CardEmpty>
+            <EmptyState compact title="No team selected" description="Pick a team to load match rows." />
           ) : (
             <Table
               columns={[
@@ -4959,7 +4961,7 @@ export function ScoutingPage() {
                   render: (row) =>
                     row.alliance_score !== null && row.opponent_score !== null
                       ? `${row.alliance_score} - ${row.opponent_score}`
-                      : 'N/A',
+                      : MISSING,
                 },
                 { key: 'scout_reports', label: 'Reports', numeric: true, sortable: true },
                 {
@@ -4967,26 +4969,26 @@ export function ScoutingPage() {
                   label: 'Overall',
                   numeric: true,
                   sortable: true,
-                  render: (row) => (row.overall_scout_avg_0_100 !== null ? row.overall_scout_avg_0_100.toFixed(1) : 'N/A'),
+                  render: (row) => (row.overall_scout_avg_0_100 !== null ? row.overall_scout_avg_0_100.toFixed(1) : MISSING),
                 },
                 {
                   key: 'manual_avg_0_100',
                   label: 'Manual',
                   numeric: true,
-                  render: (row) => (row.manual_avg_0_100 !== null ? row.manual_avg_0_100.toFixed(1) : 'N/A'),
+                  render: (row) => (row.manual_avg_0_100 !== null ? row.manual_avg_0_100.toFixed(1) : MISSING),
                 },
                 {
                   key: 'scouting_api_avg_0_100',
                   label: 'Scout+API',
                   numeric: true,
-                  render: (row) => (row.scouting_api_avg_0_100 !== null ? row.scouting_api_avg_0_100.toFixed(1) : 'N/A'),
+                  render: (row) => (row.scouting_api_avg_0_100 !== null ? row.scouting_api_avg_0_100.toFixed(1) : MISSING),
                 },
                 {
                   key: 'avg_points_total',
                   label: 'Avg Pts',
                   numeric: true,
                   sortable: true,
-                  render: (row) => (row.avg_points_total !== null ? row.avg_points_total.toFixed(1) : 'N/A'),
+                  render: (row) => (row.avg_points_total !== null ? row.avg_points_total.toFixed(1) : MISSING),
                 },
                 {
                   key: 'latest_note',
@@ -5041,6 +5043,7 @@ export function ScoutingPage() {
 
         {showHistorySection ? (
           <SurfaceCard
+            expandable
             title="Scouted Teams Quick Access"
             right={
               <Button
@@ -5108,7 +5111,7 @@ export function ScoutingPage() {
                   key: 'avg_scouting_api_0_100',
                   label: 'Scout+API',
                   numeric: true,
-                  render: (row) => (row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : 'N/A'),
+                  render: (row) => (row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : MISSING),
                 },
                 {
                   key: 'avg_points_total',
@@ -5197,7 +5200,7 @@ export function ScoutingPage() {
                       <span className="center-chip">Overall: {row.avg_overall_scout_0_100.toFixed(1)}</span>
                       <span className="center-chip">Manual: {row.avg_manual_0_100.toFixed(1)}</span>
                       <span className="center-chip">
-                        Scout+API: {row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : 'N/A'}
+                        Scout+API: {row.avg_scouting_api_0_100 !== null ? row.avg_scouting_api_0_100.toFixed(1) : MISSING}
                       </span>
                       <span className="center-chip">Driver: {row.avg_driver_0_100.toFixed(1)}</span>
                     </div>

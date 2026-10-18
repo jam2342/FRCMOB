@@ -39,6 +39,7 @@ import {
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { resolveTab } from './tabUtils';
 import { storageGet, storageSet, storageRemove } from '../platform/safeStorage';
+import { MISSING } from '../utils/formatValue';
 const COMPARE_STORAGE_KEYS = {
   event: 'scouting_compare_event_key',
   teams: 'scouting_compare_team_keys',
@@ -554,11 +555,11 @@ export function ComparePage() {
       numeric: true,
       render: (row) => {
         const rank = parseNumber(asRecord(asRecord(asRecord(row.tba_event_status)?.qual)?.ranking)?.rank);
-        return rank !== null ? `#${rank}` : 'N/A';
+        return rank !== null ? `#${rank}` : MISSING;
       },
     },
     { key: 'fuel', label: 'Fuel/active min', numeric: true, render: (row) => metric(row.breakdown?.averages?.fuel_scoring_rate, 1) },
-    { key: 'auto', label: 'Auto', numeric: true, render: (row) => metric(row.breakdown?.averages?.auto_contribution, 2) },
+    { key: 'auto', label: 'Auto', numeric: true, render: (row) => metric(row.breakdown?.averages?.auto_contribution, 1) },
     { key: 'climb', label: 'Climb', numeric: true, render: (row) => pct(row.breakdown?.averages?.climb_success_prob, 1) },
     { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.rating?.matches_here ?? '—' },
   ];
@@ -607,7 +608,7 @@ export function ComparePage() {
         label: 'Fuel per active-hub min',
         better: 'high' as const,
         getValue: (row: (typeof compareRows)[number]) => row.breakdown?.averages?.fuel_scoring_rate ?? null,
-        format: (value: number) => metric(value, 2),
+        format: (value: number) => metric(value, 1),
       },
       {
         id: 'climb',
@@ -892,6 +893,7 @@ export function ComparePage() {
                     type="button"
                     key={`compare-pool-${team.team_key}`}
                     className={`event-picker-item ${selected ? 'active' : ''}`.trim()}
+                    title={`#${team.team_number} ${team.nickname || team.team_key}`}
                     onClick={() => {
                       if (selected) {
                         removeCompareTeam(normalized);
@@ -934,8 +936,6 @@ export function ComparePage() {
           {compareTeamKeys.length > 0 ? (
           <div className="center-tabs-header">
             <SegmentedTabs
-              className="center-tabs"
-              itemClassName="center-tab-btn"
               ariaLabel="Compare tabs"
               value={activeTab}
               onChange={setActiveTab}
@@ -987,7 +987,7 @@ export function ComparePage() {
         </SurfaceCard>
 
         {activeTab === 'summary' && compareTeamKeys.length > 0 ? (
-            <SurfaceCard title="Summary" className="compare-summary-card" compactable>
+            <SurfaceCard expandable title="Summary" className="compare-summary-card" compactable>
             {/* Highlights below the teams: they need every team's data, and arriving
                 above the list they pushed it ~300 px down on a phone. */}
             <Table
@@ -1060,7 +1060,7 @@ export function ComparePage() {
                     </div>
                     <div className="center-kpi-card">
                       <span>Auto Contribution</span>
-                      <strong>{metric(row.breakdown?.averages?.auto_contribution, 2)}</strong>
+                      <strong>{metric(row.breakdown?.averages?.auto_contribution, 1)}</strong>
                     </div>
                     <div className="center-kpi-card">
                       <span>Climb Success</span>
@@ -1073,7 +1073,7 @@ export function ComparePage() {
                       <h5>Top Pros</h5>
                       {(row.rating?.pros || []).slice(0, 4).map((signal, idx) => (
                         <p key={`compare-pro-${row.team_key}-${idx}`}>
-                          {signal.label} ({metric(signal.metric_value, 2)} · {metric(signal.percentile, 1)}%)
+                          {signal.label} ({metric(signal.metric_value, 1)} · {metric(signal.percentile, 1)}%)
                         </p>
                       ))}
                       {(row.rating?.pros || []).length === 0 ? <p className="center-muted">No pros loaded.</p> : null}
@@ -1083,7 +1083,7 @@ export function ComparePage() {
                       <h5>Top Cons</h5>
                       {(row.rating?.cons || []).slice(0, 4).map((signal, idx) => (
                         <p key={`compare-con-${row.team_key}-${idx}`}>
-                          {signal.label} ({metric(signal.metric_value, 2)} · {metric(signal.percentile, 1)}%)
+                          {signal.label} ({metric(signal.metric_value, 1)} · {metric(signal.percentile, 1)}%)
                         </p>
                       ))}
                       {(row.rating?.cons || []).length === 0 ? <p className="center-muted">No cons loaded.</p> : null}
@@ -1117,7 +1117,7 @@ export function ComparePage() {
                           const qual = asRecord(status?.qual);
                           const ranking = asRecord(qual?.ranking);
                           const rank = parseNumber(ranking?.rank);
-                          return rank !== null ? `#${rank}` : 'N/A';
+                          return rank !== null ? `#${rank}` : MISSING;
                         })()}
                       </strong>
                     </div>
@@ -1129,7 +1129,7 @@ export function ComparePage() {
                           const qual = asRecord(status?.qual);
                           const ranking = asRecord(qual?.ranking);
                           const record = asRecord(ranking?.record);
-                          if (!record) return 'N/A';
+                          if (!record) return MISSING;
                           const wins = parseNumber(record.wins) ?? 0;
                           const losses = parseNumber(record.losses) ?? 0;
                           const ties = parseNumber(record.ties) ?? 0;
@@ -1139,11 +1139,11 @@ export function ComparePage() {
                     </div>
                     <div className="center-kpi-card">
                       <span>TBA Event Awards</span>
-                      <strong>{row.tba_event_awards_count ?? 'N/A'}</strong>
+                      <strong>{row.tba_event_awards_count ?? MISSING}</strong>
                     </div>
                     <div className="center-kpi-card">
                       <span>TBA Season Awards</span>
-                      <strong>{row.tba_awards_year_count ?? 'N/A'}</strong>
+                      <strong>{row.tba_awards_year_count ?? MISSING}</strong>
                     </div>
                   </div>
 
