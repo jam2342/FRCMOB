@@ -1,5 +1,6 @@
+import { QuietBoundary } from '../components/ui/QuietBoundary';
 import { cx } from '../components/ui/primitives/cx';
-import { type FormEvent, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { searchTeams } from '../api';
 import { BottomTabBar } from '../components/navigation/BottomTabBar';
@@ -18,6 +19,13 @@ import {
   UsersIcon,
 } from '../components/ui/Icons';
 import { OfflineIndicator } from '../components/ui/OfflineIndicator';
+import { ToastHost } from '../components/ui/ToastHost';
+import { PullToRefresh } from '../components/ui/PullToRefresh';
+import { PastSeasonBanner } from '../features/seasons/PastSeasonBanner';
+import { SiteFooter } from '../components/SiteFooter';
+import paletteStyles from './PaletteTrigger.module.css';
+import { ThemeToggle } from './ThemeToggle';
+import themeToggleStyles from './ThemeToggle.module.css';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { TourPrompt } from '../components/tutorial/TourPrompt';
@@ -39,7 +47,9 @@ import { useEventNames } from '../hooks/useEventNames';
 import { type TutorialScope } from './userSettings';
 import { useShellSettingsState } from './useShellSettingsState';
 import { Spinner } from '../components/ui/Spinner';
+import { isPlainClick, navigateWithTransition, notifyRouteCommitted, sectionDirection } from '../utils/viewTransition';
 import './ProductShell.css';
+import { storageGet, storageSet } from '../platform/safeStorage';
 
 
 // Each item carries its icon, so the collapsed rail has something to show.
@@ -50,6 +60,12 @@ import './ProductShell.css';
 const TabTutorialOverlay = lazy(() =>
   import('../components/tutorial/TabTutorialOverlay').then((module) => ({ default: module.TabTutorialOverlay })),
 );
+
+// Extras that aren't needed to show the first page: their code loads after it (the palette only
+// when first opened), so the startup script stays the size the speed work got it to.
+const CommandPalette = lazy(() => import('../features/palette/CommandPalette').then((module) => ({ default: module.CommandPalette })));
+const TeamPeek = lazy(() => import('../features/teamPeek/TeamPeek').then((module) => ({ default: module.TeamPeek })));
+const NextMatchPill = lazy(() => import('../features/nextMatch/NextMatchPill').then((module) => ({ default: module.NextMatchPill })));
 
 const NAV_ITEMS = [
   { to: '/home', label: 'Home', Icon: GridIcon },
@@ -62,6 +78,8 @@ const NAV_ITEMS = [
   { to: '/favorites', label: 'Favorites', Icon: StarIcon },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ];
+
+const NAV_ORDER = NAV_ITEMS.map((item) => item.to);
 
 function linkClass({ isActive }: { isActive: boolean }) {
   return `ps-nav-link ${isActive ? 'active' : ''}`.trim();
@@ -196,6 +214,10 @@ export function ProductShell() {
   } = useShellSettingsState();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
+  // Tells a running page transition the new page is on screen.
+  useLayoutEffect(() => {
+    notifyRouteCommitted();
+  }, [location.key]);
   const [jumpInput, setJumpInput] = useState('');
   const [jumpBusy, setJumpBusy] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -204,12 +226,30 @@ export function ProductShell() {
     () => window.innerWidth > DESKTOP_SIDEBAR_BREAKPOINT_PX,
   );
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState<boolean>(
-    () => window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE) === '1',
+    () => storageGet(SIDEBAR_COLLAPSED_STORAGE) === '1',
   );
   const [desktopFinderCollapsed, setDesktopFinderCollapsed] = useState<boolean>(
-    () => window.localStorage.getItem(FINDER_COLLAPSED_STORAGE) === '1',
+    () => storageGet(FINDER_COLLAPSED_STORAGE) === '1',
   );
   const [quickSearchShortcutNonce, setQuickSearchShortcutNonce] = useState(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Each opening starts clean (a fresh query and highlight).
+  const [paletteSession, setPaletteSession] = useState(0);
+  const paletteOpenRef = useRef(paletteOpen);
+  paletteOpenRef.current = paletteOpen;
+  // Any route change closes the sheets that cover the page: a bottom tab tapped behind
+  // the More sheet, or the phone's Back button, used to leave them open over the new
+  // page (with scrolling still locked under them).
+  useEffect(() => {
+    setMobileMoreOpen(false);
+    setMobileSearchOpen(false);
+    setPaletteOpen(false);
+  }, [location.key]);
+  const openPalette = useCallback(() => {
+    setPaletteSession((current) => current + 1);
+    setPaletteOpen(true);
+  }, []);
+  const paletteShortcut = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K';
   const [tutorialOpen, setTutorialOpen] = useState<boolean>(false);
   const [tutorialScope, setTutorialScope] = useState<TutorialScope>(() => resolveScopeFromPath(location.pathname));
   const [, setTutorialProgressVersion] = useState<number>(0);
@@ -289,11 +329,11 @@ export function ProductShell() {
   }, [contextEventLabel, contextMatchLabel, contextSnapshot.matchKey, contextTeamLabel, hasContextEvent, hasContextTeam]);
 
   useEffect(() => {
-    window.localStorage.setItem(FINDER_COLLAPSED_STORAGE, desktopFinderCollapsed ? '1' : '0');
+    storageSet(FINDER_COLLAPSED_STORAGE, desktopFinderCollapsed ? '1' : '0');
   }, [desktopFinderCollapsed]);
 
   useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE, desktopSidebarCollapsed ? '1' : '0');
+    storageSet(SIDEBAR_COLLAPSED_STORAGE, desktopSidebarCollapsed ? '1' : '0');
   }, [desktopSidebarCollapsed]);
 
   useEffect(() => {
@@ -349,6 +389,19 @@ export function ProductShell() {
     setTutorialScope(activeScope);
   }, [activeScope]);
 
+  // ⌘K / Ctrl+K opens the palette from anywhere, typing included (it's the one shortcut people
+  // expect to work inside a field).
+  useEffect(() => {
+    function onPaletteKey(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 'k' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      if (paletteOpenRef.current) setPaletteOpen(false);
+      else openPalette();
+    }
+    window.addEventListener('keydown', onPaletteKey);
+    return () => window.removeEventListener('keydown', onPaletteKey);
+  }, [openPalette]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const isQuickSearchKey = event.key === '/' || event.key === 'Divide' || event.code === 'Slash';
@@ -379,16 +432,55 @@ export function ProductShell() {
     return () => window.cancelAnimationFrame(raf);
   }, [quickSearchShortcutNonce]);
 
+  // Back to a page puts you where you were. Phones scroll the window, wider screens the content
+  // pane, so both are saved and restored. The page is usually still filling in when it returns
+  // and the browser can't scroll past content that isn't there yet, so the restore keeps trying
+  // while it grows, and stops the moment you scroll or touch.
+  useEffect(() => {
+    try {
+      window.history.scrollRestoration = 'manual';
+    } catch {
+      // Not settable here; the restore below still runs.
+    }
+  }, []);
+
   useEffect(() => {
     const node = contentRef.current;
-    if (!node) return;
+    if (!node) return undefined;
     const storageKey = `${PAGE_SCROLL_STORAGE_PREFIX}${location.pathname}${location.search}`;
-    const saved = Number(window.sessionStorage.getItem(storageKey) || '');
-    if (Number.isFinite(saved) && saved > 0) {
-      node.scrollTo({ top: saved, behavior: 'auto' });
-      return;
+    const read = (key: string) => {
+      const value = Number(window.sessionStorage.getItem(key) || '');
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    };
+    const savedPane = read(storageKey);
+    const savedWindow = read(`${storageKey}#window`);
+    if (!savedPane && !savedWindow) {
+      node.scrollTo({ top: 0, behavior: 'auto' });
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      return undefined;
     }
-    node.scrollTo({ top: 0, behavior: 'auto' });
+    let stopped = false;
+    let timer: number | null = null;
+    const startedAt = performance.now();
+    const stop = () => {
+      stopped = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+    const attempt = () => {
+      if (stopped) return;
+      if (savedPane) node.scrollTo({ top: savedPane, behavior: 'auto' });
+      if (savedWindow) window.scrollTo({ top: savedWindow, behavior: 'auto' });
+      const reached = Math.abs(node.scrollTop - savedPane) <= 2 && Math.abs(window.scrollY - savedWindow) <= 2;
+      if (reached || performance.now() - startedAt > 2500) return;
+      timer = window.setTimeout(attempt, 100);
+    };
+    attempt();
+    const inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
+    inputs.forEach((type) => window.addEventListener(type, stop, { passive: true, capture: true }));
+    return () => {
+      stop();
+      inputs.forEach((type) => window.removeEventListener(type, stop, { capture: true }));
+    };
   }, [location.pathname, location.search]);
 
   useEffect(() => {
@@ -403,17 +495,34 @@ export function ProductShell() {
   useEffect(() => {
     const node = contentRef.current;
     if (!node) return;
-    const storageKey = `${PAGE_SCROLL_STORAGE_PREFIX}${location.pathname}${location.search}`;
-    const onScroll = () => {
-      window.sessionStorage.setItem(storageKey, String(Math.max(0, Math.round(node.scrollTop))));
+    const route = `${location.pathname}${location.search}`;
+    const storageKey = `${PAGE_SCROLL_STORAGE_PREFIX}${route}`;
+    // Only while this page is the one on screen: leaving it, the next (shorter) page makes the
+    // browser clamp the scroll, and saving that clamped spot is what sent Back ~140px short.
+    const stillHere = () => window.location.hash.replace(/^#/, '') === route;
+    const onPaneScroll = () => {
+      if (stillHere()) window.sessionStorage.setItem(storageKey, String(Math.max(0, Math.round(node.scrollTop))));
     };
-    node.addEventListener('scroll', onScroll, { passive: true });
-    return () => node.removeEventListener('scroll', onScroll);
+    const onWindowScroll = () => {
+      if (stillHere()) window.sessionStorage.setItem(`${storageKey}#window`, String(Math.max(0, Math.round(window.scrollY))));
+    };
+    node.addEventListener('scroll', onPaneScroll, { passive: true });
+    window.addEventListener('scroll', onWindowScroll, { passive: true });
+    return () => {
+      node.removeEventListener('scroll', onPaneScroll);
+      window.removeEventListener('scroll', onWindowScroll);
+    };
   }, [location.pathname, location.search]);
 
   async function runGlobalJump(rawInput?: string) {
     const value = String(rawInput ?? jumpInput).trim().toLowerCase();
     if (!value) return;
+    // A team or event search can take seconds on venue wifi. If the scout has moved on
+    // by the time it answers, stay where they went instead of pulling them away.
+    const startedOn = window.location.hash;
+    const go = (path: string) => {
+      if (window.location.hash === startedOn) navigate(path);
+    };
 
     // What was typed decides where it goes; the Auto/Team/Event switch made people choose first.
     const activeMode: QuickJumpGuess = guessQuickJump(value);
@@ -422,7 +531,7 @@ export function ProductShell() {
     if (activeMode === 'match') {
       const matchJump = parseMatchJump(value);
       if (matchJump) {
-        navigate(`/match-center?event=${matchJump.eventKey}&match=${matchJump.matchKey}`);
+        go(`/match-center?event=${matchJump.eventKey}&match=${matchJump.matchKey}`);
         return;
       }
     }
@@ -439,24 +548,24 @@ export function ProductShell() {
           if (selected?.team_key) {
             const params = new URLSearchParams();
             params.set('team', selected.team_key.toLowerCase());
-            navigate(`/team-center?${params.toString()}`);
+            go(`/team-center?${params.toString()}`);
             return;
           }
         } catch {
           // fallback below
         }
-        navigate(`/team-center`);
+        go(`/team-center`);
         return;
       }
       const params = new URLSearchParams();
       params.set('team', teamKey);
-      navigate(`/team-center?${params.toString()}`);
+      go(`/team-center?${params.toString()}`);
       return;
     }
 
     if (activeMode === 'event') {
       if (isEventKey(value)) {
-        navigate(`/events?event=${value}`);
+        go(`/events?event=${value}`);
         return;
       }
       try {
@@ -470,7 +579,7 @@ export function ProductShell() {
         );
         const selected = filtered[0] || resolved.bestMatch;
         if (selected?.event_key) {
-          navigate(`/events?event=${selected.event_key.toLowerCase()}`);
+          go(`/events?event=${selected.event_key.toLowerCase()}`);
           return;
         }
       } catch {
@@ -479,7 +588,7 @@ export function ProductShell() {
       const params = new URLSearchParams();
       params.set('q', value);
       if (region !== 'all') params.set('region', region);
-      navigate(`/events?${params.toString()}`);
+      go(`/events?${params.toString()}`);
       return;
     }
 
@@ -489,7 +598,7 @@ export function ProductShell() {
         const payload = await searchTeams(value, 10);
         const named = payload.teams.find((team) => typedTeamName(value, team.nickname));
         if (named?.team_key) {
-          navigate(`/team-center?team=${named.team_key.toLowerCase()}`);
+          go(`/team-center?team=${named.team_key.toLowerCase()}`);
           return;
         }
       } catch {
@@ -500,7 +609,7 @@ export function ProductShell() {
     const params = new URLSearchParams();
     params.set('q', value);
     if (region !== 'all') params.set('region', region);
-    navigate(`/events?${params.toString()}`);
+    go(`/events?${params.toString()}`);
   }
 
   function handleJumpSubmit(event: FormEvent<HTMLFormElement>) {
@@ -587,6 +696,13 @@ export function ProductShell() {
               to={item.to}
               className={linkClass}
               title={sidebarCollapsed ? item.label : undefined}
+              onClick={(event) => {
+                if (!isPlainClick(event) || location.pathname === item.to) return;
+                event.preventDefault();
+                navigateWithTransition(navigate, item.to, {
+                  direction: sectionDirection(NAV_ORDER, location.pathname, item.to),
+                });
+              }}
             >
               <item.Icon className="ps-nav-link-icon" />
               <span className="ps-nav-link-label">{item.label}</span>
@@ -631,6 +747,7 @@ export function ProductShell() {
               {isOnline ? 'Online' : 'Offline'}
               {queueSize > 0 ? <span className="ps-network-queue-badge">{queueSize}</span> : null}
             </span>
+            <ThemeToggle theme={themeMode} className={themeToggleStyles.phoneOnly} />
             <button
               type="button"
               className="ps-mobile-search-trigger"
@@ -642,6 +759,7 @@ export function ProductShell() {
           </div>
           {showTopbarTools ? (
           <div className="ps-topbar-tools">
+            <ThemeToggle theme={themeMode} className={themeToggleStyles.desktopOnly} />
             {finderCollapseAvailable ? (
               <button
                 type="button"
@@ -675,6 +793,15 @@ export function ProductShell() {
                   >
                     {jumpBusy ? <Spinner size={14} /> : <SearchIcon />}
                     <span className="ps-topbar-search-btn-label">{jumpBusy ? '' : 'Search'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={paletteStyles.trigger}
+                    onClick={openPalette}
+                    aria-label={`Search everything (${paletteShortcut})`}
+                    title={`Search everything (${paletteShortcut})`}
+                  >
+                    {paletteShortcut}
                   </button>
                 </form>
                 {helperLabel ? <div className="ps-topbar-search-hint">{helperLabel}</div> : null}
@@ -858,7 +985,12 @@ export function ProductShell() {
               <button type="button" className="ps-pwa-dismiss" onClick={pwaInstall.dismiss} aria-label="Dismiss">×</button>
             </div>
           ) : null}
+          {/* Event pages carry ?event=; an earlier season's event says so first. */}
+          {/^\/(events|match-center|team-center|compare|scouting)(\/|$)/.test(location.pathname) ? (
+            <PastSeasonBanner eventKey={new URLSearchParams(location.search).get('event')} />
+          ) : null}
           <Outlet />
+          <SiteFooter />
         </main>
       </div>
 
@@ -880,9 +1012,11 @@ export function ProductShell() {
       />
 
       {tutorialOpen ? (
-        <Suspense fallback={null}>
-          <TabTutorialOverlay key={tutorialScope} scope={tutorialScope} onClose={() => setTutorialOpen(false)} />
-        </Suspense>
+        <QuietBoundary name="tour">
+          <Suspense fallback={null}>
+            <TabTutorialOverlay key={tutorialScope} scope={tutorialScope} onClose={() => setTutorialOpen(false)} />
+          </Suspense>
+        </QuietBoundary>
       ) : null}
       {showTourPrompt ? (
         <TourPrompt
@@ -898,6 +1032,32 @@ export function ProductShell() {
         moreOpen={mobileMoreOpen}
         onToggleMore={() => setMobileMoreOpen((c) => !c)}
       />
+      <ToastHost />
+      <PullToRefresh areaRef={contentRef} pathname={location.pathname} />
+      {/* Each extra on its own: one that fails to download is left out, the rest stay. */}
+      <QuietBoundary name="next-match">
+        <Suspense fallback={null}>
+          <NextMatchPill pathname={location.pathname} search={location.search} />
+        </Suspense>
+      </QuietBoundary>
+      <QuietBoundary name="team-peek">
+        <Suspense fallback={null}>
+          <TeamPeek />
+        </Suspense>
+      </QuietBoundary>
+      {paletteSession > 0 ? (
+        <QuietBoundary key={paletteSession} name="palette">
+          <Suspense fallback={null}>
+            <CommandPalette
+              open={paletteOpen}
+              onClose={() => setPaletteOpen(false)}
+              recentEvents={recentEventQuickPicks}
+              recentTeams={recentTeamQuickPicks}
+              onStartTour={() => openTutorial(activeScope)}
+            />
+          </Suspense>
+        </QuietBoundary>
+      ) : null}
     </div>
   );
 }

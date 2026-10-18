@@ -1,9 +1,10 @@
+import { formatDayTime } from '../utils/formatTime';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { getScoutingCoverage } from '../api';
 import type { ScoutingCoverageResponse } from '../api';
 import { EventPicker } from '../components/EventPicker';
-import { PageViewBar } from '../components/PageViewBar';
-import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
+import { ScoutingViewBar } from '../components/ScoutingViewBar';
+import { scoutingViewTitle } from '../components/pageViewBarConfig';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { Stat } from '../components/ui/primitives';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
@@ -139,16 +140,17 @@ function ScoutingCoverageWorkspacePage() {
 
   return (
     <>
-      <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
+      <ScoutingViewBar />
       <div className="center-page-container">
 
           <SurfaceCard
-            title="Scouting Coverage"
+            title={scoutingViewTitle('/scouting/coverage')}
             subtitle="Who has scouted what — find the holes before alliance selection does."
             expandable={false}
             mobileCollapsible={false}
           >
             <EventPicker
+              label="Event"
               value={eventKey}
               onSelect={selectEvent}
               inputValue={eventInput}
@@ -157,7 +159,7 @@ function ScoutingCoverageWorkspacePage() {
               loading={loading}
             />
             {errorText || (data && (!online || isShowingOfflineData)) ? <p className="center-callout warning" role="alert">
-              {data ? `Showing saved coverage. ${lastUpdated ? `Last live update ${new Date(lastUpdated).toLocaleString()}.` : 'No live update confirmed yet.'}` : errorText}
+              {data ? `Showing saved coverage. ${lastUpdated ? `Last live update ${formatDayTime(lastUpdated)}.` : 'No live update confirmed yet.'}` : errorText}
               {' '}<button type="button" className="center-btn ghost" disabled={loading} onClick={() => void fetchCoverage(eventKey)}>Retry</button>
             </p> : null}
 
@@ -296,7 +298,7 @@ function ScoutingCoverageWorkspacePage() {
 // the device has joined one.
 export function ScoutingCoveragePage() {
   return (
-    <WorkspaceGate feature="Scouting coverage reports" viewBar={<PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />}>
+    <WorkspaceGate feature="Scouting coverage reports" viewBar={<ScoutingViewBar />}>
       <ScoutingCoverageWorkspacePage />
     </WorkspaceGate>
   );

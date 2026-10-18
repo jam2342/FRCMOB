@@ -40,3 +40,39 @@ describe('OfflineIndicator', () => {
   });
 
 });
+
+describe('back online', () => {
+  it('shows each waiting change go out, then one "all synced" that folds away', async () => {
+    const { act } = await import('@testing-library/react');
+    vi.useFakeTimers();
+    status = { online: false, queueSize: 3 };
+    const view = render(<MemoryRouter><OfflineIndicator /></MemoryRouter>);
+    status = { online: true, queueSize: 3 };
+    view.rerender(<MemoryRouter><OfflineIndicator /></MemoryRouter>);
+    expect(screen.getByText('Back online · sharing 1 of 3 changes')).toBeInTheDocument();
+    status = { online: true, queueSize: 1 };
+    view.rerender(<MemoryRouter><OfflineIndicator /></MemoryRouter>);
+    expect(screen.getByText('Back online · sharing 3 of 3 changes')).toBeInTheDocument();
+    status = { online: true, queueSize: 0 };
+    view.rerender(<MemoryRouter><OfflineIndicator /></MemoryRouter>);
+    expect(screen.getByText('All 3 changes synced')).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(3000); });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(screen.queryByRole('status')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('with nothing waiting, just says it is back online for a moment', async () => {
+    const { act } = await import('@testing-library/react');
+    vi.useFakeTimers();
+    status = { online: false, queueSize: 0 };
+    const view = render(<MemoryRouter><OfflineIndicator /></MemoryRouter>);
+    status = { online: true, queueSize: 0 };
+    view.rerender(<MemoryRouter><OfflineIndicator /></MemoryRouter>);
+    expect(screen.getByText('Back online')).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1900); });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(screen.queryByText('Back online')).toBeNull();
+    vi.useRealTimers();
+  });
+});

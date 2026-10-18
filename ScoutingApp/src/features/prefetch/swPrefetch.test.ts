@@ -23,10 +23,10 @@ describe('service worker alert prefetch', () => {
       seen.push(String(input));
       return Promise.resolve(new Response(JSON.stringify({ ok: true, matches: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }) as unknown as typeof fetch);
-    const { loadMatchCenterSynergy } = await import('./pageRequests');
+    const { loadMatchCenterPredictions } = await import('./pageRequests');
     const { getEventSchedule } = await import('../../api');
     const { SAVED_COPY_MAX_AGE_MS } = await import('../../config/savedCopy');
-    await loadMatchCenterSynergy('2026arc');
+    await loadMatchCenterPredictions('2026arc');
     await getEventSchedule('2026arc', false, undefined, { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.schedule });
     expect([...seen].sort()).toEqual(swUrls);
   });

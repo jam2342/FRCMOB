@@ -7,11 +7,13 @@
 import json
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db import models
+from app.services.push.subscriptions import valid_subscription_keys
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,28 @@ except ImportError:  # pragma: no cover - exercised only without the dep
     _PYWEBPUSH_AVAILABLE = False
 
 _MISSING_DEP_WARNED = False
+# Browsers hand out endpoints on their vendor's push service only. Anything else
+# would make the server POST wherever a caller points it (and wait on it).
+PUSH_SERVICE_HOSTS = (
+    "fcm.googleapis.com",
+    "android.googleapis.com",
+    "updates.push.services.mozilla.com",
+    "web.push.apple.com",
+)
+PUSH_SERVICE_HOST_SUFFIXES = (".push.apple.com", ".notify.windows.com", ".push.services.mozilla.com")
+PUSH_SEND_TIMEOUT_SEC = 10
+
+
+def push_endpoint_allowed(endpoint: str) -> bool:
+    try:
+        parts = urlsplit(str(endpoint or "").strip())
+        port = parts.port
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or port not in (None, 443) or parts.username or parts.password:
+        return False
+    return host in PUSH_SERVICE_HOSTS or host.endswith(PUSH_SERVICE_HOST_SUFFIXES)
 
 def push_configured() -> bool:
     return bool(
@@ -54,7 +78,17 @@ def send_web_push(
             _MISSING_DEP_WARNED = True
         return False
 
+    if not push_endpoint_allowed(subscription.endpoint):
+        # Stored before the endpoint check existed; never send there.
+        logger.warning("Push endpoint not on a known push service; deleting subscription %s", subscription.id)
+        db.delete(subscription)
+        return False
+
     keys = subscription.keys if isinstance(subscription.keys, dict) else {}
+    if not valid_subscription_keys(keys):
+        logger.warning("Invalid push encryption keys; deleting subscription %s", subscription.id)
+        db.delete(subscription)
+        return False
     subscription_info = {
         "endpoint": subscription.endpoint,
         "keys": {
@@ -69,6 +103,7 @@ def send_web_push(
             vapid_private_key=str(settings.vapid_private_key).strip(),
             vapid_claims={"sub": str(settings.vapid_subject or "mailto:admin@frcmob.app").strip()},
             ttl=int(settings.push_ttl_sec or 1800),
+            timeout=PUSH_SEND_TIMEOUT_SEC,
         )
         if subscription.failure_count:
             subscription.failure_count = 0

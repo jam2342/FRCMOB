@@ -1,5 +1,7 @@
 import {
   useId,
+  useRef,
+  useState,
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
@@ -205,7 +207,12 @@ export type FieldStepperProps = FieldShellProps & {
   disabled?: boolean;
   /** Used for the +/- button labels, e.g. "high goal" → "Increase high goal". */
   name?: string;
+  /** Shows each press: "+3" rises off the button and the value pops. For counters a scout
+   *  taps without looking, on phones that can't vibrate (iPhone). */
+  feedback?: boolean;
 };
+
+type StepperBurst = { id: number; increase: boolean; text: string };
 
 export function FieldStepper({
   label,
@@ -221,9 +228,13 @@ export function FieldStepper({
   step = 1,
   disabled = false,
   name,
+  feedback = false,
 }: FieldStepperProps) {
   const { id, hintId, errorId, describedBy, invalid } = useFieldWiring({ hint, error });
   const subject = name ?? label ?? 'value';
+  const [bursts, setBursts] = useState<StepperBurst[]>([]);
+  const [pulse, setPulse] = useState({ count: 0, up: true });
+  const burstIdRef = useRef(0);
 
   // Binary floating point makes 1 + 0.1 + 0.1 into 1.2000000000000002, which
   // then renders in full. Round to the precision the step itself implies, so a
@@ -233,6 +244,25 @@ export function FieldStepper({
     const bounded = Math.min(max, Math.max(min, next));
     return decimals === 0 ? bounded : Number(bounded.toFixed(decimals));
   };
+
+  const press = (direction: 1 | -1) => {
+    const next = clamp(value + direction * step);
+    if (next === value) return;
+    if (feedback) {
+      const delta = Number((next - value).toFixed(decimals));
+      burstIdRef.current += 1;
+      const burst = { id: burstIdRef.current, increase: delta > 0, text: `${delta > 0 ? '+' : '−'}${Math.abs(delta)}` };
+      // Fast tapping keeps at most four in the air.
+      setBursts((current) => [...current.slice(-3), burst]);
+      setPulse((current) => ({ count: current.count + 1, up: delta > 0 }));
+    }
+    onValueChange(next);
+  };
+  const pulseClass = pulse.count === 0
+    ? undefined
+    : pulse.up
+      ? (pulse.count % 2 ? styles.popUpA : styles.popUpB)
+      : (pulse.count % 2 ? styles.popDownA : styles.popDownB);
 
   return (
     <FieldFrame
@@ -250,7 +280,7 @@ export function FieldStepper({
         <button
           type="button"
           className={styles.stepperButton}
-          onClick={() => onValueChange(clamp(value - step))}
+          onClick={() => press(-1)}
           disabled={disabled || value <= min}
           aria-label={`Decrease ${subject}${step === 1 ? '' : ` by ${step}`}`}
         >
@@ -261,7 +291,7 @@ export function FieldStepper({
           id={id}
           type="number"
           inputMode="numeric"
-          className={styles.stepperValue}
+          className={cx(styles.stepperValue, pulseClass)}
           value={value}
           min={min}
           max={max}
@@ -282,12 +312,22 @@ export function FieldStepper({
         <button
           type="button"
           className={styles.stepperButton}
-          onClick={() => onValueChange(clamp(value + step))}
+          onClick={() => press(1)}
           disabled={disabled || value >= max}
           aria-label={`Increase ${subject}${step === 1 ? '' : ` by ${step}`}`}
         >
           {step === 1 ? '+' : `+${step}`}
         </button>
+        {bursts.map((burst) => (
+          <span
+            key={burst.id}
+            aria-hidden="true"
+            className={cx(styles.burst, burst.increase ? styles.burstIncrease : styles.burstDecrease)}
+            onAnimationEnd={() => setBursts((current) => current.filter((item) => item.id !== burst.id))}
+          >
+            {burst.text}
+          </span>
+        ))}
       </div>
     </FieldFrame>
   );

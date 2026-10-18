@@ -48,4 +48,21 @@ describe('device cache freshness', () => {
     const fallback = (await offline.getEventSchedule('2026arc')) as unknown as { version: number };
     expect(fallback.version).toBe(2);
   });
+
+  it('never goes back to an older copy after a live read', async () => {
+    // Match Center polls live matches past the cache; when the match ended it went back
+    // to cached reads and the pre-match copy in memory hid the final score for a poll.
+    vi.stubEnv('VITE_API_URL', '/api');
+    let version = 1;
+    const fetchMock = vi.fn().mockImplementation(async () => json({ ok: true, version: version++ }));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = await import('./api');
+    const before = (await api.getEventSchedule('2026arc')) as unknown as { version: number };
+    expect(before.version).toBe(1);
+    const live = (await api.getEventSchedule('2026arc', false, undefined, { bypassCache: true, cacheTtlMs: 0, staleWhileRevalidateMs: 0 })) as unknown as { version: number };
+    expect(live.version).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const after = (await api.getEventSchedule('2026arc')) as unknown as { version: number };
+    expect(after.version).toBeGreaterThanOrEqual(2);
+  });
 });

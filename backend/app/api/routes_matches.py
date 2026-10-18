@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, true
+from sqlalchemy import func, text, true
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -771,6 +771,19 @@ def _upsert_event_if_missing(
     return event
 
 
+# Any id works; it only has to be the same for every schedule writer.
+_SCHEDULE_WRITE_LOCK_ID = 0x5C4ED
+
+
+def _lock_schedule_writes(db: Session) -> None:
+    # Several requests can refresh the same unsaved event at once (Home asks for a
+    # day's events in one batch, and two workers serve it). merge() selects then
+    # inserts, so without this the slower ones die on matches_pkey / teams_pkey.
+    # Held until commit: a few ms of row writes, never the provider fetch.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("select pg_advisory_xact_lock(:id)"), {"id": _SCHEDULE_WRITE_LOCK_ID})
+
+
 def _refresh_event_schedule_from_tba(db: Session, tba: TBAClient, event_key: str) -> int:
     try:
         payload = tba.event_matches(event_key)
@@ -785,13 +798,14 @@ def _refresh_event_schedule_from_tba(db: Session, tba: TBAClient, event_key: str
 
     team_keys_to_upsert: set[str] = set()
     match_team_links: list[tuple[str, str, str, int]] = []
+    match_rows: list[models.Match] = []
 
     for match in payload:
         match_key = match.get("key")
         if not isinstance(match_key, str) or not match_key:
             continue
 
-        db.merge(
+        match_rows.append(
             models.Match(
                 match_key=match_key,
                 event_key=event_key,
@@ -813,6 +827,9 @@ def _refresh_event_schedule_from_tba(db: Session, tba: TBAClient, event_key: str
 
     nickname_overrides = _event_team_nickname_overrides(tba, event_key, team_keys_to_upsert)
 
+    _lock_schedule_writes(db)
+    for row in match_rows:
+        db.merge(row)
     for team_key in sorted(team_keys_to_upsert):
         nickname = nickname_overrides.get(team_key)
         existing_team = db.get(models.Team, team_key)
@@ -918,6 +935,7 @@ def _refresh_event_schedule_from_first(
     event_team_links: set[str] = set()
     match_team_links: list[tuple[str, str, str, str | None]] = []
     seen_match_keys: set[str] = set()
+    _lock_schedule_writes(db)
 
     for idx, row in enumerate(schedule, start=1):
         if not isinstance(row, dict):

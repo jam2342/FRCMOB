@@ -2,14 +2,14 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StrategyBriefingPage } from './StrategyBriefingPage';
-import { getEventSchedule, getEventScheduleWithSynergy, getEventRatings, getEventTeamLiveForm } from '../api';
+import { getEventSchedule, getEventPredictionSchedule, getEventRatings, getEventTeamLiveForm } from '../api';
 vi.mock('../hooks/useLiveRefreshSetting', () => ({ useLiveRefreshSetting: () => 10 }));
 vi.mock('../api', () => ({
   getEventSchedule: vi.fn(async () => ({ matches: [2,1].map(number => ({
     match_key:`2026old_qm${number}`,display_name:`Qual ${number}`,comp_level:'qm',set_number:1,match_number:number,is_completed:false,
     red:[{team_key:'frc118',team_number:118}],blue:[{team_key:'frc254',team_number:254}],
   })) })),
-  getEventScheduleWithSynergy: vi.fn(async () => ({matches:[]})),
+  getEventPredictionSchedule: vi.fn(async () => ({matches:[]})),
   getEventRatings: vi.fn(async () => ({ratings:[]})),
   getEventTeamLiveForm: vi.fn(async () => ({team_statuses:{}})),
 }));
@@ -61,13 +61,13 @@ it('refreshes every input, pauses while hidden, resumes on return, and stops aft
   await act(async () => {});
   expect(screen.getByRole('heading', { name: 'Qual 1' })).toBeInTheDocument();
   await act(async () => { vi.advanceTimersByTime(10_000); });
-  for (const request of [getEventSchedule, getEventScheduleWithSynergy, getEventRatings, getEventTeamLiveForm]) {
+  for (const request of [getEventSchedule, getEventPredictionSchedule, getEventRatings, getEventTeamLiveForm]) {
     expect(request).toHaveBeenCalledTimes(2);
   }
   expect(getEventSchedule).toHaveBeenLastCalledWith('2026old', false, undefined, { bypassCache: true });
   // Polls skip the cache but never ask the server to rebuild: ratings refresh is admin-only.
   expect(getEventRatings).toHaveBeenLastCalledWith('2026old', false, { bypassCache: true });
-  expect(getEventScheduleWithSynergy).toHaveBeenLastCalledWith('2026old', { include_pair_breakdown: false, bypassCache: true });
+  expect(getEventPredictionSchedule).toHaveBeenLastCalledWith('2026old', { bypassCache: true });
   act(() => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
     document.dispatchEvent(new Event('visibilitychange'));

@@ -46,6 +46,35 @@ def _make_test_engine():
 # pytest fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _fresh_team_model_cache():
+    # The season run is cached per process; every test starts from its own database.
+    from app.services.ratings import team_model_service
+
+    team_model_service.clear_cache()
+    from app.services.ratings import win_correction
+
+    # Tests change data and read predictions straight after: no background rebuilds.
+    previous, team_model_service.STALE_READS = team_model_service.STALE_READS, False
+    # Tests check the deterministic probabilities; the learned correction has its own.
+    previous_blend, win_correction.CORRECTION_BLEND = win_correction.CORRECTION_BLEND, 0.0
+    yield
+    team_model_service.STALE_READS = previous
+    win_correction.CORRECTION_BLEND = previous_blend
+
+
+@pytest.fixture(autouse=True)
+def _no_workspace_creation_budget():
+    # With a real Redis (CI) the hourly budget is shared by every test that creates
+    # a workspace; the budget's own tests set a small one.
+    from app.core.config import settings
+
+    previous = settings.workspace_create_max_per_hour
+    settings.workspace_create_max_per_hour = 1_000_000
+    yield
+    settings.workspace_create_max_per_hour = previous
+
+
 @pytest.fixture()
 def db_engine():
     # Yield an in-memory SQLite engine with all tables created.

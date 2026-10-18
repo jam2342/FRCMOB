@@ -17,7 +17,6 @@ from app.core.security import require_admin_access
 from app.db import models
 from app.db.session import get_db
 from app.api.schemas import TeamSearchResponse
-from app.services.clients import statbotics as statbotics_client
 from app.services.intel.helpers import (
     EVENT_INTEL_CACHE_TTL_SEC,
     TEAM_INTEL_CACHE_TTL_SEC,
@@ -46,7 +45,6 @@ logger = logging.getLogger(__name__)
 async def search_teams(
     q: str,
     limit: int = 25,
-    include_global: bool = True,
     # Off unless asked for: it's one blocking TBA call per result (up to 75).
     include_event_registrations: bool = False,
     preferred_year: int = CURRENT_SEASON_YEAR,
@@ -109,52 +107,6 @@ async def search_teams(
             "state": team_profile.state_prov if team_profile else None,
         }
 
-    inserted_global = 0
-    if include_global and len(teams_by_key) < capped_limit:
-        try:
-            global_teams = await statbotics_client.get_all_teams(include_inactive=True)
-        except RuntimeError:
-            global_teams = []
-
-        for item in global_teams:
-            team_number_raw = item.get("team")
-            if not isinstance(team_number_raw, int):
-                continue
-            team_number = int(team_number_raw)
-            team_key = f"frc{team_number}"
-            nickname = item.get("name")
-
-            if not _rt._matches_team_query(query, team_key, team_number, nickname):
-                continue
-
-            if team_key not in teams_by_key:
-                teams_by_key[team_key] = {
-                    "team_key": team_key,
-                    "team_number": team_number,
-                    "nickname": nickname,
-                    "analyzed_matches": 0,
-                    "source": "global",
-                    "country": item.get("country"),
-                    "state": item.get("state"),
-                }
-
-                # Upsert matched global teams so "Open Team" can load breakdown without 404.
-                if not settings.public_readonly_mode:
-                    db.merge(
-                        models.Team(
-                            team_key=team_key,
-                            team_number=team_number,
-                            nickname=nickname,
-                        )
-                    )
-                    inserted_global += 1
-
-            if len(teams_by_key) >= capped_limit:
-                break
-
-    if inserted_global > 0:
-        db.commit()
-
     def _rank(item: dict) -> tuple[int, int]:
         team_key = str(item["team_key"]).lower()
         number_str = str(item["team_number"])
@@ -212,7 +164,6 @@ async def get_team_intel(
     preferred_year: int = CURRENT_SEASON_YEAR,
     fallback_year: int = PREVIOUS_SEASON_YEAR,
     include_tba: bool = True,
-    include_statbotics: bool = True,
     allow_season_fallback: bool = True,
     auto_heal_ratings: bool = False,
     refresh: bool = False,
@@ -225,7 +176,6 @@ async def get_team_intel(
         preferred_year=preferred_year,
         fallback_year=fallback_year,
         include_tba=include_tba,
-        include_statbotics=include_statbotics,
         allow_season_fallback=allow_season_fallback,
         auto_heal_ratings=auto_heal_ratings,
     )
@@ -259,7 +209,6 @@ async def get_team_intel(
         preferred_year=preferred_year,
         fallback_year=fallback_year,
         include_tba=include_tba,
-        include_statbotics=include_statbotics,
         allow_season_fallback=allow_season_fallback,
         auto_heal_ratings=auto_heal_ratings,
     )
@@ -295,7 +244,6 @@ async def get_event_teams_intel(
     event_key: str,
     request: Request,
     include_tba: bool = True,
-    include_statbotics: bool = True,
     auto_heal_ratings: bool = False,
     include_season_fallback: bool = True,
     include_rating_details: bool = False,
@@ -307,7 +255,6 @@ async def get_event_teams_intel(
     cache_token = _event_intel_cache_token(
         event_key=normalized_event_key,
         include_tba=include_tba,
-        include_statbotics=include_statbotics,
         auto_heal_ratings=auto_heal_ratings,
         include_season_fallback=include_season_fallback,
         include_rating_details=include_rating_details,
@@ -340,7 +287,6 @@ async def get_event_teams_intel(
         db=db,
         event_key=normalized_event_key,
         include_tba=include_tba,
-        include_statbotics=include_statbotics,
         auto_heal_ratings=auto_heal_ratings,
         include_season_fallback=include_season_fallback,
         include_rating_details=include_rating_details,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { plainSignalLabel, signalRankLabel } from './teamCenterOfficial';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import {
   getEventRatings,
   getTeamBreakdown,
@@ -12,7 +12,8 @@ import type {
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
-import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
+import { EVENTS_VIEWS, viewTitle } from '../components/pageViewBarConfig';
+import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -39,12 +40,12 @@ const RANKING_COLUMNS: TableColumn<RankingRow>[] = [
     render: (row) => <span className="dviz-rating-pill">{row.rating_0_100.toFixed(1)}</span>,
   },
   { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence_0_1) },
-  { key: 'throughput', label: 'Throughput', numeric: true, render: (row) => row.subscores.throughput.toFixed(0) },
-  { key: 'endgame', label: 'Endgame', numeric: true, render: (row) => row.subscores.endgame.toFixed(0) },
+  { key: 'throughput', label: 'Throughput', numeric: true, render: (row) => metric(row.subscores.throughput, 0) },
+  { key: 'endgame', label: 'Endgame', numeric: true, render: (row) => metric(row.subscores.endgame, 0) },
   { key: 'auto', label: 'Auto', numeric: true, render: (row) => row.subscores.auto_contribution == null ? '—' : metric(row.subscores.auto_contribution, 0) },
-  { key: 'consistency', label: 'Consistency', numeric: true, render: (row) => row.subscores.consistency.toFixed(0) },
+  { key: 'consistency', label: 'Consistency', numeric: true, render: (row) => metric(row.subscores.consistency, 0) },
 ];
-import { metric, pct, normalizeTeamKeyInput } from './centerUtils';
+import { metric, pct, normalizeTeamKeyInput, TEAM_NUMBER_PLACEHOLDER } from './centerUtils';
 import { readMyTeamKey } from '../features/workspace/myTeam';
 
 /* ------------------------------------------------------------------ */
@@ -55,64 +56,28 @@ import { readMyTeamKey } from '../features/workspace/myTeam';
 // picked everywhere else didn't carry over here.
 const STORAGE_KEY = 'scouting_center_event_key';
 
-/* radar chart subscore keys & labels */
+/* radar chart subscore keys & labels: the parts of the rating official results measure */
 const SUBSCORE_KEYS = [
   'throughput',
-  'shift_productivity',
-  'capacity_utilization',
-  'endgame',
   'auto_contribution',
+  'endgame',
   'consistency',
-  'defense_presence',
-  'rp_contribution',
-  'penalty_discipline',
-  'results_anchor',
 ] as const;
 
 const SUBSCORE_LABELS: Record<string, string> = {
-  throughput: 'Throughput',
-  shift_productivity: 'Shift Prod.',
-  capacity_utilization: 'Capacity',
-  endgame: 'Endgame',
+  throughput: 'Teleop',
+  endgame: 'Climb',
   auto_contribution: 'Auto',
   consistency: 'Consistency',
-  defense_presence: 'Defense',
-  rp_contribution: 'RP Contrib.',
-  penalty_discipline: 'Penalties',
-  results_anchor: 'Results',
 };
 
-/* metric display mapping */
-const METRIC_LABELS: Record<keyof MetricAverages, string> = {
+/* metric display mapping: what the official per-match record holds (cycle time,
+   defense and reliability had only ever come from broadcast video). */
+const METRIC_KEYS = ['fuel_scoring_rate', 'auto_contribution', 'climb_success_prob'] as const satisfies readonly (keyof MetricAverages)[];
+const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], string> = {
   fuel_scoring_rate: 'Fuel Rate (fuel/active min)',
-  cycle_time_sec: 'Cycle Time (s)',
   auto_contribution: 'Auto Contrib.',
   climb_success_prob: 'Climb %',
-  defensive_engagement_sec: 'Defense Time (s)',
-  reliability_score: 'Reliability',
-};
-
-const METRIC_KEYS = Object.keys(METRIC_LABELS) as (keyof MetricAverages)[];
-
-/* zone color map */
-const ZONE_COLORS: Record<string, string> = {
-  red_alliance_scoring_zone: '#ef4444',
-  red_loading_depot_zone: '#f97316',
-  red_tower_endgame_zone: '#a855f7',
-  neutral_transition_zone: '#6b7280',
-  blue_alliance_scoring_zone: '#3b82f6',
-  blue_loading_depot_zone: '#06b6d4',
-  blue_tower_endgame_zone: '#8b5cf6',
-};
-
-const ZONE_LABELS: Record<string, string> = {
-  red_alliance_scoring_zone: 'Red Scoring',
-  red_loading_depot_zone: 'Red Loading',
-  red_tower_endgame_zone: 'Red Tower',
-  neutral_transition_zone: 'Neutral',
-  blue_alliance_scoring_zone: 'Blue Scoring',
-  blue_loading_depot_zone: 'Blue Loading',
-  blue_tower_endgame_zone: 'Blue Tower',
 };
 
 /* ------------------------------------------------------------------ */
@@ -347,79 +312,6 @@ function Sparkline({
   );
 }
 
-/** Donut chart for zone time breakdown */
-function DonutChart({
-  slices,
-  size = 180,
-}: {
-  slices: { key: string; label: string; value: number; color: string }[];
-  size?: number;
-}) {
-  const total = slices.reduce((s, sl) => s + sl.value, 0);
-  if (total <= 0) return null;
-  const cx = size / 2;
-  const cy = size / 2;
-  const rOuter = size / 2 - 8;
-  const rInner = rOuter * 0.55;
-
-  function arcPath(startAngle: number, endAngle: number, outer: number, inner: number): string {
-    const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
-    const x1 = cx + outer * Math.cos(startAngle);
-    const y1 = cy + outer * Math.sin(startAngle);
-    const x2 = cx + outer * Math.cos(endAngle);
-    const y2 = cy + outer * Math.sin(endAngle);
-    const x3 = cx + inner * Math.cos(endAngle);
-    const y3 = cy + inner * Math.sin(endAngle);
-    const x4 = cx + inner * Math.cos(startAngle);
-    const y4 = cy + inner * Math.sin(startAngle);
-    return [
-      `M${x1.toFixed(2)},${y1.toFixed(2)}`,
-      `A${outer},${outer} 0 ${largeArc} 1 ${x2.toFixed(2)},${y2.toFixed(2)}`,
-      `L${x3.toFixed(2)},${y3.toFixed(2)}`,
-      `A${inner},${inner} 0 ${largeArc} 0 ${x4.toFixed(2)},${y4.toFixed(2)}`,
-      'Z',
-    ].join(' ');
-  }
-
-  const sliceArcs = slices.reduce<Array<{ key: string; label: string; value: number; color: string; startAngle: number; angle: number }>>(
-    (entries, sl) => {
-      const previous = entries[entries.length - 1];
-      const startAngle = previous ? previous.startAngle + previous.angle : -Math.PI / 2;
-      const angle = (sl.value / total) * 2 * Math.PI;
-      if (angle < 0.01) return entries;
-      return [
-        ...entries,
-        {
-          ...sl,
-          startAngle,
-          angle,
-        },
-      ];
-    },
-    [],
-  );
-
-  return (
-    <svg className="dviz-donut-svg" viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
-      {sliceArcs.map((sl) => {
-        return (
-          <path
-            key={sl.key}
-            d={arcPath(sl.startAngle, sl.startAngle + sl.angle, rOuter, rInner)}
-            fill={sl.color}
-            className="dviz-donut-slice"
-          >
-            <title>{sl.label}: {sl.value.toFixed(1)}s ({((sl.value / total) * 100).toFixed(0)}%)</title>
-          </path>
-        );
-      })}
-      <text className="dviz-donut-center" x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
-        {total.toFixed(0)}s
-      </text>
-    </svg>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /*  Page component                                                     */
 /* ------------------------------------------------------------------ */
@@ -430,7 +322,10 @@ function DonutChart({
 // screen.
 export function DataVizPage() {
   const isMobile = useMobileLayout();
-  if (isMobile) return <Navigate to="/events" replace />;
+  const { search } = useLocation();
+  // A desktop link shared to a phone keeps its event.
+  const event = new URLSearchParams(search).get('event');
+  if (isMobile) return <Navigate to={event ? `/events?event=${encodeURIComponent(event)}` : '/events'} replace />;
   return <DataVizPageContent />;
 }
 
@@ -551,20 +446,6 @@ function DataVizPageContent() {
     }));
   }, [breakdown]);
 
-  /* zone time donut */
-  const zoneSlices = useMemo(() => {
-    if (!breakdown?.zone_time_sec) return [];
-    return Object.entries(breakdown.zone_time_sec)
-      .filter(([, v]) => v > 0)
-      .map(([k, v]) => ({
-        key: k,
-        label: ZONE_LABELS[k] || k,
-        value: v,
-        color: ZONE_COLORS[k] || '#6b7280',
-      }))
-      .sort((a, b) => b.value - a.value);
-  }, [breakdown]);
-
   /* event type breakdown */
   const eventTypeCounts = useMemo(() => {
     if (!breakdown?.event_type_counts?.length) return [];
@@ -584,57 +465,48 @@ function DataVizPageContent() {
 
   /* ── render ─────────────────────────────────── */
   return (
+    <>
+    <PageViewBar items={EVENTS_VIEWS} />
     <div className="center-page-container dataviz-page">
-      <PageViewBar items={EVENTS_VIEWS} />
 
-      <div className="center-page-header">
-        <h1 className="center-page-title">Data Dashboard</h1>
-        <p className="center-page-subtitle">
-          Visual analytics for event and team data
-        </p>
-      </div>
-
-      {/* controls */}
-      <EventPicker
-        value={eventKey}
-        onSelect={selectEvent}
-        inputValue={eventInput}
-        onInputChange={setEventInput}
-        onSubmit={commitInput}
-      />
-
-      <div className="center-input-row" style={{ marginTop: '0.5rem' }}>
+      <SurfaceCard
+        title={viewTitle(EVENTS_VIEWS, '/events/dashboard')}
+        subtitle="Charts of how the teams at this event rate, and one team up close."
+        expandable={false}
+        mobileCollapsible={false}
+      >
+        <EventPicker
+          label="Event"
+          value={eventKey}
+          onSelect={selectEvent}
+          inputValue={eventInput}
+          onInputChange={setEventInput}
+          onSubmit={commitInput}
+        />
+        <label className="center-label" htmlFor="dviz-team">Team</label>
         <input
           id="dviz-team"
-              aria-label="Team number"
           className="center-input"
           type="text"
           inputMode="numeric"
-          placeholder="Team number — e.g. 254"
+          placeholder={TEAM_NUMBER_PLACEHOLDER}
           value={teamInput}
           onChange={(e) => setTeamInput(e.target.value)}
           style={{ maxWidth: 220 }}
         />
-      </div>
+        <SegmentedTabs
+          className="center-tabs"
+          ariaLabel="Dashboard view"
+          value={activePanel}
+          onChange={(next) => setActivePanel(next)}
+          items={[
+            { value: 'overview', label: 'Event Overview' },
+            { value: 'team', label: 'Team Deep Dive', disabled: !teamKey },
+          ]}
+        />
+      </SurfaceCard>
 
-      {/* panel toggle */}
-      <div className="dviz-panel-toggle">
-        <button
-          className={`dviz-toggle-btn ${activePanel === 'overview' ? 'active' : ''}`}
-          onClick={() => setActivePanel('overview')}
-        >
-          Event Overview
-        </button>
-        <button
-          className={`dviz-toggle-btn ${activePanel === 'team' ? 'active' : ''}`}
-          onClick={() => setActivePanel('team')}
-          disabled={!teamKey}
-        >
-          Team Deep Dive
-        </button>
-      </div>
-
-      {loading && <div className="center-status-banner">Loading data...</div>}
+      {loading && <div className="center-status-banner">Loading data…</div>}
       {error && <div className="center-status-banner center-error-banner">{error}</div>}
 
 
@@ -650,7 +522,9 @@ function DataVizPageContent() {
                 {topTeams.length > 0 ? (
                   <HBarChart items={topTeams} maxVal={maxRating} width={500} />
                 ) : (
-                  <p className="dviz-empty">Select an event to view ratings</p>
+                  <p className="dviz-empty">
+                    {!eventKey ? 'Select an event to view ratings' : loadingRatings ? 'Loading ratings…' : 'No ratings for this event yet.'}
+                  </p>
                 )}
               </div>
             </SurfaceCard>
@@ -681,7 +555,9 @@ function DataVizPageContent() {
                   </div>
                 </div>
               ) : (
-                <p className="center-callout muted">Load an event to see how its field compares.</p>
+                <p className="center-callout muted">
+                  {!eventKey ? 'Load an event to see how its field compares.' : loadingRatings ? 'Loading ratings…' : 'Nothing to compare yet.'}
+                </p>
               )}
             </SurfaceCard>
 
@@ -741,32 +617,11 @@ function DataVizPageContent() {
               </SurfaceCard>
             )}
 
-            {/* Zone Time Breakdown */}
-            {zoneSlices.length > 0 && (
-              <SurfaceCard
-                title="Zone Time Distribution"
-                subtitle="Average seconds per zone"
-              >
-                <div className="dviz-zone-container">
-                  <DonutChart slices={zoneSlices} size={200} />
-                  <div className="dviz-zone-legend">
-                    {zoneSlices.map((sl) => (
-                      <div key={sl.key} className="dviz-zone-legend-item">
-                        <span className="dviz-zone-swatch" style={{ background: sl.color }} />
-                        <span className="dviz-zone-legend-label">{sl.label}</span>
-                        <span className="dviz-zone-legend-val">{sl.value.toFixed(1)}s</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </SurfaceCard>
-            )}
-
             {/* Performance Metrics */}
             {breakdown?.averages && (
               <SurfaceCard
                 title="Performance Averages"
-                subtitle="Across scouted matches"
+                subtitle="Across official matches"
               >
                 <div className="center-kpi-grid dviz-kpi-grid">
                   {METRIC_KEYS.map((key) => {
@@ -814,7 +669,7 @@ function DataVizPageContent() {
                         <div key={i} className="dviz-proscons-item dviz-pro-item">
                           <span className="dviz-proscons-label">{plainSignalLabel(p.label)}</span>
                           <span className="dviz-proscons-val">
-                            {signalRankLabel(p.percentile, 'strength')}
+                            {p.rationale || signalRankLabel(p.percentile, 'strength')}
                           </span>
                         </div>
                       ))}
@@ -827,7 +682,7 @@ function DataVizPageContent() {
                         <div key={i} className="dviz-proscons-item dviz-con-item">
                           <span className="dviz-proscons-label">{plainSignalLabel(c.label)}</span>
                           <span className="dviz-proscons-val">
-                            {signalRankLabel(c.percentile, 'risk')}
+                            {c.rationale || signalRankLabel(c.percentile, 'risk')}
                           </span>
                         </div>
                       ))}
@@ -840,5 +695,6 @@ function DataVizPageContent() {
         )}
 
     </div>
+    </>
   );
 }

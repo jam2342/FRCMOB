@@ -271,3 +271,30 @@ describe('merging server copies of a report', () => {
     expect(replaced.api_snapshot).toEqual({ team_key: 'frc254' });
   });
 });
+
+describe('reports a room snapshot or another tab must not erase', () => {
+  it('keeps a correction still on its way when the snapshot has the older version', async () => {
+    const { replaceRoomEntries, normalizeEntry } = await import('./scoutingPage.helpers');
+    const base = normalizeEntry({ id: 'e1', event_key: '2026arc', match_key: '2026arc_qm1', team_key: 'frc971', scout_profile: 'Sam' })!;
+    const older = { ...base, saved_at_ms: 1000, room_key: 'room-a', server_synced: true, notes: 'v1' };
+    const correction = { ...base, saved_at_ms: 2000, room_key: 'room-a', server_synced: false, notes: 'v2' };
+    const [kept] = replaceRoomEntries([correction], 'room-a', [older]);
+    expect(kept.notes).toBe('v2');
+    expect(kept.server_synced).toBe(false);
+    // Once the server has the correction, its copy wins as before.
+    const [settled] = replaceRoomEntries([correction], 'room-a', [{ ...correction, server_synced: true }]);
+    expect(settled.server_synced).toBe(true);
+  });
+
+  it("adds reports only another tab saved, newest first, without changing this tab's", async () => {
+    const { withReportsFromOtherTabs, normalizeEntry } = await import('./scoutingPage.helpers');
+    const make = (id: string, at: number, notes = '') =>
+      ({ ...normalizeEntry({ id, event_key: '2026arc', match_key: `2026arc_qm${id}`, team_key: 'frc254', scout_profile: 'Sam' })!, saved_at_ms: at, notes });
+    const mine = [make('1', 3000, 'mine')];
+    const stored = [make('2', 2000), make('1', 1000, 'stale')];
+    const merged = withReportsFromOtherTabs(mine, stored);
+    expect(merged.map((row) => row.id)).toEqual(['1', '2']);
+    expect(merged[0].notes).toBe('mine');
+    expect(withReportsFromOtherTabs(mine, [])).toBe(mine);
+  });
+});

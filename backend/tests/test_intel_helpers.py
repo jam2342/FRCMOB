@@ -55,7 +55,6 @@ class TeamIntelCacheTokenTests(unittest.TestCase):
             preferred_year=2025,
             fallback_year=2024,
             include_tba=True,
-            include_statbotics=True,
             allow_season_fallback=False,
             auto_heal_ratings=True,
         )
@@ -77,7 +76,7 @@ class TeamIntelCacheTokenTests(unittest.TestCase):
         self.assertIn("|-|", token)
 
     def test_boolean_flags_encoded(self):
-        token = self._token(include_tba=True, include_statbotics=False)
+        token = self._token(include_tba=True)
         self.assertIn("tba=1", token)
         self.assertIn("sb=0", token)
 
@@ -94,7 +93,6 @@ class EventIntelCacheTokenTests(unittest.TestCase):
         defaults = dict(
             event_key="2025txhou",
             include_tba=True,
-            include_statbotics=True,
             auto_heal_ratings=True,
             include_season_fallback=False,
             include_rating_details=True,

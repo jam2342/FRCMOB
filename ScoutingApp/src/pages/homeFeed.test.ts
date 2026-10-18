@@ -6,6 +6,7 @@ import {
   nearestLoadedMatchDayMs,
   buildHomeFilterCounts,
   filterHomeWindowMatches,
+  homeStartEvent,
   pickMobileHomeAutoEventKey,
   resolveHomeMatchState,
   selectHomeDayMatches,
@@ -147,20 +148,17 @@ describe('homeFeed', () => {
     expect(selected).toBe('2026live');
   });
 
-  it('falls back to date-active events when schedules are not loaded yet', () => {
+  it('never opens an event with nothing to show today', () => {
     const nowMs = Date.UTC(2026, 2, 20, 18, 0, 0);
     const events = [
       makeEvent('2026cur', {
         start_date: '2026-03-20',
         end_date: '2026-03-22',
       }),
-      makeEvent('2026later', {
-        start_date: '2026-03-25',
-        end_date: '2026-03-27',
-      }),
     ];
-
-    expect(pickMobileHomeAutoEventKey(events, {}, nowMs)).toBe('2026cur');
+    // Running today by its dates, but the schedule isn't loaded / published yet.
+    expect(pickMobileHomeAutoEventKey(events, {}, nowMs)).toBe('');
+    expect(pickMobileHomeAutoEventKey(events, { '2026cur': { matches: [] } }, nowMs)).toBe('');
   });
 });
 
@@ -221,5 +219,14 @@ describe('nearestLoadedMatchDayMs', () => {
 
   it('returns null when nothing has a time', () => {
     expect(nearestLoadedMatchDayMs([{ scheduled_time: null }], day(2026, 9, 28))).toBeNull();
+  });
+});
+
+describe('homeStartEvent', () => {
+  it('keeps the event you were on, even when it is not a suggested one', () => {
+    expect(homeStartEvent('2026pahat', ['2026mexas', '2026txman1'])).toBe('2026pahat');
+    expect(homeStartEvent(' 2026CASS ', ['2026mexas'])).toBe('2026cass');
+    expect(homeStartEvent('', ['2026mexas', '2026txman1'])).toBe('2026mexas');
+    expect(homeStartEvent('not a key', [])).toBe('');
   });
 });

@@ -17,6 +17,7 @@ const members = [
 ];
 
 vi.mock('../api', () => ({
+  getWorkspaceSignupPolicy: vi.fn(async () => ({ required: false, site_key: null })),
   createWorkspace: vi.fn(async () => {
     // Mirrors the real client: the session is set before the call returns.
     rememberIssuedJoinCode(1, 'ABCDE-12345');
@@ -134,8 +135,9 @@ describe('My Team page', () => {
     fireEvent.change(screen.getByLabelText(/Workspace name/),{target:{value:'Fixture'}});
     fireEvent.change(screen.getAllByLabelText(/Your name/)[1],{target:{value:'Scout'}});
     fireEvent.change(screen.getByLabelText(/FRC team number/),{target:{value:'-254'}});
+    await waitFor(() => expect(screen.getByRole('button', {name:'Create workspace'})).toBeEnabled());
     fireEvent.click(screen.getByRole('button',{name:'Create workspace'}));
-    expect(await screen.findByRole('alert')).toHaveTextContent('digits only');expect(createWorkspace).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Enter a valid team number using digits only/)).toBeTruthy();expect(createWorkspace).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText(/Join code/),{target:{value:'ABCDE12345'}});
     fireEvent.change(screen.getAllByLabelText(/Your name/)[0],{target:{value:'   '}});
     fireEvent.click(screen.getByRole('button',{name:'Join team'}));expect(joinWorkspace).not.toHaveBeenCalled();
@@ -145,6 +147,7 @@ describe('My Team page', () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/Workspace name/), { target: { value: 'Robonauts' } });
     fireEvent.change(screen.getAllByLabelText(/Your name/)[1], { target: { value: 'Test Scout' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create workspace' })).toBeEnabled());
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Create workspace' }));
     });

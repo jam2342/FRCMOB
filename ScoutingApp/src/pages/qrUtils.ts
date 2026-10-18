@@ -147,56 +147,34 @@ function compactToRaw(compact: CompactEntry): Record<string, unknown> {
 const QR_PREFIX = 'FRCMOB1:'; // version-tagged prefix for entry detection
 const ROOM_QR_PREFIX = 'FRCROOM1:'; // version-tagged prefix for room detection
 
-async function compressBytes(data: Uint8Array): Promise<Uint8Array> {
-  if (typeof CompressionStream === 'function') {
-    const cs = new CompressionStream('deflate');
-    const writer = cs.writable.getWriter();
-    writer.write(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
-    writer.close();
-    const reader = cs.readable.getReader();
-    const chunks: Uint8Array[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    const total = chunks.reduce((a, c) => a + c.length, 0);
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      out.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return out;
+// Runs bytes through a CompressionStream or DecompressionStream and collects the result.
+async function transformBytes(data: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
+  const writer = stream.writable.getWriter();
+  writer.write(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
+  writer.close();
+  const reader = stream.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
   }
-  // Fallback: no compression
-  return data;
+  const out = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+// Browsers without the streams pass data through uncompressed on both ends.
+async function compressBytes(data: Uint8Array): Promise<Uint8Array> {
+  return typeof CompressionStream === 'function' ? transformBytes(data, new CompressionStream('deflate')) : data;
 }
 
 async function decompressBytes(data: Uint8Array): Promise<Uint8Array> {
-  if (typeof DecompressionStream === 'function') {
-    const ds = new DecompressionStream('deflate');
-    const writer = ds.writable.getWriter();
-    writer.write(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
-    writer.close();
-    const reader = ds.readable.getReader();
-    const chunks: Uint8Array[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    const total = chunks.reduce((a, c) => a + c.length, 0);
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      out.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return out;
-  }
-  // Fallback: data was not compressed
-  return data;
+  return typeof DecompressionStream === 'function' ? transformBytes(data, new DecompressionStream('deflate')) : data;
 }
 
 /* ------------------------------------------------------------------ */

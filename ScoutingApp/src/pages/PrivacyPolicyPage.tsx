@@ -3,9 +3,15 @@ import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   AUTHOR_NAME,
   AUTHOR_SITE_URL,
+  CLOUDFLARE_PRIVACY_URL,
+  GOOGLE_PRIVACY_URL,
   LEGAL_CONTACT_LABEL,
   LEGAL_CONTACT_URL,
   LEGAL_EFFECTIVE_DATE,
+  TURNSTILE_PRIVACY_URL,
+  TWITCH_PRIVACY_URL,
+  VERCEL_ANALYTICS_PRIVACY_URL,
+  YOUTUBE_TERMS_URL,
 } from './legalContent';
 import './LegalPage.css';
 
@@ -27,7 +33,7 @@ export function PrivacyPolicyPage() {
           </div>
 
           <p className="legal-intro">
-            FRCMOB is a scouting and match-analysis tool for FIRST Robotics Competition teams. It is
+            FRCMOB is a scouting and match-analysis tool for <i>FIRST</i>&reg; Robotics Competition teams. It is
             built around robot performance, not people. This policy describes exactly what the app
             stores, where it stores it, and how long it keeps it.
           </p>
@@ -35,10 +41,16 @@ export function PrivacyPolicyPage() {
           <section>
             <h4>No accounts, no personal profiles</h4>
             <p>
-              FRCMOB has no user sign-up. We do not ask for your name, email address, phone number,
-              date of birth, or postal address, and there is no account record tied to you. Because
-              minors participate in FRC, this is deliberate: the app is designed so that it does not
-              need personal information about students in order to work.
+              FRCMOB has no user sign-up. We do not ask for your email address, phone number, date of
+              birth, or postal address, and there are no passwords. Because minors participate in FRC,
+              this is deliberate: the app is designed so that it does not need personal information
+              about students in order to work.
+            </p>
+            <p>
+              If your team uses a team workspace, we store the workspace name, its optional FRC team
+              number, and for each member the display name they chose, their role, and when they joined
+              and were last active. Membership is proven by a token kept on that member&apos;s device,
+              not by an identity.
             </p>
             <p>
               The one identifier you may type in is a scout profile label — a short name or initials
@@ -139,11 +151,33 @@ export function PrivacyPolicyPage() {
           <section>
             <h4>Public data we ingest</h4>
             <p>
-              FRCMOB pulls event schedules, match results, team information, rankings, and links to
-              public match videos from The Blue Alliance, the official FRC Events API, and Statbotics,
-              and embeds those videos from their video platform. That data is already public and is
-              governed by those services&apos; own
-              terms. We cache it to keep the app fast and usable on weak venue wifi.
+              FRCMOB&apos;s server pulls event schedules, match results, team information, rankings, and
+              links to public match videos from The Blue Alliance and the official FRC Events API
+              (Event Data provided by <i>FIRST</i>). That data is already public and is governed by
+              those services&apos; own terms. We cache it to keep the app fast and usable on weak venue
+              wifi. These requests come from our server and carry nothing about you.
+            </p>
+          </section>
+
+          <section>
+            <h4>Videos, images, and YouTube API Services</h4>
+            <p>
+              FRCMOB uses <strong>YouTube API Services</strong> (the YouTube embedded player) to show
+              match videos. Before you press play, only a thumbnail image loads from YouTube&apos;s image
+              server. When you press play, the YouTube player loads from YouTube (Google), which receives
+              your IP address and browser information and may set cookies or use similar technologies,
+              under the{' '}
+              <a href={GOOGLE_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>
+              . FRCMOB does not access, collect, or store any of your YouTube or Google account data,
+              and never asks you to sign in to YouTube. Watching YouTube videos is subject to the{' '}
+              <a href={YOUTUBE_TERMS_URL} target="_blank" rel="noopener noreferrer">YouTube Terms of Service</a>.
+            </p>
+            <p>
+              Twitch streams load in Twitch&apos;s own player when you press play, under the{' '}
+              <a href={TWITCH_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Twitch Privacy Notice</a>.
+              Team avatars and robot photos may load directly from the services that host them (such as
+              Imgur), which receive your IP address and browser information when your browser fetches
+              the image.
             </p>
           </section>
 
@@ -157,7 +191,16 @@ export function PrivacyPolicyPage() {
             </p>
             <p>
               We do not sell data, and we do not share it with advertisers or data brokers. There is no
-              advertising in FRCMOB and no third-party advertising or analytics trackers.
+              advertising in FRCMOB and no advertising or cross-site trackers.
+            </p>
+            <p>
+              The website counts page views with{' '}
+              <a href={VERCEL_ANALYTICS_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Vercel Web Analytics</a>
+              . It uses no cookies and does not store your IP address; each page view records the page,
+              the referring site, approximate location (country, region, city), device type, and
+              operating system and browser versions, and a visit is recognised for at most 24 hours by
+              a hash of the request. It is turned off if your browser sends Do Not Track or Global
+              Privacy Control, and it is not used in the mobile app.
             </p>
           </section>
 
@@ -165,10 +208,20 @@ export function PrivacyPolicyPage() {
             <h4>Infrastructure providers</h4>
             <p>
               The app runs on third-party infrastructure that necessarily processes data in order to
-              host it: a frontend host, a cloud server that runs the API with its Postgres database and
-              Redis cache, an off-site database backup service, and your browser vendor&apos;s push
-              service for notifications. These providers act as processors for storage and delivery; they are
-              not permitted to use the data for their own purposes.
+              host it: Vercel hosts the website, an Oracle Cloud server in the United States runs the
+              API with its Postgres database and Redis cache, Neon keeps an off-site database backup,
+              and your browser vendor&apos;s push service delivers notifications. These providers act
+              as processors for storage and delivery; they are not permitted to use the data for their
+              own purposes.
+            </p>
+            <p>
+              Workspace creation uses Cloudflare Turnstile to help block automated abuse. The
+              security check processes browser and connection information under{' '}
+              <a href={CLOUDFLARE_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Cloudflare&apos;s privacy policy</a>{' '}
+              and its{' '}
+              <a href={TURNSTILE_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Turnstile Privacy Addendum</a>
+              . Cloudflare processes that information for us; questions about it can come to us.
+              You can join an existing workspace without completing this check.
             </p>
           </section>
 
@@ -177,7 +230,8 @@ export function PrivacyPolicyPage() {
             <p>
               Scouting and analysis data is kept for the competition season and historical comparison
               across seasons — season-over-season trends are a core feature. Push subscriptions are
-              removed when you unsubscribe or when the endpoint repeatedly fails. Local device data
+              removed when you unsubscribe, when the endpoint repeatedly fails, or after 180 days
+              without an update. Local device data
               persists until you clear it. If you want data about your team removed, contact us and we
               will delete it.
             </p>

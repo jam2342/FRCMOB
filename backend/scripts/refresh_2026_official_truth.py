@@ -21,6 +21,7 @@ from app.services.events.ingest import (
     upsert_score_breakdown_truth,
 )
 from app.services.ratings.model import recompute_event_ratings
+from app.services.scoring.alliance_results import upsert_alliance_results
 from app.tba.client import TBAClient
 
 
@@ -147,6 +148,7 @@ def main() -> None:
                     matches=eligible,
                     auto_fuel_copr_by_team=auto_fuel_coprs,
                 )
+                upsert_alliance_results(db, event_key=event_key, season_year=2026, matches=eligible)
                 db.commit()
                 ratings = recompute_event_ratings(db, event_key)
                 if not ratings.get("ok"):

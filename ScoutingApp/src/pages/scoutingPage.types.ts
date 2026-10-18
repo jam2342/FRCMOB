@@ -102,7 +102,6 @@ export type ApiTeamSnapshot = {
   auto_contribution: number | null;
   climb_success_prob: number | null;
   cycle_time_sec: number | null;
-  statbotics_norm_epa: number | null;
   tba_rank: number | null;
   warnings: string[];
 };
@@ -245,7 +244,6 @@ export type MatchTeamOption = {
 export type EventTeamApiBaseline = {
   rating_0_100: number | null;
   reliability_0_1: number | null;
-  statbotics_norm_epa: number | null;
 };
 
 export type TeamRollup = {

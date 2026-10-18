@@ -1,0 +1,285 @@
+/* Sits above the bottom tab bar like a music app's mini-player; opens upward into details.
+   Portalled-free but fixed, so it reads tokens from :root. */
+.pill {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--bottom-bar-height) + 8px + var(--safe-area-bottom));
+  z-index: var(--z-sticky);
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-xl);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  animation: pillIn 320ms var(--motion-ease) both;
+  transition: border-color var(--motion-base) ease, border-radius var(--motion-base) ease;
+}
+
+@media (min-width: 1121px) {
+  .pill {
+    left: auto;
+    right: 24px;
+    bottom: 24px;
+    width: 360px;
+  }
+}
+
+.soon {
+  border-color: var(--color-accent);
+}
+
+.expanded {
+  border-radius: var(--radius-xl);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bar:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -3px;
+  border-radius: var(--radius-lg);
+}
+
+.dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-alliance-red);
+}
+
+.pill[data-alliance='blue'] .dot {
+  background: var(--color-alliance-blue);
+}
+
+.soon .dot {
+  background: var(--color-accent-strong);
+  animation: pillPulse 1.5s ease-out infinite;
+}
+
+.headline {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.countdown {
+  flex: none;
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.chevron {
+  flex: none;
+  color: var(--color-text-muted);
+  transition: transform var(--motion-base) var(--motion-ease);
+}
+
+.expanded .chevron {
+  transform: rotate(180deg);
+}
+
+/* Opens by growing a grid row from 0fr, so the height animates without measuring. */
+.details {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--motion-base) var(--motion-ease);
+}
+
+.expanded .details {
+  grid-template-rows: 1fr;
+}
+
+.detailsInner {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease, padding var(--motion-base) var(--motion-ease);
+}
+
+.expanded .detailsInner {
+  padding: 14px 16px 4px;
+  opacity: 1;
+  transition-delay: 60ms;
+}
+
+.headRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.headRow > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.iconButton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -8px -8px 0 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.clockRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bigClock {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.lineups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  font-size: var(--font-size-base);
+}
+
+.lineups > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.red {
+  color: var(--color-alliance-red-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.blue {
+  color: var(--color-alliance-blue-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.primary,
+.secondary {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.primary {
+  flex: 1;
+  border: 0;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.secondary {
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text);
+}
+
+.secondary:hover {
+  background: var(--color-surface-muted);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+@keyframes pillIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+@keyframes pillPulse {
+  0% { box-shadow: 0 0 0 0 var(--color-accent-soft); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill,
+  .soon .dot {
+    animation: none;
+  }
+
+  .details,
+  .detailsInner,
+  .chevron {
+    transition: none;
+  }
+}

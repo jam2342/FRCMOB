@@ -1,0 +1,56 @@
+/* Hangs just under the top bar and follows the finger down. */
+.indicator {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--ps-topbar-height, 56px) + var(--ps-offline-banner-height, 0px));
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.indicator svg {
+  color: var(--color-accent-text);
+  flex: none;
+}
+
+.indicator[data-phase='pulling'],
+.indicator[data-phase='idle'] {
+  transition: none;
+}
+
+.indicator[data-phase='refreshing'],
+.indicator[data-phase='done'] {
+  transition: transform var(--motion-base) var(--motion-ease), opacity var(--motion-base) ease;
+}
+
+.spin {
+  animation: pullSpin 800ms linear infinite;
+}
+
+.done {
+  color: var(--color-success-text);
+}
+
+@keyframes pullSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

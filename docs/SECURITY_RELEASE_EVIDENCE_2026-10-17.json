@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-18T03:53:19.758547+00:00",
+  "checkout": "<local>/FRCMOB-security-release-20261017",
+  "baseline_commit": "55b304c5cfb10a06bbe6c82e67ce46b1d3f68f0d",
+  "status": "combined_candidate_locally_verified_not_deployed",
+  "results": {
+    "backend": {
+      "passed": 621,
+      "skipped": 18,
+      "subtests_passed": 2
+    },
+    "frontend": {
+      "passed": 831,
+      "files": 186
+    },
+    "postgres_and_preflight_tests": {
+      "passed": 8
+    },
+    "migration": "disposable PostgreSQL17.11 upgrade/check/downgrade/re-upgrade/check passed",
+    "frontend_build": "passed Node26; example.invalid detector URL",
+    "lint": "ESLint and Ruff passed; whitespace check passed",
+    "browser": "mocked Turnstile gating/reset;390px no overflow;main/recorder injected inline JS blocked",
+    "dependency_scan": "prior zero-finding scans; dependency manifests identical to scanned candidate",
+    "independent_review": "earlier bounded review only; no new independent review claimed"
+  },
+  "dependency_manifests_match_scanned_candidate": true,
+  "production_read_only_preflight": {
+    "ready": false,
+    "read_only": true,
+    "checks": [
+      {
+        "check": "production_environment",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "STRICT_STARTUP_ENV_VALIDATION",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "ENFORCE_ADMIN_AUTH_FOR_WRITES",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "ON_DEVICE_SYNC_REQUIRE_SIGNED_TOKEN",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "ADMIN_API_KEY",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "ADMIN_SESSION_TOKEN_SECRET",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "TURNSTILE_SITE_KEY",
+        "passed": false,
+        "remedy": "Configure TURNSTILE_SITE_KEY directly in the backend environment."
+      },
+      {
+        "check": "TURNSTILE_SECRET_KEY",
+        "passed": false,
+        "remedy": "Configure TURNSTILE_SECRET_KEY directly in the backend environment."
+      },
+      {
+        "check": "TURNSTILE_ALLOWED_HOSTNAMES",
+        "passed": false,
+        "remedy": "Allow the frontend's exact hostname; use no scheme, path, port or wildcard."
+      },
+      {
+        "check": "explicit_cors_origins",
+        "passed": true,
+        "remedy": null
+      },
+      {
+        "check": "candidate_migration_present",
+        "passed": false,
+        "remedy": "Build the reviewed candidate image containing migration 0027 before release."
+      },
+      {
+        "check": "media_disk_reserve",
+        "passed": true,
+        "remedy": null
+      }
+    ]
+  },
+  "production_observations": {
+    "frontend_commit": "55b304c5cfb10a06bbe6c82e67ce46b1d3f68f0d",
+    "database_revision": "20261017_0026",
+    "backend_image_id": "sha256:b04bd5118d92ad42f38331ae18a5d3eb05eeb86b2de8f1a0092acfd06ba83e5f",
+    "backup": {
+      "name": "frcmob_20261018T0317Z.dump",
+      "bytes": 17510525,
+      "mode": "0600",
+      "archive_index_readable": true,
+      "table_data_entries": 32,
+      "full_restore_tested": false
+    },
+    "external_tcp": {
+      "reachable": [
+        22,
+        443
+      ],
+      "timed_out": [
+        111,
+        8000,
+        5432,
+        6379
+      ]
+    },
+    "mutations_performed": false
+  },
+  "source_sha256": {
+    "backend/app/api/edge_cache.py": "b5e3cc4c829f86a3d80d98d5aa19dfc7b8befd6858ebb3d1e022753b6ccf6a2b",
+    "backend/app/api/routes_pit_scouting.py": "2bd3afeaf834da6d8ba544473eada34d0f9ee7468802261a2537a3105d024888",
+    "backend/app/api/routes_push.py": "8e06f6a79d7158ac5f6c240044f95020499ea5032e0bdf1f4150eb99bec9b9ab",
+    "backend/app/api/routes_scouting_rooms.py": "95694518cac6eeb15e81d741608de85e5dcbaf4d9c60c08365cfc3118d1c102e",
+    "backend/app/api/routes_tracks.py": "16cbdf5fad554ea571c4e70737c8086165b7d9d8f6798d8f63faed3de4439d3d",
+    "backend/app/api/routes_workspaces.py": "d7b82b208527a9cbb1b8711373ecd72b919ac2d297716aace44938cd21e116bf",
+    "backend/app/core/config.py": "3831090f221181cc1d29d25b0e6854e8cb23871e3e5725fcdfd10673005b4d0d",
+    "backend/app/core/security.py": "49349b48c8a63042601e0781fb5ee01ee1eec6b382bc94281e1ed77d9c443935",
+    "backend/app/db/models.py": "d5eba768202f26ec0062ad6e9cb74c98242360007ef546788852debb93620955",
+    "backend/app/services/workspace_limits.py": "e9955134ee05a38ec83ddf1796ff432902cf1c2c7e10bbaa9a40fef5c8efc67f",
+    "backend/app/services/signup_challenge.py": "b9ce60bf72e3ae533f6eb050ec0bf869f996314618df11aa393a1ee78a88ae41",
+    "backend/app/services/scouting_rooms/team.py": "460d4b8ba909f992c310fb0390575b7b171fc98459c8f24e470b95954b4a1c06",
+    "backend/app/services/push/subscriptions.py": "2d6e6f48ba57c8039defdad9c8e46ab8aba8ca72c985e9cc62b953c8674a4814",
+    "backend/app/services/push/sender.py": "615e3e68e305e413772bbc90bd80da3884b63162f59110eb112a74f972b2e15a",
+    "backend/app/services/push/match_alerts.py": "512b937823d59b9aed260ab2201143a5e1831a91ed4c4de0b2c2676e109cc759",
+    "backend/alembic/versions/20261017_0027_scout_entry_authors.py": "d18f91517875ef2728fa1925a133d36201a4255bbee8f956e0e97e157db00968",
+    "backend/requirements.txt": "a80bbce6ab58fa36f1b0bea189d23e82828626906a500abbd5f81c3b8297b45a",
+    "ScoutingApp/package-lock.json": "b217675b9813ada3dcb85f73abc1ee69b0bd03582cdb3976e75e48f0d8d9b557",
+    "ScoutingApp/build/contentSecurityPolicy.ts": "5bc8c9fc7cacf5292aabae31179e63b04fa9fba92aba76eb39ea312752132ae5",
+    "ScoutingApp/src/features/workspace/TurnstileChallenge.tsx": "2cc421ab71da1dce2eb4d86a4accbd433891451ce7d7f73c689311c0f6f1ce7c",
+    "ScoutingApp/src/pages/MyTeamPage.tsx": "b5df581dc814c5d72614dcb13615a69699246f75864ff1ffb58166951d0d2eda",
+    "ScoutingApp/src/api.ts": "941e01f6ea9633a537453abf1833d6ff4f044b17495affb3826bfcafdd20c85a",
+    "ScoutingApp/src/pages/PrivacyPolicyPage.tsx": "fd76cb90398e3069660542aa484a8ebcdd6d07cb2efbd0f4d65eb2e60867332d",
+    "backend/scripts/security_release_preflight.py": "531c625789ce0c84a47909b44481086ea70971c05005495b7b44260353387630",
+    "backend/tests/test_security_release_preflight.py": "9c4104df570fbc8978c726f249a52c1f3d92651de2f95ec459d28813e15e41f0",
+    "backend/tests/test_security_storage_postgres.py": "d10fd9273248342462febe177528d8e7a2a65e50962afd34594564ff257d27f8",
+    "backend/tests/test_scout_identity_security.py": "85e57b9878bc1507aca3228312a37d0acf10c8b14c2416c69c36eba24f351090",
+    "ScoutingApp/build/contentSecurityPolicy.test.ts": "38b7172ce5aa7fe4a92ec4d4ae7d7ec20bb9b846eb104201534836d5c3a19d71",
+    "docs/SECURITY_RELEASE_2026-10-17.md": "17c623218d02dd228c8570e5b20360c6b4182d892693f33edb19e5a940198daa"
+  },
+  "verification_log_sha256": {
+    "/tmp/frcmob-security-release-backend.log": "3b8925fc36842636b180e417c15ffa21ed951f2e10071cbf8459e1f4badbd0a3",
+    "/tmp/frcmob-security-release-frontend.log": "494000da56e43fff6e24677b3f14dd1be812463bbfd5e01fea670b0959df062a",
+    "/tmp/frcmob-security-release-postgres.log": "265ee07496a521f57fa8e8dc73193fb44ed8cec4ae53dfd31fa554d87e42d300",
+    "/tmp/frcmob-security-release-build.log": "67349e05d0241d60d91f9abe232f7924f99cf9859035748963c3f451856776ba",
+    "/tmp/frcmob-security-release-lint.log": "77c25d409b90975d8b6cecb8aed303da147deb70c189487b7e0c6b661f0350b2",
+    "/tmp/frcmob-security-release-browser.log": "cbe86426a7c89e3439d7704f69c10c5ed2089b3bb745b4b510af651120009e33"
+  },
+  "not_verified": [
+    "real provider keys/challenge",
+    "candidate Linux image and OS scan",
+    "complete backup restore",
+    "post-deploy workspace/CDN checks",
+    "credential entropy/history/rotation"
+  ]
+}

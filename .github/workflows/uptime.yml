@@ -1,12 +1,14 @@
 # Production once ran for five months with the backend stopped and nobody noticed.
 # This checks the live site end to end (Vercel rewrite -> VM -> Postgres/Redis).
 # A failed scheduled run emails whoever last edited the cron.
-# Every 2 hours keeps it to ~360 Actions minutes a month on the free private plan.
+# Every 6 hours keeps it to ~120 Actions minutes a month.
 name: uptime
 
 on:
   schedule:
-    - cron: "17 */2 * * *"
+    # Every 6 h: each run bills a full Actions minute. A free external monitor
+    # (e.g. UptimeRobot on /api/health/deep) can watch more often at no cost.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -29,9 +31,9 @@ jobs:
           h = json.load(sys.stdin)
           print(json.dumps({k: h.get(k) for k in ("ok", "database", "redis")}))
           problems = [name for name in ("database", "redis") if not h.get(name)]
-          errors = (h.get("env_validation") or {}).get("errors") or []
-          if errors:
-              problems.append("env validation (%s)" % "; ".join(errors))
+          # The error list itself is admin-only; ask /health/deep with the admin key to read it.
+          if h.get("env_ok") is False:
+              problems.append("env validation")
           if problems:
               print("::error::Unhealthy: " + ", ".join(problems))
               sys.exit(1)

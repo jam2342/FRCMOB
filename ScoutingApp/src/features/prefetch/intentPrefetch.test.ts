@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./pageRequests', () => ({
   loadTeamCenterIntel: vi.fn(() => Promise.resolve({})),
   loadTeamCenterLogo: vi.fn(() => Promise.resolve({})),
-  loadMatchCenterSynergy: vi.fn(() => Promise.resolve({})),
+  loadMatchCenterPredictions: vi.fn(() => Promise.resolve({})),
   loadEventsTeamsHistory: vi.fn(() => Promise.resolve({})),
   loadEventsRankings: vi.fn(() => Promise.resolve({})),
 }));
@@ -34,7 +34,7 @@ describe('prefetchForHref', () => {
 
   it('covers Match Center and Events links that name an event', async () => {
     await Promise.all(prefetchForHref('#/match-center?event=2026arc&match=2026arc_qm1', BASE)!.run());
-    expect(requests.loadMatchCenterSynergy).toHaveBeenCalledWith('2026arc');
+    expect(requests.loadMatchCenterPredictions).toHaveBeenCalledWith('2026arc');
     await Promise.all(prefetchForHref('/#/events?event=2026casac', BASE)!.run());
     expect(requests.loadEventsTeamsHistory).toHaveBeenCalledWith('2026casac');
     expect(requests.loadEventsRankings).toHaveBeenCalledWith('2026casac');

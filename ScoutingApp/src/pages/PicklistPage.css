@@ -329,3 +329,11 @@ button.picklist-rank--button {
     min-height: 44px;
   }
 }
+
+/* The two ways to start a list, side by side under the empty state. */
+.product-shell .picklist-empty-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}

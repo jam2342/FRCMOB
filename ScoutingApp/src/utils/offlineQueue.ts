@@ -360,6 +360,8 @@ async function flushQueue(): Promise<number> {
       // Delete only this confirmed item, so concurrent saves cannot be overwritten.
       await removeQueuedItem(item.id);
       successCount++;
+      // Lets pages that are closed right now still settle what this delivered (pit drafts).
+      window.dispatchEvent(new CustomEvent('offlinequeue:delivered', { detail: { url: item.url, method: item.method, body: item.body } }));
     } else if (res.status >= 500 || res.status === 408 || res.status === 429) {
       await saveQueuedItem({ ...item, attempts: item.attempts + 1 });
       waiting.add(key);

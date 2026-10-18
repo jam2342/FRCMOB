@@ -39,6 +39,7 @@ export function TeamScoutingCard() {
         mobileCollapsible={false}
       >
         <EventPicker
+          label="Event"
           value={eventKey}
           onSelect={(key) => { selectEvent(key); setChangingEvent(false); }}
           inputValue={eventInput}

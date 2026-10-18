@@ -8,13 +8,14 @@ import logging
 import time
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db import models
 from app.services.events.match_times import refresh_match_times
 from app.services.push.sender import push_configured, send_web_push
+from app.services.push.subscriptions import purge_expired_subscriptions
 from app.tba.client import TBAClient
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 MAX_LEAD_SEC = 60 * 60
 # Keep only this many dedupe keys per subscription.
 MAX_NOTIFIED_KEYS = 300
+# Bound upstream work, including fields running up to a day late or an hour early.
+MAX_EVENTS_PER_TICK = 20
+MAX_MATCHES_PER_EVENT = 100
+MAX_SCHEDULE_DELAY_SEC = 24 * 60 * 60
+EARLY_START_LOOKAHEAD_SEC = 60 * 60
 
 
 def _shift_alerts_still_allowed(db, prefs: dict, room_key: str) -> bool:
@@ -58,17 +64,43 @@ def _prune_notified(notified: dict[str, Any]) -> dict[str, Any]:
     return dict(ordered[-MAX_NOTIFIED_KEYS:])
 
 def run_match_alert_tick(db: Session) -> dict[str, Any]:
+    purge_expired_subscriptions(db)
     if not push_configured():
+        db.commit()
         return {"ok": True, "skipped": "push not configured"}
 
     now_ts = int(time.time())
+    expected_start = func.coalesce(models.Match.predicted_time, models.Match.time)
+    # Subscriber-controlled event strings must never cause upstream requests.
+    # Only ingested local events with a relevant unstarted match can be refreshed.
+    subscribed_events = select(models.PushSubscription.event_key).where(
+        models.PushSubscription.enabled.is_(True),
+        models.PushSubscription.event_key.isnot(None),
+    )
+    low, high = now_ts - MAX_SCHEDULE_DELAY_SEC, now_ts + MAX_LEAD_SEC + EARLY_START_LOOKAHEAD_SEC
+    event_keys = db.execute(
+        select(models.Match.event_key)
+        .join(models.Event, models.Event.event_key == models.Match.event_key)
+        .where(
+            models.Match.event_key.in_(subscribed_events),
+            models.Match.actual_time.is_(None),
+            or_(models.Match.time.between(low, high), models.Match.predicted_time.between(low, high)),
+        )
+        .group_by(models.Match.event_key)
+        .order_by(func.min(func.abs(expected_start - now_ts)), models.Match.event_key)
+        .limit(MAX_EVENTS_PER_TICK)
+    ).scalars().all()
+    if not event_keys:
+        db.commit()
+        return {"ok": True, "subscriptions": 0, "sent": 0}
     subs = db.execute(
         select(models.PushSubscription).where(
             models.PushSubscription.enabled.is_(True),
-            models.PushSubscription.event_key.isnot(None),
-        )
+            models.PushSubscription.event_key.in_(event_keys),
+        ).order_by(models.PushSubscription.id).limit(max(0, int(settings.push_subscriptions_max_total)))
     ).scalars().all()
     if not subs:
+        db.commit()
         return {"ok": True, "subscriptions": 0, "sent": 0}
 
     subs_by_event: dict[str, list[models.PushSubscription]] = {}
@@ -86,7 +118,6 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
         except Exception:
             db.rollback()
             logger.warning("push.match_times_refresh_failed event=%s", event_key, exc_info=True)
-        expected_start = func.coalesce(models.Match.predicted_time, models.Match.time)
         matches = db.execute(
             select(models.Match).where(
                 models.Match.event_key == event_key,
@@ -94,7 +125,7 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
                 expected_start.isnot(None),
                 expected_start >= now_ts - 300,
                 expected_start <= horizon_ts,
-            )
+            ).order_by(expected_start, models.Match.match_key).limit(MAX_MATCHES_PER_EVENT)
         ).scalars().all()
         if not matches:
             continue

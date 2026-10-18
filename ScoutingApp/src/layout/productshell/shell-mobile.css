@@ -170,7 +170,8 @@
 @media (max-width: 1120px) {
   /* Push content up so bottom bar doesn't overlay page content */
   .ps-content {
-    padding-bottom: calc(var(--bottom-bar-height) + 8px + env(safe-area-inset-bottom, 0px)) !important;
+    /* Plus the next-match pill's height while it shows (features/nextMatch). */
+    padding-bottom: calc(var(--bottom-bar-height) + var(--next-match-pill-space, 0px) + 8px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* Hide the old hamburger button since we have bottom bar "More" */
@@ -991,29 +992,6 @@
     color: var(--color-success-text);
   }
 
-  .fm-progress-bar {
-    height: 3px;
-    background: color-mix(in srgb, var(--color-surface-muted) 50%, transparent);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 2px;
-  }
-
-  .fm-progress-fill {
-    height: 100%;
-    border-radius: 2px;
-    background: #538dd7;
-    transition: width 0.4s ease;
-  }
-
-  .fm-progress-fill.live {
-    background: var(--color-danger-text);
-  }
-
-  .fm-progress-fill.ended {
-    background: #4ade80;
-  }
-
   /* ── Tab Bar ─────────────────────────────────────────────────────────────
      FotMob-style minimal text tabs with underline active indicator.
      ──────────────────────────────────────────────────────────────────────── */
@@ -1342,7 +1320,6 @@
     white-space: nowrap;
   }
 
-
   .fm-event-header-stats {
     display: flex;
     flex-wrap: wrap;
@@ -1421,11 +1398,6 @@
      Compact 2-column KPI cards on mobile.
      ──────────────────────────────────────────────────────────────────────── */
 
-
-
-
-
-
   /* ── Events: Standings Table (Rankings) ────────────────────────────────
      FotMob-style clean standings rows.
      ──────────────────────────────────────────────────────────────────────── */
@@ -1492,6 +1464,38 @@
     .fm-standings-row > :nth-child(3),
     .fm-standings-row > :nth-child(6) {
       display: none;
+    }
+  }
+
+  /* Forecast: "Playoffs" needs a wider fourth column than a record does. */
+  .fm-standings-card--forecast .fm-standings-header,
+  .fm-standings-card--forecast .fm-standings-row {
+    grid-template-columns: 28px minmax(0, 1fr) 40px 58px 40px 32px;
+  }
+
+  @media (max-width: 359px) {
+    .fm-standings-card--forecast .fm-standings-header,
+    .fm-standings-card--forecast .fm-standings-row {
+      grid-template-columns: 24px minmax(0, 1fr) 58px 40px;
+    }
+  }
+
+  /* Final result: rank, team, ranking score, playoff result. */
+  .fm-standings-card--final .fm-standings-header,
+  .fm-standings-card--final .fm-standings-row {
+    grid-template-columns: 28px minmax(0, 1fr) 44px 64px;
+  }
+
+  @media (max-width: 359px) {
+    .fm-standings-card--final .fm-standings-header,
+    .fm-standings-card--final .fm-standings-row {
+      grid-template-columns: 24px minmax(0, 1fr) 40px 60px;
+    }
+
+    /* Four columns only: keep the ranking score the generic narrow rule hides. */
+    .fm-standings-card--final .fm-standings-header span:nth-child(3),
+    .fm-standings-card--final .fm-standings-row > :nth-child(3) {
+      display: block;
     }
   }
 
@@ -2042,106 +2046,6 @@
     color: var(--color-success-text);
   }
 
-  /* ── Scouting Section Tabs (FotMob Tab Bar) ─────────────────────────── */
-
-  .fm-scout-section-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(40, 56, 70, 0.5);
-    margin-bottom: 6px;
-  }
-
-  .fm-scout-section-tab {
-    flex: 1;
-    padding: 10px 6px 8px;
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
-    color: var(--color-text-dim);
-    letter-spacing: 0.02em;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    transition: color 0.15s ease, border-color 0.15s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-  }
-
-  .fm-scout-section-tab .icon-inline {
-    width: 14px;
-    height: 14px;
-    opacity: 0.6;
-  }
-
-  .fm-scout-section-tab.active {
-    color: var(--color-text);
-    border-bottom-color: var(--color-info-text);
-  }
-
-  .fm-scout-section-tab.active .icon-inline {
-    opacity: 1;
-  }
-
-  .fm-scout-section-tab:active {
-    opacity: 0.7;
-  }
-
-  /* ── Scouting Panel Tabs (Pill Bar) ─────────────────────────────────── */
-
-  .fm-scout-panel-tabs {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    margin-bottom: 4px;
-  }
-
-  .fm-scout-panel-tabs::-webkit-scrollbar { display: none; }
-
-  .fm-scout-panel-pill {
-    flex: 0 0 auto;
-    min-height: 30px;
-    padding: 0 12px;
-    border: 1px solid rgba(40, 56, 70, 0.5);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-bg-elevated) 80%, transparent);
-    color: var(--color-text-dim);
-    font-size: var(--font-size-legacy-11);
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    transition: all 0.15s ease;
-  }
-
-  .fm-scout-panel-pill .icon-inline {
-    width: 13px;
-    height: 13px;
-    opacity: 0.5;
-  }
-
-  .fm-scout-panel-pill.active {
-    border-color: color-mix(in srgb, var(--color-info-text) 50%, transparent);
-    background: color-mix(in srgb, var(--color-info-text) 12%, transparent);
-    color: var(--color-text);
-  }
-
-  .fm-scout-panel-pill.active .icon-inline {
-    opacity: 0.9;
-  }
-
-  .fm-scout-panel-pill:active {
-    transform: scale(0.96);
-  }
-
   /* ── Scouting Cards FotMob Cleanup ──────────────────────────────────── */
 
   .fm-scout-cards .surface-card {
@@ -2191,17 +2095,6 @@
   .scouting-mobile-compact .fm-scout-hero-chip {
     font-size: var(--font-size-legacy-10);
     padding: 2px 6px;
-  }
-
-  .scouting-mobile-compact .fm-scout-section-tab {
-    padding: 8px 4px 6px;
-    font-size: var(--font-size-legacy-11);
-  }
-
-  .scouting-mobile-compact .fm-scout-panel-pill {
-    min-height: 26px;
-    font-size: var(--font-size-legacy-10);
-    padding: 0 9px;
   }
 
   .scouting-mobile-compact .fm-scout-cards .surface-card {
@@ -2839,7 +2732,6 @@
     align-self: flex-end;
   }
 
-
   /* Hide old match state / timer columns; replaced by fm-match-header-row */
   .home-match-main > .home-match-state,
   .home-match-main > .home-match-timer-col {
@@ -3287,22 +3179,6 @@
     color: var(--status-final-text);
   }
 
-  .product-shell.theme-light .fm-progress-bar {
-    background: #dfe8f2;
-  }
-
-  .product-shell.theme-light .fm-progress-fill {
-    background: #4f96ea;
-  }
-
-  .product-shell.theme-light .fm-progress-fill.live {
-    background: var(--status-live-color);
-  }
-
-  .product-shell.theme-light .fm-progress-fill.ended {
-    background: var(--status-final-color);
-  }
-
   .product-shell.theme-light .fm-tab-bar {
     border-bottom-color: var(--color-border);
   }
@@ -3385,20 +3261,12 @@
   }
 }
 
-
 /* ── smallest-phones ──────────────────────────────────── */
 
 /* At ~250px the four-way view toggle (Setup/Room/Data/Board) gives each
    button about 53px for an icon and a word, and the word clipped to "Setu",
    "Boar". The word is what tells them apart, so the icon goes. */
 @media (max-width: 300px) {
-  .mobile-view-toggle-btn .segmented-tabs__icon {
-    display: none;
-  }
-
-  .mobile-view-toggle-btn {
-    padding-inline: 4px;
-  }
 }
 
 /* Five Team Center stats in one row left ~40px each at 250px, so the rating

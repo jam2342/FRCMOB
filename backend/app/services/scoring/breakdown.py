@@ -19,15 +19,6 @@ def _sum_numeric_keys(payload: dict[str, Any], keys: list[str]) -> float | None:
         seen = True
     return total if seen else None
 
-def _season_year_from_event_key(event_key: object) -> int | None:
-    token = str(event_key or "").strip()[:4]
-    if token.isdigit():
-        year = int(token)
-        if 1992 <= year <= 2100:
-            return year
-    return None
-
-
 def _extract_rebuilt_auto_fuel_count(breakdown: dict[str, Any]) -> float | None:
     hub = breakdown.get("hubScore") if isinstance(breakdown.get("hubScore"), dict) else {}
     hub_auto_count = _as_number(hub.get("autoCount"))

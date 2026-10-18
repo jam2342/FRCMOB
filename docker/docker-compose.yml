@@ -33,10 +33,6 @@ services:
   backend:
     build:
       context: ../backend
-      args:
-        # CPU-only torch. The default wheels pull ~16 NVIDIA CUDA packages that
-        # nothing here can use, and they cost several GB per build.
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cpu
     container_name: scouting-backend
     env_file:
       - ../.env

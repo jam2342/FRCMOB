@@ -1,0 +1,125 @@
+.banner {
+  display: flex;
+  align-items: stretch;
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+  color: var(--color-text);
+  animation: awayIn 320ms var(--motion-ease) both;
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 4px 8px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+.main:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.main:focus-visible,
+.dismiss:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -3px;
+}
+
+.icon {
+  flex: none;
+  color: var(--color-accent-text);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.text strong {
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.show {
+  flex: none;
+  padding: 0 8px;
+  color: var(--color-accent-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.dismiss {
+  flex: none;
+  width: 44px;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+
+.dismiss:hover {
+  color: var(--color-text);
+}
+
+/* Rows that came in while you were away: a dot in the top-left corner (the row clips anything
+   outside its edge). */
+.newRow {
+  position: relative;
+}
+
+.newRow::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent-strong);
+  pointer-events: none;
+}
+
+.flash {
+  animation: awayFlash 1.8s ease;
+}
+
+@keyframes awayIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes awayFlash {
+  0%,
+  35% {
+    background-color: var(--color-accent-soft);
+    border-color: var(--color-accent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .flash {
+    animation: none;
+  }
+}

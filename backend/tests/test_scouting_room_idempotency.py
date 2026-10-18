@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import unittest
+from fastapi import HTTPException
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy.pool import StaticPool
 
 from app.api import routes_scouting_rooms
 from app.core.config import settings
 from app.db import models
 from app.db.base import Base
-from tests.workspace_helpers import seed_workspace
+from tests.workspace_helpers import add_seeded_member, seed_workspace
 
 
 class ScoutingRoomIdempotencyTests(unittest.TestCase):
@@ -24,7 +24,9 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
         Base.metadata.create_all(self.engine)
         self.db = self.SessionLocal()
-        workspace, _member, _headers = seed_workspace(self.db)
+        workspace, member, _headers = seed_workspace(self.db, display_name="ScoutA")
+        self.author_id = member.id
+        self.other_author_id = add_seeded_member(self.db, workspace, display_name="ScoutB").id
         self.workspace_id = workspace.id
         self.db.add(models.Event(event_key="2026txhou", name="Houston", year=2026))
         self.db.add(models.Team(team_key="frc118", team_number=118, nickname="Robonauts"))
@@ -64,6 +66,7 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         def persist(payload, scout):
             return routes_scouting_rooms._persist_room_entry(
                 self.db, room=self.room, entry_payload=payload, scout_profile=scout, client_entry_id="entry-1",
+                author_member_id=self.author_id if scout == "ScoutA" else self.other_author_id,
             )
 
         persist(entry(12, 1000), "ScoutA")
@@ -72,7 +75,9 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         row, _ = persist(entry(30, 2000), "ScoutA")  # the scout corrects the report
         self.assertEqual(row.total_points, 30)
         self.assertEqual(row.payload["points"]["total"], 30)
-        row, _ = persist(entry(99, 3000), "ScoutB")  # someone else reusing the id
+        with self.assertRaises(HTTPException) as conflict:
+            persist(entry(99, 3000), "ScoutB")  # someone else reusing the id
+        self.assertEqual(conflict.exception.status_code, 409)
         self.assertEqual(row.total_points, 30)
         self.assertEqual(self.db.query(models.ScoutingRoomEntry).count(), 1)
 
@@ -89,6 +94,7 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             room=self.room,
             entry_payload=payload,
             scout_profile="ScoutA",
+            author_member_id=self.author_id,
             client_entry_id="client-entry-1",
         )
         row_b, created_b = routes_scouting_rooms._persist_room_entry(
@@ -96,6 +102,7 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             room=self.room,
             entry_payload=payload,
             scout_profile="ScoutA",
+            author_member_id=self.author_id,
             client_entry_id="client-entry-1",
         )
         self.assertTrue(created_a)
@@ -221,57 +228,6 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
             secondary_leader_profiles=[],
         )
         self.assertEqual(role, routes_scouting_rooms.ROOM_ROLE_EDITOR)
-
-    def test_upsert_room_assignment_and_assignments_for_scout(self):
-        row = routes_scouting_rooms._upsert_room_assignment(
-            self.db,
-            room=self.room,
-            match_key="2026txhou_qm1",
-            team_key="frc118",
-            assigned_scout_profile="Scout B",
-            assigned_by_scout_profile="ScoutA",
-            event_key="2026txhou",
-        )
-        self.assertEqual(row.room_key, "room-test")
-        self.assertEqual(row.match_key, "2026txhou_qm1")
-        self.assertEqual(row.team_key, "frc118")
-        rows = routes_scouting_rooms._load_room_assignments(
-            self.db,
-            "room-test",
-            event_key="2026txhou",
-        )
-        scoped = routes_scouting_rooms._assignments_for_scout(rows, "scout b")
-        self.assertEqual(len(scoped), 1)
-        self.assertEqual(scoped[0].id, row.id)
-
-    def test_upsert_room_assignment_retries_once_on_stale_data_error(self):
-        original_commit = self.db.commit
-        stale_once = {"raised": False}
-
-        def _flaky_commit():
-            if not stale_once["raised"]:
-                stale_once["raised"] = True
-                raise StaleDataError("simulated concurrent row update")
-            return original_commit()
-
-        self.db.commit = _flaky_commit  # type: ignore[assignment]
-        try:
-            row = routes_scouting_rooms._upsert_room_assignment(
-                self.db,
-                room=self.room,
-                match_key="2026txhou_qm1",
-                team_key="frc118",
-                assigned_scout_profile="Scout Retry",
-                assigned_by_scout_profile="ScoutA",
-                event_key="2026txhou",
-            )
-        finally:
-            self.db.commit = original_commit  # type: ignore[assignment]
-
-        self.assertTrue(stale_once["raised"])
-        self.assertEqual(str(row.match_key), "2026txhou_qm1")
-        self.assertEqual(str(row.team_key), "frc118")
-        self.assertEqual(str(row.assigned_scout_profile), "Scout Retry")
 
     def test_room_role_owner_includes_secondary_leaders(self):
         self.db.add(

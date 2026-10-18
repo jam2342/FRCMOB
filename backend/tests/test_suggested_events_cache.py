@@ -115,3 +115,42 @@ class SuggestedEventsCacheTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SuggestedEventsOrderTests(unittest.TestCase):
+    def test_running_events_lead_and_the_rest_still_follow(self):
+        from datetime import date, timedelta
+
+        today = date.today()
+        def event(key, start, end, teams):
+            return {"key": key, "name": key, "year": 2026, "start_date": start.isoformat(), "end_date": end.isoformat(), "team_count": teams}
+        tba_events = [
+            event("2026big", date(2026, 3, 1), date(2026, 3, 3), 60),
+            event("2026mid", date(2026, 4, 1), date(2026, 4, 3), 40),
+            event("2026nowa", today, today + timedelta(days=2), 20),
+            event("2026nowb", today - timedelta(days=1), today + timedelta(days=1), 30),
+        ]
+
+        class FakeTBA:
+            def events(self, year):
+                return tba_events if year == 2026 else []
+
+            def event_teams(self, key):
+                return []
+
+        with patch.object(routes_events, "TBAClient", FakeTBA), \
+             patch.object(routes_events, "_event_team_counts", return_value={}), \
+             patch.object(routes_events.settings, "tba_auth_key", "x"), \
+             patch.object(routes_events.settings, "public_readonly_mode", True):
+            payload = routes_events._compute_suggested_events(
+                object(), preferred_year=2026, fallback_year=2025, limit=10, prioritize_running=True, team_count_fetch_limit=0,
+            )
+            plain = routes_events._compute_suggested_events(
+                object(), preferred_year=2026, fallback_year=2025, limit=10, prioritize_running=False, team_count_fetch_limit=0,
+            )
+        keys = [e["event_key"] for e in payload["events"]]
+        # Two events are running: they come first (most teams first), and the season's
+        # other events still follow instead of being dropped.
+        self.assertEqual(keys, ["2026nowb", "2026nowa", "2026big", "2026mid"])
+        self.assertEqual((payload["source"], payload["running_count"]), ("remote_live_now", 2))
+        self.assertEqual([e["event_key"] for e in plain["events"]], ["2026big", "2026mid", "2026nowb", "2026nowa"])

@@ -131,8 +131,12 @@ describe('OnDeviceRun match lifecycle', () => {
     expect(screen.queryByRole('button', { name: 'Continue to calibration' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Load match teams' }));
     await screen.findByRole('button', { name: 'Continue to calibration' });
-    fireEvent.change(screen.getByPlaceholderText('inferred from match key'), { target: { value: '2026other' } });
-    expect(screen.queryByRole('button', { name: 'Continue to calibration' })).not.toBeInTheDocument();
+    const eventBox = screen.getByLabelText('Event');
+    fireEvent.change(eventBox, { target: { value: '2026other' } });
+    fireEvent.keyDown(eventBox, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Continue to calibration' })).not.toBeInTheDocument());
+    // A new event clears the old event's match, so type one that doesn't belong to it.
+    fireEvent.change(screen.getByPlaceholderText('e.g. 2026txhou_qm1'), { target: { value: '2026test_qm2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Load match teams' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('event key must match');
     expect(getEventSchedule).toHaveBeenCalledTimes(2);
@@ -165,9 +169,9 @@ describe('OnDeviceRun match lifecycle', () => {
     try {
       render(<OnDeviceRun />);
       // The label names the event (a readable code when its name isn't known), never the raw key.
-      const picker = await screen.findByRole('combobox', { name: 'Match at 2026 TEST' }, { timeout: 2000 });
+      const picker = await screen.findByRole('combobox', { name: 'Match' }, { timeout: 2000 });
       await waitFor(() => expect(picker).toHaveValue('2026test_qm2'));
-      expect(screen.getByRole('option', { name: 'QM 1 (played)' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /^QM 1\b.*played$/ })).toBeInTheDocument();
       expect(document.querySelector('.odr-teams')).toHaveTextContent('RED3BLUE4');
       expect(screen.getByRole('button', { name: 'Continue to calibration' })).toBeInTheDocument();
 

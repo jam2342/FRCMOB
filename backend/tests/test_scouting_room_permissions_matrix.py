@@ -331,7 +331,7 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
         demote_payload = demote.json()
         self.assertTrue(bool(demote_payload.get("removed")))
 
-    def test_secondary_leader_can_assign_replace_and_kick(self):
+    def test_secondary_leader_can_kick(self):
         owner = self._create_or_join_room(scout_profile="Owner Scout")
         owner_token = str(((owner.get("access") or {}).get("room_access_token") or "")).strip()
         self.assertTrue(owner_token)
@@ -350,36 +350,6 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
             str(((secondary.get("access") or {}).get("room_role") or "")).lower(),
             "owner",
         )
-
-        upsert = self.client.post(
-            "/scouting/rooms/room-perm/assignments",
-            json={
-                "event_key": "2026txhou",
-                "match_key": "2026txhou_qm1",
-                "team_key": "frc118",
-                "assigned_scout_profile": "Scout C",
-            },
-            headers={ROOM_ACCESS_HEADER: secondary_token},
-        )
-        self.assertEqual(upsert.status_code, 200, upsert.text)
-        self.assertTrue(upsert.json().get("ok"))
-
-        replace = self.client.post(
-            "/scouting/rooms/room-perm/assignments/replace",
-            json={
-                "event_key": "2026txhou",
-                "assignments": [
-                    {
-                        "match_key": "2026txhou_qm2",
-                        "team_key": "frc148",
-                        "assigned_scout_profile": "Scout D",
-                    }
-                ],
-            },
-            headers={ROOM_ACCESS_HEADER: secondary_token},
-        )
-        self.assertEqual(replace.status_code, 200, replace.text)
-        self.assertTrue(replace.json().get("ok"))
 
         original_presence_snapshot = routes_scouting_rooms.scouting_room_hub.presence_snapshot
         original_disconnect_profile = routes_scouting_rooms.scouting_room_hub.disconnect_scout_profile
@@ -412,31 +382,6 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
             routes_scouting_rooms.scouting_room_hub.disconnect_scout_profile = original_disconnect_profile
         self.assertEqual(kick.status_code, 200, kick.text)
         self.assertTrue(bool(kick.json().get("kicked")))
-
-    def test_replace_assignment_returns_503_when_assignments_table_missing(self):
-        owner = self._create_or_join_room(scout_profile="Owner Scout")
-        owner_token = str(((owner.get("access") or {}).get("room_access_token") or "")).strip()
-        self.assertTrue(owner_token)
-
-        with self.engine.begin() as conn:
-            conn.exec_driver_sql("DROP TABLE scouting_room_assignments")
-
-        replace = self.client.post(
-            "/scouting/rooms/room-perm/assignments/replace",
-            json={
-                "event_key": "2026txhou",
-                "assignments": [
-                    {
-                        "match_key": "2026txhou_qm1",
-                        "team_key": "frc118",
-                        "assigned_scout_profile": "Scout C",
-                    }
-                ],
-            },
-            headers={ROOM_ACCESS_HEADER: owner_token},
-        )
-        # After Phase 7: runtime table creation removed — missing table → 503
-        self.assertIn(replace.status_code, (500, 503), replace.text)
 
     def test_promote_secondary_leader_returns_503_when_leaders_table_missing(self):
         owner = self._create_or_join_room(scout_profile="Owner Scout")
@@ -475,32 +420,7 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
             str(presence),
         )
 
-    def test_assignments_endpoint_presence_heartbeat_updates_live_members(self):
-        owner = self._create_or_join_room(scout_profile="Owner Scout")
-        owner_token = str(((owner.get("access") or {}).get("room_access_token") or "")).strip()
-        self.assertTrue(owner_token)
-
-        response = self.client.get(
-            "/scouting/rooms/room-perm/assignments",
-            params={
-                "event_key": "2026txhou",
-                "for_scout_profile": "Owner Scout",
-                "client_id": "client-assign-1",
-                "presence_heartbeat": "1",
-            },
-            headers={ROOM_ACCESS_HEADER: owner_token},
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json()
-        self.assertTrue(payload.get("ok"))
-        presence = payload.get("presence") or []
-        self.assertTrue(
-            any(str(member.get("scout_profile") or "").strip() == "Owner Scout" for member in presence),
-            str(presence),
-        )
-        self.assertEqual(str(payload.get("room_role") or "").lower(), "owner")
-
-    def test_non_leader_cannot_assign_kick_or_promote(self):
+    def test_non_leader_cannot_kick_or_promote(self):
         owner = self._create_or_join_room(scout_profile="Owner Scout")
         owner_token = str(((owner.get("access") or {}).get("room_access_token") or "")).strip()
         self.assertTrue(owner_token)
@@ -519,18 +439,6 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
             str(((non_leader.get("access") or {}).get("room_role") or "")).lower(),
             "editor",
         )
-
-        assign = self.client.post(
-            "/scouting/rooms/room-perm/assignments",
-            json={
-                "event_key": "2026txhou",
-                "match_key": "2026txhou_qm1",
-                "team_key": "frc118",
-                "assigned_scout_profile": "Scout X",
-            },
-            headers={ROOM_ACCESS_HEADER: non_leader_token},
-        )
-        self.assertEqual(assign.status_code, 403)
 
         kick = self.client.post(
             "/scouting/rooms/room-perm/kick",
@@ -682,74 +590,6 @@ class ScoutingRoomPermissionMatrixTests(unittest.TestCase):
         payload = response.json()
         self.assertTrue(payload.get("ok"))
         self.assertIn("access", payload)
-
-    def test_assignment_update_survives_presence_snapshot_failure_for_owner(self):
-        owner = self._create_or_join_room(scout_profile="Owner Scout")
-        owner_token = str(((owner.get("access") or {}).get("room_access_token") or "")).strip()
-        self.assertTrue(owner_token)
-
-        original_presence_snapshot = routes_scouting_rooms.scouting_room_hub.presence_snapshot
-
-        async def _raise_presence_snapshot(_room_key: str):
-            raise RuntimeError("presence backend timeout")
-
-        routes_scouting_rooms.scouting_room_hub.presence_snapshot = _raise_presence_snapshot
-        try:
-            upsert = self.client.post(
-                "/scouting/rooms/room-perm/assignments",
-                json={
-                    "event_key": "2026txhou",
-                    "match_key": "2026txhou_qm1",
-                    "team_key": "frc118",
-                    "assigned_scout_profile": "Scout Z",
-                },
-                headers={ROOM_ACCESS_HEADER: owner_token},
-            )
-        finally:
-            routes_scouting_rooms.scouting_room_hub.presence_snapshot = original_presence_snapshot
-
-        self.assertEqual(upsert.status_code, 200, upsert.text)
-        self.assertTrue(upsert.json().get("ok"))
-
-    def test_assignment_update_succeeds_when_realtime_broadcast_transport_fails(self):
-        owner = self._create_or_join_room(scout_profile="Owner Scout")
-        owner_token = str(((owner.get("access") or {}).get("room_access_token") or "")).strip()
-        self.assertTrue(owner_token)
-
-        original_route_broadcast = routes_scouting_rooms._broadcast_room_message
-        original_hub_broadcast = routes_scouting_rooms.scouting_room_hub.broadcast
-        original_bus_publish = routes_scouting_rooms.scouting_room_bus.publish
-        routes_scouting_rooms._broadcast_room_message = self._orig_broadcast_room_message
-
-        async def _raise_hub_broadcast(_room_key: str, _payload: dict):
-            raise RuntimeError("socket fanout failure")
-
-        async def _raise_bus_publish(_room_key: str, _payload: dict):
-            raise RuntimeError("redis publish failure")
-
-        routes_scouting_rooms.scouting_room_hub.broadcast = _raise_hub_broadcast
-        routes_scouting_rooms.scouting_room_bus.publish = _raise_bus_publish
-        try:
-            upsert = self.client.post(
-                "/scouting/rooms/room-perm/assignments",
-                json={
-                    "event_key": "2026txhou",
-                    "match_key": "2026txhou_qm1",
-                    "team_key": "frc118",
-                    "assigned_scout_profile": "Scout Y",
-                },
-                headers={ROOM_ACCESS_HEADER: owner_token},
-            )
-        finally:
-            routes_scouting_rooms.scouting_room_bus.publish = original_bus_publish
-            routes_scouting_rooms.scouting_room_hub.broadcast = original_hub_broadcast
-            routes_scouting_rooms._broadcast_room_message = original_route_broadcast
-
-        self.assertEqual(upsert.status_code, 200, upsert.text)
-        payload = upsert.json()
-        self.assertTrue(payload.get("ok"))
-        self.assertEqual(str((payload.get("assignment") or {}).get("assigned_scout_profile") or ""), "Scout Y")
-
 
 if __name__ == "__main__":
     unittest.main()

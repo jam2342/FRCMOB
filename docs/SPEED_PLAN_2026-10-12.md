@@ -435,3 +435,4 @@ Rule for every item above: **behavior lives in the backend and the app; the host
 6. Build-time check that the ONNX models are present (`ONDEVICE_MODEL_REQUIRED` keys off `VERCEL` today; switch it to a host-neutral env var).
 7. Turn on API caching for `/api` at the new host and re-run #2's MISS/HIT and workspace-header checks.
 8. Native shells point at the public site URL (`shareableAppUrl()`), so check that after a domain change.
+9. Every path: `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera/microphone self). The rest of the CSP travels in the HTML (`build/contentSecurityPolicy.ts`); if the backend's address changes, update `NATIVE_WS_URL` or the room socket is blocked.

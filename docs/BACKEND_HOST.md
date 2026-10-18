@@ -46,7 +46,7 @@ If the public IP changes, the sslip name changes with it: set `BACKEND_TLS_HOST`
 
 The `.env` is the old container's env merged with the repo `.env` for keys the
 container never set, minus every `*_TEXAS_*` key, with:
-`APP_ENV=production`, `ML_SHADOW_AUTO_TRAIN_ACTIVATE=false`,
+`APP_ENV=production`,
 `ON_DEVICE_SYNC_REQUIRE_SIGNED_TOKEN=true`. Leftover `VIDEO_*`, `LIVE_ANALYSIS_*` and
 `ANALYSIS_JOB_*` keys from the broadcast pipeline are ignored (settings use
 `extra="ignore"`). The local repo `.env` points
@@ -62,9 +62,9 @@ ssh -i ~/.ssh/frcmob_oci ubuntu@<ip> \
   'cd ~/frcmob && sudo docker compose --env-file .env -f docker/docker-compose.oci.yml --profile tls up -d --build'
 ```
 
-`Dockerfile.prod` installs torch from the CPU-only wheel index (the ML shadow models
-need torch; the host has no GPU). Before 2026-09-28 the image carried the CUDA wheels,
-ultralytics and EasyOCR and weighed ~11 GB.
+The image has no torch since 2026-10-17 (it was only there for the ML shadow models,
+now removed). Before 2026-09-28 it also carried the CUDA wheels, ultralytics and EasyOCR
+and weighed ~11 GB.
 
 ## Database and Redis on the VM
 

@@ -23,7 +23,7 @@ Then open the live site: Home should show today's events and Team Center a ratin
 ## Official data freshness
 
 The regional automation tick (every 12 h) re-ingests each completed event of the
-season, recomputes synergy and ratings, then trains the ML shadow models once.
+season, then recomputes its ratings.
 
 ```bash
 curl -s https://scouting-app-iryg.vercel.app/api/automation/regional/season/2026/status
@@ -31,54 +31,6 @@ curl -s https://scouting-app-iryg.vercel.app/api/automation/regional/season/2026
 
 `last_run_at` should be under ~14 h old; `last_result.failed_event_count` should be 0
 or close to it. The ops smoke check logs a warning when the tick goes stale.
-
-## ML shadow models
-
-The shadow models (team strength, match outcome, synergy, roles) train on official
-data: team-strength targets are official fuel rates, match-outcome targets are final
-scores from official findings. They run in shadow and do not change ratings until an
-operator activates a version; `ML_SHADOW_AUTO_TRAIN_ACTIVATE` must stay `false` in
-production.
-
-Blend knobs must be non-zero, or ML contributes nothing even when activated:
-
-```bash
-sudo docker exec scouting-backend python -c "
-from app.core.config import settings as s
-print(s.ml_shadow_enabled, s.ml_shadow_rollout_ratio, s.ml_match_outcome_blend,
-      s.ml_team_strength_blend, s.ml_synergy_blend, s.ml_role_blend)"
-```
-
-How much training data is there right now (read-only; runs the real snapshot builders
-and rolls back):
-
-```bash
-sudo docker exec -w /app -e PYTHONPATH=/app scouting-backend \
-  python scripts/survey_shadow_training_data.py --season 2026
-```
-
-`unknown_team_rows` must be 0: a snapshot row whose team is missing from `teams` fails
-the foreign key and rolls back the whole training run. (That happened until
-2026-09-28 because TBA writes B teams as `frc4788B` and the builders lowercased it.)
-
-Train without waiting for the next tick:
-
-```bash
-sudo docker exec -w /app -e PYTHONPATH=/app scouting-backend \
-  python scripts/backfill_shadow_models.py --season 2026
-```
-
-Then check the registry and predictions:
-
-```sql
-select model_key, model_version, is_active, trained_at, metrics
-from ml_model_registry order by trained_at desc limit 10;
-
-select model_key, count(*), max(created_at) from ml_shadow_predictions group by model_key;
-```
-
-An empty `ml_model_registry` after a completed tick means training failed: search the
-backend log for `ML shadow auto-train failed` or `snapshot_rebuild_failed`.
 
 ## On-device session acceptance and promotion
 
@@ -110,8 +62,8 @@ Recommended gates: at least 30 team-match samples across two phone performance t
 median field-position error at most 0.75 m, p90 at most 1.5 m, identity precision at
 least 98%, match-clock alignment error at most 1.0 s, at least 2 sustained inference fps,
 and no more than 20% inference-time drift over a match. Enable training before ratings;
-rating use needs a separate shadow evaluation showing no regression on held-out
-match and team metrics.
+rating use needs a separate evaluation showing no regression on held-out match and team
+metrics.
 
 ## Tripwires
 
@@ -119,8 +71,6 @@ match and team metrics.
 |---|---|---|
 | `/health/deep` `ok` | false | API, database, Redis or env validation broken |
 | Regional automation `last_run_at` | older than 14 h | Scheduler stalled or locked |
-| `ml_model_registry` | empty after a tick | Shadow training is failing |
-| Any ML blend knob | 0.0 | `.env` not loaded; ML silently off |
 | `/home/ubuntu/backups/backup.log` | no dump in 2 h | Hourly backup broken |
 | On-device detector holdout mAP@0.5 | < 0.71 | Detector drifted or regressed |
 

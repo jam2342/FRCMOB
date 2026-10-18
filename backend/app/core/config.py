@@ -134,6 +134,25 @@ class Settings(BaseSettings):
     scouting_room_access_ttl_sec: int = 43200
     # Scouts join a workspace once per season; removal revokes access immediately.
     team_workspace_access_ttl_sec: int = 15552000
+    # Workspaces are anonymous (no accounts yet), so their cost is bounded instead:
+    # site-wide creations per hour, pit photo bytes per workspace and event, and
+    # empty workspaces nobody has opened in a while are removed.
+    workspace_create_max_per_hour: int = 30
+    workspace_signup_challenge_required: bool = False
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
+    turnstile_allowed_hostnames: str = ""
+    pit_photo_quota_bytes_per_workspace_event: int = 500 * 1024 * 1024
+    pit_photo_quota_bytes_per_workspace: int = 1024 * 1024 * 1024
+    pit_photo_quota_bytes_total: int = 5 * 1024 * 1024 * 1024
+    pit_photo_minimum_free_bytes: int = 512 * 1024 * 1024
+    pit_photo_max_files_per_workspace: int = 2000
+    pit_photo_max_files_total: int = 10000
+    push_subscriptions_max_total: int = 10000
+    push_subscriptions_max_new_per_hour: int = 300
+    push_subscription_retention_days: int = 180
+    workspace_empty_cleanup_enabled: bool = True
+    workspace_empty_cleanup_after_days: int = 30
     log_level: str = "INFO"
     log_format: str = "text"  # "text" for human-readable, "json" for structured
     cors_allow_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -141,19 +160,7 @@ class Settings(BaseSettings):
     first_frc_api_base_url: str = "https://frc-api.firstinspires.org/v3.0"
     first_frc_api_username: str = ""
     first_frc_api_auth_key: str = ""
-    statbotics_base_url: str = "https://api.statbotics.io/v3"
     tba_cache_max_entries: int = 2048
-    statbotics_cache_ttl_sec: int = 300
-    statbotics_stale_cache_ttl_sec: int = 900
-    statbotics_stale_serve_on_error: bool = True
-    statbotics_circuit_breaker_enabled: bool = True
-    statbotics_circuit_failure_threshold: int = 4
-    statbotics_circuit_cooldown_sec: int = 90
-    # Cooldown doubles each time the breaker reopens during one outage, up to this.
-    statbotics_circuit_max_cooldown_sec: int = 1800
-    # How long a team/event intel request waits for Statbotics before answering
-    # without EPA (the page treats it as a note, not a failure).
-    intel_statbotics_budget_sec: float = 2.5
     # Caching headers on GET responses (app/api/edge_cache.py). The CDN rule goes in
     # this header; a host that only reads another one is a config change here.
     edge_cache_enabled: bool = True
@@ -188,38 +195,7 @@ class Settings(BaseSettings):
     automation_regional_settle_days: int = 3
     automation_regional_max_rechecks_per_tick: int = 20
     automation_regional_countries: str = "USA,Canada"
-    analysis_quality_gate_enabled: bool = True
-    analysis_quality_min_coverage_score: float = 0.2
-    analysis_quality_min_detections: int = 8
     scouting_data_outdated_days: int = 45
-    rating_recent_match_window: int = 20
-    rating_recent_priority_window: int = 10
-    rating_recent_priority_weight: float = 2.0
-    rating_recent_base_weight: float = 1.0
-    rating_penalty_impact_net_points: float = 0.30
-    rating_penalty_impact_subscores: float = 0.35
-    rating_penalty_impact_driver: float = 0.35
-    rating_penalty_impact_base_rating: float = 0.30
-    rating_statbotics_epa_enabled: bool = True
-    rating_results_anchor_epa_weight: float = 0.12
-    rating_performance_epa_blend: float = 0.08
-    rating_performance_auto_weight: float = 0.22
-    rating_base_auto_weight: float = 0.09
-    rating_performance_antidefense_weight: float = 0.08
-    rating_base_antidefense_weight: float = 0.06
-    rating_antidefense_stage_early_quals_multiplier: float = 0.62
-    rating_antidefense_stage_late_quals_multiplier: float = 1.00
-    rating_antidefense_stage_elims_multiplier: float = 1.24
-    rating_antidefense_stage_support_matches: int = 6
-    rating_trend_throughput_delta: float = 0.05
-    rating_trend_reliability_delta: float = 0.04
-    rating_trend_cycle_delta: float = 0.05
-    rating_trend_penalty_delta: float = 0.10
-    synergy_discipline_risk_multiplier: float = 0.30
-    synergy_epa_pair_weight: float = 0.20
-    synergy_pair_prior_shrink_k: float = 4.0
-    synergy_pair_event_shrink_k: float = 3.0
-    synergy_pair_event_blend_k: float = 3.0
     team_intel_cache_ttl_sec: int = 120
     event_intel_cache_ttl_sec: int = 90
     intel_snapshot_enabled: bool = True
@@ -234,9 +210,6 @@ class Settings(BaseSettings):
     fuel_rate_calibration_ttl_sec: int = 900
     fuel_rate_calibration_min_samples: int = 20
     fuel_rate_calibration_max_rows: int = 5000
-    climb_official_backfill_enabled: bool = True
-    climb_official_backfill_interval_minutes: int = 180
-    climb_official_backfill_max_events_per_run: int = 6
     ops_metrics_sample_days: int = 14
     ops_smoke_check_enabled: bool = True
     ops_smoke_check_interval_minutes: int = 30
@@ -244,6 +217,8 @@ class Settings(BaseSettings):
     ops_alert_automation_lock_spike_threshold: int = 3
     request_slow_log_threshold_ms: float = 900.0
     request_timing_header_enabled: bool = False
+    # Largest legitimate body is a 6 MB pit photo as base64 (~8.4 MB). Caddy has the same cap.
+    max_request_body_bytes: int = 10 * 1024 * 1024
     db_slow_query_logging_enabled: bool = True
     db_slow_query_threshold_ms: float = 80.0
     db_slow_query_max_sql_chars: int = 220
@@ -258,19 +233,6 @@ class Settings(BaseSettings):
     events_search_remote_fallback_enabled: bool = True
     events_search_remote_year_span: int = 3
     events_search_cache_ttl_sec: int = 90
-    ml_shadow_enabled: bool = False
-    ml_shadow_rollout_ratio: float = 0.0
-    ml_shadow_model_dir: str = "media/models/shadow"
-    ml_shadow_team_strength_model_version: str = ""
-    ml_shadow_match_outcome_model_version: str = ""
-    ml_shadow_feature_source_version: str = "shadow_features_v1"
-    # Training and promotion are deliberately opt-in. Event ingestion must not
-    # silently retrain and activate a model from unreviewed live data.
-    ml_shadow_auto_train_on_event_breakdown: bool = False
-    ml_shadow_auto_train_limit_events: int = 40
-    ml_shadow_auto_train_activate: bool = False
-    ml_shadow_auto_train_recompute_ratings: bool = True
-    ml_shadow_auto_train_current_season_only: bool = True
     # Scheduler-backed catch-up for matches analyzed before the hook shipped or when the hook fails.
     auto_scout_backfill_enabled: bool = True
     auto_scout_backfill_interval_minutes: int = 30
@@ -284,14 +246,10 @@ class Settings(BaseSettings):
     on_device_sync_max_teams: int = 12  # 6 robots + slack for mislabeled keys
     on_device_sync_max_points_per_team: int = 6000  # ~160s match well above any real fps
     on_device_sync_max_total_points: int = 24000
-    on_device_sync_max_runs_per_match: int = 50  # cap distinct on-device runs per match
+    on_device_sync_max_runs_per_match: int = 20  # per team (or per caller) and match
     # A verified four-corner calibration + stable pose + strong identity must all
     # be present before ordinary acceptance. Legacy payloads always score zero.
     on_device_sync_min_quality_score: float = 0.8
-    ml_match_outcome_blend: float = 0.0  # 0..1 — blend ML prob with deterministic baseline
-    ml_team_strength_blend: float = 0.0  # 0..1 — reserved for Phase 3 rating blend
-    ml_synergy_blend: float = 0.0  # 0..1 — blend ML pair synergy with deterministic shrinkage
-    ml_role_blend: float = 0.0  # 0..1 — blend ML role signals with deterministic classifier
     matches_live_results_cache_ttl_sec: int = 5
 
     @field_validator(

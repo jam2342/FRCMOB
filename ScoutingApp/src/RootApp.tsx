@@ -71,9 +71,15 @@ const TermsOfServicePage = lazy(() =>
 );
 
 function withPageSuspense(content: ReactNode, label?: string) {
+  return <PageBoundary label={label}>{content}</PageBoundary>;
+}
+
+// A crash on one page must not follow you to the next one.
+function PageBoundary({ label, children }: { label?: string; children: ReactNode }) {
+  const location = useLocation();
   return (
-    <ErrorBoundary label={label}>
-      <Suspense fallback={<PageSpinner />}>{content}</Suspense>
+    <ErrorBoundary label={label} resetKey={location.pathname}>
+      <Suspense fallback={<PageSpinner />}>{children}</Suspense>
     </ErrorBoundary>
   );
 }

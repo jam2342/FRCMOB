@@ -37,6 +37,26 @@ async function resolveLogoUrl(teamKey: string, eventKey?: string): Promise<strin
   return null;
 }
 
+// A few lookups at a time. A busy day's Home shows hundreds of avatars, and firing every lookup
+// at once (about a thousand calls) crowded out the live score polls on venue wifi.
+const MAX_CONCURRENT = 4;
+let running = 0;
+const waiting: Array<() => void> = [];
+
+function limited<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      running += 1;
+      task().then(resolve, reject).finally(() => {
+        running -= 1;
+        waiting.shift()?.();
+      });
+    };
+    if (running < MAX_CONCURRENT) start();
+    else waiting.push(start);
+  });
+}
+
 function fetchLogo(teamKey: string, eventKey?: string): Promise<string | null> {
   const cacheKey = buildCacheKey(teamKey, eventKey);
   const cached = logoCache.get(cacheKey);
@@ -45,7 +65,7 @@ function fetchLogo(teamKey: string, eventKey?: string): Promise<string | null> {
   const existing = inflight.get(cacheKey);
   if (existing) return existing;
 
-  const p = resolveLogoUrl(teamKey, eventKey)
+  const p = limited(() => resolveLogoUrl(teamKey, eventKey))
     .then((url) => {
       logoCache.set(cacheKey, url);
       inflight.delete(cacheKey);
@@ -97,10 +117,27 @@ export function TeamAvatar({
   }, [cacheKey, fallbackCacheKey, normalizedEventKey]);
   const [resolvedUrls, setResolvedUrls] = useState<Record<string, string | null>>({});
   const mountedRef = useRef(true);
+  // Looked up only once the avatar is near the screen; off-screen rows never ask.
+  const placeholderRef = useRef<HTMLSpanElement | null>(null);
+  const [nearScreen, setNearScreen] = useState(() => typeof IntersectionObserver === 'undefined');
+
+  useEffect(() => {
+    if (nearScreen || cachedUrl !== undefined) return undefined;
+    const el = placeholderRef.current;
+    if (!el) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNearScreen(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '300px 0px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [cachedUrl, nearScreen]);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (cachedUrl !== undefined) {
+    if (cachedUrl !== undefined || !nearScreen) {
       return () => {
         mountedRef.current = false;
       };
@@ -120,7 +157,7 @@ export function TeamAvatar({
     return () => {
       mountedRef.current = false;
     };
-  }, [cacheKey, cachedUrl, normalizedEventKey, normalizedTeamKey]);
+  }, [cacheKey, cachedUrl, nearScreen, normalizedEventKey, normalizedTeamKey]);
 
   const url = cachedUrl !== undefined ? cachedUrl : (resolvedUrls[cacheKey] ?? null);
   const loaded = cachedUrl !== undefined || Object.prototype.hasOwnProperty.call(resolvedUrls, cacheKey);
@@ -131,7 +168,7 @@ export function TeamAvatar({
   if (!loaded) {
     // Placeholder while loading
     return (
-      <span className={`${cls} team-avatar--loading`} style={sizeStyle} aria-hidden="true" />
+      <span ref={placeholderRef} className={`${cls} team-avatar--loading`} style={sizeStyle} aria-hidden="true" />
     );
   }
 

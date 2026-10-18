@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { storageGet, storageSet, storageRemove } from '../platform/safeStorage';
 
 const RECENT_SEARCHES_KEY = 'scouting_recent_searches';
 
@@ -8,7 +9,7 @@ function normalizeRecentSearch(raw: unknown): string {
 
 function readRecentSearches(limit: number): string[] {
   try {
-    const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
+    const raw = storageGet(RECENT_SEARCHES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -27,7 +28,7 @@ function writeRecentSearch(query: string, limit: number): string[] {
   const recent = readRecentSearches(limit).filter((value) => value !== trimmed);
   recent.unshift(trimmed);
   const next = recent.slice(0, limit);
-  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+  storageSet(RECENT_SEARCHES_KEY, JSON.stringify(next));
   return next;
 }
 
@@ -46,7 +47,7 @@ export function useRecentSearches(limit: number) {
 
   const clearRecentSearches = useCallback(() => {
     try {
-      localStorage.removeItem(RECENT_SEARCHES_KEY);
+      storageRemove(RECENT_SEARCHES_KEY);
     } catch {
       // ignore
     }

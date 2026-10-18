@@ -6,15 +6,11 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any, Callable
 
 from app.core.config import settings
 from app.db import models
-from app.services.quality_gate import evaluate_summary_quality_gate
-from app.services.ratings.model import calibrate_public_rating_scale
-from app.services.ratings.output_builder import rating_subscores
-from app.services.team_utils import model_uses_calibrated_public_scale as _model_uses_calibrated_public_scale
+from app.services.ratings.output_builder import rating_points, rating_subscores
 
 # ── Constants ──────────────────────────────────────────────────
 
@@ -33,36 +29,9 @@ def rating_float(value: object) -> float | None:
         return float(value)
     return None
 
-def rating_display_value(value: object, model_version: object) -> float | None:
+def rating_display_value(value: object) -> float | None:
     parsed = rating_float(value)
-    if parsed is None:
-        return None
-    if _model_uses_calibrated_public_scale(model_version):
-        return round(parsed, 3)
-    return round(calibrate_public_rating_scale(parsed), 3)
-
-def mean_metric(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return float(sum(values) / len(values))
-
-def safe_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        f = float(value)  # type: ignore[arg-type]
-        return None if math.isnan(f) else int(f)
-    except (TypeError, ValueError):
-        return None
-
-def sigmoid(value: float) -> float:
-    clamped = max(-60.0, min(60.0, float(value)))
-    return 1.0 / (1.0 + math.exp(-clamped))
-
-def safe_div(numerator: float, denominator: float) -> float | None:
-    if abs(denominator) < 1e-12:
-        return None
-    return numerator / denominator
+    return round(parsed, 3) if parsed is not None else None
 
 # ── Finding source helpers ────────────────────────────────────
 
@@ -82,26 +51,6 @@ def is_score_breakdown_source(
         if "score_breakdown" in official_source:
             return True
     return False
-
-_VIDEO_TRACKING_BACKENDS = frozenset({"motion_v1", "yolo_bytetrack", "auto"})
-
-def is_video_finding_source(finding: models.TeamMatchFinding) -> bool:
-    source_token = str(finding.source or "").strip().lower()
-    if not source_token:
-        return False
-    if is_score_breakdown_source(source_token, finding=finding):
-        return False
-    if source_token.startswith("video_"):
-        return True
-    if source_token in {"motion_v1", "yolo_bytetrack"}:
-        return True
-    if "yolo" in source_token or "bytetrack" in source_token:
-        return True
-
-    summary = finding.summary if isinstance(finding.summary, dict) else {}
-    analysis_context = summary.get("analysis_context") if isinstance(summary.get("analysis_context"), dict) else {}
-    tracking_backend = str(analysis_context.get("tracking_backend") or "").strip().lower()
-    return tracking_backend in _VIDEO_TRACKING_BACKENDS
 
 def finding_source_priority(source: object) -> int:
     token = str(source or "").strip().lower()
@@ -262,73 +211,6 @@ def compute_averages(
         "defensive_engagement_sec": defense_avg,
         "reliability_score": reliability_avg,
     }
-
-def metric_coverage_payload(
-    findings: list[models.TeamMatchFinding],
-    climb_fallback_by_match: dict[str, float] | None = None,
-    quality_gate_fallback_used: bool = False,
-) -> dict[str, dict[str, float | int | str | None]]:
-    recent = findings[:RECENT_STATS_MATCH_WINDOW]
-    total_matches = len(recent)
-    fallback = climb_fallback_by_match or {}
-
-    def _observed_count(metric_key: str) -> int:
-        observed = 0
-        for finding in recent:
-            if metric_key == "fuel_scoring_rate":
-                value = effective_fuel_scoring_rate(finding)
-            else:
-                value = _finding_metric_value(finding, metric_key)
-            if metric_key == "climb_success_prob":
-                fallback_value = fallback.get(finding.match_key)
-                if isinstance(fallback_value, (int, float)) and (value is None or fallback_value > float(value)):
-                    value = float(fallback_value)
-            if isinstance(value, (int, float)):
-                observed += 1
-        return observed
-
-    def _missing_reason(metric_key: str, observed: int) -> str | None:
-        if observed > 0:
-            return None
-        if total_matches <= 0:
-            return "No analyzed matches available in the current season scope."
-        if quality_gate_fallback_used:
-            return (
-                "Metric is still missing even after low-confidence fallback coverage; "
-                "run fresh analysis for stronger signal."
-            )
-        if metric_key == "fuel_scoring_rate":
-            return "No scoring detections were accepted by quality gate for recent matches."
-        if metric_key == "cycle_time_sec":
-            return "No valid cycle windows were detected in recent analyzed matches."
-        if metric_key == "auto_contribution":
-            return "No autonomous scoring/mobility contribution was detected yet."
-        if metric_key == "climb_success_prob":
-            return "No climb attempts/success signals were detected for recent matches."
-        if metric_key == "defensive_engagement_sec":
-            return "No defensive engagement intervals were detected for recent matches."
-        if metric_key == "reliability_score":
-            return "Tracking quality evidence is insufficient to estimate reliability."
-        return "Insufficient signal coverage in recent matches."
-
-    keys = [
-        "fuel_scoring_rate",
-        "cycle_time_sec",
-        "auto_contribution",
-        "climb_success_prob",
-        "defensive_engagement_sec",
-        "reliability_score",
-    ]
-    payload: dict[str, dict[str, float | int | str | None]] = {}
-    for key in keys:
-        observed = _observed_count(key)
-        payload[key] = {
-            "observed_matches": observed,
-            "total_matches": total_matches,
-            "coverage_0_1": round((observed / total_matches), 3) if total_matches > 0 else 0.0,
-            "missing_reason": _missing_reason(key, observed),
-        }
-    return payload
 
 # ── Climb helpers ─────────────────────────────────────────────
 
@@ -540,11 +422,9 @@ def compute_climb_sources(
     climb_fallback_by_match: dict[str, float] | None = None,
 ) -> dict[str, object]:
     if not findings:
-        empty = weighted_climb_source_summary([], "video_analyzed")
         return {
             "overall_climb_success_prob": None,
-            "video_only": empty,
-            "official_score_breakdown": {**empty, "source": "official_score_breakdown"},
+            "official_score_breakdown": weighted_climb_source_summary([], "official_score_breakdown"),
             "level_capability": compute_climb_level_capability([]),
         }
 
@@ -554,10 +434,6 @@ def compute_climb_sources(
         indexed_recent,
         "all_sources",
         climb_fallback_by_match=climb_fallback_by_match,
-    )
-    video_only = weighted_climb_source_summary(
-        [(index, finding) for index, finding in indexed_recent if is_video_finding_source(finding)],
-        "video_analyzed",
     )
     official_only = weighted_climb_source_summary(
         [
@@ -569,7 +445,6 @@ def compute_climb_sources(
     )
     return {
         "overall_climb_success_prob": overall.get("climb_success_prob"),
-        "video_only": video_only,
         "official_score_breakdown": official_only,
         "level_capability": compute_climb_level_capability(
             recent_findings,
@@ -596,104 +471,12 @@ def serialize_finding(finding: models.TeamMatchFinding, match_time: int | None) 
         "summary": finding.summary,
     }
 
-def extract_perimeter_context(finding: models.TeamMatchFinding) -> tuple[str | None, str | None]:
-    summary = finding.summary if isinstance(finding.summary, dict) else {}
-    context = summary.get("analysis_context")
-    if not isinstance(context, dict):
-        return None, None
-
-    perimeter_type = str(context.get("perimeter_type") or "").strip().lower()
-    if perimeter_type not in {"welded", "andymark"}:
-        perimeter_type = ""
-    perimeter_source = str(context.get("perimeter_source") or "").strip() or None
-    return (perimeter_type or None), perimeter_source
-
-def apply_quality_gate_to_finding_rows(rows: list[tuple]) -> tuple[list[tuple], dict]:
-    gate_config = quality_gate_config_payload()
-    if not gate_config["enabled"]:
-        return (
-            rows,
-            {
-                **gate_config,
-                "raw_count": len(rows),
-                "accepted_count": len(rows),
-                "excluded_count": 0,
-                "excluded_examples": [],
-            },
-        )
-
-    accepted: list[tuple] = []
-    excluded_examples: list[dict] = []
-    for row in rows:
-        finding = row[0]
-        is_valid, reason, coverage_score, detections = evaluate_summary_quality_gate(
-            finding.summary if isinstance(finding, models.TeamMatchFinding) else None
-        )
-        if is_valid:
-            accepted.append(row)
-            continue
-        if len(excluded_examples) < 12 and isinstance(finding, models.TeamMatchFinding):
-            excluded_examples.append(
-                {
-                    "match_key": finding.match_key,
-                    "analysis_run_id": finding.analysis_run_id,
-                    "reason": reason,
-                    "coverage_score": coverage_score,
-                    "detections": detections,
-                }
-            )
-
-    return (
-        accepted,
-        {
-            **gate_config,
-            "raw_count": len(rows),
-            "accepted_count": len(accepted),
-            "excluded_count": max(0, len(rows) - len(accepted)),
-            "excluded_examples": excluded_examples,
-        },
-    )
-
-def rows_for_metric_coverage(
-    raw_rows: list[tuple],
-    accepted_rows: list[tuple],
-    quality_gate: dict,
-) -> tuple[list[tuple], dict]:
-    # Rows the gate rejected are never shown in their place: ratings drop them, so the
-    # team's history and averages must too (it used to fall back to them).
-    gate_enabled = bool(quality_gate.get("enabled"))
-    selected_rows = accepted_rows if gate_enabled else raw_rows
-    fallback_used = False
-    source = "quality_gate_accepted"
-    if not gate_enabled:
-        source = "quality_gate_disabled"
-    elif not selected_rows:
-        source = "quality_gate_rejected_all" if raw_rows else "none"
-
-    raw_count = int(quality_gate.get("raw_count") or 0)
-    accepted_count = int(quality_gate.get("accepted_count") or 0)
-    accepted_ratio = (float(accepted_count) / float(raw_count)) if raw_count > 0 else None
-    return (
-        selected_rows,
-        {
-            "source": source,
-            "fallback_used": fallback_used,
-            "raw_count": raw_count,
-            "accepted_count": accepted_count,
-            "accepted_ratio_0_1": (
-                round(max(0.0, min(1.0, accepted_ratio)), 3)
-                if isinstance(accepted_ratio, float)
-                else None
-            ),
-        },
-    )
-
 # ── Rating row serialization ─────────────────────────────────
 
 def serialize_rating_row(row: models.EventTeamRating, team: models.Team | None) -> dict:
-    rd = rating_display_value(row.rating_0_100, row.model_version)
-    robot_display = rating_display_value(row.robot_level_0_100, row.model_version)
-    driver_display = rating_display_value(row.driver_skill_0_100, row.model_version)
+    rd = rating_display_value(row.rating_0_100)
+    robot_display = rating_display_value(row.robot_level_0_100)
+    driver_display = rating_display_value(row.driver_skill_0_100)
     return {
         "event_key": row.event_key,
         "team_key": row.team_key,
@@ -704,6 +487,7 @@ def serialize_rating_row(row: models.EventTeamRating, team: models.Team | None) 
         "robot_level_0_100": robot_display,
         "driver_skill_0_100": driver_display,
         "subscores": rating_subscores(row),
+        **rating_points(row),
         "pros": row.pros_json or [],
         "cons": row.cons_json or [],
         "evidence": row.evidence_json or [],

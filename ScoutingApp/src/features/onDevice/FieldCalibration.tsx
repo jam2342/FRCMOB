@@ -7,7 +7,7 @@ import { openDb, saveCalibration } from './offlineStore';
 import { grayscaleFromRgba, type GrayImage } from './opticalFlowCore';
 
 // The 4 taps, in order, with field-relative prompts (origin = blue-station x scoring-table
-// corner; +X toward red station, +Y toward the audience side — per game_config.field_layout).
+// corner; +X toward red station, +Y toward the audience side).
 const CORNER_PROMPTS = [
   'Blue-station × scoring-table corner',
   'Red-station × scoring-table corner',

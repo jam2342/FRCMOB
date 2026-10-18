@@ -35,17 +35,17 @@ export function parseOfficialStats(raw: unknown): OfficialTeamStats | null {
 // from when nobody has scouted the team.
 export function officialMetricsNote(stats: OfficialTeamStats | null | undefined): string {
   if (!stats?.available) {
-    return 'Nobody has scouted this team yet, and it has no official results this season.';
+    return 'This team has no official results this season yet.';
   }
   const eventCount = stats.events.filter((event) => event.copr).length;
   if (stats.copr_matches > 0) {
     return (
-      `Nobody has scouted this team yet. Fuel and auto are TBA's per-team estimates from ` +
+      `From official results. Fuel and auto are TBA's per-team estimates from ` +
       `${stats.copr_matches} official matches at ${eventCount} event${eventCount === 1 ? '' : 's'} this season, ` +
       `so one event's numbers can differ; climb is its official record.`
     );
   }
-  return "Nobody has scouted this team yet. Climb is its official record; TBA's per-team fuel estimates aren't available.";
+  return "From official results. Climb is its official record; TBA's per-team fuel estimates aren't available.";
 }
 
 export function scoreAgainst(value: number | null | undefined, elite: number): number | null {
@@ -72,10 +72,6 @@ export function isRobotSignal(label: string): boolean {
 // The ratings engine names its signals for analysts ("RP threshold contributor", "External EPA
 // baseline is low"). They're stored with each rating, so they're translated where they're shown.
 const PLAIN_SIGNAL_LABELS: Record<string, string> = {
-  'High external EPA baseline': 'Strong Statbotics rating',
-  'External EPA baseline is low': 'Weak Statbotics rating',
-  'Strong EPA baseline': 'Strong Statbotics rating',
-  'Low EPA baseline': 'Weak Statbotics rating',
   'Strong OPR projection': 'Scores a lot in official results',
   'Weak win-margin projection': 'Expected to win by little, or lose',
   'ML throughput projection is strong': 'Expected to score a lot',
@@ -123,4 +119,21 @@ const PLAIN_SIGNAL_LABELS: Record<string, string> = {
 
 export function plainSignalLabel(label: string): string {
   return PLAIN_SIGNAL_LABELS[(label || '').trim()] ?? label;
+}
+
+// A rating's 80% range as people read it: one decimal while it's tight (96.7–97.8),
+// whole numbers once it's wide (43–71). Null when there's no range.
+export function ratingRangeLabel(range: readonly [number, number] | null | undefined): string | null {
+  if (!range) return null;
+  const [low, high] = range;
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+  const digits = high - low < 5 ? 1 : 0;
+  return `${low.toFixed(digits)}–${high.toFixed(digits)}`;
+}
+
+// A rating or points move as "+1.2" / "−0.3" / "0": never "-0" for a move that rounds away.
+export function signedChange(value: number, digits = 1): string {
+  const rounded = Number(value.toFixed(digits));
+  if (rounded === 0 || Number.isNaN(rounded)) return (0).toFixed(digits);
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(digits)}`;
 }

@@ -120,7 +120,7 @@ export function AutoScoutReviewPanel({
               onClick={onGenerate}
               disabled={!canGenerate || loading}
             >
-              <SearchIcon className="icon-inline" /> {loading ? 'Working...' : draft ? 'Refresh Draft' : 'Generate Draft'}
+              <SearchIcon className="icon-inline" /> {loading ? 'Working…' : draft ? 'Refresh Draft' : 'Generate Draft'}
             </button>
             {draft ? (
               <button
@@ -149,7 +149,7 @@ export function AutoScoutReviewPanel({
                 onClick={onSave}
                 disabled={approving}
               >
-                <SaveIcon className="icon-inline" /> {approving ? 'Approving...' : 'Save Reviewed Entry'}
+                <SaveIcon className="icon-inline" /> {approving ? 'Approving…' : 'Save Reviewed Entry'}
               </button>
             ) : null}
           </div>

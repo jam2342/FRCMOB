@@ -22,7 +22,7 @@ afterEach(() => {cleanup(); localStorage.clear(); window.location.hash=''; vi.re
 async function capture() {
   window.location.hash='#/scouting/record?event=2026test&match=2026test_qm1';
   render(<OnDeviceRun />);
-  fireEvent.change(await screen.findByLabelText(/Match at/), { target: { value: '2026test_qm1' } });
+  fireEvent.change(await screen.findByLabelText('Match'), { target: { value: '2026test_qm1' } });
   fireEvent.click(await screen.findByText('Continue to calibration'));
   fireEvent.click(screen.getByText('Calibrate'));
 }
@@ -49,7 +49,7 @@ it('confirms a replacement after Back, preserves a canceled capture, and clears 
 it('explains a missing saved calibration', async () => {
   window.location.hash='#/scouting/record?event=2026test&match=2026test_qm1';
   render(<OnDeviceRun />);
-  fireEvent.change(await screen.findByLabelText(/Match at/), { target: { value: '2026test_qm1' } });
+  fireEvent.change(await screen.findByLabelText('Match'), { target: { value: '2026test_qm1' } });
   fireEvent.click(await screen.findByText('Continue to calibration'));
   fireEvent.click(screen.getByText('Use saved calibration'));
   await screen.findByText('No calibration saved on this device. Capture or upload a field photo first.');

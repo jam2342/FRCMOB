@@ -559,11 +559,11 @@
 @media (max-width: 1120px) {
   /* Keep the scouting tool switcher reachable on mobile — every sub-view
      (Pit, Coverage, Auto Paths, Field Calibration, On-Device) lives here, so
-     hiding it stranded those tools. Start-aligned + scrollable with an edge
-     fade hint (see .can-scroll-* in ps-shared-controls.css). */
+     hiding it stranded those tools. Centred like the Match Center and Compare
+     tab rows, so a section's menu sits in the same place in every section. */
   .product-shell .scouting-page-view-bar {
     display: flex;
-    justify-content: flex-start;
+    justify-content: center;
     width: 100%;
     gap: 6px;
     /* Default: the pill is a sibling before a .center-page-container, whose
@@ -578,13 +578,6 @@
      inner gutter — its toggle/cards sit flush at the ps-content edge, so drop
      the pill's side inset to match (this is the misalignment that was visible). */
   .product-shell .scouting-page-view-bar:has(+ .scouting-layout-grid) {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  /* Auto Paths renders the pill INSIDE the container, so it already inherits
-     the gutter — no extra inset needed. */
-  .product-shell .center-page-container > .scouting-page-view-bar {
     padding-left: 0;
     padding-right: 0;
   }
@@ -621,18 +614,6 @@
     overflow: hidden;
   }
 
-  .product-shell .scouting-layout-grid .mobile-view-toggle-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: 32px;
-    padding: 4px 8px;
-    font-size: var(--font-size-2xs);
-    transition:
-      min-height var(--motion-fast) ease,
-      padding var(--motion-fast) ease,
-      font-size var(--motion-fast) ease;
-  }
-
   .product-shell .scouting-layout-grid .center-sidebar .center-actions-row .center-btn,
   .product-shell .scouting-layout-grid .center-sidebar .center-actions-row a.center-btn {
     min-height: 32px;
@@ -653,17 +634,6 @@
     min-height: 96px;
     padding: 10px;
     font-size: var(--font-size-sm);
-  }
-  .product-shell .scouting-layout-grid .fm-scout-panel-pill,
-  .product-shell .scouting-layout-grid .fm-scout-section-tab {
-    min-height: var(--control-min-height-dense);
-    padding: 0 var(--control-padding-inline);
-    border: 1px solid var(--control-border);
-    border-radius: var(--control-radius);
-    background: var(--control-bg);
-    color: var(--control-text-muted);
-    box-shadow: none;
-    white-space: nowrap;
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero {
@@ -691,66 +661,6 @@
       padding var(--motion-fast) ease,
       font-size var(--motion-fast) ease,
       border-radius var(--motion-fast) ease;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-section-tabs {
-    gap: 6px;
-    padding: 6px;
-    border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
-    margin-bottom: 8px;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-section-tab {
-    flex: 1;
-    font-size: var(--font-size-2xs);
-    font-weight: 720;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-section-tab.active,
-  .product-shell .scouting-layout-grid .fm-scout-panel-pill.active {
-    border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
-    background: var(--control-bg-active);
-    color: var(--control-text);
-    box-shadow: var(--control-shadow-active);
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-section-tab .icon-inline,
-  .product-shell .scouting-layout-grid .fm-scout-panel-pill .icon-inline {
-    opacity: 0.72;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-section-tab.active .icon-inline,
-  .product-shell .scouting-layout-grid .fm-scout-panel-pill.active .icon-inline {
-    opacity: 1;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-panel-tabs {
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-panel-pill {
-    font-size: var(--font-size-legacy-11);
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle {
-    top: var(--ps-sticky-top);
-    gap: 4px;
-    padding: 4px;
-    border-radius: 12px;
-    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle-btn {
-    min-height: 30px;
-    padding: 4px 8px;
-    font-size: var(--font-size-2xs);
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle-btn .segmented-tabs__icon {
-    transform: scale(0.92);
   }
 
   /* Section switching + Scout Board now live in the merged top toggle
@@ -860,8 +770,7 @@
     min-height: 44px;
   }
 
-  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed,
-  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .finder-sidebar-header.scout-sidebar-hub {
+  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed {
     padding: 6px;
     gap: 0;
     border-radius: 13px;
@@ -874,22 +783,12 @@
     color: var(--color-text);
   }
 
-  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-overview,
-  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .scout-sidebar-overview {
+  .product-shell .scouting-layout-grid.mobile-finder-open .finder-sidebar-header.scout-sidebar-hub.collapsed .scout-sidebar-overview {
     max-height: 0;
     margin: 0;
     opacity: 0;
     transform: translateY(-8px);
     pointer-events: none;
-  }
-
-  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .scout-sidebar-nav {
-    gap: 4px;
-  }
-
-  .product-shell .scouting-layout-grid.mobile-finder-open.scouting-top-hidden .scout-sidebar-nav-pill {
-    min-height: 34px;
-    font-size: var(--font-size-legacy-11);
   }
 
   .scout-sidebar-section {
@@ -943,57 +842,6 @@
     flex-shrink: 0;
   }
 
-  .product-shell .scouting-layout-grid.scouting-top-hidden .mobile-view-toggle,
-  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-18px);
-    max-height: 0;
-    margin: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-width: 0;
-    box-shadow: none;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero {
-    gap: 0;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-hidden .mobile-view-toggle-btn,
-  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero-actions .center-btn,
-  .product-shell .scouting-layout-grid.scouting-top-hidden .fm-scout-hero-chip {
-    opacity: 0;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
-    top: calc(var(--ps-sticky-top) + var(--scout-phone-nav-height, 58px) + 8px);
-    gap: 4px;
-    padding: 6px 8px;
-    border-radius: 12px;
-    box-shadow: 0 8px 16px rgba(6, 10, 15, 0.14);
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions {
-    gap: 4px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-actions .center-btn{
-    min-height: 28px;
-    padding: 0 8px;
-    font-size: var(--font-size-legacy-11);
-    border-radius: 7px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-context {
-    gap: 3px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero-chip {
-    padding: 2px 6px;
-    font-size: var(--font-size-legacy-10);
-    border-radius: 5px;
-  }
 }
 
 @media (max-width: 320px), (max-height: 500px) {
@@ -1003,16 +851,6 @@
     padding: 4px;
     border-radius: 11px;
     max-height: 84px;
-  }
-
-  .product-shell .scouting-layout-grid .mobile-view-toggle-btn {
-    min-height: 34px;
-    padding: 0 8px;
-    font-size: var(--font-size-legacy-11);
-  }
-
-  .product-shell .scouting-layout-grid .mobile-view-toggle-btn .segmented-tabs__icon {
-    transform: scale(0.88);
   }
 
   .product-shell .scouting-layout-grid .fm-scout-hero {
@@ -1054,42 +892,7 @@
     display: none;
   }
 
-  .product-shell .scouting-layout-grid .fm-scout-section-tabs {
-    gap: 4px;
-    padding: 4px;
-    margin-bottom: 6px;
-    border-radius: 11px;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-section-tab {
-    min-height: 32px;
-    font-size: var(--font-size-legacy-11);
-    padding: 0 6px;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-panel-tabs {
-    gap: 5px;
-    margin-bottom: 3px;
-  }
-
-  .product-shell .scouting-layout-grid .fm-scout-panel-pill {
-    min-height: 30px;
-    padding: 0 10px;
-    font-size: var(--font-size-legacy-10);
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .mobile-view-toggle {
-    top: var(--ps-sticky-top);
-    padding: 3px;
-  }
-
-  .product-shell .scouting-layout-grid.scouting-top-condensed .fm-scout-hero {
-    top: calc(var(--ps-sticky-top) + var(--scout-phone-nav-height, 58px) + 8px);
-    padding: 3px 5px;
-    max-height: 82px;
-  }
 }
-
 
 /* ── Collapsed scouting rail ─────────────────────────────────────────
    Collapsing the workspace used to hide the section tabs along with

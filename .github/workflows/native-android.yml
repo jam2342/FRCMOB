@@ -1,8 +1,16 @@
 name: Native Android
 on:
+  # Only what can break the Android build itself; every frontend PR already builds
+  # the web app in CI, and this job costs minutes on each run.
   pull_request:
     paths:
-      - 'ScoutingApp/**'
+      - 'ScoutingApp/android/**'
+      - 'ScoutingApp/capacitor.config.*'
+      - 'ScoutingApp/package.json'
+      - 'ScoutingApp/package-lock.json'
+      - 'ScoutingApp/brand/**'
+      - 'ScoutingApp/public/models/**'
+      - 'ScoutingApp/src/platform/**'
       - '.github/workflows/native-android.yml'
   workflow_dispatch:
 permissions:

@@ -410,11 +410,11 @@ describe('scoutingRoomWebSocketUrl', () => {
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
     const api = await import('./api');
 
-    await api.getEventScheduleWithSynergy('2026x', { include_pair_breakdown: false });
+    await api.getEventPredictionSchedule('2026x');
     await vi.advanceTimersByTimeAsync(30_000);
     expect(signals.every((signal) => !signal.aborted)).toBe(true);
 
-    const again = await api.getEventScheduleWithSynergy('2026x', { include_pair_breakdown: false });
+    const again = await api.getEventPredictionSchedule('2026x');
     expect(again.event_key).toBe('2026x');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

@@ -2,7 +2,7 @@ import { isNativeApp } from '../platform/runtime';
 import { getDatabaseResponse, putDatabaseResponse, pruneDatabaseResponses } from './apiResponseDatabase';
 // Saved API responses too big for localStorage. Events are usually run with little or
 // no signal, and the responses a scout needs most are the big ones: an event's ratings
-// (1 MB at a regional, 6.6 MB at Championship), the schedule with synergy (1.5 MB) and
+// (1 MB at a regional, 6.6 MB at Championship), the schedule with predictions (1.5 MB) and
 // team intel (1.2 MB). localStorage caps an origin at ~5 MB and the API client skips
 // anything over 450 KB there, so without this those pages came up empty offline.
 // Cache Storage holds hundreds of MB. The service worker leaves "frcmob-api-*" alone.

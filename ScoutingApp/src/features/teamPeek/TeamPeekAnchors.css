@@ -1,0 +1,4 @@
+/* Anything with a team peek: a long press shows the card, not the phone's own link callout. */
+[data-team-peek] {
+  -webkit-touch-callout: none;
+}

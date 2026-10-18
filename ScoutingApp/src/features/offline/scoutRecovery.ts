@@ -1,3 +1,4 @@
+import { setItemMakingRoom } from '../../utils/apiCacheSpace';
 // Keep failed draft writes within this tab so route changes still recover them.
 // A null entry hides an old persisted draft whose removal failed.
 const pendingDrafts = new Map<string, string | null>();
@@ -10,7 +11,7 @@ export function readRecoverableScoutDraft(key: string): string | null {
 export function persistRecoverableScoutDraft(key: string, value: string | null): boolean {
   try {
     if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
+    else setItemMakingRoom(key, value);
     pendingDrafts.delete(key);
     return true;
   } catch {

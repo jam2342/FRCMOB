@@ -3,6 +3,10 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 interface Props {
   /** Optional label shown in the fallback UI (e.g. the page name). */
   label?: string;
+  // Clears a caught error when it changes. Every page's boundary sits in the same spot in the
+  // tree, so React keeps one instance across navigation: without this, one page crashing left
+  // every page you went to next on "<Page> failed to load" until a reload.
+  resetKey?: string;
   children: ReactNode;
 }
 
@@ -21,6 +25,8 @@ function isChunkLoadFailure(error: Error | null): boolean {
     message.includes('failed to fetch dynamically imported module') ||
     message.includes('importing a module script failed') ||
     message.includes('loading chunk') ||
+    // Vite's own wording when a lazy chunk's stylesheet doesn't arrive.
+    message.includes('unable to preload css') ||
     message.includes('chunkloaderror')
   );
 }
@@ -39,6 +45,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
+  }
+
+  componentDidUpdate(prevProps: Props): void {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null });
+    }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {

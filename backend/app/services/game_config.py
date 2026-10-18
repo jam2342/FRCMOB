@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.core.config import settings
-from app.game_config.schema import FieldLayoutVariant, GameConfig, Zone
+from app.game_config.schema import GameConfig, Zone
 
 
 def resolve_config_path() -> Path:
@@ -29,17 +29,6 @@ def load_game_config() -> GameConfig:
 def reload_game_config() -> GameConfig:
     load_game_config.cache_clear()
     return load_game_config()
-
-
-def get_field_layout_variant(perimeter_type: str) -> FieldLayoutVariant | None:
-    config = load_game_config()
-    if config.field_layout is None:
-        return None
-    normalized = (perimeter_type or "").strip().lower()
-    for variant in config.field_layout.variants:
-        if variant.perimeter_type == normalized:
-            return variant
-    return None
 
 
 def point_in_polygon(x: float, y: float, polygon: list[tuple[float, float]]) -> bool:

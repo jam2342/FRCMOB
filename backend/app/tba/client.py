@@ -6,7 +6,6 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 
-import httpx
 
 from app.core.config import settings
 
@@ -178,9 +177,6 @@ class TBAClient:
     def event_team_statuses(self, event_key: str):
         return self._request("GET", f"{BASE}/event/{event_key}/teams/statuses", ttl_sec=TBA_LIVE_CACHE_TTL_SEC)
 
-    def event_insights(self, event_key: str):
-        return self._request("GET", f"{BASE}/event/{event_key}/insights")
-
     def event_predictions(self, event_key: str):
         return self._request("GET", f"{BASE}/event/{event_key}/predictions")
 
@@ -193,9 +189,6 @@ class TBAClient:
     def team_event_status(self, team_key: str, event_key: str):
         return self._request("GET", f"{BASE}/team/{team_key}/event/{event_key}/status", ttl_sec=TBA_LIVE_CACHE_TTL_SEC)
 
-    def team_events_statuses(self, team_key: str, year: int):
-        return self._request("GET", f"{BASE}/team/{team_key}/events/{year}/statuses", ttl_sec=TBA_LIVE_CACHE_TTL_SEC)
-
     def team_awards_year(self, team_key: str, year: int):
         return self._request("GET", f"{BASE}/team/{team_key}/awards/{year}")
 
@@ -205,19 +198,6 @@ class TBAClient:
     def match(self, match_key: str):
         return self._request("GET", f"{BASE}/match/{match_key}", ttl_sec=TBA_LIVE_CACHE_TTL_SEC)
 
-    def match_zebra_motionworks(self, match_key: str):
-        return self._request("GET", f"{BASE}/match/{match_key}/zebra_motionworks")
-
 # ---------------------------------------------------------------------------
 # Async convenience helpers (for use in FastAPI async endpoints)
 # ---------------------------------------------------------------------------
-
-async def async_get_event(event_key: str) -> dict:
-    # Fetch a single TBA event asynchronously via httpx.
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{BASE}/event/{event_key}",
-            headers={"X-TBA-Auth-Key": settings.tba_auth_key},
-        )
-    response.raise_for_status()
-    return response.json()

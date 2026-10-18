@@ -50,12 +50,9 @@ _WRITE_PATH_ADMIN_EXEMPT_PREFIXES = (
     # aggregate-only. Still blocked in public readonly mode.
     "/telemetry/vitals",
     "/api/telemetry/vitals",
-)
-# Computations that take a JSON body but write nothing. The method alone made them
-# look like writes, which locked every non-admin out of Alliance Advisor and Compare.
-# Any write such a handler can still do (e.g. synergy auto-precompute) checks admin itself.
-_READ_ONLY_POST_PATHS = (
-    re.compile(r"^(?:/api)?/synergy/event/[^/]+/theoretical-alliance/?$"),
+    # What the browser's Content-Security-Policy blocked (routes_telemetry): same rules.
+    "/telemetry/csp",
+    "/api/telemetry/csp",
 )
 ADMIN_SESSION_HEADER = "X-Admin-Session"
 ROOM_ACCESS_HEADER = "X-Room-Access-Token"
@@ -229,6 +226,7 @@ def issue_room_access_token(
     scout_profile: str,
     role: str = ROOM_ROLE_EDITOR,
     ttl_sec: int | None = None,
+    workspace_member_id: int | None = None,
 ) -> dict[str, Any]:
     now_ts = int(time.time())
     configured_ttl = int(settings.security.scouting_room_access_ttl_sec or 43200)
@@ -245,6 +243,8 @@ def issue_room_access_token(
         "iat": now_ts,
         "exp": expires_ts,
     }
+    if workspace_member_id is not None:
+        payload["mid"] = int(workspace_member_id)
     return {
         "token": _signed_payload_token(payload),
         "role": normalized_role,
@@ -299,7 +299,8 @@ def parse_workspace_access_token(token: str | None) -> dict[str, Any] | None:
 def workspace_access_token_from_request(request: HTTPConnection) -> str:
     # Deliberately not the Authorization bearer: that one carries admin sessions.
     value = str(request.headers.get(WORKSPACE_ACCESS_HEADER) or "").strip()
-    if value:
+    if value or request.scope.get("type") != "websocket":
+        # Only sockets may carry it in the URL; elsewhere it would land in proxy logs.
         return value
     return str(request.query_params.get(WORKSPACE_ACCESS_QUERY_PARAM) or "").strip()
 
@@ -437,9 +438,6 @@ def enforce_write_request_access(request: Request) -> None:
         )
 
     if any(request_path.startswith(prefix) for prefix in _WRITE_PATH_ADMIN_EXEMPT_PREFIXES):
-        return
-
-    if method == "POST" and any(pattern.match(request_path) for pattern in _READ_ONLY_POST_PATHS):
         return
 
     if request_has_admin_access(request):

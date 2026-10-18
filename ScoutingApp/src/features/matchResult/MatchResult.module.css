@@ -1,0 +1,100 @@
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The few seconds after a result lands: the winner's side lights up, the other side steps back,
+   and the score and winner line pop in. Applied to the hero, then removed. */
+.reveal :global(.fm-winner-badge),
+.reveal :global(.match-live-score),
+.reveal :global(.fm-score-value) {
+  animation: resultPop 520ms var(--motion-spring) both;
+}
+
+.reveal :global(.fm-winner-badge) {
+  animation-delay: 1000ms;
+}
+
+.wonRed,
+.wonBlue {
+  border-radius: var(--radius-md);
+  animation: resultGlow 2.4s ease 900ms both;
+}
+
+.wonRed {
+  --result-glow: var(--color-alliance-red-soft);
+}
+
+.wonBlue {
+  --result-glow: var(--color-alliance-blue-soft);
+}
+
+.lost {
+  animation: resultStepBack 2.4s ease 900ms both;
+}
+
+@keyframes resultPop {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.4;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* A spread shadow in the same colour pads the glow out past the text without moving layout. */
+@keyframes resultGlow {
+  0%,
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+  20%,
+  70% {
+    background: var(--result-glow);
+    box-shadow: 0 0 0 8px var(--result-glow);
+  }
+}
+
+@keyframes resultStepBack {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  70% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal :global(.fm-winner-badge),
+  .reveal :global(.match-live-score),
+  .reveal :global(.fm-score-value),
+  .wonRed,
+  .wonBlue,
+  .lost {
+    animation: none;
+  }
+}
+
+/* Buttons and chips side by side in the match header (Change match · Share). */
+.heroActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

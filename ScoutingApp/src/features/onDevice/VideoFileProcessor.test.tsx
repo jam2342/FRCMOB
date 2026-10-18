@@ -6,7 +6,6 @@ import { VideoFileProcessor } from './VideoFileProcessor';
 import { advanceSampleTarget, safePlaybackRate, SPEEDUP_MAX_RATE } from './samplingRate';
 
 vi.mock('./detector', () => ({
-  ON_DEVICE_MODEL_URL: '/models/test.onnx',
   ON_DEVICE_MODEL_VERSION: 'test-model',
   createDeviceDetector: vi.fn(async () => ({
     modelVersion: 'test-model',

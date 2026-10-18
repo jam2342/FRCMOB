@@ -1,19 +1,22 @@
+import { rankedTeamPool, type PoolTeam } from './eventTeamPool';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  getAllianceOutlook,
   getEventTeamsIntel,
-  getTheoreticalAlliance,
+  getSelectionModel,
 } from '../api';
 import type {
+  AllianceOutlookResponse,
   EventTeamsIntelResponse,
-  TheoreticalAllianceResponse,
   TheoreticalSelectionModel,
   TheoreticalSelectionTopTeam,
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
-import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
+import { COMPARE_VIEWS, viewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { BestNextPick } from '../features/picks/BestNextPick';
 import {
   Button,
   CardBody,
@@ -28,14 +31,8 @@ import {
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import styles from './AllianceAdvisorPage.module.css';
 import { plainSignalLabel } from './teamCenterOfficial';
-import { DEFAULT_WEIGHTS, normalizedWeights, teamsFromParam } from './allianceBuilder';
-import {
-  asRecord,
-  metric,
-  parseNumber,
-  pct,
-  teamNumberFromTeamKey,
-} from './centerUtils';
+import { teamsFromParam } from './allianceBuilder';
+import { metric, pct, teamNumberFromTeamKey } from './centerUtils';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -47,12 +44,7 @@ const DEFAULT_RANK_WEIGHT = 1.0;
 const DEFAULT_SCALE = 35;
 const DEFAULT_CAPTAINS = 8;
 
-type EventTeam = {
-  team_key: string;
-  team_number: number;
-  nickname: string | null;
-  rating_0_100: number | null;
-};
+type EventTeam = PoolTeam;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -112,9 +104,7 @@ export function AllianceAdvisorPage() {
   /* --- Alliance builder (what-if) --- */
   const [searchParams] = useSearchParams();
   const [builderSlots, setBuilderSlots] = useState<[string, string, string]>(() => teamsFromParam(searchParams.get('teams')));
-  const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
-  const weightShares = useMemo(() => normalizedWeights(weights), [weights]);
-  const [builderResult, setBuilderResult] = useState<TheoreticalAllianceResponse | null>(null);
+  const [builderResult, setBuilderResult] = useState<AllianceOutlookResponse | null>(null);
   const [loadingBuilder, setLoadingBuilder] = useState(false);
   const [builderError, setBuilderError] = useState('');
 
@@ -123,22 +113,7 @@ export function AllianceAdvisorPage() {
   const builderGeneration = useRef(0);
 
   /* --- Derived --- */
-  const teamPool = useMemo<EventTeam[]>(() => {
-    const teams = Array.isArray(eventTeams?.teams) ? eventTeams.teams : [];
-    return teams
-      .map((entry) => {
-        const row = asRecord(entry);
-        const rating = asRecord(row?.rating);
-        return {
-          team_key: String(row?.team_key || '').toLowerCase(),
-          team_number: parseNumber(row?.team_number) ?? 0,
-          nickname: typeof row?.nickname === 'string' ? row.nickname : null,
-          rating_0_100: parseNumber(rating?.rating_0_100),
-        };
-      })
-      .filter((row) => row.team_key.length > 0)
-      .sort((a, b) => (b.rating_0_100 ?? 0) - (a.rating_0_100 ?? 0));
-  }, [eventTeams]);
+  const teamPool = useMemo<EventTeam[]>(() => rankedTeamPool(eventTeams?.teams), [eventTeams]);
 
   const teamKeySet = useMemo(() => new Set(teamPool.map((t) => t.team_key)), [teamPool]);
 
@@ -154,7 +129,7 @@ export function AllianceAdvisorPage() {
     setBuilderResult(null);
     setLoadingBuilder(false);
     return () => { builderGeneration.current += 1; };
-  }, [eventKey, teamPool, builderSlots, weights, rankWeight, scale, simulations, fetchTrigger]);
+  }, [eventKey, teamPool, builderSlots, fetchTrigger]);
 
   /* --- Fetch event teams --- */
   const fetchTeams = useCallback(async (key: string) => {
@@ -166,7 +141,6 @@ export function AllianceAdvisorPage() {
     try {
       const payload = await getEventTeamsIntel(key, {
         include_tba: true,
-        include_statbotics: false,
         include_season_fallback: true,
         include_rating_details: false,
         include_rating_signals: true,
@@ -200,20 +174,12 @@ export function AllianceAdvisorPage() {
     setLoadingModel(true);
     setErrorText('');
     try {
-      // We send a dummy 3-team alliance to trigger the selection model.
-      // The selection model is event-wide so the specific teams don't affect the overall rankings.
-      const topThree = teamPool.slice(0, 3).map((t) => t.team_key);
-      const result = await getTheoreticalAlliance(eventKey, {
-        team_keys: topThree,
-        compatibility_weight: 0.5,
-        pros_weight: 0.3,
-        cons_weight: 0.2,
-        include_selection_model: true,
-        selection_rank_weight: rankWeight,
-        selection_scale: scale,
-        selection_captains: DEFAULT_CAPTAINS,
-        selection_simulations: simulations,
-        selection_rank_source: 'auto',
+      const result = await getSelectionModel(eventKey, {
+        rank_weight: rankWeight,
+        scale,
+        captains: DEFAULT_CAPTAINS,
+        simulations,
+        rank_source: 'auto',
       });
       if (generation !== modelGeneration.current) return;
       setSelectionModel(result.selection_model ?? null);
@@ -249,18 +215,7 @@ export function AllianceAdvisorPage() {
     setLoadingBuilder(true);
     setBuilderError('');
     try {
-      const result = await getTheoreticalAlliance(eventKey, {
-        team_keys: keys,
-        compatibility_weight: weightShares.compatibility,
-        pros_weight: weightShares.pros,
-        cons_weight: weightShares.cons,
-        include_selection_model: false,
-        selection_rank_weight: rankWeight,
-        selection_scale: scale,
-        selection_captains: DEFAULT_CAPTAINS,
-        selection_simulations: simulations,
-        selection_rank_source: 'auto',
-      });
+      const result = await getAllianceOutlook(eventKey, keys);
       if (generation === builderGeneration.current) setBuilderResult(result);
     } catch (err) {
       if (generation !== builderGeneration.current) return;
@@ -269,7 +224,7 @@ export function AllianceAdvisorPage() {
     } finally {
       if (generation === builderGeneration.current) setLoadingBuilder(false);
     }
-  }, [eventKey, builderSlots, teamKeySet, rankWeight, scale, simulations, weightShares]);
+  }, [eventKey, builderSlots, teamKeySet]);
 
   // Memoised because the table columns depend on it; a fresh function each
   // render would rebuild every column definition on every keystroke.
@@ -414,9 +369,13 @@ export function AllianceAdvisorPage() {
 
         {/* ---- Event Selection ---- */}
         <SurfaceCard
-          title="Alliance Selection Advisor"
+          title={viewTitle(COMPARE_VIEWS, '/compare/alliance-advisor')}
+          subtitle="Build an alliance and see who fits it best."
+          expandable={false}
+          mobileCollapsible={false}
         >
           <EventPicker
+            label="Event"
             value={eventKey}
             onSelect={handleEventSelect}
             inputValue={eventInput}
@@ -482,7 +441,7 @@ export function AllianceAdvisorPage() {
                   loading={loadingModel}
                   disabled={teamPool.length < 6}
                 >
-                  {loadingModel ? 'Simulating...' : 'Run Selection Model'}
+                  {loadingModel ? 'Simulating…' : 'Run Selection Model'}
                 </Button>
               </div>
 
@@ -617,38 +576,9 @@ export function AllianceAdvisorPage() {
                 ))}
               </div>
 
-              <details className={styles.weights}>
-                <summary>Adjust weights</summary>
-                <p className={styles.note}>
-                  How much each part counts toward the alliance score. They're balanced to 100% for you.
-                </p>
-                <div className={styles.paramGrid}>
-                  {([
-                    ['compatibility', 'Compatibility'],
-                    ['pros', 'Strengths'],
-                    ['cons', 'Risk penalty'],
-                  ] as const).map(([key, label]) => (
-                    <FieldStepper
-                      key={key}
-                      label={label}
-                      hint={`${Math.round(weightShares[key] * 100)}% of the score`}
-                      value={weights[key]}
-                      onValueChange={(next) => {
-                        setWeights((current) => ({ ...current, [key]: next }));
-                        setBuilderResult(null);
-                      }}
-                      min={0}
-                      max={100}
-                      step={5}
-                      name={`${label} weight`}
-                    />
-                  ))}
-                </div>
-              </details>
-
               <div className={styles.actions}>
                 <Button variant="primary" onClick={() => void runBuilder()} loading={loadingBuilder}>
-                  {loadingBuilder ? 'Analyzing...' : 'Analyze Alliance'}
+                  {loadingBuilder ? 'Analyzing…' : 'Analyze Alliance'}
                 </Button>
               </div>
 
@@ -656,44 +586,42 @@ export function AllianceAdvisorPage() {
                 <p className={`${styles.note} ${styles.noteWarning}`} role="alert">{builderError}</p>
               ) : null}
 
-              {builderResult ? (
+              {builderResult?.unavailable ? (
+                <p className={styles.note}>
+                  {builderResult.unavailable === 'too_few_teams'
+                    ? 'This event has too few teams to compare alliances.'
+                    : 'Alliances are only analysed for the current, rated season.'}
+                </p>
+              ) : builderResult && builderResult.vs_strong && builderResult.vs_typical ? (
                 <div className={styles.stack}>
-                  {/* Four equal figures answered four questions; the page only
-                      asks one — how good is this lineup. Alliance Score takes
-                      the display step with its confidence attached, and the
-                      rest step down beside it. */}
+                  {/* One question: how good is this lineup. The chance to win a playoff
+                      match against a strong alliance at this event leads; the rest says
+                      why. Same team model and reference alliances as Best Next Pick. */}
                   <div className="page-hero">
                     <Stat
                       size="display"
-                      label="Alliance Score"
-                      value={metric(builderResult.weighted_total_score_0_100, 1)}
-                      unit="/ 100"
-                      confidence={builderResult.compatibility.confidence_0_1}
+                      label="Beats a strong alliance"
+                      value={pct(builderResult.vs_strong.win_prob, 0)}
+                      sub={`${builderResult.vs_strong.teams.map(teamNumLabel).join(', ')} · ${metric(builderResult.vs_strong.points, 0)} pts`}
                     />
                     <div className="page-hero-stats">
                       <Stat
                         size="sm"
-                        label="Compatibility"
-                        value={metric(builderResult.compatibility.compatibility_score_0_100, 1)}
-                        unit="/ 100"
+                        label="Expected points"
+                        value={metric(builderResult.alliance_points ?? null, 0)}
+                        sub={builderResult.alliance_points_range_80
+                          ? `usually ${metric(builderResult.alliance_points_range_80[0], 0)}–${metric(builderResult.alliance_points_range_80[1], 0)}`
+                          : undefined}
                       />
                       <Stat
                         size="sm"
-                        label="Synergy Points"
-                        value={metric(builderResult.compatibility.alliance_synergy_points, 2)}
+                        label="Beats a typical alliance"
+                        value={pct(builderResult.vs_typical.win_prob, 0)}
+                        sub={`${metric(builderResult.vs_typical.points, 0)} pts`}
                       />
-                      <Stat
-                        size="sm"
-                        label="Strengths"
-                        value={metric(builderResult.pros_cons.alliance_pros_score_0_100, 1)}
-                        unit="/ 100"
-                      />
-                      <Stat
-                        size="sm"
-                        label="Risk"
-                        value={metric(builderResult.pros_cons.alliance_cons_risk_0_100, 1)}
-                        unit="/ 100"
-                      />
+                      {Object.entries(builderResult.bonus_rp_chances || {}).map(([rp, chance]) => (
+                        <Stat key={rp} size="sm" label={`${rp.charAt(0).toUpperCase()}${rp.slice(1)} RP`} value={pct(chance, 0)} />
+                      ))}
                     </div>
                   </div>
 
@@ -713,57 +641,30 @@ export function AllianceAdvisorPage() {
                         ),
                       },
                       { key: 'rating_0_100', label: 'Rating', numeric: true, render: (t) => metric(t.rating_0_100, 1) },
-                      { key: 'compatibility_score_0_100', label: 'Compatibility', numeric: true, render: (t) => metric(t.compatibility_score_0_100, 1) },
-                      { key: 'pros_score_0_100', label: 'Pros', numeric: true, render: (t) => metric(t.pros_score_0_100, 1) },
-                      { key: 'cons_risk_0_100', label: 'Cons Risk', numeric: true, render: (t) => metric(t.cons_risk_0_100, 1) },
-                      { key: 'weighted_score_0_100', label: 'Weighted', numeric: true, render: (t) => metric(t.weighted_score_0_100, 1) },
+                      { key: 'points_per_match', label: 'Pts / match', numeric: true, render: (t) => metric(t.points_per_match, 0) },
+                      { key: 'climb_points', label: 'Climb', numeric: true, render: (t) => metric(t.climb_points, 1) },
+                      { key: 'event_rank_by_points', label: 'Rank here', numeric: true, render: (t) => `${t.event_rank_by_points} of ${builderResult.team_count ?? '—'}` },
                     ]}
                     rows={builderResult.teams}
                     rowKey={(team) => team.team_key}
-                    caption="Per-team contribution to the alliance score."
+                    caption="What each robot brings, from its rating."
                   />
 
-                  <Table
-                    columns={[
-                      {
-                        key: 'pair',
-                        label: 'Pair',
-                        render: (pair) => (
-                          <span className={styles.nowrap}>
-                            {teamNumLabel(pair.team_key_a)} + {teamNumLabel(pair.team_key_b)}
-                          </span>
-                        ),
-                      },
-                      { key: 'synergy_points', label: 'Synergy', numeric: true, render: (p) => metric(p.synergy_points, 2) },
-                      { key: 'base_synergy_points', label: 'Base', numeric: true, render: (p) => metric(p.base_synergy_points, 2) },
-                      { key: 'complement_bonus_points', label: 'Complement', numeric: true, render: (p) => metric(p.complement_bonus_points, 2) },
-                      { key: 'risk_penalty_points', label: 'Risk', numeric: true, render: (p) => metric(p.risk_penalty_points, 2) },
-                      { key: 'source', label: 'Source', align: 'center', render: (p) => <Chip size="sm">{{ projection: 'Estimated', blended: 'Results + estimates', measured: 'Scouted' }[p.source] || 'Unavailable'}</Chip> },
-                    ]}
-                    rows={builderResult.compatibility.pair_breakdown}
-                    rowKey={(_pair, index) => String(index)}
-                    caption="How each pair of teams contributes synergy."
-                  />
-
-                  {builderResult.teams.some((t) => t.pros_top.length > 0 || t.cons_top.length > 0) ? (
+                  {builderResult.teams.some((t) => t.strengths.length > 0 || t.risks.length > 0) ? (
                     <div className={styles.prosConsGrid}>
                       {builderResult.teams.map((team) => (
                         <div key={team.team_key} className={styles.prosConsCard}>
                           <strong className={styles.prosConsTitle}>
                             {teamLabel(team.team_key, teamPool)}
                           </strong>
-                          {team.pros_top.length > 0 ? (
+                          {team.strengths.length > 0 ? (
                             <ul className={styles.prosList}>
-                              {team.pros_top.filter((p) => typeof p.label === 'string' && p.label.trim()).slice(0, 3).map((p, i) => (
-                                <li key={i}>{plainSignalLabel(p.label!)}</li>
-                              ))}
+                              {team.strengths.map((label) => <li key={label}>{plainSignalLabel(label)}</li>)}
                             </ul>
                           ) : null}
-                          {team.cons_top.length > 0 ? (
+                          {team.risks.length > 0 ? (
                             <ul className={styles.consList}>
-                              {team.cons_top.filter((c) => typeof c.label === 'string' && c.label.trim()).slice(0, 3).map((c, i) => (
-                                <li key={i}>{plainSignalLabel(c.label!)}</li>
-                              ))}
+                              {team.risks.map((label) => <li key={label}>{plainSignalLabel(label)}</li>)}
                             </ul>
                           ) : null}
                         </div>
@@ -774,6 +675,14 @@ export function AllianceAdvisorPage() {
               ) : null}
             </CardBody>
           </SurfaceCard>
+        ) : null}
+
+        {eventKey && teamPool.length > 0 ? (
+          <BestNextPick
+            eventKey={eventKey}
+            partners={builderSlots.slice(0, 2).map((s) => s.trim().toLowerCase()).filter(Boolean)}
+            onOpenTeam={openTeamCenter}
+          />
         ) : null}
 
     </div>

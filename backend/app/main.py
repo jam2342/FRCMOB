@@ -26,11 +26,12 @@ from app.api.routes_push import router as push_router
 from app.api.routes_scouting import router as scouting_router
 from app.api.routes_scouting_insights import router as scouting_insights_router
 from app.api.routes_scouting_rooms import router as scouting_rooms_router
-from app.api.routes_synergy import router as synergy_router
+from app.api.routes_alliances import router as alliances_router
 from app.api.routes_teams import router as teams_router
 from app.api.routes_tracks import router as tracks_router
 from app.api.routes_workspaces import router as workspaces_router
 from app.api.routes_telemetry import router as telemetry_router
+from app.api.body_limit import BodyLimitMiddleware
 from app.api.edge_cache import EdgeCacheMiddleware
 from app.core.config import (
     LOCAL_DATABASE_URL_FALLBACK,
@@ -41,6 +42,7 @@ from app.core.security import ADMIN_SESSION_HEADER
 from app.core.security import enforce_write_request_access
 from app.core.security import media_signature_valid
 from app.core.security import request_has_admin_access
+from app.core.security import request_has_explicit_admin_credential
 from app.db.session import SessionLocal
 from app.services.utils import pg_sqlstate_code as _pg_sqlstate
 from app.services.scouting_rooms.bus import scouting_room_bus
@@ -114,6 +116,15 @@ async def lifespan(app: FastAPI):
         if production_like:
             raise
 
+    # The team model's season run takes ~13 s cold; build it before the first request.
+    try:
+        from app.services.ratings.constants import SEASON_BASELINES
+        from app.services.ratings.team_model_service import warm_up
+
+        warm_up(max(SEASON_BASELINES))
+    except Exception:
+        logger.exception("team model warm-up failed to start")
+
     try:
         await scouting_room_bus.start(on_message=_handle_scouting_room_bus_message)
         logger.info("Scouting room redis bus initialized")
@@ -122,25 +133,9 @@ async def lifespan(app: FastAPI):
         if production_like:
             raise
 
-    # Statbotics is an optional external dep with its own retry/circuit breaker;
-    # pre-warming the connection pool is best-effort even in production.
-    try:
-        from app.services.clients import statbotics as statbotics_client
-        await statbotics_client._get_client()
-        logger.info("Statbotics HTTP client initialized with connection pooling")
-    except Exception:
-        logger.warning("Statbotics client warmup failed; continuing.", exc_info=True)
-
     yield
 
     # ── shutdown ─────────────────────────────────────────────────────────
-    try:
-        from app.services.clients import statbotics as statbotics_client
-        await statbotics_client.close_client()
-        logger.info("Statbotics HTTP client closed")
-    except Exception as e:
-        logger.error("Error closing Statbotics client: %s", e)
-
     try:
         stop_scheduler()
         logger.info("Background scheduler stopped on shutdown")
@@ -159,7 +154,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Error stopping scouting room realtime hub: %s", e)
 
-app = FastAPI(lifespan=lifespan)
+def _docs_urls() -> dict[str, str | None]:
+    # The interactive docs map every route for anyone; production doesn't publish them.
+    publish = not bool(getattr(settings, "is_production_like", False))
+    return {
+        "docs_url": "/docs" if publish else None,
+        "redoc_url": "/redoc" if publish else None,
+        "openapi_url": "/openapi.json" if publish else None,
+    }
+
+app = FastAPI(lifespan=lifespan, **_docs_urls())
 MEDIA_DIR = Path(__file__).resolve().parents[1] / "media"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 request_logger = logging.getLogger("app.request")
@@ -238,13 +242,6 @@ def _startup_env_validation_report() -> dict[str, object]:
 
     if not str(settings.tba_auth_key or "").strip():
         warnings.append("TBA_AUTH_KEY is not configured; TBA-backed intel may be sparse.")
-    if not str(settings.statbotics_base_url or "").strip():
-        errors.append("STATBOTICS_BASE_URL is empty.")
-
-    if production_like and bool(settings.ml_shadow_auto_train_activate):
-        errors.append(
-            "ML_SHADOW_AUTO_TRAIN_ACTIVATE must be false in production; promote reviewed candidates explicitly."
-        )
 
     if production_like and not bool(settings.on_device_sync_require_signed_token):
         errors.append(
@@ -359,6 +356,7 @@ async def request_access_and_logging_middleware(request: Request, call_next):
     except HTTPException as exc:
         response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
         request_logger.warning(
             "request.denied request_id=%s method=%s path=%s status=%s detail=%s",
             request_id,
@@ -384,6 +382,9 @@ async def request_access_and_logging_middleware(request: Request, call_next):
 
     duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
     response.headers["X-Request-ID"] = request_id
+    # Pit photos are user uploads served from the app's origin: never let a browser
+    # reinterpret one as something other than its declared type.
+    response.headers["X-Content-Type-Options"] = "nosniff"
     if bool(settings.request_timing_header_enabled):
         response.headers["X-Response-Time-Ms"] = str(duration_ms)
     slow_threshold_ms = max(
@@ -438,12 +439,14 @@ app.include_router(push_router)
 app.include_router(scouting_router)
 app.include_router(scouting_insights_router)
 app.include_router(scouting_rooms_router)
-app.include_router(synergy_router)
+app.include_router(alliances_router)
 app.include_router(teams_router)
 app.include_router(tracks_router)
 app.include_router(workspaces_router)
 app.include_router(telemetry_router)
 app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
+# Outermost, so no route or middleware buffers an oversized body first.
+app.add_middleware(BodyLimitMiddleware)
 
 async def _handle_scouting_room_bus_message(room_key: str, payload: dict) -> None:
     message_type = str((payload or {}).get("type") or "").strip().lower()
@@ -492,34 +495,38 @@ def root():
     return {"status": "scouting backend running"}
 
 @app.get("/health")
-def health():
+def health(request: Request):
     env_report = _startup_env_validation_report()
-    return {
+    payload: dict[str, object] = {
         "ok": bool(env_report.get("ok")),
         "app_env": str(getattr(settings, "app_env", "development")),
         "public_readonly_mode": bool(settings.public_readonly_mode),
+        # Settings and Events read these to explain admin-only actions.
         "write_auth": {
             "enforced": bool(settings.enforce_admin_auth_for_writes),
             "admin_key_configured": bool(str(settings.admin_api_key or "").strip()),
-            "session_token_secret_configured": bool(str(settings.admin_session_token_secret or "").strip()),
             "header": str(settings.admin_api_header or "X-Admin-Key"),
             "session_header": ADMIN_SESSION_HEADER,
         },
+    }
+    # How the server is configured is for operators, not every visitor.
+    if not request_has_explicit_admin_credential(request):
+        return payload
+    payload["write_auth"]["session_token_secret_configured"] = bool(  # type: ignore[index]
+        str(settings.admin_session_token_secret or "").strip()
+    )
+    return payload | {
         "integrations": {
             "tba_configured": bool(settings.tba_auth_key),
             "first_frc_api_configured": bool(
                 settings.first_frc_api_username and settings.first_frc_api_auth_key
             ),
         },
-        "ml": {
-            "shadow_enabled": bool(settings.ml_shadow_enabled),
-            "auto_training_on_event_breakdown": bool(settings.ml_shadow_auto_train_on_event_breakdown),
-        },
         "env_validation": env_report,
     }
 
 @app.get("/health/deep")
-def deep_health():
+def deep_health(request: Request):
     database_ok = False
     redis_ok = False
 
@@ -543,10 +550,13 @@ def deep_health():
         redis_client.close()
 
     env_report = _startup_env_validation_report()
-    return {
+    payload: dict[str, object] = {
         "ok": bool(database_ok and redis_ok and env_report.get("ok")),
         "api": True,
         "database": bool(database_ok),
         "redis": bool(redis_ok),
-        "env_validation": env_report,
+        "env_ok": bool(env_report.get("ok")),
     }
+    if request_has_explicit_admin_credential(request):
+        payload["env_validation"] = env_report
+    return payload

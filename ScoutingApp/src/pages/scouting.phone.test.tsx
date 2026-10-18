@@ -330,7 +330,8 @@ it('keeps the existing desktop groups and dropdown fields', async () => {
   for (const name of ['Auto fuel scored','Teleop fuel scored','Bump crossings','Trench crossings']) expect(screen.getByLabelText(name)).toBeInTheDocument();
   expect(screen.getByRole('group',{name:'Anti-defense level'})).toBeInTheDocument();
   expect(screen.queryByRole('tab',{name:'Review'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('tab',{name:'Saved'})).not.toBeInTheDocument();
+  // Desktop's side panel uses the phone's names for the same three sections.
+  for (const name of ['Robot','Room','Saved']) expect(screen.getByRole('tab',{name})).toBeInTheDocument();
 },20000);
 
 it('cancels a match change without losing a draft when phone storage is full', async () => {
@@ -377,4 +378,42 @@ it('keeps a joined room key and Copy visible when Room tools is closed', async (
   expect(summary.closest('details')).not.toHaveAttribute('open');
   expect(status).toHaveTextContent('room-test');
   expect(within(status).getByRole('button',{name:'Copy Key'})).toBeInTheDocument();
+},20000);
+
+it('offers Undo after a save that turns the report back into a draft', async () => {
+  room.snapshot = null;
+  const { currentToast, runToastAction } = await import('../components/ui/toast');
+  const { readStoredEntries } = await import('./scoutingPage.helpers');
+  mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
+  await waitFor(() => expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254'));
+  fireEvent.click(screen.getByRole('tab',{name:'Auto'}));
+  fireEvent.click(screen.getByRole('button',{name:/^Increase Auto fuel scored/}));
+  const counted = Number((screen.getByLabelText('Auto fuel scored') as HTMLInputElement).value);
+  expect(counted).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole('button',{name:'Save'}));
+  await screen.findByText(/Saved #254/);
+  expect(readStoredEntries(1)).toHaveLength(1);
+  const toast = currentToast();
+  expect(toast?.message).toBe('Saved #254 in Qual 1');
+  expect(toast?.actionLabel).toBe('Undo');
+  const { act } = await import('@testing-library/react');
+  act(() => runToastAction(toast!.id));
+  expect(readStoredEntries(1)).toHaveLength(0);
+  expect(readScoutDraft<typeof EMPTY_FORM>(scoutDraftKey(1,'2026week0_qm1','frc254'))?.form.auto_scored).toBe(counted);
+  expect(screen.getByLabelText('Auto fuel scored')).toHaveValue(counted);
+  await screen.findByText(/Undone\. This report is a draft again/);
+},20000);
+
+it('closes the Undo toast when the scout leaves the board, keeping the saved report', async () => {
+  room.snapshot = null;
+  const { currentToast } = await import('../components/ui/toast');
+  const { readStoredEntries } = await import('./scoutingPage.helpers');
+  const view = mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
+  await waitFor(() => expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254'));
+  fireEvent.click(screen.getByRole('button',{name:'Save'}));
+  await screen.findByText(/Saved #254/);
+  expect(currentToast()).not.toBeNull();
+  view.unmount();
+  expect(currentToast()).toBeNull();
+  expect(readStoredEntries(1)).toHaveLength(1);
 },20000);

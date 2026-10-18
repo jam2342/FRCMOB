@@ -7,28 +7,6 @@ function normalizeHomeEventKey(eventKey: string | null | undefined): string {
   return String(eventKey || '').trim().toLowerCase();
 }
 
-function parseHomeEventDateToken(value: string | null | undefined): string | null {
-  if (!value || typeof value !== 'string') return null;
-  const token = value.trim().slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(token) ? token : null;
-}
-
-function localDateTokenFromMs(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function eventRunsOnDateToken(event: EventSearchItem | undefined, targetToken: string): boolean {
-  const startToken = parseHomeEventDateToken(event?.start_date ?? null);
-  const endToken = parseHomeEventDateToken(event?.end_date ?? null) ?? startToken;
-  const first = startToken ?? endToken;
-  const last = endToken ?? startToken;
-  if (!first || !last) return false;
-  const low = first <= last ? first : last;
-  const high = first <= last ? last : first;
-  return targetToken >= low && targetToken <= high;
-}
-
 export function hasResolvedMatchScores(match: Pick<EventScheduleItem, 'red_score' | 'blue_score'>): boolean {
   const red = match.red_score;
   const blue = match.blue_score;
@@ -147,15 +125,16 @@ export function pickMobileHomeAutoEventKey(
   scheduleByEvent: Record<string, { matches?: EventScheduleItem[] | null }>,
   nowMs: number,
 ): string {
-  const todayToken = localDateTokenFromMs(nowMs);
   const ranked = events
     .map((event) => {
       const eventKey = normalizeHomeEventKey(event.event_key);
       if (!eventKey) return null;
 
+      // Only an event with matches today to show: one that merely runs today by its
+      // dates (schedule not out yet, no webcast) replaced the event you were on with an
+      // empty page. Until its schedule loads it isn't a candidate either.
       const dayMatches = selectHomeDayMatches(scheduleByEvent[eventKey]?.matches || [], nowMs);
-      const runsTodayByDate = eventRunsOnDateToken(event, todayToken);
-      if (!runsTodayByDate && dayMatches.length === 0) return null;
+      if (dayMatches.length === 0) return null;
 
       let liveCount = 0;
       let pendingCount = 0;
@@ -290,4 +269,13 @@ export function nearestLoadedMatchDayMs(
     }
   }
   return best ? best.day : null;
+}
+
+// The event Home opens on: the one you were on, else the first suggested. The suggested
+// list is the biggest events (and whatever is running), so a small off-season event is
+// rarely in it; swapping it for another event made Home show your event for a moment
+// and then replace it.
+export function homeStartEvent(storedEventKey: string | null | undefined, suggestedKeys: string[]): string {
+  const stored = String(storedEventKey || '').trim().toLowerCase();
+  return /^\d{4}[a-z0-9]+$/.test(stored) ? stored : suggestedKeys[0] || '';
 }
