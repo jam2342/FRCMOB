@@ -60,7 +60,8 @@ it('shows the alliance outlook with plain strengths and risks', async () => {
   render(<MemoryRouter initialEntries={['/?event=2026new&teams=frc2000,frc2001,frc2002']}><AllianceAdvisorPage /></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Alliance' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Analyze Alliance' }));
-  await screen.findByText('Beats a strong alliance');
+  // The default 1 s ran out on a loaded CI runner (1.1 s on 2026-10-18).
+  await screen.findByText('Beats a strong alliance', undefined, { timeout: 5000 });
   expect(vi.mocked(getAllianceOutlook).mock.calls.at(-1)?.[1]).toEqual(['frc2000', 'frc2001', 'frc2002']);
   expect(screen.getByText('41%')).toBeInTheDocument();
   expect(screen.getByText('83%')).toBeInTheDocument();

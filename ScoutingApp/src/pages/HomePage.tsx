@@ -39,6 +39,7 @@ import {
   pickMobileHomeAutoEventKey,
   resolveHomeMatchState,
   selectHomeDayMatches,
+  sortHomeFeedMatches,
   type HomeFilter,
 } from './homeFeed';
 import {
@@ -47,7 +48,7 @@ import {
 } from '../layout/centerContext';
 import { TeamAvatar } from '../components/TeamAvatar';
 import {
-  LiveDotIcon, ClockIcon, CheckCircleIcon, BarChartIcon, InfoIcon,
+  LiveDotIcon, ClockIcon, CheckCircleIcon, InfoIcon,
   TrophyIcon, VideoIcon, PuzzleIcon, CalendarIcon, UsersIcon, LinkIcon,
   ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, SearchIcon,
 } from '../components/ui/Icons';
@@ -56,8 +57,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { embeddableUrl } from '../config/embedHosts';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
-import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
-import { Stat, Table, type TableColumn } from '../components/ui/primitives';
+import { useMobileLayout } from '../hooks/useMobileLayout';
+import { Stat } from '../components/ui/primitives';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
@@ -75,8 +76,6 @@ import { EventPicker } from '../components/EventPicker';
 
 const HOME_EVENT_VIEW_PREFS_STORAGE = 'scouting_home_event_view_prefs_v1';
 const HOME_MOBILE_AUTO_EVENT_GUARD_STORAGE = 'scouting_home_mobile_auto_event_guard_v1';
-
-type HomeTeamsSortMode = 'rank' | 'team';
 
 type HomeEventSchedule = {
   event_name: string | null;
@@ -113,7 +112,6 @@ type RankingRow = {
 
 type HomeEventViewPrefs = {
   activeFilter?: HomeFilter;
-  teamsSortMode?: HomeTeamsSortMode;
 };
 
 type HomeMobileAutoEventGuard = {
@@ -137,7 +135,6 @@ const HOME_MOBILE_DEFAULT_COLLAPSED_CARD_KEYS = [
   'compare-builder',
   'live-stream',
   'leaderboard',
-  'teams-insights',
 ] as const;
 
 function normalizeEventKey(eventKey: string): string {
@@ -191,10 +188,6 @@ function writeHomeMobileAutoEventGuard(dayToken: string) {
 function teamSuffix(row: { nickname?: string | null; team_key: string }): string {
   const nickname = (row.nickname || '').trim();
   return nickname && nickname !== row.team_key ? ` ${nickname}` : '';
-}
-
-function normalizeHomeTeamsSortMode(value: unknown): HomeTeamsSortMode {
-  return value === 'team' ? 'team' : 'rank';
 }
 
 function eventLocationLabel(event: EventSearchItem): string {
@@ -341,12 +334,6 @@ export function HomePage() {
     else next.delete('day');
     setSearchParams(next, { replace: true });
   }, [searchParams, selectedDayMs, setSearchParams]);
-  const [teamsPanelOpen, setTeamsPanelOpen] = useState(false);
-  const [teamsQueryInput, setTeamsQueryInput] = useState('');
-  const [teamsQuery, setTeamsQuery] = useState('');
-  const [teamsPage, setTeamsPage] = useState(1);
-  const [teamsPerPage, setTeamsPerPage] = useState(10);
-  const [teamsSortMode, setTeamsSortMode] = useState<HomeTeamsSortMode>('rank');
   const [mobileCollapsedCards, setMobileCollapsedCards] = useState<Record<string, boolean>>({});
   const [desktopCollapsedFeedCards, setDesktopCollapsedFeedCards] = useState<Record<string, boolean>>({});
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -387,13 +374,6 @@ export function HomePage() {
 
 
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setTeamsQuery(teamsQueryInput.trim());
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [teamsQueryInput]);
-
   /* ── Event search: a closed search starts empty next time ────────── */
   useEffect(() => {
     if (!eventSearchOpen) setEventSearchQuery('');
@@ -415,15 +395,10 @@ export function HomePage() {
   }, [eventSearchOpen]);
 
   useEffect(() => {
-    setTeamsPage(1);
-  }, [teamsPerPage, teamsQuery, teamsSortMode, selectedEventKey]);
-
-  useEffect(() => {
     if (!selectedEventKey) return;
     const prefs = readHomeEventViewPrefs();
     const eventPrefs = prefs[selectedEventKey];
     setActiveFilter(eventPrefs?.activeFilter || 'all');
-    setTeamsSortMode(normalizeHomeTeamsSortMode(eventPrefs?.teamsSortMode));
   }, [selectedEventKey]);
 
   useEffect(() => {
@@ -433,11 +408,10 @@ export function HomePage() {
     const next: HomeEventViewPrefs = {
       ...previous,
       activeFilter,
-      teamsSortMode,
     };
     prefs[selectedEventKey] = next;
     writeHomeEventViewPrefs(prefs);
-  }, [activeFilter, selectedEventKey, teamsSortMode]);
+  }, [activeFilter, selectedEventKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -906,7 +880,7 @@ export function HomePage() {
           event_key: eventKey,
           event_name: schedule?.event_name || eventByKey[eventKey]?.name || eventKey,
           location: eventByKey[eventKey] ? eventLocationLabel(eventByKey[eventKey]) : 'Location unavailable',
-          matches: filtered,
+          matches: sortHomeFeedMatches(filtered, nowMs),
           total_filtered_matches: filtered.length,
           total_matches: dayMatches.length,
         };
@@ -914,7 +888,9 @@ export function HomePage() {
       .filter((section) => {
         if (activeFilter === 'all') return section.total_matches > 0;
         return section.total_filtered_matches > 0;
-      });
+      })
+      .sort((a, b) => Number(b.matches.some((match) => resolveHomeMatchState(match, nowMs) === 'live'))
+        - Number(a.matches.some((match) => resolveHomeMatchState(match, nowMs) === 'live')));
   }, [activeFilter, eventByKey, feedEventKeys, nowMs, scheduleByEvent, selectedDayMs]);
 
   const filterCounts = useMemo(() => {
@@ -1271,6 +1247,7 @@ export function HomePage() {
       value: timer.value,
       sub: `${nextLiveHomeMatch.match.display_name} \u00b7 ${eventName}`,
       live: timer.state === 'live',
+      href: buildMatchCenterPath(nextLiveHomeMatch.eventKey, nextLiveHomeMatch.match.match_key),
     };
   }, [nextLiveHomeMatch, nowMs, scheduleByEvent]);
 
@@ -1313,68 +1290,6 @@ export function HomePage() {
 
   const leaderboardRows = useMemo(() => eventRankingRows.slice(0, 8), [eventRankingRows]);
 
-  const filteredTeamsRows = useMemo(() => {
-    const query = teamsQuery.trim().toLowerCase();
-    if (!query) return eventRankingRows;
-    return eventRankingRows.filter((row) => (
-      row.team_key.includes(query) ||
-      row.nickname.toLowerCase().includes(query) ||
-      String(row.team_number).includes(query)
-    ));
-  }, [eventRankingRows, teamsQuery]);
-
-  const sortedTeamsRows = useMemo(() => {
-    const rows = [...filteredTeamsRows];
-    if (teamsSortMode === 'team') {
-      rows.sort((a, b) => a.team_number - b.team_number);
-      return rows;
-    }
-    rows.sort((a, b) => {
-      const rankA = a.rank ?? Number.POSITIVE_INFINITY;
-      const rankB = b.rank ?? Number.POSITIVE_INFINITY;
-      if (rankA !== rankB) return rankA - rankB;
-      return a.team_number - b.team_number;
-    });
-    return rows;
-  }, [filteredTeamsRows, teamsSortMode]);
-
-  const teamsTotalCount = sortedTeamsRows.length;
-  const teamsTotalPages = Math.max(1, Math.ceil(teamsTotalCount / Math.max(1, teamsPerPage)));
-
-  useEffect(() => {
-    setTeamsPage((current) => Math.min(current, teamsTotalPages));
-  }, [teamsTotalPages]);
-
-  const pagedTeamsRows = useMemo(() => {
-    const start = Math.max(0, (teamsPage - 1) * teamsPerPage);
-    return sortedTeamsRows.slice(start, start + teamsPerPage);
-  }, [sortedTeamsRows, teamsPage, teamsPerPage]);
-
-  /* Team number and nickname were two columns on desktop and one line on the
-     phone. They are one entity, so they are one column now — which also makes
-     the narrow-width card head read as the team rather than as a bare index. */
-  const teamsInsightColumns: TableColumn<(typeof pagedTeamsRows)[number]>[] = [
-    {
-      key: 'team',
-      label: 'Team',
-      render: (row) => (
-        <button type="button" className="center-inline-link" data-team-peek={row.team_key.toLowerCase()} onClick={() => openTeamCenter(row.team_key)}>
-          #{row.team_number}
-          {row.nickname && row.nickname !== row.team_key ? ` ${row.nickname}` : ''}
-        </button>
-      ),
-    },
-    { key: 'rank', label: 'Rank', numeric: true, render: (row) => row.rank ?? '-' },
-    { key: 'record', label: 'Record', render: (row) => row.record },
-    { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.matches_played ?? '-' },
-  ];
-
-  const teamsPageSummary = useMemo(() => {
-    const start = teamsTotalCount > 0 ? (teamsPage - 1) * teamsPerPage + 1 : 0;
-    const end = Math.min(teamsTotalCount, teamsPage * teamsPerPage);
-    return `${start}-${end} of ${teamsTotalCount}`;
-  }, [teamsPage, teamsPerPage, teamsTotalCount]);
-
   const streamCardSummary = useMemo(() => {
     if (loadingSelectedContext) return 'Loading stream context…';
     if (!selectedEventStream) return 'No stream data available.';
@@ -1395,12 +1310,6 @@ export function HomePage() {
     if (liveEvents.length === 0) return 'No events scheduled for today in current feed.';
     return `${liveEvents.length} event(s) today`;
   }, [liveEvents.length, loadingHome]);
-
-  const teamsInsightsSummary = useMemo(() => {
-    if (loadingSelectedContext) return 'Loading event rankings…';
-    if (sortedTeamsRows.length === 0) return 'No team rows matched current filters.';
-    return `${pagedTeamsRows.length} row(s) · ${teamsPageSummary}`;
-  }, [loadingSelectedContext, pagedTeamsRows.length, sortedTeamsRows.length, teamsPageSummary]);
 
   const mobileCollapsibleCardKeys = useMemo(() => {
     return [
@@ -1591,7 +1500,6 @@ export function HomePage() {
   }
 
   const allEventsCollapsed = isCardCollapsed('all-events');
-  const teamsInsightsCollapsed = isCardCollapsed('teams-insights');
   const compareBuilderCollapsed = isCardCollapsed('compare-builder');
   const liveStreamCollapsed = isCardCollapsed('live-stream');
   const leaderboardCollapsed = isCardCollapsed('leaderboard');
@@ -1615,12 +1523,6 @@ export function HomePage() {
       return;
     }
     setErrorText('Unable to copy match link on this device/browser.');
-  }
-
-  function openEventCenter(eventKey: string) {
-    const normalized = normalizeEventKey(eventKey);
-    if (!normalized) return;
-    navigate(`/events?event=${encodeURIComponent(normalized)}&tab=schedule`);
   }
 
   function openTeamCenter(teamKey: string, eventKey: string = selectedEventKey) {
@@ -1666,13 +1568,16 @@ export function HomePage() {
               {liveEvents.length > 0 ? (
                 <div className="home-board-event-list">
                   {liveEvents.map((item) => (
-                    <button
+                    <article
                       key={`home-live-event-${item.event_key}`}
-                      type="button"
                       className={`home-event-item home-event-item-rail ${selectedEventKey === item.event_key ? 'active' : ''}`.trim()}
-                      onClick={() => selectHomeEventKey(item.event_key, { manual: true })}
                     >
-                      <strong className="home-event-item-title">{item.name}</strong>
+                      <div className="home-event-item-links">
+                        <Link className="entity-link" to={`/events?event=${encodeURIComponent(item.event_key)}&tab=schedule`} title={item.name}>
+                          <strong className="home-event-item-title">{item.name}</strong>
+                        </Link>
+                        <Link className="entity-link" to={`/events?event=${encodeURIComponent(item.event_key)}&tab=rankings`} aria-label={`Rankings for ${item.name}`}>Rankings</Link>
+                      </div>
                       <small className="home-event-item-location">{item.location}</small>
                       <div className="home-event-item-tags">
                         <span className="home-event-item-tag home-event-item-tag-live">
@@ -1683,7 +1588,7 @@ export function HomePage() {
                           {item.match_count > 0 ? ` · ${item.match_count} match${item.match_count === 1 ? '' : 'es'}` : ''}
                         </span>
                       </div>
-                    </button>
+                    </article>
                   ))}
                 </div>
               ) : null}
@@ -1790,23 +1695,17 @@ export function HomePage() {
             )}
           </div>
 
-          {/* What Home is actually for: how long until the next match. The
-              countdown already existed inside nextLiveHomeMatch, used only to
-              enable an "Open Next Live" button — the number itself was never
-              shown. Rendered only when there is a real scheduled time; a match
-              with no published time has nothing to count down, and a hero
-              reading "Pending publish" would be a label pretending to be a
-              value. */}
+          {/* Only a match with a published start gets a countdown; tapping it opens that match. */}
           {nextHomeMatchHero ? (
-            <div className="page-hero home-next-hero">
+            <Link className="page-hero home-next-hero" to={nextHomeMatchHero.href} aria-label={`Open ${nextHomeMatchHero.sub}`}>
               <Stat
                 size="display"
                 label={nextHomeMatchHero.label}
                 value={nextHomeMatchHero.value}
-                sub={nextHomeMatchHero.sub}
+                sub={<span className="entity-link">{nextHomeMatchHero.sub} <ChevronRightIcon className="icon-inline" /></span>}
                 tone={nextHomeMatchHero.live ? 'danger' : 'default'}
               />
-            </div>
+            </Link>
           ) : null}
 
           <SegmentedTabs<HomeFilter>
@@ -1837,29 +1736,6 @@ export function HomePage() {
             >
               <ChevronDownIcon className={`icon-inline ${allHomeCardsCollapsed ? '' : 'icon-rotate-180'}`.trim()} /> {allHomeCardsCollapsed ? 'Expand All' : 'Minimize All'}
             </button>
-            {/* Not on phones: a "Live" button right under the "Live" filter tab was two controls
-                with one name doing different things, and the countdown above already says
-                what's next. */}
-            {nextLiveHomeMatch && !isMobileLayout ? (
-              <button
-                type="button"
-                className="home-mini-tab-btn"
-                onClick={() => openMatch(nextLiveHomeMatch.eventKey, nextLiveHomeMatch.match.match_key)}
-                title={`Open ${nextLiveHomeMatch.match.display_name}`}
-              >
-                <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> Open Next Live
-              </button>
-            ) : null}
-            {!isMobileLayout ? (
-              <button
-                type="button"
-                className={`home-mini-tab-btn ${teamsPanelOpen ? 'active' : ''}`.trim()}
-                onClick={() => setTeamsPanelOpen((prev) => !prev)}
-                title="Show this event's rankings"
-              >
-                <BarChartIcon className="icon-inline" /> Rankings
-              </button>
-            ) : null}
             {isMobileLayout ? (
               <button
                 type="button"
@@ -1870,7 +1746,7 @@ export function HomePage() {
                 }}
                 title="View leaderboard, stream & links"
               >
-                <InfoIcon className="icon-inline" /> Info
+                <InfoIcon className="icon-inline" /> Event info
               </button>
             ) : null}
           </div>
@@ -1881,113 +1757,6 @@ export function HomePage() {
             <span title="Currently selected event">{selectedEventDisplay}</span>
             <span title="Active filter">{homeFilterLabel(activeFilter)} · {filterCounts[activeFilter]} match{filterCounts[activeFilter] === 1 ? '' : 'es'}</span>
             <span title="Last data refresh">{relativeFromTimestamp(lastUpdatedAt)}</span>
-          </section>
-        ) : null}
-
-        {teamsPanelOpen ? (
-          <section
-            className={`home-mini-panel home-teams-insights-panel ${teamsInsightsCollapsed ? 'home-card-collapsed' : ''}`.trim()}
-          >
-            <header className="home-mini-panel-head home-card-head">
-              <div>
-                <h3>Rankings</h3>
-                <small>Official event rankings</small>
-              </div>
-              <div className="home-card-head-actions">
-                {renderMobileCollapseButton('teams-insights', 'Rankings')}
-                <div className="center-actions-row compact">
-                  <button type="button" className="center-btn ghost" onClick={() => setTeamsPanelOpen(false)}>
-                    Close
-                  </button>
-                </div>
-              </div>
-            </header>
-
-            {teamsInsightsCollapsed ? (
-              <p id={cardContentId('teams-insights')} className="home-card-collapsed-hint">
-                {teamsInsightsSummary}
-              </p>
-            ) : (
-              <>
-                <div id={cardContentId('teams-insights')} className="home-teams-controls">
-                  <input
-                    value={teamsQueryInput}
-                    onChange={(event) => setTeamsQueryInput(event.target.value)}
-                    placeholder="Search team number, key, or name"
-                    aria-label="Search teams insights"
-                  />
-                  <select
-                    value={teamsSortMode}
-                    onChange={(event) => setTeamsSortMode(normalizeHomeTeamsSortMode(event.target.value))}
-                    aria-label="Teams sort mode"
-                  >
-                    <option value="rank">Sort: Rank</option>
-                    <option value="team">Sort: Team</option>
-                  </select>
-                </div>
-
-                <div className="center-status-row compact">
-                  <span className="center-chip">Page {teamsPage} of {teamsTotalPages} · {teamsPageSummary}</span>
-                </div>
-
-                {loadingSelectedContext ? (
-                  <div className="center-loading-state">
-                    <SkeletonBlock rows={4} compact />
-                  </div>
-                ) : null}
-                {!loadingSelectedContext && sortedTeamsRows.length === 0 ? (
-                  <EmptyState compact title="No rankings" description="No ranking rows matched this search." />
-                ) : null}
-
-                {pagedTeamsRows.length > 0 ? (
-                  <>
-                    {/* No chip row here, unlike Match Center and Team Center:
-                        this board already has an always-present "Sort: …"
-                        select in its controls row above, and the chips were the
-                        mobile-only twin of that same state. Two controls for
-                        one value is worse than the asymmetry it fixed. */}
-                    <Table
-                      columns={teamsInsightColumns}
-                      rows={pagedTeamsRows}
-                      rowKey={(row) => `home-teams-row-${row.team_key}`}
-                      cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
-                    />
-                  </>
-                ) : null}
-
-                <div className="center-actions-row">
-                  <button
-                    type="button"
-                    className="center-btn ghost"
-                    disabled={teamsPage <= 1 || loadingSelectedContext}
-                    onClick={() => setTeamsPage((prev) => Math.max(1, prev - 1))}
-                  >
-                    <ChevronLeftIcon className="icon-inline" /> Prev
-                  </button>
-                  <button
-                    type="button"
-                    className="center-btn ghost"
-                    disabled={teamsPage >= teamsTotalPages || loadingSelectedContext}
-                    onClick={() => setTeamsPage((prev) => prev + 1)}
-                  >
-                    Next <ChevronRightIcon className="icon-inline" />
-                  </button>
-                  <label className="center-label" htmlFor="home-teams-per-page">
-                    Rows/Page
-                  </label>
-                  <select
-                    id="home-teams-per-page"
-                    value={teamsPerPage}
-                    onChange={(event) => setTeamsPerPage(Number(event.target.value))}
-                    className="center-input home-teams-per-page"
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                  </select>
-                </div>
-              </>
-            )}
           </section>
         ) : null}
 
@@ -2050,6 +1819,7 @@ export function HomePage() {
           {feedSections.map((section) => {
             const feedCardKey = `feed-${section.event_key}`;
             const sectionCollapsed = isFeedSectionCollapsed(feedCardKey);
+            const nextMatchKey = section.matches.find((match) => resolveHomeMatchState(match, nowMs) === 'upcoming')?.match_key;
             return (
               <article
                 key={`home-section-${section.event_key}`}
@@ -2057,21 +1827,15 @@ export function HomePage() {
               >
                 <header className="home-event-section-head home-card-head">
                   <div>
-                    <h3>{section.event_name}</h3>
+                    <h3>
+                      <Link className="entity-link" to={`/events?event=${encodeURIComponent(section.event_key)}&tab=schedule`}>{section.event_name}</Link>
+                    </h3>
                     <small>
                       {section.location}
                     </small>
                   </div>
                   <div className="home-card-head-actions">
                     {renderFeedSectionCollapseButton(feedCardKey, section.event_name)}
-                    <button
-                      type="button"
-                      className="home-board-btn subtle"
-                      onClick={() => openEventCenter(section.event_key)}
-                      title="View full event details"
-                    >
-                      View Event
-                    </button>
                   </div>
                 </header>
 
@@ -2116,116 +1880,101 @@ export function HomePage() {
                                 : winner === 'tie'
                                   ? 'winner-tie'
                                   : '';
-                          const winnerText =
-                            winner === 'red'
-                              ? `Red wins ${match.winning_score ?? match.red_score ?? ''}`.trim()
-                              : winner === 'blue'
-                                ? `Blue wins ${match.winning_score ?? match.blue_score ?? ''}`.trim()
-                                : winner === 'tie'
-                                  ? 'Match tied'
-                                  : null;
                           const compactRed = compactAllianceLabel(match.red);
                           const compactBlue = compactAllianceLabel(match.blue);
                           return (
                             <article
                               key={`home-match-${section.event_key}-${match.match_key}-${awayNewKeys.has(match.match_key) ? awayFlash : 0}`}
                               data-home-match={match.match_key}
+                              data-match-state={effectiveState}
                               className={[
-                                'home-match-row', winnerClass, isMobileLayout ? 'mobile-compact' : '',
+                                'home-match-row', winnerClass, isMobileLayout ? 'mobile-compact' : 'desktop-compact',
+                                effectiveState === 'live' ? 'is-live' : '',
+                                match.match_key === nextMatchKey ? 'is-next' : '',
                                 awayNewKeys.has(match.match_key) ? awayStyles.newRow : '',
                                 awayNewKeys.has(match.match_key) && awayFlash > 0 ? awayStyles.flash : '',
                               ].filter(Boolean).join(' ')}
                               aria-label={awayNewKeys.has(match.match_key) ? `${match.display_name}, new since your last visit` : undefined}
                             >
-                              <button
-                                type="button"
-                                className="home-match-main"
-                                // One tap opens the match on phones too. Rows used to expand first
-                                // and need a second tap; the expanded part only repeated what Match
-                                // Center shows (teams, a share link).
-                                onClick={(event) => openMatch(section.event_key, match.match_key, event.currentTarget.closest('.home-match-row'))}
-                                title={`Open ${match.display_name} in Match Center`}
-                              >
-                                {isMobileLayout ? (
-                                      <div className="home-match-compact-body">
-                                        <div className="home-match-compact-head">
-                                          <strong>{match.display_name}</strong>
-                                          <span className={`home-match-compact-state ${effectiveState}`}>{stateTextLabel(effectiveState)}</span>
-                                        </div>
-                                        <div className="home-match-compact-line">
-                                          <span className="home-match-compact-side red">{compactRed}</span>
-                                          <span className="home-match-compact-score">{headerValue}</span>
-                                          <span className="home-match-compact-side blue">{compactBlue}</span>
-                                        </div>
+                              <div className="home-match-heading">
+                                <button
+                                  type="button"
+                                  className="home-match-main"
+                                  onClick={(event) => openMatch(section.event_key, match.match_key, event.currentTarget.closest('.home-match-row'))}
+                                  title={`Open ${match.display_name} in Match Center`}
+                                >
+                                  {isMobileLayout ? (
+                                    <div className="home-match-compact-body">
+                                      <div className="home-match-compact-head">
+                                        <strong title={match.display_name}>{match.display_name}</strong>
+                                        <span className={`home-match-compact-state ${effectiveState}`}>
+                                          {match.match_key === nextMatchKey ? 'Next up' : stateTextLabel(effectiveState)}
+                                        </span>
                                       </div>
-                                ) : (
-                                  <>
-                                    <span className={`home-match-state ${effectiveState}`}>{stateLabel(effectiveState)}</span>
-                                    <div className="home-match-center-col">
-                                      <strong>{match.display_name}</strong>
-                                      <small>{fmtDateShort(matchStartTime(match))}</small>
-                                    </div>
-                                    <div className="home-match-alliances">
-                                      <div className={`home-alliance-line red-line ${winner === 'red' ? 'winner' : ''}`.trim()}>
-                                        <span className="red">Red</span>
-                                        <small>{match.red.map((team) => `#${team.team_number}`).join(' · ') || 'TBD'}</small>
-                                        <strong className="alliance-score">{hasScores ? match.red_score : '-'}</strong>
-                                      </div>
-                                      <div className={`home-alliance-line blue-line ${winner === 'blue' ? 'winner' : ''}`.trim()}>
-                                        <span className="blue">Blue</span>
-                                        <small>{match.blue.map((team) => `#${team.team_number}`).join(' · ') || 'TBD'}</small>
-                                        <strong className="alliance-score">{hasScores ? match.blue_score : '-'}</strong>
+                                      <div className="home-match-compact-line">
+                                        <span className="home-match-compact-side red" title={match.red.map((team) => `#${team.team_number}`).join(' · ')}>{compactRed}</span>
+                                        <span className="home-match-compact-score">{headerValue}</span>
+                                        <span className="home-match-compact-side blue" title={match.blue.map((team) => `#${team.team_number}`).join(' · ')}>{compactBlue}</span>
                                       </div>
                                     </div>
-                                    <div className="home-match-timer-col">
-                                      <small>{isCompleted ? 'Final' : timer.label}</small>
-                                      <strong>{headerValue}</strong>
-                                      {winnerText ? <span className="home-winner-chip">{winnerText}</span> : null}
-                                    </div>
-                                  </>
-                                )}
-                              </button>
+                                  ) : (
+                                    <>
+                                      <div className="home-match-center-col">
+                                        <strong>{match.display_name}</strong>
+                                        <small>{fmtDateShort(matchStartTime(match))}</small>
+                                      </div>
+                                      <span className={`home-match-state ${effectiveState}`}>
+                                        {match.match_key === nextMatchKey ? 'Next up' : stateLabel(effectiveState)}
+                                      </span>
+                                      {!isCompleted ? <strong className="home-match-countdown" title={timer.label}>{timer.value}</strong> : null}
+                                    </>
+                                  )}
+                                </button>
+                                {!isMobileLayout ? (
+                                  <button
+                                    type="button"
+                                    className="home-match-link-btn"
+                                    onClick={() => { void copyMatchDeepLink(section.event_key, match.match_key); }}
+                                    aria-label={`Copy link to ${match.display_name}`}
+                                    title={`Copy link to ${match.display_name}`}
+                                  >
+                                    <LinkIcon className="icon-inline" />
+                                  </button>
+                                ) : null}
+                              </div>
                               {!isMobileLayout ? (
-                                <>
-                                  <div className="home-match-team-pills" aria-label="Match teams quick links">
-                                    {match.red.map((team) => (
+                                <div className="home-match-alliances">
+                                  {(['red', 'blue'] as const).map((alliance) => (
+                                    <div key={alliance} className={`home-alliance-line ${alliance}-line ${winner === alliance ? 'winner' : ''}`.trim()}>
+                                      <span className={alliance}>{alliance === 'red' ? 'Red' : 'Blue'}</span>
+                                      <div className="home-alliance-teams" aria-label={`${alliance} alliance teams`}>
+                                        {match[alliance].length ? match[alliance].map((team) => (
+                                          <button
+                                            key={team.team_key}
+                                            type="button"
+                                            className={`home-team-pill ${alliance}`}
+                                            data-team-peek={team.team_key.toLowerCase()}
+                                            data-team-peek-event={section.event_key}
+                                            onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
+                                            title={`View Team ${team.team_number}`}
+                                          >
+                                            <TeamAvatar teamKey={team.team_key.toLowerCase()} teamNumber={team.team_number} eventKey={section.event_key} size={16} />
+                                            #{team.team_number}
+                                          </button>
+                                        )) : 'TBD'}
+                                      </div>
                                       <button
-                                        key={`home-match-red-${match.match_key}-${team.team_key}`}
                                         type="button"
-                                        className="home-team-pill red"
-                                        data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={section.event_key} onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
-                                        title={`View Team ${team.team_number}`}
+                                        className="alliance-score home-match-score"
+                                        onClick={(event) => openMatch(section.event_key, match.match_key, event.currentTarget.closest('.home-match-row'))}
+                                        aria-label={`Open ${match.display_name}, ${alliance} ${hasScores ? match[`${alliance}_score`] : 'score pending'}${winner === alliance ? ', winner' : ''}`}
+                                        title={`Open ${match.display_name} in Match Center`}
                                       >
-                                        <TeamAvatar teamKey={team.team_key.toLowerCase()} teamNumber={team.team_number} eventKey={section.event_key} size={18} />
-                                        #{team.team_number}
+                                        {hasScores ? match[`${alliance}_score`] : MISSING}
                                       </button>
-                                    ))}
-                                    {match.blue.map((team) => (
-                                      <button
-                                        key={`home-match-blue-${match.match_key}-${team.team_key}`}
-                                        type="button"
-                                        className="home-team-pill blue"
-                                        data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={section.event_key} onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
-                                        title={`View Team ${team.team_number}`}
-                                      >
-                                        <TeamAvatar teamKey={team.team_key.toLowerCase()} teamNumber={team.team_number} eventKey={section.event_key} size={18} />
-                                        #{team.team_number}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <div className="home-match-actions">
-                                    <button
-                                      type="button"
-                                      className="home-match-link-btn"
-                                      onClick={() => {
-                                        void copyMatchDeepLink(section.event_key, match.match_key);
-                                      }}
-                                      title="Copy shareable match link"
-                                    >
-                                      <LinkIcon className="icon-inline" /> Copy Link
-                                    </button>
-                                  </div>
-                                </>
+                                    </div>
+                                  ))}
+                                </div>
                               ) : null}
                             </article>
                           );
@@ -2475,7 +2224,7 @@ export function HomePage() {
             onClick={closeDrawer}
             aria-label="Close drawer"
           />
-          <aside className={`home-drawer${mobileDrawerClosing ? ' home-drawer-closing' : ''}`} aria-label="Event info drawer">
+          <aside className={`home-drawer home-event-info-drawer${mobileDrawerClosing ? ' home-drawer-closing' : ''}`} aria-label="Event info drawer">
             <header className="home-drawer-header">
               <strong>Event Info</strong>
               <button type="button" className="home-drawer-close" onClick={closeDrawer} aria-label="Close">
@@ -2483,9 +2232,19 @@ export function HomePage() {
               </button>
             </header>
 
+            <section className="home-drawer-section">
+              <h4>Today&apos;s events</h4>
+              {liveEvents.length ? liveEvents.map(item => (
+                <div className="home-event-item-links home-drawer-event-links" key={item.event_key}>
+                  <Link className="entity-link" to={`/events?event=${encodeURIComponent(item.event_key)}&tab=schedule`} onClick={() => setMobileDrawerOpen(false)}>{item.name}</Link>
+                  <Link className="entity-link" to={`/events?event=${encodeURIComponent(item.event_key)}&tab=rankings`} aria-label={`Rankings for ${item.name}`} onClick={() => setMobileDrawerOpen(false)}>Rankings</Link>
+                </div>
+              )) : <p className="center-callout muted">No events scheduled today.</p>}
+            </section>
+
             {/* Leaderboard */}
             <section className="home-drawer-section">
-              <h4><TrophyIcon className="icon-inline" /> Leaderboard</h4>
+              <h4><TrophyIcon className="icon-inline" /> Rankings</h4>
               <small>{selectedEventDisplay}</small>
               {loadingSelectedContext ? <p className="center-callout muted">Loading…</p> : null}
               {!loadingSelectedContext && leaderboardRows.length === 0 ? (

@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.api.schemas import ScheduleResponse, TeamLiveFormResponse
 from app.services.cache import get_cache
 from app.services.events.first_events_client import FIRSTEventsClient
+from app.services.events.first_live_results import first_results_for_waiting_matches
 from app.services.events.match_times import match_times_from_payload
 from app.services.phase_windows import compute_phase_windows_payload, get_or_compute_match_phase_windows
 from app.services.utils import COMP_LEVEL_ORDER
@@ -76,6 +77,18 @@ def _cached_live_results_for_event(tba: TBAClient, event_key: str) -> dict[str, 
     except (TBAClientError, RuntimeError, ValueError, TypeError):
         # Keep schedule endpoint resilient even when live scoring metadata is unavailable.
         result_by_match_key = {}
+        remote_matches = None
+
+    if isinstance(remote_matches, list):
+        # Results TBA hasn't picked up yet, straight from FRC Events (1-3 min sooner).
+        # Best effort: a failure here must never cost the TBA results above.
+        try:
+            waiting = first_results_for_waiting_matches(tba, cache_key, remote_matches, result_by_match_key)
+        except Exception:  # noqa: BLE001
+            logger.exception("first_live_results.failed event=%s", cache_key)
+            waiting = {}
+        for match_key, payload in waiting.items():
+            result_by_match_key[match_key] = _match_result_snapshot(payload)
 
     ttl_sec = max(1, int(settings.matches_live_results_cache_ttl_sec or 5))
     if _event_results_settled(result_by_match_key):
@@ -104,6 +117,18 @@ def _event_results_settled(result_by_match_key: dict[str, dict[str, Any]]) -> bo
         if isinstance(actual, (int, float)):
             latest = max(latest, int(actual))
     return latest > 0 and latest < int(time.time()) - _SETTLED_AFTER_SEC
+
+
+def _tba_lists_unsaved_matches(db: Session, tba: TBAClient, event_key: str) -> bool:
+    # The live results (cached 5 s, needed for this response anyway) carry every TBA match key.
+    tba_keys = set(_cached_live_results_for_event(tba, event_key))
+    if not tba_keys:
+        return False
+    saved = {
+        str(key).lower()
+        for (key,) in db.query(models.Match.match_key).filter(models.Match.event_key == event_key).all()
+    }
+    return bool(tba_keys - saved)
 
 
 def _event_team_nickname_overrides(
@@ -1205,17 +1230,23 @@ def get_event_schedule(
     if refresh and not settings.public_readonly_mode:
         require_admin_access(request, "Schedule refresh")
 
-    should_attempt_knockout_topup = (
+    plain_read = (
         not refresh
         and not settings.public_readonly_mode
         and local_match_count > 0
-        and local_knockout_count == 0
         and tournament_level is None
         and team_number is None
         and start is None
         and end is None
         and if_modified_since is None
         and only_modified_since is None
+    )
+    # TBA adds double-elimination matches round by round. Topping up only while no playoff
+    # row existed left later rounds and finals off the schedule until the next ingest
+    # (2026ncfay1 showed 28 of TBA's 40 matches, no finals, on 2026-10-18).
+    should_attempt_knockout_topup = plain_read and (
+        local_knockout_count == 0
+        or (include_live_results and tba is not None and _tba_lists_unsaved_matches(db, tba, event_key))
     )
     if should_attempt_knockout_topup:
         cache_key = str(event_key or "").strip().lower()

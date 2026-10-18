@@ -130,7 +130,7 @@ it('retains successful event counts and schedule after a partial refresh failure
   await act(async () => { vi.advanceTimersByTime(10_000); });
   expect(screen.getByText('1 match')).toBeInTheDocument();
   expect(screen.getByText('7 teams')).toBeInTheDocument();
-  expect(screen.getByText(/Next match: Qual 1/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Qual 1' })).toHaveAttribute('href', '/match-center?event=2026test&match=2026test_qm1');
   expect(screen.getByText('Showing saved data; it may be out of date.')).toBeInTheDocument();
   expect(screen.queryByText('All published matches are complete.')).not.toBeInTheDocument();
 });
@@ -154,4 +154,15 @@ it.each([false, true])('distinguishes empty from completed schedules (completed=
   showFavorites();
   await act(async () => {});
   expect(screen.getByText(completed ? 'All published matches are complete.' : 'Schedule not published yet.')).toBeInTheDocument();
+});
+
+ it('opens each favorite by its name and scopes rankings to that event', async () => {
+  showFavorites();
+  await act(async () => {});
+  expect(screen.getByRole('link', { name: 'Test' })).toHaveAttribute('href', '/events?event=2026test');
+  expect(screen.getByRole('link', { name: 'Rankings for Test' })).toHaveAttribute('href', '/events?event=2026test&tab=rankings');
+  fireEvent.click(screen.getByRole('tab', { name: 'Teams' }));
+  await act(async () => {});
+  expect(screen.getByRole('link', { name: '#1 Team' })).toHaveAttribute('href', '/team-center?team=frc1');
+  expect(screen.queryByRole('button', { name: 'Team Details' })).not.toBeInTheDocument();
 });

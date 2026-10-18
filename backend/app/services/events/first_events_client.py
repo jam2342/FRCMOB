@@ -43,6 +43,8 @@ class FIRSTEventsClient:
         params: dict[str, Any] | None = None,
         if_modified_since: str | None = None,
         only_modified_since: str | None = None,
+        timeout: float = 20,
+        max_retries: int = _MAX_RETRIES,
     ) -> tuple[dict[str, Any], str | None, bool]:
         if if_modified_since and only_modified_since:
             raise RuntimeError(
@@ -68,18 +70,18 @@ class FIRSTEventsClient:
         url = f"{self.base}{path}"
         last_exc: Exception | None = None
 
-        for attempt in range(1, _MAX_RETRIES + 1):
+        for attempt in range(1, max_retries + 1):
             try:
                 response = self.session.get(
-                    url, params=params or {}, headers=headers, timeout=20,
+                    url, params=params or {}, headers=headers, timeout=timeout,
                 )
             except requests.RequestException as exc:
                 last_exc = exc
-                if attempt < _MAX_RETRIES:
+                if attempt < max_retries:
                     wait = _RETRY_BACKOFF_BASE_SEC * (2 ** (attempt - 1))
                     logger.warning(
                         "FIRST API request failed for %s (attempt %d/%d), retrying in %.1fs: %s",
-                        path, attempt, _MAX_RETRIES, wait, exc,
+                        path, attempt, max_retries, wait, exc,
                     )
                     time.sleep(wait)
                     continue
@@ -90,11 +92,11 @@ class FIRSTEventsClient:
                 self._record_success()
                 return {}, response.headers.get("Last-Modified"), True
 
-            if response.status_code >= 500 and attempt < _MAX_RETRIES:
+            if response.status_code >= 500 and attempt < max_retries:
                 wait = _RETRY_BACKOFF_BASE_SEC * (2 ** (attempt - 1))
                 logger.warning(
                     "FIRST API returned %d for %s (attempt %d/%d), retrying in %.1fs",
-                    response.status_code, path, attempt, _MAX_RETRIES, wait,
+                    response.status_code, path, attempt, max_retries, wait,
                 )
                 time.sleep(wait)
                 continue
@@ -117,7 +119,7 @@ class FIRSTEventsClient:
 
         # Exhausted retries
         self._record_failure()
-        raise RuntimeError(f"FIRST API request failed for {path} after {_MAX_RETRIES} attempts") from last_exc
+        raise RuntimeError(f"FIRST API request failed for {path} after {max_retries} attempts") from last_exc
 
     def _record_failure(self) -> None:
         self._consecutive_failures += 1
@@ -161,6 +163,25 @@ class FIRSTEventsClient:
             params=params,
             if_modified_since=if_modified_since,
             only_modified_since=only_modified_since,
+        )
+
+    def event_matches(
+        self,
+        season: int,
+        event_code: str,
+        *,
+        tournament_level: str,
+        if_modified_since: str | None = None,
+        timeout: float = 20,
+        max_retries: int = _MAX_RETRIES,
+    ) -> tuple[dict[str, Any], str | None, bool]:
+        # Played matches with final scores; unplayed ones aren't listed.
+        return self._get(
+            f"/{season}/matches/{event_code.upper()}",
+            params={"tournamentLevel": tournament_level},
+            if_modified_since=if_modified_since,
+            timeout=timeout,
+            max_retries=max_retries,
         )
 
     def event_alliances(
