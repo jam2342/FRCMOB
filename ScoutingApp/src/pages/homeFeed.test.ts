@@ -11,6 +11,7 @@ import {
   resolveHomeMatchState,
   selectHomeDayMatches,
   selectHomeWindowMatches,
+  sortHomeFeedMatches,
 } from './homeFeed';
 
 function makeMatch(
@@ -159,6 +160,58 @@ describe('homeFeed', () => {
     // Running today by its dates, but the schedule isn't loaded / published yet.
     expect(pickMobileHomeAutoEventKey(events, {}, nowMs)).toBe('');
     expect(pickMobileHomeAutoEventKey(events, { '2026cur': { matches: [] } }, nowMs)).toBe('');
+  });
+});
+
+describe('sortHomeFeedMatches', () => {
+  const now = Date.UTC(2026, 9, 18, 18);
+  const sec = now / 1000;
+  const keys = (rows: EventScheduleItem[]) => rows.map((match) => match.match_key);
+
+  it('puts live and next up ahead of newest results without burying them under future matches', () => {
+    const rows = [
+      makeMatch('qm1', sec - 3600, { is_completed: true }),
+      makeMatch('qm10', sec + 600),
+      makeMatch('qm9', sec + 300),
+      makeMatch('qm7', sec - 300, { is_completed: true }),
+      makeMatch('qm8', sec - 30),
+      makeMatch('qm11', sec + 900),
+    ];
+    const original = keys(rows);
+    expect(keys(sortHomeFeedMatches(rows, now))).toEqual(['qm8', 'qm9', 'qm7', 'qm1', 'qm10', 'qm11']);
+    expect(keys(rows)).toEqual(original);
+    expect(keys(sortHomeFeedMatches(filterHomeWindowMatches(rows, 'completed', now), now))).toEqual(['qm7', 'qm1']);
+    expect(keys(sortHomeFeedMatches(filterHomeWindowMatches(rows, 'upcoming', now), now))).toEqual(['qm9', 'qm10', 'qm11']);
+  });
+
+  it('uses actual and predicted start times when matches are postponed or played out of order', () => {
+    const rows = [
+      makeMatch('qm1', sec - 3600, { actual_time: sec - 300, is_completed: true }),
+      makeMatch('qm2', sec - 1800, { actual_time: sec - 600, is_completed: true }),
+      makeMatch('qm3', sec - 900, { predicted_time: sec + 1200 }),
+      makeMatch('qm4', sec + 600),
+    ];
+    expect(keys(sortHomeFeedMatches(rows, now))).toEqual(['qm4', 'qm1', 'qm2', 'qm3']);
+  });
+
+  it('shows latest results on finished days and keeps untimed matches behind timed ones', () => {
+    const rows = [
+      makeMatch('qm9', sec - 3600, { is_completed: true }),
+      makeMatch('qm10', sec - 3000, { is_completed: true }),
+      makeMatch('qm11', null, { match_number: 11, is_completed: true }),
+      makeMatch('unknown', null),
+    ];
+    expect(keys(sortHomeFeedMatches(rows, now))).toEqual(['qm10', 'qm9', 'qm11', 'unknown']);
+    expect(sortHomeFeedMatches([], now)).toEqual([]);
+  });
+
+  it('falls back to match order when timestamps are missing or tied', () => {
+    const rows = [
+      makeMatch('qm2', null, { match_number: 2, is_completed: true }),
+      makeMatch('qm10', null, { match_number: 10, is_completed: true }),
+      makeMatch('f1m1', null, { comp_level: 'f', is_completed: true }),
+    ];
+    expect(keys(sortHomeFeedMatches(rows, now))).toEqual(['f1m1', 'qm10', 'qm2']);
   });
 });
 

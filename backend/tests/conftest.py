@@ -75,6 +75,18 @@ def _no_workspace_creation_budget():
     settings.workspace_create_max_per_hour = previous
 
 
+@pytest.fixture(autouse=True)
+def _no_first_live_results():
+    # A local .env carries real FRC Events credentials; tests must never call it.
+    # The overlay's own tests switch it back on with a fake client.
+    from app.core.config import settings
+
+    previous = settings.first_live_results_enabled
+    settings.first_live_results_enabled = False
+    yield
+    settings.first_live_results_enabled = previous
+
+
 @pytest.fixture()
 def db_engine():
     # Yield an in-memory SQLite engine with all tables created.

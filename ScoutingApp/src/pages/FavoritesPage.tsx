@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEventNames } from '../hooks/useEventNames';
 import { eventDisplayName } from '../utils/eventSearchIndex';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventSchedule,
   getEventTeamLiveForm,
@@ -665,20 +665,16 @@ export function FavoritesPage() {
     });
   }
 
-  function openEventCenter(eventKey: string) {
-    navigate(`/events?event=${eventKey}`);
-  }
-
   function openMatchCenter(eventKey: string, matchKey: string) {
     const normalizedEventKey = normalizeEventKey(eventKey);
     navigate(buildMatchCenterPath(normalizedEventKey, matchKey));
   }
 
-  function openTeamCenter(teamKey: string) {
+  function teamCenterPath(teamKey: string) {
     const params = new URLSearchParams();
     params.set('team', teamKey);
     if (eventContextKey) params.set('event', eventContextKey);
-    navigate(`/team-center?${params.toString()}`);
+    return `/team-center?${params.toString()}`;
   }
 
   const renderEventCards = (
@@ -692,7 +688,7 @@ export function FavoritesPage() {
         return (
           <article key={`favorite-event-card-${card.event_key}`} className="favorites-item-card event">
             <header>
-              <strong>{eventCardName(card)}</strong>
+              <strong><Link className="entity-link" to={`/events?event=${encodeURIComponent(card.event_key)}`}>{eventCardName(card)}</Link></strong>
             </header>
             <div className={styles.chipRow}>
               <Chip>{card.schedule_count == null ? 'Matches unavailable' : `${card.schedule_count} match${card.schedule_count === 1 ? '' : 'es'}`}</Chip>
@@ -722,7 +718,7 @@ export function FavoritesPage() {
               </div>
             ) : nextMatch ? (
               <p className={styles.note}>
-                Next match: {nextMatch.display_name || nextMatch.match_key} · {fmtDateShort(matchStartTime(nextMatch))}
+                Next match: <Link className="entity-link" to={buildMatchCenterPath(card.event_key, nextMatch.match_key)}>{nextMatch.display_name || nextMatch.match_key}</Link> · {fmtDateShort(matchStartTime(nextMatch))}
               </p>
             ) : (
               <p className={styles.note}>{!card.schedule_available ? 'Schedule unavailable.' : card.schedule_count === 0 ? 'Schedule not published yet.' : card.completed_count === card.schedule_count ? 'All published matches are complete.' : 'No upcoming matches.'}</p>
@@ -739,9 +735,7 @@ export function FavoritesPage() {
             ) : null}
 
             <div className={styles.actions}>
-              <Button size="sm" onClick={() => openEventCenter(card.event_key)}>
-                Events
-              </Button>
+              <Link className="entity-link" to={`/events?event=${encodeURIComponent(card.event_key)}&tab=rankings`} aria-label={`Rankings for ${eventCardName(card)}`}>Rankings</Link>
               <Button size="sm" variant="quiet" onClick={() => removeFavoriteEvent(card.event_key)}>
                 Remove
               </Button>
@@ -769,7 +763,9 @@ export function FavoritesPage() {
         <article key={`favorite-team-card-${card.team_key}`} className="favorites-item-card team">
           <header>
             <strong>
-              {card.team_number !== null ? `#${card.team_number}` : `Team ${card.team_key.replace(/^frc/, '')}`} {card.nickname}
+              <Link className="entity-link" to={teamCenterPath(card.team_key)}>
+                {card.team_number !== null ? `#${card.team_number}` : `Team ${card.team_key.replace(/^frc/, '')}`} {card.nickname}
+              </Link>
             </strong>
           </header>
 
@@ -804,9 +800,6 @@ export function FavoritesPage() {
           ) : null}
 
           <div className={styles.actions}>
-            <Button size="sm" title={`Open Team Center for Team ${card.team_number ?? card.team_key.replace(/^frc/, '')}`} onClick={() => openTeamCenter(card.team_key)}>
-              Team Details
-            </Button>
             <Button size="sm" variant="quiet" onClick={() => removeFavoriteTeam(card.team_key)}>
               Remove
             </Button>

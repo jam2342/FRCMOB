@@ -33,8 +33,10 @@ class Policy:
 
 
 POLICIES = {
-    # Changes with every match: live scores, rankings, predictions.
-    "live": Policy(5, 15),
+    # Changes with every match: live scores, rankings, predictions. 15 s because the
+    # backend refreshes live TBA data only every 15 s (TBA_LIVE_CACHE_TTL_SEC): a
+    # shorter edge life re-fetched the same answer and spent Vercel's origin quota.
+    "live": Policy(15, 15),
     # Changes when ratings are rebuilt.
     "event": Policy(60, 600),
     # Event lists and search.

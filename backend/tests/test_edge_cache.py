@@ -124,7 +124,7 @@ class MiddlewareTests(unittest.TestCase):
     def test_public_data_gets_cdn_rule_and_an_etag_and_revalidates_to_304(self):
         resp = self.client.get("/events/2026arc/rankings")
         self.assertEqual(resp.headers["cache-control"], "no-cache")
-        self.assertEqual(resp.headers["cdn-cache-control"], "max-age=5, stale-while-revalidate=15")
+        self.assertEqual(resp.headers["cdn-cache-control"], "max-age=15, stale-while-revalidate=15")
         etag = resp.headers["etag"]
         self.assertTrue(etag.startswith('W/"'))
         again = self.client.get("/events/2026arc/rankings", headers={"If-None-Match": etag})

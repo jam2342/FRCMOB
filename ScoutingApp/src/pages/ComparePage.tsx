@@ -1038,7 +1038,7 @@ export function ComparePage() {
                     <span className="center-chip">Matches here: {row.rating?.matches_here ?? 0}</span>
                   </div>
                   <header>
-                    <h4>{row.breakdown?.team.nickname || row.team_key}</h4>
+                    <h4><Link className="entity-link" to={`/team-center?${new URLSearchParams({ team: row.team_key, ...(selectedEventKey ? { event: selectedEventKey } : {}) })}`}>{row.breakdown?.team.nickname || row.team_key}</Link></h4>
                     <small>Updated {relativeFromTimestamp(row.last_updated_at)}</small>
                   </header>
 
@@ -1150,9 +1150,6 @@ export function ComparePage() {
 
 
                   <div className="center-actions-row">
-                    <button type="button" className="center-btn ghost" title={`Open Team Center for ${row.team_key}`} onClick={() => openTeamCenter(row.team_key)}>
-                      Team Details
-                    </button>
                     <button
                       type="button"
                       className="center-btn ghost"
