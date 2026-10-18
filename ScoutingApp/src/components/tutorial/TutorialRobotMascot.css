@@ -199,9 +199,7 @@
   animation: tut-robot-right-point 0.98s ease-in-out infinite;
 }
 
-.tut-robot.is-animated.is-talking.is-wave .tut-robot-arm-swoosh-right,
-.tut-robot.is-animated.is-talking.is-point-right .tut-robot-arm-swoosh-right,
-.tut-robot.is-animated.is-talking.is-point-left .tut-robot-arm-swoosh-left {
+.tut-robot.is-animated.is-talking.is-wave .tut-robot-arm-swoosh-right {
   opacity: 0.78;
   animation: tut-robot-arm-swoosh 0.9s ease-in-out infinite;
 }

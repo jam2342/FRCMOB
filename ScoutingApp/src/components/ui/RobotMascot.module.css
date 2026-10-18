@@ -1,0 +1,86 @@
+.robot {
+  display: block;
+  overflow: visible;
+}
+
+.head {
+  fill: var(--color-accent);
+}
+
+.antenna {
+  stroke: var(--color-accent-hover);
+}
+
+.antennaTip {
+  fill: var(--color-accent-hover);
+}
+
+.face {
+  fill: var(--color-on-accent);
+}
+
+.smile {
+  stroke: var(--color-on-accent);
+}
+
+.body {
+  fill: var(--color-surface-muted);
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+}
+
+.bob {
+  animation: robotBob 3s ease-in-out infinite;
+}
+
+.eyes {
+  transform-origin: 40px 38px;
+  animation: robotBlink 4.5s infinite;
+}
+
+.arm {
+  transform-origin: 62px 46px;
+  animation: robotWave 3.2s ease-in-out infinite;
+}
+
+@keyframes robotBob {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes robotBlink {
+  0%,
+  95%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes robotWave {
+  0%,
+  55%,
+  100% {
+    transform: rotate(0deg);
+  }
+  65% {
+    transform: rotate(-24deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+  85% {
+    transform: rotate(-18deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bob,
+  .eyes,
+  .arm {
+    animation: none;
+  }
+}

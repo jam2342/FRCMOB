@@ -1,32 +1,13 @@
 # Climb Service
 
-Backfills official climb results into the database when they become available. Climb truth comes from the TBA score breakdown, not inference.
-
-The video-vs-official climb audit that used to live here was removed on 2026-10-05: the broadcast pipeline that produced video climb predictions was retired on 2026-09-28, so the audit had nothing new to compare.
+Climb truth comes from the TBA score breakdown, not inference. Event ingest (`services/events/ingest.py`) writes each robot's official climb result into its `TeamMatchFinding` as `climb_success_prob` (full success `1.0`, partial `0.35`, none `0.0`).
 
 ## Files
 
-**`official_backfill.py`**
-Fetches match scorebreakdowns from TBA and writes official climb results into the database.
+**`coverage.py`**
+`climb_signal_coverage()` reports, for the most recent events, how many teams have any climb signal and how many of those are official. The admin ops dashboard (`GET /maintenance/ops/dashboard`) shows it.
 
-Climb results are converted to a `climb_success_prob` value:
-- Full success → `1.0`
-- Partial → `0.35`
-- Failed → `0.0`
+## History
 
-These are either upserted into existing `TeamMatchFinding` records or created as new ones. The last backfill result is cached in Redis with a 14-day TTL.
-
-## How It Runs
-
-1. Fetch match scorebreakdowns from TBA for the target event.
-2. Extract climb outcome per team from the breakdown JSON.
-3. Convert to `climb_success_prob` using the success/partial/fail mapping.
-4. Upsert into `TeamMatchFinding` records, preserving existing fields.
-5. Cache the result for 14 days.
-
-## Dependencies
-
-- TBA client — source of official scorebreakdowns
-- `TeamMatchFinding` — the target table for backfill writes
-- `EventTeamRating` — used for coverage reporting
-- Redis — result caching for backfill
+- The video-vs-official climb audit was removed on 2026-10-05: the broadcast pipeline that produced video climb predictions was retired on 2026-09-28.
+- The scheduled official-climb backfill was removed on 2026-10-14. It predated ingest writing climbs itself, and by then it re-downloaded the same six events every three hours and rewrote 1,662 unchanged rows each time. Rows it inserted earlier keep the source `tba_score_breakdown_backfill`, which the official-data readers still accept.

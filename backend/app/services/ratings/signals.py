@@ -1,355 +1,161 @@
-# Signal construction and pros/cons generation for the rating model.
-
+# Strengths and risks for a team, in plain words, from the same official points the
+# rating uses. Each signal names the matches it rests on.
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from app.db import models
-from app.services.utils import _clamp
+from app.services.ratings.strength import MatchPoints, Strength
 
-from app.services.ratings.helpers import _evidence_for_metric
+# How far above or below the season's typical robot a component must be to be called out.
+STRONG_RATIO = 1.6
+WEAK_RATIO = 0.5
+MIN_MATCHES = 3
 
-def _infer_signal_metric(
-    metric: str | None,
-    evidence: list[dict[str, Any]],
+
+def _signal(
+    rule_id: str,
     label: str,
-) -> str:
-    if isinstance(metric, str) and metric.strip():
-        return metric.strip()
-    for entry in evidence:
-        candidate = entry.get("metric") if isinstance(entry, dict) else None
-        if isinstance(candidate, str) and candidate.strip():
-            return candidate.strip()
-    lowered = label.lower()
-    if "auto" in lowered:
-        return "auto_contribution"
-    if "endgame" in lowered or "tower" in lowered or "climb" in lowered:
-        return "climb_success_prob"
-    if "defense" in lowered:
-        return "defensive_engagement_sec"
-    if "penalty" in lowered or "discipline" in lowered:
-        return "penalty_points_per_match"
-    if "trend" in lowered:
-        return "trend_delta"
-    return "composite_signal"
-
-def _apply_sparse_rating_guard(
+    rationale: str,
     *,
-    raw_final_rating: float,
-    confidence: float,
-    matches_observed: int,
-    video_findings_count: int,
-    use_fallback_model: bool,
-) -> tuple[float, dict[str, Any]]:
-    from app.services.ratings.constants import (
-        SPARSE_RATING_MAX_RAW_LOW_CONFIDENCE,
-        SPARSE_RATING_MAX_RAW_LOW_MATCH,
-        SPARSE_RATING_MAX_RAW_MEDIUM_MATCH,
-        SPARSE_RATING_MAX_RAW_NO_VIDEO,
-        SPARSE_RATING_MIN_RAW,
-    )
-
-    # The guard is for thin evidence, so it keys on matches actually observed
-    # (official breakdowns count). Keying it on video capped every team once
-    # broadcast video stopped being ratings-eligible: at 2026arc the top six all read
-    # 87.702 and the bottom eleven 29.314, 17 of 75 teams on clamped, tied values.
-    sparse = matches_observed < 5 or confidence < 0.35
-    lower = SPARSE_RATING_MIN_RAW if sparse else 0.0
-    if matches_observed <= 0:
-        upper = SPARSE_RATING_MAX_RAW_NO_VIDEO
-    elif matches_observed < 3:
-        upper = SPARSE_RATING_MAX_RAW_LOW_MATCH
-    elif matches_observed < 5:
-        upper = SPARSE_RATING_MAX_RAW_MEDIUM_MATCH
-    else:
-        upper = 100.0
-    if confidence < 0.35:
-        upper = min(upper, SPARSE_RATING_MAX_RAW_LOW_CONFIDENCE)
-    guarded = _clamp(float(raw_final_rating), float(lower), float(upper))
-    return guarded, {
-        "lower_bound_raw": round(float(lower), 4),
-        "upper_bound_raw": round(float(upper), 4),
-        "applied": abs(float(guarded) - float(raw_final_rating)) > 1e-6,
-        "raw_before_guard": round(float(raw_final_rating), 4),
-        "raw_after_guard": round(float(guarded), 4),
-        "fallback_model_active": bool(use_fallback_model),
-        "matches_observed": int(matches_observed),
-        "video_findings_count": int(video_findings_count),
-        "confidence_0_1": round(_clamp(float(confidence), 0.0, 1.0), 4),
-    }
-
-def _make_signal(
-    label: str,
-    metric_value: float,
-    percentile: float,
-    evidence: list[dict[str, Any]],
-    *,
-    metric: str | None = None,
-    baseline_value: float | None = None,
-    sample_size: int | None = None,
-    category: str | None = None,
-    rationale: str | None = None,
-    impact: str | None = None,
-    trend_delta: float | None = None,
-    signal_confidence: float | None = None,
+    metric: str,
+    value: float,
+    strength: Strength,
+    impact: str,
+    category: str,
+    evidence: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    signal_metric = _infer_signal_metric(metric, evidence, label)
-    computed_delta = (
-        float(trend_delta)
-        if isinstance(trend_delta, (int, float))
-        else (
-            float(metric_value) - float(baseline_value)
-            if isinstance(baseline_value, (int, float))
-            else float(percentile) - 50.0
-        )
-    )
-    inferred_sample_size = (
-        max(0, int(sample_size))
-        if isinstance(sample_size, int)
-        else max(0, len([entry for entry in evidence if isinstance(entry, dict)]))
-    )
-    inferred_confidence = (
-        _clamp(float(signal_confidence), 0.0, 1.0)
-        if isinstance(signal_confidence, (int, float))
-        else _clamp(
-            (0.35 * _clamp(abs(float(computed_delta)) / 50.0, 0.0, 1.0))
-            + (0.65 * _clamp(float(inferred_sample_size) / 6.0, 0.0, 1.0)),
-            0.0,
-            1.0,
-        )
-    )
-    rule_id = re.sub(r"[^a-z0-9]+", "_", str(label).strip().lower()).strip("_") or "signal"
-    payload: dict[str, Any] = {
+    evidence = evidence or []
+    return {
         "rule_id": rule_id,
         "label": label,
-        "metric": signal_metric,
-        "metric_value": round(metric_value, 4),
-        "percentile": round(percentile, 2),
-        "delta": round(float(computed_delta), 4),
-        "sample_size": int(inferred_sample_size),
-        "confidence_0_1": round(float(inferred_confidence), 4),
-        "signal_confidence_0_1": round(float(inferred_confidence), 4),
-        "evidence_count": int(len(evidence)),
+        "rationale": rationale,
+        "metric": metric,
+        "metric_value": round(float(value), 2),
+        "sample_size": strength.matches_here,
+        "confidence_0_1": strength.confidence,
+        "signal_confidence_0_1": strength.confidence,
+        "evidence_count": len(evidence),
         "evidence": evidence,
+        "impact": impact,
+        "category": category,
     }
-    if category:
-        payload["category"] = category
-    if rationale:
-        payload["rationale"] = rationale
-    if impact:
-        payload["impact"] = impact
-    if isinstance(trend_delta, (int, float)):
-        payload["trend_delta"] = round(float(trend_delta), 4)
-    return payload
 
-def _dedupe_signals(signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen_labels: set[str] = set()
-    deduped: list[dict[str, Any]] = []
-    for signal in signals:
-        if not isinstance(signal, dict):
-            continue
-        label = str(signal.get("label") or "").strip().lower()
-        if not label or label in seen_labels:
-            continue
-        seen_labels.add(label)
-        deduped.append(signal)
-    return deduped
 
-def _ensure_minimum_pros_cons_signals(
+def _best(here: list[MatchPoints], field: str, n: int = 3, reverse: bool = True) -> list[dict[str, Any]]:
+    rows = [m for m in here if getattr(m, field) is not None]
+    rows.sort(key=lambda m: (getattr(m, field), m.time), reverse=reverse)
+    return [{"match_key": m.match_key, "metric": field, "value": round(float(getattr(m, field)), 2)} for m in rows[:n]]
+
+
+def team_signals(
     *,
-    pros: list[dict[str, Any]],
-    cons: list[dict[str, Any]],
-    confidence: float,
-    findings: list[models.TeamMatchFinding],
-    use_fallback_model: bool,
-    throughput: float,
-    auto_contribution_score: float,
-    endgame: float,
-    defense_presence_score: float,
-    anti_defense_score: float,
-    penalty_discipline: float,
+    strength: Strength,
+    here: list[MatchPoints],
+    typical: dict[str, float],
+    subscores: dict[str, float | None],
+    trend: dict[str, Any] | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    min_target = 2
-    if len(pros) >= min_target and len(cons) >= min_target:
+    pros: list[dict[str, Any]] = []
+    cons: list[dict[str, Any]] = []
+    if strength.matches_here + strength.matches_before < MIN_MATCHES:
+        played = strength.matches_here + strength.matches_before
+        if played == 0 and strength.basis == "last_season":
+            cons.append(_signal(
+                "last_season_only", "No matches this season yet",
+                "Starts from how strong the team was last season, in a different game.",
+                metric="matches", value=0, strength=strength, impact="neutral", category="confidence",
+            ))
+        elif played == 0 and strength.basis == "rookie":
+            cons.append(_signal(
+                "rookie_start", "Rookie team",
+                "No history yet: starts a little below the season's typical robot.",
+                metric="matches", value=0, strength=strength, impact="neutral", category="confidence",
+            ))
+        else:
+            cons.append(_signal(
+                "limited_evidence", "Few matches to judge from",
+                "Fewer than three official matches this season, so the rating leans on where it started.",
+                metric="matches", value=played, strength=strength, impact="neutral", category="confidence",
+            ))
         return pros, cons
 
-    model_hint = (
-        "Based on official results and external ratings."
-        if use_fallback_model
-        else "Includes analyzed match data."
-    )
-    seen_labels = {
-        str(item.get("label") or "").strip().lower()
-        for item in pros + cons
-        if isinstance(item, dict)
-    }
+    teleop_typical = max(1e-6, typical.get("teleop", 0.0))
+    if strength.teleop >= STRONG_RATIO * teleop_typical:
+        pros.append(_signal(
+            "high_teleop", "Scores a lot of fuel",
+            f"About {strength.teleop:.0f} teleop points a match; the typical robot scores {teleop_typical:.0f}.",
+            metric="teleop_points", value=strength.teleop, strength=strength, impact="positive", category="strength",
+            evidence=_best(here, "teleop"),
+        ))
+    elif strength.teleop <= WEAK_RATIO * teleop_typical:
+        cons.append(_signal(
+            "low_teleop", "Scores little fuel",
+            f"About {strength.teleop:.0f} teleop points a match; the typical robot scores {teleop_typical:.0f}.",
+            metric="teleop_points", value=strength.teleop, strength=strength, impact="negative", category="risk",
+            evidence=_best(here, "teleop", reverse=False),
+        ))
 
-    pro_candidates: list[dict[str, Any]] = [
-        {
-            "label": "Autonomous floor is serviceable",
-            "score": auto_contribution_score,
-            "metric": "auto_contribution",
-            "descending": True,
-            "category": "baseline",
-            "impact": "upside",
-            "rationale": f"Auto contribution percentile is holding above the median. {model_hint}",
-        },
-        {
-            "label": "Teleop baseline is stable",
-            "score": throughput,
-            "metric": "fuel_scoring_rate",
-            "descending": True,
-            "category": "baseline",
-            "impact": "upside",
-            "rationale": f"Throughput percentile indicates repeatable teleop scoring. {model_hint}",
-        },
-        {
-            "label": "Endgame baseline is viable",
-            "score": endgame,
-            "metric": "climb_success_prob",
-            "descending": True,
-            "category": "baseline",
-            "impact": "upside",
-            "rationale": f"Endgame percentile supports reliable closing points. {model_hint}",
-        },
-        {
-            "label": "Defense utility baseline",
-            "score": defense_presence_score,
-            "metric": "defensive_engagement_sec",
-            "descending": True,
-            "category": "baseline",
-            "impact": "upside",
-            "rationale": f"Defense presence percentile supports situational two-way value. {model_hint}",
-        },
-        {
-            "label": "Anti-defense baseline",
-            "score": anti_defense_score,
-            "metric": "fuel_scoring_rate",
-            "descending": True,
-            "category": "resilience",
-            "impact": "upside",
-            "rationale": f"Anti-defense percentile suggests manageable output drop under pressure. {model_hint}",
-        },
-        {
-            "label": "Clean-play baseline",
-            "score": penalty_discipline,
-            "metric": "reliability_score",
-            "descending": True,
-            "category": "discipline",
-            "impact": "risk_down",
-            "rationale": f"Penalty-discipline percentile supports cleaner match outcomes. {model_hint}",
-        },
-    ]
-    cons_candidates: list[dict[str, Any]] = [
-        {
-            "label": "Autonomous floor needs work",
-            "score": auto_contribution_score,
-            "metric": "auto_contribution",
-            "descending": False,
-            "category": "baseline",
-            "impact": "risk_up",
-            "rationale": f"Auto contribution percentile is currently below the event median. {model_hint}",
-        },
-        {
-            "label": "Teleop baseline is limited",
-            "score": throughput,
-            "metric": "fuel_scoring_rate",
-            "descending": False,
-            "category": "baseline",
-            "impact": "risk_up",
-            "rationale": f"Throughput percentile is limiting offensive floor. {model_hint}",
-        },
-        {
-            "label": "Endgame baseline is limited",
-            "score": endgame,
-            "metric": "climb_success_prob",
-            "descending": False,
-            "category": "baseline",
-            "impact": "risk_up",
-            "rationale": f"Endgame percentile is below average in current sample. {model_hint}",
-        },
-        {
-            "label": "Defense utility is limited",
-            "score": defense_presence_score,
-            "metric": "defensive_engagement_sec",
-            "descending": False,
-            "category": "baseline",
-            "impact": "risk_up",
-            "rationale": f"Defense presence percentile is low for counter-play value. {model_hint}",
-        },
-        {
-            "label": "Anti-defense risk profile",
-            "score": anti_defense_score,
-            "metric": "cycle_time_sec",
-            "descending": True,
-            "category": "resilience",
-            "impact": "risk_up",
-            "rationale": f"Anti-defense percentile indicates vulnerability under pressure. {model_hint}",
-        },
-        {
-            "label": "Discipline risk baseline",
-            "score": penalty_discipline,
-            "metric": "reliability_score",
-            "descending": False,
-            "category": "discipline",
-            "impact": "risk_up",
-            "rationale": f"Penalty-discipline percentile can pressure match outcomes. {model_hint}",
-        },
-    ]
+    auto_typical = max(1e-6, typical.get("auto", 0.0))
+    if strength.auto >= STRONG_RATIO * auto_typical:
+        pros.append(_signal(
+            "strong_auto", "Strong autonomous",
+            f"About {strength.auto:.0f} points in auto; the typical robot scores {auto_typical:.0f}.",
+            metric="auto_points", value=strength.auto, strength=strength, impact="positive", category="strength",
+            evidence=_best(here, "auto"),
+        ))
+    elif strength.auto <= WEAK_RATIO * auto_typical:
+        cons.append(_signal(
+            "weak_auto", "Autonomous needs work",
+            f"About {strength.auto:.0f} points in auto; the typical robot scores {auto_typical:.0f}.",
+            metric="auto_points", value=strength.auto, strength=strength, impact="negative", category="risk",
+        ))
 
-    def _append_candidate(
-        target: list[dict[str, Any]],
-        candidate: dict[str, Any],
-        *,
-        is_pro: bool,
-    ) -> bool:
-        label_key = str(candidate.get("label") or "").strip().lower()
-        if not label_key or label_key in seen_labels:
-            return False
-        score = _clamp(float(candidate.get("score") or 0.0), 0.0, 100.0)
-        signal = _make_signal(
-            str(candidate.get("label") or ""),
-            score,
-            score,
-            _evidence_for_metric(
-                findings,
-                str(candidate.get("metric") or "fuel_scoring_rate"),
-                descending=bool(candidate.get("descending", True)),
-            ),
-            category=str(candidate.get("category") or "baseline"),
-            rationale=str(candidate.get("rationale") or ""),
-            impact=str(candidate.get("impact") or ("upside" if is_pro else "risk_up")),
-            signal_confidence=confidence,
-        )
-        target.append(signal)
-        seen_labels.add(label_key)
-        return True
+    climbs = [m for m in here if m.climb]
+    if strength.climb >= 5.0:
+        where = f"Climbed in {len(climbs)} of {len(here)} matches here" if here else "Climbs at earlier events"
+        pros.append(_signal(
+            "climbs", "Can climb",
+            f"{where}, about {strength.climb:.0f} points a match.",
+            metric="climb_points", value=strength.climb, strength=strength, impact="positive", category="strength",
+            evidence=_best(here, "climb"),
+        ))
 
-    if len(pros) < min_target:
-        ranked = sorted(pro_candidates, key=lambda item: float(item.get("score") or 0.0), reverse=True)
-        for candidate in ranked:
-            if len(pros) >= min_target:
-                break
-            score = float(candidate.get("score") or 0.0)
-            if score < 58.0 and len(pros) > 0:
-                continue
-            _append_candidate(pros, candidate, is_pro=True)
-        while len(pros) < min_target and ranked:
-            if not _append_candidate(pros, ranked.pop(0), is_pro=True):
-                continue
+    consistency = subscores.get("consistency")
+    if consistency is not None and strength.matches_here >= 5:
+        if consistency >= 70:
+            pros.append(_signal(
+                "consistent", "Steady from match to match",
+                "Its points rarely stray far from its average.",
+                metric="consistency", value=consistency, strength=strength, impact="positive", category="strength",
+            ))
+        elif consistency < 35:
+            cons.append(_signal(
+                "inconsistent", "Up and down from match to match",
+                "Some matches score far below its average.",
+                metric="consistency", value=consistency, strength=strength, impact="negative", category="risk",
+                evidence=_best(here, "teleop", reverse=False),
+            ))
 
-    if len(cons) < min_target:
-        ranked = sorted(cons_candidates, key=lambda item: float(item.get("score") or 100.0))
-        for candidate in ranked:
-            if len(cons) >= min_target:
-                break
-            score = float(candidate.get("score") or 100.0)
-            if score > 42.0 and len(cons) > 0:
-                continue
-            _append_candidate(cons, candidate, is_pro=False)
-        while len(cons) < min_target and ranked:
-            if not _append_candidate(cons, ranked.pop(0), is_pro=False):
-                continue
+    if trend is not None:
+        base = max(10.0, abs(trend["earlier_points"]))
+        change = trend["delta_points"] / base
+        if change >= 0.2:
+            pros.append(_signal(
+                "trending_up", "Scoring is trending up",
+                f"Last four matches: {trend['recent_points']:.0f} points a match, up from {trend['earlier_points']:.0f}.",
+                metric="trend_points", value=trend["delta_points"], strength=strength, impact="positive", category="trend",
+            ))
+        elif change <= -0.2:
+            cons.append(_signal(
+                "trending_down", "Scoring is trending down",
+                f"Last four matches: {trend['recent_points']:.0f} points a match, down from {trend['earlier_points']:.0f}.",
+                metric="trend_points", value=trend["delta_points"], strength=strength, impact="negative", category="trend",
+            ))
 
+    if strength.matches_here == 0 and strength.matches_before:
+        cons.append(_signal(
+            "earlier_events_only", "Not played here yet",
+            f"Based on {strength.matches_before} matches at earlier events this season.",
+            metric="matches_before", value=strength.matches_before, strength=strength, impact="neutral", category="confidence",
+        ))
     return pros, cons

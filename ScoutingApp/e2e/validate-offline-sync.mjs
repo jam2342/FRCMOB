@@ -69,13 +69,13 @@ try {
   // Warm the recorder route, then reopen it offline with a previously unseen query.
   console.log('Recovery export passed');
   await page.goto(`${base}/record.html#/scouting/record`);
-  await page.getByText('On-Device Match Breakdown', { exact: true }).waitFor();
+  await page.getByText('On-Device Breakdown', { exact: true }).waitFor();
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
   console.log('Recorder warmed', errors);
   await context.setOffline(true);
   await page.goto(`${base}/record.html?offline-cold-start=1#/scouting/record`);
-  await page.getByText('On-Device Match Breakdown', { exact: true }).waitFor();
+  await page.getByText('On-Device Breakdown', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => crossOriginIsolated), true, 'Offline recorder lost isolation headers');
   await page.screenshot({ path: '/tmp/frcmob-offline-recorder.png', fullPage: true });
   if (errors.length) console.log(JSON.stringify(await page.evaluate(() => window.__offlineTestErrors)));

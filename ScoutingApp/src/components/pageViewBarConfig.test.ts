@@ -20,16 +20,17 @@ describe('page view routes', () => {
   });
 
   it('renders each view bar on its family landing page', () => {
+    // Scouting pages render the shared <ScoutingViewBar />, which carries SCOUTING_VIEWS.
     const landingPages = [
-      ['src/pages/ScoutingPage.tsx', 'SCOUTING_VIEWS'],
-      ['src/pages/EventsPage.tsx', 'EVENTS_VIEWS'],
-      ['src/pages/ComparePage.tsx', 'COMPARE_VIEWS'],
-      ['src/pages/MatchCenterPage.tsx', 'MATCH_HUB_VIEWS'],
+      ['src/pages/ScoutingPage.tsx', '<ScoutingViewBar />'],
+      ['src/pages/EventsPage.tsx', 'items={EVENTS_VIEWS}'],
+      ['src/pages/ComparePage.tsx', 'items={COMPARE_VIEWS}'],
+      ['src/pages/MatchCenterPage.tsx', 'items={MATCH_HUB_VIEWS}'],
     ] as const;
 
-    for (const [path, configName] of landingPages) {
+    for (const [path, marker] of landingPages) {
       const pageSource = readFileSync(resolve(process.cwd(), path), 'utf8');
-      expect(pageSource, `${path} does not render ${configName}`).toContain(`items={${configName}}`);
+      expect(pageSource, `${path} does not render ${marker}`).toContain(marker);
     }
   });
 });

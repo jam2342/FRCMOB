@@ -1,0 +1,55 @@
+name: Regression
+
+# Drives the app in a browser through the failures real users hit (lost reports,
+# white screens, stuck pages): ScoutingApp/e2e/regression. Reads production's public
+# data through a read-only proxy, so it runs nightly and on frontend changes rather
+# than on every push.
+permissions:
+  contents: read
+
+on:
+  # Weekly for drift in live data; PRs that touch the frontend run it anyway.
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ScoutingApp/src/**"
+      - "ScoutingApp/public/sw.js"
+      - "ScoutingApp/build/**"
+      - "ScoutingApp/e2e/regression/**"
+      - "ScoutingApp/vite.config.ts"
+      - "ScoutingApp/vite.regression.config.ts"
+
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: ScoutingApp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ScoutingApp/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e:regression
+        env:
+          VITE_ONDEVICE_MODEL_URL: https://example.invalid/frc_robot_detector_v2.onnx
+          # Full Chromium in the new headless mode: behaves like Chrome (service
+          # worker offline, touch). The default headless shell differs there.
+          PW_CHANNEL: chromium
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: regression-failures
+          path: ScoutingApp/e2e/regression/out/
+          if-no-files-found: ignore

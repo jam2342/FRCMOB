@@ -1336,7 +1336,7 @@
       "input:Add event",
       "input:Add team",
       "input:Global quick jump",
-      "select:Team Rating Context Event (optional)"
+      "select:Event for team ratings"
     ]
   },
   "/settings": {

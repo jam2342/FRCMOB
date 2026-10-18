@@ -1,15 +1,10 @@
 import unittest
 
-try:
-    from app.api.routes_matches import (
-        _form_label,
-        _is_match_completed,
-        _team_result_for_match,
-    )
-
-    _IMPORT_ERROR: Exception | None = None
-except Exception as exc:  # pragma: no cover - dependency-gated import
-    _IMPORT_ERROR = exc
+from app.api.routes_matches import (
+    _form_label,
+    _is_match_completed,
+    _team_result_for_match,
+)
 
 
 def _mock_match(
@@ -35,7 +30,6 @@ def _mock_match(
     }
 
 
-@unittest.skipIf(_IMPORT_ERROR is not None, f"optional api deps unavailable: {_IMPORT_ERROR}")
 class LiveFormUtilsTests(unittest.TestCase):
     def test_match_completion_detection(self):
         self.assertFalse(_is_match_completed(_mock_match()))

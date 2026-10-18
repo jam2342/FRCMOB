@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 from typing import Any, Callable, Coroutine
 
 from sqlalchemy.orm import Session
 
-from app.services.clients import statbotics as statbotics_client
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,6 @@ def build_event_teams_intel_payload(
     db: Session,
     event_key: str,
     include_tba: bool = True,
-    include_statbotics: bool = True,
     auto_heal_ratings: bool = True,
     include_season_fallback: bool = True,
     include_rating_details: bool = False,
@@ -50,16 +50,15 @@ def build_event_teams_intel_payload(
 ) -> dict[str, Any]:
     # Build event-scoped team intel payload.
     #
-    # Runs the registered async builder on its own loop (see statbotics_client.run_sync).
+    # Runs the registered async builder on its own loop (callers are sync: scheduler, ratings).
     if _event_teams_intel_builder is None:
         logger.warning("intel_builders: event_teams_intel_builder not registered")
         return {}
-    return statbotics_client.run_sync(
+    return asyncio.run(
         _event_teams_intel_builder(
             db=db,
             event_key=event_key,
             include_tba=include_tba,
-            include_statbotics=include_statbotics,
             auto_heal_ratings=auto_heal_ratings,
             include_season_fallback=include_season_fallback,
             include_rating_details=include_rating_details,
@@ -75,17 +74,16 @@ def build_team_intel_payload(
     preferred_year: int,
     fallback_year: int,
     include_tba: bool = True,
-    include_statbotics: bool = True,
     allow_season_fallback: bool = True,
     auto_heal_ratings: bool = True,
 ) -> dict[str, Any]:
     # Build team-scoped intel payload.
     #
-    # Runs the registered async builder on its own loop (see statbotics_client.run_sync).
+    # Runs the registered async builder on its own loop (callers are sync: scheduler, ratings).
     if _team_intel_builder is None:
         logger.warning("intel_builders: team_intel_builder not registered")
         return {}
-    return statbotics_client.run_sync(
+    return asyncio.run(
         _team_intel_builder(
             db=db,
             team_key=team_key,
@@ -93,7 +91,6 @@ def build_team_intel_payload(
             preferred_year=preferred_year,
             fallback_year=fallback_year,
             include_tba=include_tba,
-            include_statbotics=include_statbotics,
             allow_season_fallback=allow_season_fallback,
             auto_heal_ratings=auto_heal_ratings,
         )

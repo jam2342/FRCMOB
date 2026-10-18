@@ -10,16 +10,10 @@
   white-space: nowrap;
 }
 
-.source {
-  margin-left: var(--space-1);
-  font-size: var(--font-size-2xs);
-  color: var(--color-text-muted);
-}
-
 /* Whether the prediction was right.
 
    The tint goes on the cells only. Setting it on the <tr> as well composited
-   it twice — 10% over 10% is 19%, which dropped the red synergy figure sitting
+   it twice — 10% over 10% is 19%, which dropped the red figure sitting
    on top of it to 3.95:1. At 5% applied once the text keeps 5.17:1 and the
    band still reads when you scan a column of them.
 

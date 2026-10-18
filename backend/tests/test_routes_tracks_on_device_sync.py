@@ -285,6 +285,48 @@ class OnDeviceSessionSyncTests(unittest.TestCase):
         self.assertEqual(hm["match_count"], 1)
         self.assertTrue(hm["include_unreviewed"])
 
+    def test_a_team_sees_its_own_unreviewed_recordings_and_nobody_else_does(self):
+        self.client.post(
+            "/tracks/on-device-session", json=_session_body("sess-own"), headers=self.workspace_headers
+        )
+        with self.SessionLocal() as db:
+            _other, _member, other_headers = seed_workspace(db, name="Other Team")
+        own = self.client.get(
+            f"/tracks/heatmap/{RED_TEAM}",
+            params={"event_key": EVENT_KEY, "include_workspace": "true"},
+            headers=self.workspace_headers,
+        )
+        other = self.client.get(
+            f"/tracks/heatmap/{RED_TEAM}",
+            params={"event_key": EVENT_KEY, "include_workspace": "true"},
+            headers=other_headers,
+        )
+        public = self.client.get(f"/tracks/heatmap/{RED_TEAM}", params={"event_key": EVENT_KEY})
+        anonymous = self.client.get(
+            f"/tracks/heatmap/{RED_TEAM}", params={"event_key": EVENT_KEY, "include_workspace": "true"}
+        )
+        self.assertEqual(own.status_code, 200, own.text)
+        self.assertEqual(own.json()["total_points"], 2)
+        self.assertEqual(own.json()["own_unreviewed_matches"], 1)
+        self.assertEqual(other.json()["total_points"], 0)
+        self.assertEqual(public.json()["total_points"], 0)
+        # Asking for team data without a workspace is the usual "join a workspace" 401.
+        self.assertEqual(anonymous.status_code, 401, anonymous.text)
+
+    def test_a_rejected_recording_stays_hidden_from_its_own_team(self):
+        created = self.client.post(
+            "/tracks/on-device-session", json=_session_body("sess-own-rejected"), headers=self.workspace_headers
+        )
+        session_id = created.json()["on_device_session_id"]
+        with mock.patch.object(routes_tracks, "require_admin_access"):
+            self.client.post(f"/tracks/on-device-session/{session_id}/review", json={"status": "rejected"})
+        own = self.client.get(
+            f"/tracks/heatmap/{RED_TEAM}",
+            params={"event_key": EVENT_KEY, "include_workspace": "true"},
+            headers=self.workspace_headers,
+        )
+        self.assertEqual(own.json()["total_points"], 0)
+
     def test_accepted_tracks_reach_the_public_heatmap(self):
         created = self.client.post("/tracks/on-device-session", json=_session_body("sess-accepted-map"))
         session_id = created.json()["on_device_session_id"]
@@ -345,6 +387,17 @@ class OnDeviceSessionSyncTests(unittest.TestCase):
         self.assertEqual(second.status_code, 429, second.text)
         with self.SessionLocal() as db:
             self.assertEqual(db.query(models.AnalysisRun).count(), 1)
+
+    def test_run_cap_is_per_caller_so_one_cannot_lock_out_another(self):
+        with mock.patch.object(settings, "on_device_sync_max_runs_per_match", 1):
+            with mock.patch.object(routes_tracks, "on_device_sync_identity", return_value=(True, "r:spammer")):
+                first = self.client.post("/tracks/on-device-session", json=_session_body("sess-a"))
+                capped = self.client.post("/tracks/on-device-session", json=_session_body("sess-b"))
+            with mock.patch.object(routes_tracks, "on_device_sync_identity", return_value=(True, "r:honest")):
+                other = self.client.post("/tracks/on-device-session", json=_session_body("sess-c"))
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(capped.status_code, 429, capped.text)
+        self.assertEqual(other.status_code, 200, other.text)
 
     def test_resync_under_cap_still_reuses_run(self):
         # The cap only blocks *new* runs; re-syncing an existing session must still work.
@@ -429,16 +482,21 @@ class OnDeviceSessionSyncTests(unittest.TestCase):
         self.assertEqual(self._count_tracks(), 0)
 
     def _sync_with_room_token(self, session_id: str, headers: dict[str, str]):
+        with self.SessionLocal() as db:
+            member = db.query(models.TeamWorkspaceMember).filter_by(
+                workspace_id=self.workspace_id, display_name="Lead",
+            ).one()
+            member_id = member.id
         with (
             mock.patch.object(
                 routes_tracks,
                 "on_device_sync_identity",
-                return_value=(True, "r:team-room:alice"),
+                return_value=(True, "r:team-room:Lead"),
             ),
             mock.patch.object(
                 routes_tracks,
                 "room_access_payload_from_request",
-                return_value={"room_key": "team-room", "role": "editor"},
+                return_value={"room_key": "team-room", "role": "editor", "mid": member_id, "scout_profile": "Lead"},
             ),
         ):
             return self.client.post("/tracks/on-device-session", json=_session_body(session_id), headers=headers)

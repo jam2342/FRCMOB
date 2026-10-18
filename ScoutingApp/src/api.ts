@@ -1,3 +1,4 @@
+import { API_CACHE_BUDGET_CHARS, API_CACHE_PREFIX, freeApiCacheSpace } from "./utils/apiCacheSpace";
 import { isNativeApp } from './platform/runtime';
 import { resolveApiBaseUrl, resolveWebSocketBaseUrl } from './platform/runtime';
 
@@ -285,7 +286,7 @@ function cacheResponse(requestKey: string, cached: CachedResponse): void {
   }
 }
 const inflightGetRequests = new Map<string, Promise<Response>>();
-const PERSIST_CACHE_PREFIX = "scouting_api_cache_v1:";
+const PERSIST_CACHE_PREFIX = API_CACHE_PREFIX;
 let suggestedEventsCircuitOpenUntilMs = 0;
 
 export type MetricAverages = {
@@ -346,14 +347,6 @@ type SeasonScope = {
   active_season_year: number;
   source: string;
   uses_active_season: boolean;
-};
-
-type DataFreshness = {
-  is_outdated: boolean;
-  outdated_days_threshold: number;
-  latest_match_time: number | null;
-  latest_match_age_days: number | null;
-  warnings: string[];
 };
 
 type TeamHistoryFinding = {
@@ -483,7 +476,6 @@ type EventTeamsHistoryTeam = {
   state_prov: string | null;
   country: string | null;
   history_count: number;
-  data_freshness?: DataFreshness;
   averages: MetricAverages | null;
   previous_games: TeamHistoryFinding[];
 };
@@ -506,62 +498,23 @@ export type TeamBreakdownResponse = {
   };
   event_key: string | null;
   season_scope?: SeasonScope;
-  data_freshness?: DataFreshness;
-  ml_projection?: {
-    available: boolean;
-    model_key: string;
-    model_version: string | null;
-    source: string | null;
-    source_event_key: string | null;
-    predicted_active_bps: number | null;
-    predicted_scores_per_min: number | null;
-    reason: string | null;
-    detail: string | null;
-    input?: {
-      rating_0_100: number | null;
-      throughput_0_100: number | null;
-      confidence_0_1: number | null;
-      match_count: number;
-      coverage_factor_0_1: number | null;
-    } | null;
-  };
+  /* Official matches in the breakdown (Data Dashboard, Auto Paths). */
   matches_analyzed: number;
   averages: MetricAverages | null;
-  metric_units?: Record<string, string>;
   climb_sources?: {
     overall_climb_success_prob: number | null;
-    video_only: ClimbSourceSummary;
     official_score_breakdown: ClimbSourceSummary;
     level_capability?: ClimbLevelCapability;
   };
   metric_coverage?: Record<string, MetricCoverageInfo>;
   official_stats?: OfficialTeamStats | null;
-  active_perimeter_type?: "welded" | "andymark" | null;
-  perimeter_types?: Array<"welded" | "andymark">;
-  perimeter_sources?: string[];
-  analysis_versions: string[];
   event_type_counts: Array<{ event_type: string; count: number }>;
-  zone_time_sec: Record<string, number>;
   recent_matches: Array<
     TeamHistoryFinding & {
       analysis_run_id: number;
       source_version: string;
     }
   >;
-  recent_events: Array<{
-    id: number;
-    analysis_run_id: number;
-    match_key: string;
-    event_key: string;
-    track_id: number | null;
-    time_sec: number;
-    frame_index: number | null;
-    event_type: string;
-    confidence: number | null;
-    field_x: number | null;
-    field_y: number | null;
-    meta: Record<string, unknown>;
-  }>;
   recent_track_points: Array<{
     id: number;
     analysis_run_id: number;
@@ -575,22 +528,30 @@ export type TeamBreakdownResponse = {
     zone_key: string | null;
     bbox: [number, number, number, number];
   }>;
-  run_ids: number[];
 };
 
 type RatingSignalEvidence = {
   match_key: string;
   metric: string;
   value: number;
-  clip_url: string | null;
 };
 
 type RatingSignal = {
   label: string;
+  /* One plain sentence with the numbers behind it (rating_v15). */
+  rationale?: string;
   metric_value: number;
-  percentile: number;
+  /* Only on older (rating_v14) signals. */
+  percentile?: number;
   evidence: RatingSignalEvidence[];
 };
+
+export type RatingChange = { match_key: string; points_change: number; rating_change: number };
+export type RatingExpectedPoints = { total: number; teleop: number; auto: number; climb: number };
+export type RatingBasis = 'this_event' | 'earlier_events' | 'last_season' | 'rookie' | 'season_typical';
+
+/* Where an event's season stands (backend services/seasons.py). */
+export type SeasonInfo = { season: number | null; game: string | null; current: boolean; rated: boolean; frozen: boolean };
 
 export type EventTeamRatingItem = {
   event_key: string;
@@ -599,21 +560,40 @@ export type EventTeamRatingItem = {
   nickname: string | null;
   rating_0_100: number;
   confidence_0_1: number;
+  /* Scoring rating: teleop + auto on the same scale as the overall rating. */
   robot_level_0_100: number;
-  driver_skill_0_100: number;
+  /* Null since rating_v15: official results can't separate driving from the robot. */
+  driver_skill_0_100: number | null;
+  /* On the rating's own scale (the season's typical robot = 50). Null when official
+     results can't measure it (results_anchor, shift_productivity, capacity_utilization,
+     manual_points_impact, rp_contribution, defense_presence, penalty_discipline), or
+     consistency before a team has 3 matches at the event. */
   subscores: {
-    results_anchor: number;
-    throughput: number;
-    shift_productivity: number;
-    capacity_utilization: number;
-    endgame: number;
+    results_anchor: number | null;
+    throughput: number | null;
+    shift_productivity: number | null;
+    capacity_utilization: number | null;
+    endgame: number | null;
     auto_contribution?: number | null;
     manual_points_impact?: number | null;
     rp_contribution?: number | null;
     defense_presence?: number | null;
-    consistency: number;
+    consistency: number | null;
     penalty_discipline?: number | null;
   };
+  /* What the rating stands for: points the team adds to its alliance per match. */
+  expected_points?: RatingExpectedPoints | null;
+  /* this_event: rated from matches here; earlier_events: hasn't played here yet;
+     season_typical: no official matches this season. */
+  basis?: RatingBasis | null;
+  matches_here?: number | null;
+  matches_before?: number | null;
+  /* Where the rating likely is (80%): [low, high]. Narrow with many matches. */
+  rating_range_80?: [number, number] | null;
+  /* Share of matches this robot is expected to score ~nothing (dead, tipped, disconnected). */
+  dud_rate?: number | null;
+  /* The last matches here that moved the rating, newest first. */
+  recent_changes?: RatingChange[];
   pros: RatingSignal[];
   cons: RatingSignal[];
   evidence: RatingSignalEvidence[];
@@ -746,74 +726,40 @@ export type EventTeamLiveFormResponse = {
   team_statuses: Record<string, EventTeamLiveFormEntry>;
 };
 
-type ScheduleSynergyPairBreakdown = {
-  team_key_a: string;
-  team_key_b: string;
-  base_synergy_points?: number;
-  role_adjustment_points?: number;
-  complement_bonus_points?: number;
-  risk_penalty_points?: number;
-  synergy_points: number;
-  confidence: number;
-  role_profile_confidence_0_1?: number;
-  role_profile_coverage_0_1?: number;
-  role_axes?: Record<string, number>;
-  source: "projection" | "blended" | "measured";
-  prior_n: number;
-  event_n: number;
-};
-
-type ScheduleSynergyAlliance = {
-  available: boolean;
-  alliance_synergy_score_0_100: number | null;
-  alliance_synergy_points: number;
-  expected_throughput: number | null;
-  projected_throughput: number | null;
-  confidence_0_1: number;
-  source_label: "projection" | "blended" | "measured";
-  pair_breakdown: ScheduleSynergyPairBreakdown[];
-  computed_at?: string | null;
-};
-
 type MatchPredictionPayload = {
   available: boolean;
   source_label: string;
-  model_key: string;
-  model_version: string | null;
   red_win_prob: number | null;
   blue_win_prob: number | null;
   favored_alliance: 'red' | 'blue' | null;
   edge_confidence_0_1: number | null;
+  /* Quals: each alliance's chance of each bonus RP, and its expected RP (3 for a win plus bonuses). */
+  bonus_rp_chances?: {
+    red: Record<string, number>;
+    blue: Record<string, number>;
+    red_expected_rp: number;
+    blue_expected_rp: number;
+  } | null;
 };
 
-export type ScheduleWithSynergyMatch = {
+export type PredictedScheduleMatch = {
   match_key: string;
   comp_level: string;
   set_number: number;
   match_number: number;
   scheduled_time: number | null;
-  red: {
-    teams: EventScheduleTeam[];
-    synergy: ScheduleSynergyAlliance;
-  };
-  blue: {
-    teams: EventScheduleTeam[];
-    synergy: ScheduleSynergyAlliance;
-  };
+  red: { teams: EventScheduleTeam[] };
+  blue: { teams: EventScheduleTeam[] };
   prediction?: MatchPredictionPayload;
 };
 
-export type EventScheduleWithSynergyResponse = {
+export type EventPredictionScheduleResponse = {
   ok: boolean;
   event_key: string;
   event_name: string | null;
-  model_version: string;
-  projection_count: number;
-  ml_prediction_model_version?: string | null;
-  ml_prediction_count?: number;
+  season?: SeasonInfo | null;
   count: number;
-  precompute?: Record<string, unknown> | null;
-  matches: ScheduleWithSynergyMatch[];
+  matches: PredictedScheduleMatch[];
 };
 
 type MatchPhaseWindow = {
@@ -851,6 +797,9 @@ export type TeamHeatmapResponse = {
   match_key: string | null;
   total_points: number;
   match_count: number;
+  // Matches covered only by your team's own recordings, which nobody has reviewed
+  // and only your team sees (asked for with include_workspace).
+  own_unreviewed_matches?: number;
   field_length_m: number;
   field_width_m: number;
   grid_cols: number;
@@ -933,7 +882,6 @@ export type TeamIntelResponse = {
   rating: Record<string, unknown>;
   auto_scout_profile?: AutoScoutProfile;
   tba: Record<string, unknown>;
-  statbotics: Record<string, unknown>;
   fallbacks: Array<Record<string, unknown>>;
   warnings: string[];
 };
@@ -998,32 +946,6 @@ export type EventTeamsIntelResponse = {
   warnings: string[];
 };
 
-type TheoreticalAllianceSignal = {
-  label?: string;
-  metric_value?: number;
-  percentile?: number;
-} & Record<string, unknown>;
-
-type TheoreticalAllianceTeamSummary = {
-  team_key: string;
-  rating_0_100: number | null;
-  model_confidence_0_1: number | null;
-  compatibility_points: number;
-  compatibility_avg_pair_points: number;
-  compatibility_score_0_100: number;
-  pros_score_0_100: number;
-  cons_risk_0_100: number;
-  weighted_score_0_100: number;
-  selection_rank?: number | null;
-  selection_strength_score?: number | null;
-  selection_strength_source?: string | null;
-  selection_desirability?: number | null;
-  selection_pick_probability_0_1?: number | null;
-  selection_is_captain?: boolean;
-  pros_top: TheoreticalAllianceSignal[];
-  cons_top: TheoreticalAllianceSignal[];
-};
-
 export type TheoreticalSelectionTopTeam = {
   team_key: string;
   rank: number;
@@ -1064,44 +986,38 @@ export type TheoreticalSelectionModel = {
   team_pick_probability_0_1?: Record<string, number>;
 };
 
-export type TheoreticalAllianceResponse = {
+export type SelectionModelResponse = {
   ok: boolean;
   event_key: string;
-  team_keys: string[];
-  weights: {
-    compatibility_weight: number;
-    pros_weight: number;
-    cons_weight: number;
-  };
-  compatibility: {
-    alliance_synergy_points: number;
-    compatibility_score_0_100: number;
-    confidence_0_1: number;
-    source_label: "projection" | "blended" | "measured";
-    pair_breakdown: Array<{
-      team_key_a: string;
-      team_key_b: string;
-      base_synergy_points?: number;
-      role_adjustment_points?: number;
-      complement_bonus_points?: number;
-      risk_penalty_points?: number;
-      synergy_points: number;
-      confidence: number;
-      role_profile_confidence_0_1?: number;
-      role_profile_coverage_0_1?: number;
-      role_axes?: Record<string, number>;
-      source: "projection" | "blended" | "measured";
-      prior_n: number;
-      event_n: number;
-    }>;
-  };
-  pros_cons: {
-    alliance_pros_score_0_100: number;
-    alliance_cons_risk_0_100: number;
-  };
-  weighted_total_score_0_100: number;
-  selection_model?: TheoreticalSelectionModel | null;
-  teams: TheoreticalAllianceTeamSummary[];
+  selection_model: TheoreticalSelectionModel;
+};
+
+export type AllianceOutlookTeam = {
+  team_key: string;
+  rating_0_100: number;
+  points_per_match: number;
+  climb_points: number;
+  dud_rate: number;
+  event_rank_by_points: number;
+  strengths: string[];
+  risks: string[];
+};
+
+export type AllianceOutlookOpponent = { teams: string[]; points: number; win_prob: number };
+
+/* How good a chosen three-team alliance is, from the team model (same as pick values). */
+export type AllianceOutlookResponse = {
+  ok: boolean;
+  event_key: string;
+  teams: AllianceOutlookTeam[];
+  alliance_points?: number;
+  alliance_points_range_80?: [number, number];
+  vs_strong?: AllianceOutlookOpponent;
+  vs_typical?: AllianceOutlookOpponent;
+  bonus_rp_chances?: Record<string, number>;
+  team_count?: number;
+  /* "season_frozen" / "season_not_rated" / "too_few_teams". */
+  unavailable?: string;
 };
 
 export type ApiHealthResponse = {
@@ -1234,10 +1150,23 @@ function normalizeMethod(method: string | undefined): string {
   return (method || "GET").toUpperCase();
 }
 
+// Pull-to-refresh opens a short window in which reads skip the in-memory and saved copies, so
+// "refresh" means the network. Offline it isn't opened: the saved copies are all there is.
+let freshReadsUntilMs = 0;
+
+export function readFreshFor(ms: number): () => void {
+  const until = Date.now() + Math.max(0, ms);
+  freshReadsUntilMs = until;
+  return () => {
+    if (freshReadsUntilMs === until) freshReadsUntilMs = 0;
+  };
+}
+
 function shouldBypassCache(url: string, init?: ApiFetchInit): boolean {
   if (init?.bypassCache) return true;
   const method = normalizeMethod(init?.method);
   if (method !== "GET") return true;
+  if (Date.now() < freshReadsUntilMs) return true;
   if (url.includes("refresh=true")) return true;
   if (url.includes("onlyModifiedSince=")) return true;
   return false;
@@ -1567,6 +1496,13 @@ function readCacheAnyAge(requestKey: string): CacheLookupResult | null {
 // Builds an offline-stale Response from the age-agnostic caches (memory, localStorage,
 // and the large-response store) and signals the UI (via a window event) that the user
 // is now looking at saved data.
+// A server having a bad moment (5xx, rate limit, timeout) is no different for a reader
+// than a dropped connection: show the last saved copy rather than "no matches" or
+// "0 matches", which read as facts. A dropped connection already did this.
+function serverTrouble(response: Response): boolean {
+  return response.status >= 500 || response.status === 429 || response.status === 408;
+}
+
 async function offlineStaleFallback(requestKey: string): Promise<Response | null> {
   let hit = readCacheAnyAge(requestKey);
   const stored = await getStoredResponse(requestKey);
@@ -1619,7 +1555,14 @@ async function writePersistentGetCache(requestKey: string, response: Response, f
       bodyText,
     };
     try {
-      window.localStorage.setItem(persistentCacheKey(requestKey), JSON.stringify(payload));
+      // Within the cache's budget (utils/apiCacheSpace.ts), so it can't crowd out
+      // scouting work: the oldest copies make room, and beyond that Cache Storage.
+      const storageKey = persistentCacheKey(requestKey);
+      const entry = JSON.stringify(payload);
+      const room = API_CACHE_BUDGET_CHARS - storageKey.length - entry.length;
+      if (room < 0) throw new Error('over the saved-copy budget');
+      freeApiCacheSpace(room);
+      window.localStorage.setItem(storageKey, entry);
     } catch {
       // localStorage full (~5 MB per site): keep it in Cache Storage instead
       return await putStoredResponse(requestKey, bodyText, {
@@ -1816,8 +1759,15 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
       let fetched: Response | null = null;
       if (boot) {
         try {
-          const early = await boot;
-          fetched = early.ok ? early : null;
+          // Same time limit as the request itself: a stalled early fetch (a dying
+          // connection on venue wifi) kept Home on "Loading matches…" for good.
+          let limit: ReturnType<typeof setTimeout> | undefined;
+          const early = await Promise.race([
+            boot,
+            new Promise<null>((resolve) => { limit = setTimeout(() => resolve(null), timeoutMs); }),
+          ]);
+          clearTimeout(limit);
+          fetched = early?.ok ? early : null;
         } catch {
           fetched = null;
         }
@@ -1869,6 +1819,11 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
       // Live reads skip the cache on purpose, but at an event with no signal the last
       // copy beats an error. Saved as never-fresh (1 ms), so it only serves offline.
       void writePersistentGetCache(requestKey, response.clone(), 1);
+      // Nor may the in-memory copy stay older than what the page just showed: once a live
+      // match ended and polling went back to cached reads, the pre-match copy in memory
+      // came back and the final score vanished for a poll. Dropped, so the next cached
+      // read falls through to the copy saved just above.
+      responseCache.delete(requestKey);
     }
     return response;
   };
@@ -1897,7 +1852,12 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
       }
     }
     try {
-      return await live;
+      const response = await live;
+      if (serverTrouble(response)) {
+        const saved = await offlineStaleFallback(requestKey);
+        if (saved) return saved;
+      }
+      return response;
     } catch (err) {
       const saved = await offlineStaleFallback(requestKey);
       if (saved) return saved;
@@ -1995,6 +1955,10 @@ async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
   }
   try {
     const response = await promise;
+    if (serverTrouble(response)) {
+      const saved = await offlineStaleFallback(requestKey);
+      if (saved) return saved;
+    }
     return response.clone();
   } catch (err) {
     // Network fetch failed (offline / DNS / connection refused): fall back to
@@ -2069,53 +2033,6 @@ export async function getOpsDashboard(sampleDays: number = 14): Promise<OpsDashb
   return (await res.json()) as OpsDashboardResponse;
 }
 
-export async function runClimbOfficialBackfill(options?: {
-  event_key?: string;
-  max_events?: number;
-}): Promise<{
-  ok: boolean;
-  result: {
-    ok: boolean;
-    event_count: number;
-    totals: {
-      official_rows: number;
-      updated_findings: number;
-      inserted_findings: number;
-      inserted_runs: number;
-      errored_events: number;
-    };
-  };
-}> {
-  const params = new URLSearchParams();
-  if (typeof options?.event_key === "string" && options.event_key.trim()) {
-    params.set("event_key", options.event_key.trim().toLowerCase());
-  }
-  if (typeof options?.max_events === "number") {
-    params.set("max_events", String(Math.max(1, Math.min(40, Math.round(options.max_events)))));
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await apiFetch(`${API}/maintenance/climb/official-backfill/run${suffix}`, {
-    method: "POST",
-    bypassCache: true,
-    cacheTtlMs: 0,
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as {
-    ok: boolean;
-    result: {
-      ok: boolean;
-      event_count: number;
-      totals: {
-        official_rows: number;
-        updated_findings: number;
-        inserted_findings: number;
-        inserted_runs: number;
-        errored_events: number;
-      };
-    };
-  };
-}
-
 export async function ingestEvent(eventKey: string): Promise<{
   ok: boolean;
   event_key: string;
@@ -2131,13 +2048,6 @@ export async function ingestEvent(eventKey: string): Promise<{
     detail?: string | null;
     model_version?: string | null;
     count?: number;
-  };
-  synergy_precompute?: {
-    triggered: boolean;
-    ok: boolean;
-    detail?: string | null;
-    model_version?: string | null;
-    projection_count?: number;
   };
 }> {
   const res = await apiFetch(`${API}/events/${eventKey}/ingest`, { method: "POST" });
@@ -2157,13 +2067,6 @@ export async function ingestEvent(eventKey: string): Promise<{
       detail?: string | null;
       model_version?: string | null;
       count?: number;
-    };
-    synergy_precompute?: {
-      triggered: boolean;
-      ok: boolean;
-      detail?: string | null;
-      model_version?: string | null;
-      projection_count?: number;
     };
   };
 }
@@ -2220,6 +2123,11 @@ async function loadSuggestedEventsSearchFallback(
     searchEvents(String(preferredYear)),
     searchEvents(String(fallbackYear)),
   ]);
+  // Both failed: say so. An empty list "ok: true" read as "no events" and left Home on
+  // an empty day with nothing to retry.
+  if (primarySearch.status === "rejected" && fallbackSearch.status === "rejected") {
+    throw primarySearch.reason instanceof Error ? primarySearch.reason : new Error("Couldn't load events. Check your connection.");
+  }
   const merged = mergeSuggestedFallbackEventLists(
     primarySearch.status === "fulfilled" ? primarySearch.value.events || [] : [],
     fallbackSearch.status === "fulfilled" ? fallbackSearch.value.events || [] : [],
@@ -2305,11 +2213,10 @@ export async function searchTeams(query: string, limit = 25): Promise<TeamSearch
   if (!q) {
     return { ok: true, query, count: 0, teams: [] };
   }
-  // Fast UI mode: avoid expensive global/team-registration expansion in interactive search.
+  // Fast UI mode: no team-registration expansion in interactive search.
   const params = new URLSearchParams({
     q,
     limit: String(limit),
-    include_global: "false",
     include_event_registrations: "false",
     preferred_year: String(SEASON.year),
     fallback_year: String(SEASON.fallbackYear),
@@ -2374,7 +2281,6 @@ export async function getTeamIntel(
     preferred_year?: number;
     fallback_year?: number;
     include_tba?: boolean;
-    include_statbotics?: boolean;
     allow_season_fallback?: boolean;
     auto_heal_ratings?: boolean;
     refresh?: boolean;
@@ -2387,9 +2293,6 @@ export async function getTeamIntel(
   if (typeof options?.preferred_year === "number") params.set("preferred_year", String(options.preferred_year));
   if (typeof options?.fallback_year === "number") params.set("fallback_year", String(options.fallback_year));
   if (typeof options?.include_tba === "boolean") params.set("include_tba", String(options.include_tba));
-  if (typeof options?.include_statbotics === "boolean") {
-    params.set("include_statbotics", String(options.include_statbotics));
-  }
   if (typeof options?.allow_season_fallback === "boolean") {
     params.set("allow_season_fallback", String(options.allow_season_fallback));
   }
@@ -2427,7 +2330,6 @@ export async function getEventTeamsIntel(
   eventKey: string,
   options?: {
     include_tba?: boolean;
-    include_statbotics?: boolean;
     auto_heal_ratings?: boolean;
     include_season_fallback?: boolean;
     include_rating_details?: boolean;
@@ -2439,9 +2341,6 @@ export async function getEventTeamsIntel(
   const canUseAdminReadFlags = clientAdminKeyAvailable();
   const params = new URLSearchParams();
   if (typeof options?.include_tba === "boolean") params.set("include_tba", String(options.include_tba));
-  if (typeof options?.include_statbotics === "boolean") {
-    params.set("include_statbotics", String(options.include_statbotics));
-  }
   // Flags the server defaults to false go in the URL only when true, so equivalent
   // requests share one cache entry (an offline pack missed pages that sent "=false").
   if (options?.auto_heal_ratings && canUseAdminReadFlags) params.set("auto_heal_ratings", "true");
@@ -2561,31 +2460,38 @@ export async function getEventRatingsLive(
   return (await res.json()) as EventRatingsResponse;
 }
 
-export async function getTheoreticalAlliance(
+/* Who is likely to be picked at alliance selection: a draft simulation on ratings and rank. */
+export async function getSelectionModel(
   eventKey: string,
-  payload: {
-    team_keys: string[];
-    compatibility_weight: number;
-    pros_weight: number;
-    cons_weight: number;
-    include_selection_model?: boolean;
-    selection_rank_weight?: number;
-    selection_scale?: number;
-    selection_captains?: number;
-    selection_simulations?: number;
-    selection_rank_source?: "auto" | "tba" | "model";
-    model_version?: string;
-    quality_threshold?: number;
-    auto_precompute?: boolean;
+  options: {
+    rank_weight: number;
+    scale: number;
+    captains: number;
+    simulations: number;
+    rank_source?: "auto" | "tba" | "model";
   },
-): Promise<TheoreticalAllianceResponse> {
-  const res = await apiFetch(`${API}/synergy/event/${eventKey}/theoretical-alliance`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+): Promise<SelectionModelResponse> {
+  const params = new URLSearchParams({
+    rank_weight: String(options.rank_weight),
+    scale: String(options.scale),
+    captains: String(options.captains),
+    simulations: String(options.simulations),
+    rank_source: options.rank_source ?? "auto",
   });
+  const res = await apiFetch(`${API}/events/${eventKey}/selection-model?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
   if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as TheoreticalAllianceResponse;
+  return (await res.json()) as SelectionModelResponse;
+}
+
+export async function getAllianceOutlook(eventKey: string, teamKeys: string[]): Promise<AllianceOutlookResponse> {
+  const params = new URLSearchParams({ teams: teamKeys.join(',') });
+  const res = await apiFetch(`${API}/events/${eventKey}/alliance-outlook?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as AllianceOutlookResponse;
 }
 
 export async function getMatchPhases(matchKey: string): Promise<MatchPhasesResponse> {
@@ -2742,32 +2648,18 @@ export async function getEventTeamLiveForm(
   return (await res.json()) as EventTeamLiveFormResponse;
 }
 
-export async function getEventScheduleWithSynergy(
+// The schedule with each match's prediction. The URL predates synergy's removal and is
+// kept so saved offline copies still match.
+export async function getEventPredictionSchedule(
   eventKey: string,
   options?: {
-    model_version?: string;
-    include_pair_breakdown?: boolean;
-    refresh?: boolean;
     showSavedMaxAgeMs?: number;
-    // Skip this tab's cached copy without asking the server to rebuild synergy.
+    // Skip this tab's cached copy.
     bypassCache?: boolean;
   },
-): Promise<EventScheduleWithSynergyResponse> {
-  const params = new URLSearchParams();
-  if (options?.model_version) params.set("model_version", options.model_version);
-  if (typeof options?.include_pair_breakdown === "boolean") {
-    params.set("include_pair_breakdown", String(options.include_pair_breakdown));
-  }
-  if (typeof options?.refresh === "boolean") {
-    if (!options.refresh || clientAdminKeyAvailable()) {
-      params.set("refresh", String(options.refresh));
-    } else {
-      params.set("refresh", "false");
-    }
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : "";
+): Promise<EventPredictionScheduleResponse> {
   const res = await apiFetch(
-    `${API}/events/${eventKey}/schedule-with-synergy${suffix}`,
+    `${API}/events/${eventKey}/schedule-with-synergy`,
     _cacheRequestOptions(
       options?.bypassCache ? { bypassCache: true } : { showSavedMaxAgeMs: options?.showSavedMaxAgeMs },
       {
@@ -2776,7 +2668,7 @@ export async function getEventScheduleWithSynergy(
     }),
   );
   if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as EventScheduleWithSynergyResponse;
+  return (await res.json()) as EventPredictionScheduleResponse;
 }
 
 export async function getEventAlliances(
@@ -2799,6 +2691,116 @@ export async function getEventAlliances(
   );
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as EventAlliancesResponse;
+}
+
+export type EventForecastTeam = {
+  team_key: string;
+  current_rank: number | null;
+  ranking_score: number | null;
+  matches_played: number;
+  points_per_match: number;
+  expected_rank?: number;
+  top8?: number;
+  captain?: number;
+  on_alliance?: number;
+  win_event?: number;
+  expected_rp?: number;
+  /* A finished event: on the winning / losing finals alliance. */
+  won_event?: boolean;
+  finalist?: boolean;
+};
+
+export type EventForecastResponse = {
+  ok: boolean;
+  event_key: string;
+  runs?: number;
+  quals_played?: number;
+  quals_remaining?: number;
+  playoffs_started?: boolean;
+  /* False for an event with no qualification matches (playoffs only). */
+  simulated: boolean;
+  /* The event is over (or its season is frozen): what happened, not a simulation. */
+  finished?: boolean;
+  winners?: string[];
+  finalists?: string[];
+  /* "season_not_rated": a season FRCMOB has no ratings for. */
+  unavailable?: string;
+  teams: EventForecastTeam[];
+};
+
+/* The rest of the event played thousands of times from the team model: each team's
+   expected rank and chances of the top 8, captaining, an alliance and the title. */
+export async function getEventForecast(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventForecastResponse> {
+  const res = await apiFetch(
+    `${API}/events/${eventKey}/forecast`,
+    _cacheRequestOptions(requestOptions, {
+      cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+      staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
+    }),
+  );
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as EventForecastResponse;
+}
+
+export type PickValueCandidate = {
+  team_key: string;
+  win_vs_strong_alliance: number;
+  alliance_points: number;
+  points_per_match: number;
+  rating_0_100: number;
+  climb_points: number;
+  dud_rate: number;
+  bonus_rp_chances: Record<string, number>;
+};
+
+export type PickValuesResponse = {
+  ok: boolean;
+  event_key: string;
+  partners: string[];
+  assumed_third: string | null;
+  reference: string[];
+  reference_points?: number;
+  candidates: PickValueCandidate[];
+  /* "season_frozen" / "season_not_rated": a past season has no live model to ask. */
+  unavailable?: string;
+};
+
+export type RatingHistoryEvent = {
+  event_key: string;
+  event_name: string | null;
+  start: number | null;
+  rating_0_100: number;
+  rating_range_80?: [number, number] | null;
+  points_per_match?: number | null;
+  matches_here: number;
+  rank?: number | null;
+  field_size?: number | null;
+  won_event: boolean;
+};
+
+export type RatingHistorySeason = { season: number; game: string | null; current: boolean; frozen: boolean; events: RatingHistoryEvent[] };
+
+export type RatingHistoryResponse = { ok: boolean; team_key: string; seasons: RatingHistorySeason[]; first_rated_season: number | null };
+
+/* A team's FRCMOB ratings season by season; seasons are different games, listed apart. */
+export async function getTeamRatingHistory(teamKey: string): Promise<RatingHistoryResponse> {
+  const res = await apiFetch(`${API}/teams/${teamKey}/rating-history`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
+    staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as RatingHistoryResponse;
+}
+
+/* Who to pick next for an alliance of 1-2 teams: each candidate's chance to beat a
+   strong alliance at the event with them. */
+export async function getPickValues(eventKey: string, teamKeys: string[], limit = 30): Promise<PickValuesResponse> {
+  const params = new URLSearchParams({ teams: teamKeys.join(','), limit: String(limit) });
+  const res = await apiFetch(`${API}/events/${eventKey}/pick-values?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as PickValuesResponse;
 }
 
 export async function getEventRankings(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventRankingsResponse> {
@@ -3257,6 +3259,8 @@ export async function getTeamHeatmap(
     sigma?: number;
     // Operators only: also count phone recordings nobody has reviewed yet.
     include_unreviewed?: boolean;
+    // Workspace members: also count your own team's recordings before review.
+    include_workspace?: boolean;
   },
 ): Promise<TeamHeatmapResponse> {
   const params = new URLSearchParams({ event_key: eventKey });
@@ -3265,6 +3269,7 @@ export async function getTeamHeatmap(
   if (options?.grid_rows != null) params.set("grid_rows", String(options.grid_rows));
   if (options?.sigma != null) params.set("sigma", String(options.sigma));
   if (options?.include_unreviewed) params.set("include_unreviewed", "true");
+  if (options?.include_workspace) params.set("include_workspace", "true");
   const res = await apiFetch(
     `${API}/tracks/heatmap/${teamKey}?${params.toString()}`,
     _cacheRequestOptions(undefined, {
@@ -3284,14 +3289,20 @@ export type TeamShiftPlayResponse = {
   event_key: string;
   available: boolean;
   sample_matches: number;
+  own_unreviewed_matches?: number;
   offense: { level_1_5: number; confidence_0_1: number } | null;
   defense: { level_1_5: number; confidence_0_1: number; assessable: boolean } | null;
   attack_heatmap: TeamHeatmapResponse | null;
   defense_heatmap: TeamHeatmapResponse | null;
 };
 
-export async function getTeamShiftPlay(teamKey: string, eventKey: string): Promise<TeamShiftPlayResponse> {
+export async function getTeamShiftPlay(
+  teamKey: string,
+  eventKey: string,
+  options?: { include_workspace?: boolean },
+): Promise<TeamShiftPlayResponse> {
   const params = new URLSearchParams({ event_key: eventKey });
+  if (options?.include_workspace) params.set("include_workspace", "true");
   const res = await apiFetch(
     `${API}/tracks/shift-play/${teamKey}?${params.toString()}`,
     _cacheRequestOptions(undefined, {
@@ -3472,10 +3483,26 @@ async function applyWorkspaceResponse(res: Response): Promise<WorkspaceStateResp
   return payload;
 }
 
+export interface WorkspaceSignupPolicy {
+  required: boolean;
+  site_key: string | null;
+}
+
+export async function getWorkspaceSignupPolicy(): Promise<WorkspaceSignupPolicy> {
+  const res = await apiFetch(`${API}/workspaces/signup-policy`, { method: "GET", cache: "no-store", ...WORKSPACE_FETCH });
+  if (!res.ok) throw new Error(await readError(res));
+  const payload = await res.json() as WorkspaceSignupPolicy;
+  if (typeof payload.required !== 'boolean' || (payload.site_key !== null && typeof payload.site_key !== 'string')) {
+    throw new Error('Workspace signup is temporarily unavailable. Try again later.');
+  }
+  return payload;
+}
+
 export async function createWorkspace(payload: {
   name: string;
   frc_team_number?: number | null;
   display_name: string;
+  challenge_token?: string | null;
 }): Promise<WorkspaceStateResponse> {
   const res = await apiFetch(`${API}/workspaces`, {
     method: "POST",

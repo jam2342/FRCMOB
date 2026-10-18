@@ -8,23 +8,19 @@ import re
 import threading
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import require_admin_access, require_write_access, sanitize_external_error
+from app.core.security import require_write_access, sanitize_external_error
 from app.db import models
 from app.db.session import get_db
-from app.api.schemas import ScheduleWithSynergyResponse
-from app.services.ml.shadow import (
-    MATCH_OUTCOME_MODEL_KEY,
-    infer_match_outcome_shadow_from_rows,
-)
+from app.api.schemas import SchedulePredictionsResponse
 from app.services.cache import get_cache
-from app.services.events.fuel_win_probability import fuel_margin_details, fuel_red_win_prob
-from app.services.ml.synergy import SYNERGY_MODEL_VERSION, precompute_event_synergy
+from app.services.events.win_probability import match_predictions, red_win_prob as points_red_win_prob
+from app.services.ratings.win_correction import active as correction_active, corrected as corrected_win_prob
 from app.services.season_config import CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR
 from app.services.utils import COMP_LEVEL_ORDER, _as_float
 from app.tba.client import TBAClient
@@ -286,24 +282,27 @@ def _station_sort_key(station: str | None) -> tuple[str, int]:
         number = 99
     return (prefix, number)
 
-def _deterministic_red_win_prob(
-    rating_margin: float,
-    synergy_margin: float,
-    projected_margin: float,
-) -> float:
-    # Sigmoid-blended deterministic baseline for red-alliance win probability.
-    #
-    # Uses the same feature margins the ML model consumes so the two are
-    # directly comparable. Weights are calibrated so that:
-    # - a +10 rating_margin alone → ~0.68
-    # - a +20 rating_margin alone → ~0.82
-    # - synergy/throughput contribute a smaller secondary nudge
-    z = (
-        0.075 * float(rating_margin)
-        + 0.015 * float(synergy_margin)
-        + 0.020 * float(projected_margin)
-    )
-    # Clamp z to avoid overflow on degenerate inputs
+def _bonus_rp_payload(details, row, season_year, thresholds, calibration, red_win, bonus_chances) -> dict | None:
+    # Quals only: chance each alliance earns each bonus RP, and its expected RP
+    # (3 for a win plus the bonuses).
+    if details is None or str(row.get("comp_level") or "qm").lower() != "qm":
+        return None
+    prediction = details[3]
+    out = {}
+    for color, hub, tower, win in (
+        ("red", prediction.red_hub, prediction.red_tower, red_win),
+        ("blue", prediction.blue_hub, prediction.blue_tower, 1.0 - red_win),
+    ):
+        chances = bonus_chances(season_year, thresholds, hub, tower, calibration)
+        out[color] = {rp: round(p, 3) for rp, p in chances.items()}
+        out[f"{color}_expected_rp"] = round(3.0 * win + sum(chances.values()), 2)
+    return out
+
+
+def _deterministic_red_win_prob(rating_margin: float) -> float:
+    # The rating-margin fallback for a match the team model can't call (an incomplete
+    # alliance): a +10 rating margin is ~0.68, +20 ~0.82.
+    z = 0.075 * float(rating_margin)
     if z > 30.0:
         return 1.0
     if z < -30.0:
@@ -734,54 +733,17 @@ def _compute_suggested_events(
             and isinstance(event.get("end_date"), date)
             and event["start_date"] <= now_date <= event["end_date"]
         ]
-        if prioritize_running and running_events:
-            running_events.sort(
-                key=lambda event: (
-                    -score_event_team_count(event),
-                    -int(event.get("year") or 0),
-                    str(event.get("event_key") or ""),
-                )
-            )
-            selected = running_events[:capped_limit]
-            selected_year = (
-                preferred_year
-                if any(int(row.get("year") or 0) == preferred_year for row in selected)
-                else (int(selected[0].get("year") or 0) if selected else None)
-            )
-            return {
-                "ok": True,
-                "preferred_year": preferred_year,
-                "fallback_year": fallback_year,
-                "selected_year": selected_year,
-                "source": "remote_live_now",
-                "count": len(selected),
-                "events": [
-                    {
-                        "event_key": str(row["event_key"]),
-                        "name": str(row["name"]),
-                        "year": int(row["year"]),
-                        "city": row.get("city"),
-                        "state_prov": row.get("state_prov"),
-                        "country": row.get("country"),
-                        "start_date": row["start_date"].isoformat() if isinstance(row.get("start_date"), date) else None,
-                        "end_date": row["end_date"].isoformat() if isinstance(row.get("end_date"), date) else None,
-                        "region": _region_label(
-                            row.get("state_prov"),
-                            row.get("country"),
-                        ),
-                    }
-                    for row in selected
-                ],
-            }
+        def rank(event: dict) -> tuple:
+            return (-score_event_team_count(event), -int(event.get("year") or 0), str(event.get("event_key") or ""))
 
-        remote_events.sort(
-            key=lambda event: (
-                -score_event_team_count(event),
-                -int(event.get("year") or 0),
-                str(event.get("event_key") or ""),
-            )
-        )
-        selected = remote_events[:capped_limit]
+        # Running events lead the list; the rest still follows. Returning only the
+        # running ones collapsed the list to 2 on an off-season Thursday, and every
+        # caller lost the events it relies on (Home dropped the event you were on,
+        # pickers and names lost everything else).
+        leading = sorted(running_events, key=rank) if prioritize_running else []
+        leading_keys = {str(event.get("event_key") or "") for event in leading}
+        rest = sorted((event for event in remote_events if str(event.get("event_key") or "") not in leading_keys), key=rank)
+        selected = (leading + rest)[:capped_limit]
         selected_year = (
             preferred_year
             if any(int(row.get("year") or 0) == preferred_year for row in selected)
@@ -792,7 +754,8 @@ def _compute_suggested_events(
             "preferred_year": preferred_year,
             "fallback_year": fallback_year,
             "selected_year": selected_year,
-            "source": "remote_most_teams",
+            "source": "remote_live_now" if leading else "remote_most_teams",
+            "running_count": len(leading),
             "count": len(selected),
             "events": [
                 {
@@ -993,28 +956,61 @@ def ingest_event(
     )
 
 
-@router.get("/{event_key}/schedule-with-synergy", response_model=ScheduleWithSynergyResponse)
+@router.get("/{event_key}/forecast")
+def get_event_forecast(event_key: str, db: Session = Depends(get_db)) -> dict:
+    # The rest of the event, simulated: each team's expected rank and its chances of the
+    # top 8, captaining, making an alliance and winning (simulation/forecast.py).
+    from app.services.simulation.forecast import event_forecast
+
+    event_key = event_key.strip().lower()
+    if db.get(models.Event, event_key) is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
+    try:
+        return event_forecast(db, event_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{event_key}/pick-values")
+def get_event_pick_values(
+    event_key: str,
+    teams: str = Query(default="", description="The alliance so far: 1-2 team keys, comma separated."),
+    limit: int = Query(default=30, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    # Who to pick next: each remaining team's effect on the alliance's chance to beat a
+    # strong alliance at this event (ratings/pick_value.py).
+    from app.services.ratings.pick_value import pick_values
+
+    event_key = event_key.strip().lower()
+    if db.get(models.Event, event_key) is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
+    partners = [t.strip().lower() for t in teams.split(",") if t.strip()]
+    partners = [t if t.startswith("frc") else f"frc{t}" for t in partners][:2]
+    try:
+        return pick_values(db, event_key, partners, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# The path predates synergy's removal (2026-10-17) and is kept so phones' saved offline
+# copies and the edge-cache rule still match: it is the schedule with predictions.
+@router.get("/{event_key}/schedule-with-synergy", response_model=SchedulePredictionsResponse)
 def get_event_schedule_with_synergy(
     event_key: str,
-    request: Request,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    include_pair_breakdown: bool = Query(default=False),
-    include_ml_predictions: bool = Query(default=True),
-    refresh: bool = False,
     db: Session = Depends(get_db),
 ):
     event = db.get(models.Event, event_key)
     if event is None:
         raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
 
-    precompute = None
-    if refresh:
-        require_admin_access(request, "Schedule synergy refresh")
-        require_write_access("Schedule synergy refresh")
-        try:
-            precompute = precompute_event_synergy(db, event_key, model_version=synergy_model_version)
-        except Exception as exc:
-            precompute = {"ok": False, "detail": sanitize_external_error(exc, default="Synergy refresh failed.")}
+    from app.services.seasons import live_model_allowed, season_info, season_of
+
+    season_year = season_of(event_key) or int(event.year)
+    season = season_info(db, season_year)
+    # Only a rated season that isn't frozen runs the team model; a frozen one serves its
+    # archived predictions, and a season without ratings has none.
+    live_predictions = live_model_allowed(db, season_year)
 
     matches = (
         db.query(models.Match)
@@ -1049,19 +1045,6 @@ def get_event_schedule_with_synergy(
             }
         )
 
-    projection_rows = (
-        db.query(models.MatchSynergyProjection)
-        .filter(
-            models.MatchSynergyProjection.event_key == event_key,
-            models.MatchSynergyProjection.model_version == synergy_model_version,
-        )
-        .all()
-    )
-    projection_by_key = {
-        (row.match_key, row.alliance_color): row
-        for row in projection_rows
-    }
-
     rating_rows = (
         db.query(models.EventTeamRating)
         .filter(models.EventTeamRating.event_key == event_key)
@@ -1069,28 +1052,14 @@ def get_event_schedule_with_synergy(
     )
     rating_by_team = {str(row.team_key or "").strip().lower(): row for row in rating_rows if row.team_key}
 
-    def _team_rating_snapshot(team_key: str) -> tuple[float, float]:
+    def _team_rating(team_key: str) -> float:
         row = rating_by_team.get(str(team_key or "").strip().lower())
-        if row is None:
-            return 50.0, 0.0
-        rating = _as_float(row.rating_0_100)
-        confidence = _as_float(row.confidence_0_1)
-        return (
-            float(rating) if rating is not None else 50.0,
-            float(confidence) if confidence is not None else 0.0,
-        )
+        rating = _as_float(row.rating_0_100) if row is not None else None
+        return float(rating) if rating is not None else 50.0
 
-    # The fuel model needs playing order, not display order: a postponed match played
-    # later must not feed the prediction of one listed after it.
-    display_index = {match.match_key: index for index, match in enumerate(matches)}
-    played_order = sorted(
-        matches,
-        key=lambda match: (
-            int(match.actual_time or match.time or 0) or 10**12,
-            display_index[match.match_key],
-        ),
-    )
-    fuel_details = fuel_margin_details(
+    # The team model replays the season in playing order, so a postponed match played
+    # later never feeds the prediction of one listed after it.
+    points_details = {} if not live_predictions else match_predictions(
         db,
         event_key,
         [
@@ -1099,15 +1068,21 @@ def get_event_schedule_with_synergy(
                 [str(item.get("team_key") or "") for item in teams_by_match.get(match.match_key, {}).get("red", [])],
                 [str(item.get("team_key") or "") for item in teams_by_match.get(match.match_key, {}).get("blue", [])],
             )
-            for match in played_order
+            for match in matches
         ],
-        event_start=min((int(match.time) for match in matches if match.time), default=None),
+        comp_levels={str(match.match_key).lower(): str(match.comp_level or "qm").lower() for match in matches},
     )
-    fuel_margin_by_match = {key: margin for key, (margin, _seen) in fuel_details.items()}
+    uncorrected_prob_by_match: dict[str, float] = {}
+    points_margin_by_match = {key: margin for key, (margin, _sd, _seen, _prediction, _features) in points_details.items()}
+    # Bonus RP chances per alliance (quals), with each event's own thresholds.
+    from app.services.ratings.ranking_points import BONUS_RP_CALIBRATION, bonus_chances, event_thresholds
 
-    # Shadow-model features are only worth building when the model will run.
-    run_ml = include_ml_predictions and bool(getattr(settings, "ml_shadow_enabled", False))
-    ml_feature_rows: list[dict[str, float | str]] = []
+    rp_thresholds = event_thresholds(
+        season_year,
+        [row.components or {} for row in db.query(models.MatchAllianceResult).filter(models.MatchAllianceResult.event_key == event_key)],
+    ) if live_predictions else {}
+    rp_calibration = BONUS_RP_CALIBRATION.get(season_year, {})
+
     deterministic_prob_by_match: dict[str, float] = {}
     rating_prob_by_match: dict[str, float] = {}
     schedule_rows = []
@@ -1116,33 +1091,6 @@ def get_event_schedule_with_synergy(
         red_teams = sorted(teams_group["red"], key=lambda item: _station_sort_key(item.get("station")))
         blue_teams = sorted(teams_group["blue"], key=lambda item: _station_sort_key(item.get("station")))
 
-        def _projection_payload(alliance: str) -> dict:
-            row = projection_by_key.get((match.match_key, alliance))
-            if row is None:
-                return {
-                    "available": False,
-                    "alliance_synergy_score_0_100": None,
-                    "alliance_synergy_points": 0.0,
-                    "expected_throughput": None,
-                    "projected_throughput": None,
-                    "confidence_0_1": 0.0,
-                    "source_label": "projection",
-                    "pair_breakdown": [],
-                }
-            return {
-                "available": True,
-                "alliance_synergy_score_0_100": row.alliance_synergy_score_0_100,
-                "alliance_synergy_points": row.alliance_synergy_points,
-                "expected_throughput": row.expected_throughput,
-                "projected_throughput": row.projected_throughput,
-                "confidence_0_1": row.confidence_0_1,
-                "source_label": row.source_label,
-                "pair_breakdown": (row.pair_breakdown or []) if include_pair_breakdown else [],
-                "computed_at": row.computed_at.isoformat() if row.computed_at else None,
-            }
-
-        red_projection = _projection_payload("red")
-        blue_projection = _projection_payload("blue")
         schedule_rows.append(
             {
                 "match_key": match.match_key,
@@ -1152,19 +1100,11 @@ def get_event_schedule_with_synergy(
                 "scheduled_time": match.time,
                 "predicted_time": match.predicted_time,
                 "actual_time": match.actual_time,
-                "red": {
-                    "teams": red_teams,
-                    "synergy": red_projection,
-                },
-                "blue": {
-                    "teams": blue_teams,
-                    "synergy": blue_projection,
-                },
+                "red": {"teams": red_teams},
+                "blue": {"teams": blue_teams},
                 "prediction": {
                     "available": False,
-                    "source_label": "ml_shadow_match_outcome",
-                    "model_key": MATCH_OUTCOME_MODEL_KEY,
-                    "model_version": None,
+                    "source_label": "",
                     "red_win_prob": None,
                     "blue_win_prob": None,
                     "favored_alliance": None,
@@ -1173,106 +1113,41 @@ def get_event_schedule_with_synergy(
             }
         )
 
-        red_ratings: list[float] = []
-        blue_ratings: list[float] = []
-        red_confidences: list[float] = []
-        blue_confidences: list[float] = []
-        for item in red_teams:
-            rating_value, confidence_value = _team_rating_snapshot(str(item.get("team_key") or ""))
-            red_ratings.append(rating_value)
-            red_confidences.append(confidence_value)
-        for item in blue_teams:
-            rating_value, confidence_value = _team_rating_snapshot(str(item.get("team_key") or ""))
-            blue_ratings.append(rating_value)
-            blue_confidences.append(confidence_value)
+        red_ratings = [_team_rating(str(item.get("team_key") or "")) for item in red_teams]
+        blue_ratings = [_team_rating(str(item.get("team_key") or "")) for item in blue_teams]
 
-        if red_ratings and blue_ratings:
+        if live_predictions and red_ratings and blue_ratings:
             red_rating_mean = sum(red_ratings) / float(len(red_ratings))
             blue_rating_mean = sum(blue_ratings) / float(len(blue_ratings))
-            red_conf_mean = sum(red_confidences) / float(len(red_confidences)) if red_confidences else 0.0
-            blue_conf_mean = sum(blue_confidences) / float(len(blue_confidences)) if blue_confidences else 0.0
-            red_synergy_points = float(_as_float(red_projection.get("alliance_synergy_points")) or 0.0)
-            blue_synergy_points = float(_as_float(blue_projection.get("alliance_synergy_points")) or 0.0)
-            red_projected = float(_as_float(red_projection.get("projected_throughput")) or 0.0)
-            blue_projected = float(_as_float(blue_projection.get("projected_throughput")) or 0.0)
             rating_margin = red_rating_mean - blue_rating_mean
-            synergy_margin = red_synergy_points - blue_synergy_points
-            projected_margin = red_projected - blue_projected
-            if run_ml:
-                ml_feature_rows.append({
-                    "event_key": event_key,
-                    "match_key": match.match_key,
-                    "red_rating_mean": red_rating_mean,
-                    "blue_rating_mean": blue_rating_mean,
-                    "rating_margin": rating_margin,
-                    "red_confidence_mean": red_conf_mean,
-                    "blue_confidence_mean": blue_conf_mean,
-                    "confidence_margin": red_conf_mean - blue_conf_mean,
-                    "red_synergy_points": red_synergy_points,
-                    "blue_synergy_points": blue_synergy_points,
-                    "synergy_margin": synergy_margin,
-                    "red_projected_throughput": red_projected,
-                    "blue_projected_throughput": blue_projected,
-                    "projected_margin": projected_margin,
-                })
             rating_prob_by_match[str(match.match_key or "").strip().lower()] = (
-                _deterministic_red_win_prob(rating_margin, synergy_margin, projected_margin)
+                _deterministic_red_win_prob(rating_margin)
             )
 
-    # Official fuel rates known before the match decide it; the rating formula covers
-    # matches with no fuel data yet (a new event whose teams haven't played before).
+    # Expected points known before the match decide it (the rating's own strength
+    # estimate); the rating formula only covers a match with an incomplete alliance.
     for match in matches:
         match_key = str(match.match_key or "").strip().lower()
-        fuel_margin = fuel_margin_by_match.get(match_key)
-        if fuel_margin is not None:
-            deterministic_prob_by_match[match_key] = fuel_red_win_prob(fuel_margin, matches_seen=fuel_details[match_key][1])
+        points_margin = points_margin_by_match.get(match_key)
+        if points_margin is not None:
+            _margin, sd, seen, _prediction, feature_row = points_details[match_key]
+            base_prob = points_red_win_prob(
+                points_margin, sd, matches_seen=seen, playoff=str(match.comp_level or "qm").lower() != "qm"
+            )
+            # The learned correction (ratings/win_correction.py) on top, when the season has one.
+            uncorrected_prob_by_match[match_key] = base_prob
+            deterministic_prob_by_match[match_key] = corrected_win_prob(season_year, base_prob, feature_row)
         elif match_key in rating_prob_by_match:
             deterministic_prob_by_match[match_key] = rating_prob_by_match[match_key]
 
-    ml_prediction_by_match: dict[str, float] = {}
-    ml_prediction_model_version: str | None = None
-    if run_ml:
-        try:
-            ml_payload = infer_match_outcome_shadow_from_rows(db, rows=ml_feature_rows)
-        except Exception as exc:
-            ml_payload = {"ok": False, "reason": "inference_failed", "detail": str(exc), "predictions": []}
-        if bool(ml_payload.get("ok")):
-            ml_prediction_model_version = str(ml_payload.get("model_version") or "") or None
-            for prediction in ml_payload.get("predictions") or []:
-                if not isinstance(prediction, dict):
-                    continue
-                match_key = str(prediction.get("match_key") or "").strip().lower()
-                red_win_prob = _as_float(prediction.get("red_win_prob"))
-                if not match_key or red_win_prob is None:
-                    continue
-                ml_prediction_by_match[match_key] = max(0.0, min(1.0, float(red_win_prob)))
-
-    ml_blend_knob = max(0.0, min(1.0, float(getattr(settings, "ml_match_outcome_blend", 0.0) or 0.0)))
-    ml_blended_prediction_count = 0
     for row in schedule_rows:
         match_key = str(row.get("match_key") or "").strip().lower()
         det_prob = deterministic_prob_by_match.get(match_key)
-        ml_prob = ml_prediction_by_match.get(match_key)
-        if det_prob is None and ml_prob is None:
-            continue
-
-        effective_blend = ml_blend_knob if ml_prob is not None else 0.0
         if det_prob is None:
-            # ML-only fallback (shouldn't normally happen since deterministic
-            # is computed whenever ratings exist, but be defensive).
-            final_prob = float(ml_prob) if ml_prob is not None else 0.5
-            source_label = "ml_shadow_match_outcome_live"
-        elif ml_prob is None or effective_blend <= 0.0:
-            final_prob = float(det_prob)
-            source_label = "deterministic_fuel_v1" if match_key in fuel_margin_by_match else "deterministic_rating_synergy_v1"
-        elif effective_blend >= 1.0:
-            final_prob = float(ml_prob)
-            source_label = "ml_shadow_match_outcome_live"
-        else:
-            final_prob = (1.0 - effective_blend) * float(det_prob) + effective_blend * float(ml_prob)
-            source_label = "blended_det_ml_v1"
+            continue
+        source_label = ("team_model_corrected_v4" if correction_active(season_year) else "deterministic_team_model_v3") if match_key in points_margin_by_match else "deterministic_rating_synergy_v1"
 
-        final_prob = max(0.0, min(1.0, float(final_prob)))
+        final_prob = max(0.0, min(1.0, float(det_prob)))
         blue_win_prob = max(0.0, min(1.0, 1.0 - final_prob))
         if final_prob > 0.5:
             favored: str | None = "red"
@@ -1281,43 +1156,47 @@ def get_event_schedule_with_synergy(
         else:
             favored = None
 
-        if ml_prob is not None and effective_blend > 0.0:
-            ml_blended_prediction_count += 1
-
         row["prediction"] = {
             "available": True,
             "source_label": source_label,
-            "model_key": MATCH_OUTCOME_MODEL_KEY,
-            "model_version": ml_prediction_model_version if ml_prob is not None else None,
             "red_win_prob": round(final_prob, 4),
             "blue_win_prob": round(blue_win_prob, 4),
-            "red_win_prob_deterministic": round(float(det_prob), 4) if det_prob is not None else None,
+            "red_win_prob_deterministic": round(float(det_prob), 4),
+            # The team model alone, before the learned correction.
+            "red_win_prob_team_model": (
+                round(uncorrected_prob_by_match[match_key], 4) if match_key in uncorrected_prob_by_match else None
+            ),
             "red_win_prob_rating": (
                 round(rating_prob_by_match[match_key], 4) if match_key in rating_prob_by_match else None
             ),
-            "fuel_margin_per_min": (
-                round(fuel_margin_by_match[match_key], 2) if match_key in fuel_margin_by_match else None
+            "points_margin": (
+                round(points_margin_by_match[match_key], 2) if match_key in points_margin_by_match else None
             ),
-            "red_win_prob_ml": round(float(ml_prob), 4) if ml_prob is not None else None,
-            "prediction_blend": round(effective_blend, 4),
+            "bonus_rp_chances": _bonus_rp_payload(
+                points_details.get(match_key), row, season_year, rp_thresholds, rp_calibration, final_prob, bonus_chances
+            ),
             "favored_alliance": favored,
             "edge_confidence_0_1": round(abs(final_prob - 0.5) * 2.0, 4),
         }
+
+    if season["frozen"]:
+        archived = {
+            row.match_key.lower(): row.prediction
+            for row in db.query(models.ArchivedMatchPrediction).filter(models.ArchivedMatchPrediction.event_key == event_key)
+        }
+        for row in schedule_rows:
+            stored = archived.get(str(row.get("match_key") or "").lower())
+            if isinstance(stored, dict):
+                row["prediction"] = stored
 
     return {
         "ok": True,
         "event_key": event_key,
         "event_name": event.name,
-        "model_version": synergy_model_version,
-        "projection_count": len(projection_rows),
-        "ml_prediction_model_version": ml_prediction_model_version,
-        "ml_prediction_count": len(ml_prediction_by_match),
-        "ml_blended_prediction_count": ml_blended_prediction_count,
+        "season": season,
         "deterministic_prediction_count": len(deterministic_prob_by_match),
-        "fuel_prediction_count": len(fuel_margin_by_match),
-        "prediction_blend": round(ml_blend_knob, 4),
+        "points_prediction_count": len(points_margin_by_match),
         "count": len(schedule_rows),
-        "precompute": precompute,
         "matches": schedule_rows,
     }
 

@@ -43,26 +43,14 @@ at Neon, drop `&channel_binding=require`.
 | `TBA_AUTH_KEY` | `<from .env>` |
 | `FIRST_FRC_API_BASE_URL` | `https://frc-api.firstinspires.org/v3.0` |
 | `FIRST_FRC_API_USERNAME` / `FIRST_FRC_API_AUTH_KEY` | `<from .env>`, both or neither |
-| `STATBOTICS_BASE_URL` | `https://api.statbotics.io/v3` |
 
 ## 4. ML
 
-The shadow models (team strength, match outcome, synergy, roles) train on official
-data. **ML is off in production** (since 2026-10-02; the evaluations in
-`docs/PRODUCTION_ML_RUNBOOK.md` found no gain), and since 2026-10-05 it doesn't train or
-run inference either: both switches below are `false`. Turn them back on (with the blend
-knobs) only when a reviewed model is ready to be evaluated. PyTorch loads on first use.
-
-| Key | Value |
-|---|---|
-| `ML_SHADOW_ENABLED` | `false` (production) — `true` runs shadow inference |
-| `ML_SHADOW_ROLLOUT_RATIO` | `1.0` |
-| `ML_SHADOW_AUTO_TRAIN_ON_EVENT_BREAKDOWN` | `false` (production) — `true` trains once per regional-automation tick |
-| `ML_SHADOW_AUTO_TRAIN_LIMIT_EVENTS` | `250` |
-| `ML_SHADOW_AUTO_TRAIN_ACTIVATE` | `false` — startup refuses `true` in production; promote reviewed models explicitly |
-| `ML_SHADOW_AUTO_TRAIN_RECOMPUTE_RATINGS` | `true` |
-| `ML_SHADOW_AUTO_TRAIN_CURRENT_SEASON_ONLY` | `true` |
-| `ML_MATCH_OUTCOME_BLEND` / `ML_TEAM_STRENGTH_BLEND` / `ML_SYNERGY_BLEND` / `ML_ROLE_BLEND` | `0.20` each |
+There are no ML settings any more: the shadow models were removed on 2026-10-17 (they
+never went live; evaluations found no gain over the formulas). Leftover `ML_SHADOW_*`
+and `ML_*_BLEND` keys in an old `.env` are ignored. The one learned piece left, the
+win-probability correction, ships its weights in the repo
+(`ratings/data/win_correction_<season>.json`) and needs no settings.
 
 ## 5. Scheduler
 

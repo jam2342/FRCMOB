@@ -17,9 +17,11 @@ from app.api.routes_scouting_rooms import (
     release_scout_room_roles,
     rename_scout_in_workspace_rooms,
 )
-from app.core.security import issue_workspace_access_token, require_admin_access, require_write_access
+from app.core.security import issue_workspace_access_token, request_has_explicit_admin_credential, require_admin_access, require_write_access
 from app.db import models
 from app.db.session import get_db
+from app.services.workspace_limits import take_workspace_creation_slot
+from app.services.signup_challenge import signup_policy, verify_signup_challenge
 from app.services.workspaces import (
     ROLE_LEADER,
     ROLE_MEMBER,
@@ -50,6 +52,7 @@ class WorkspaceCreateRequest(BaseModel):
     name: str = Field(..., max_length=80)
     frc_team_number: int | None = None
     display_name: str = Field(..., max_length=40)
+    challenge_token: str | None = Field(default=None, max_length=2048)
 
 
 class WorkspaceJoinRequest(BaseModel):
@@ -121,18 +124,34 @@ def _load_member_in_workspace(db: Session, actor: WorkspaceActor, member_id: int
     return member
 
 
+@router.get("/signup-policy")
+def get_signup_policy():
+    return signup_policy()
+
+
 @router.post("")
-def create_workspace(body: WorkspaceCreateRequest, db: Session = Depends(get_db)):
+def create_workspace(body: WorkspaceCreateRequest, request: Request, db: Session = Depends(get_db)):
     require_write_access("Creating a workspace")
+    # Invalid names never consume a one-use challenge or the site's signup slots.
+    name = normalize_workspace_name(body.name)
+    display_name = normalize_display_name(body.display_name)
+    team_number = normalize_team_number(body.frc_team_number)
+    if not request_has_explicit_admin_credential(request):
+        verify_signup_challenge(body.challenge_token)
+    if not take_workspace_creation_slot():
+        raise HTTPException(
+            status_code=429,
+            detail="Lots of teams are signing up right now. Try again in a few minutes.",
+        )
     workspace = models.TeamWorkspace(
-        name=normalize_workspace_name(body.name),
-        frc_team_number=normalize_team_number(body.frc_team_number),
+        name=name,
+        frc_team_number=team_number,
         join_code_hash="",
     )
     join_code = issue_join_code(db, workspace)
     db.add(workspace)
     db.flush()
-    member = add_member(db, workspace, display_name=normalize_display_name(body.display_name), role=ROLE_LEADER)
+    member = add_member(db, workspace, display_name=display_name, role=ROLE_LEADER)
     db.commit()
     actor = WorkspaceActor(workspace=workspace, member=member)
     return _with_access(actor, _session_payload(actor, db, join_code=join_code))

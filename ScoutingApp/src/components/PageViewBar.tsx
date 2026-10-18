@@ -48,14 +48,12 @@ function ChevronIcon() {
   );
 }
 
-// Segmented bar for switching between related sub-views. With
-// collapseToMenuOnMobile it folds into a single dropdown pill on small
-// screens, so it doesn't stack a second full-width bar onto the already
-// bar-heavy scouting layout.
+// Segmented bar for switching between related sub-views. On phones a menu of more than four
+// folds into a single dropdown pill (override with collapseToMenuOnMobile).
 export function PageViewBar({
   items: allItems,
   className = '',
-  collapseToMenuOnMobile = false,
+  collapseToMenuOnMobile,
 }: {
   items: readonly ViewBarItem[];
   className?: string;
@@ -76,7 +74,9 @@ export function PageViewBar({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 });
-  const showCollapsedMenu = collapseToMenuOnMobile && isMobile;
+  // Up to four tabs fit across a phone; more fold into one dropdown. One rule for every section,
+  // rather than each page choosing.
+  const showCollapsedMenu = (collapseToMenuOnMobile ?? items.length > 4) && isMobile;
 
   const toFor = useCallback(
     (item: ViewBarItem) =>

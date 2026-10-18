@@ -1,0 +1,86 @@
+/* The reconnect moment. Shares .offline-banner's placement (the shell measures that class to keep
+   sticky bars clear of it); only the tint, progress and the fold-away are here. */
+.success {
+  background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface-raised));
+  border-bottom-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+  animation: bannerSettle 320ms var(--motion-ease) both;
+}
+
+.check {
+  color: var(--color-success-text);
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: checkDraw 380ms ease 80ms forwards;
+}
+
+.spin {
+  color: var(--color-accent-text);
+  animation: bannerSpin 800ms linear infinite;
+}
+
+.progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+  transform-origin: left center;
+  transition: transform 400ms var(--motion-ease);
+}
+
+/* Folds up instead of vanishing, so the page under it slides rather than jumps. */
+.leaving {
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-bottom-width: 0 !important;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 240ms var(--motion-ease), padding 240ms var(--motion-ease), opacity 180ms ease;
+}
+
+.success:not(.leaving) {
+  max-height: 60px;
+}
+
+@keyframes checkDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes bannerSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes bannerSettle {
+  from {
+    filter: brightness(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .success,
+  .check,
+  .spin {
+    animation: none;
+  }
+
+  .check {
+    stroke-dashoffset: 0;
+  }
+
+  .leaving,
+  .progress span {
+    transition: none;
+  }
+}

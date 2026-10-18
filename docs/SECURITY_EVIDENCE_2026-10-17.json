@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-10-17",
+  "checkout": "<local>/FRCMOB-security-20261017",
+  "baseline_commit": "de8ebab9a6dd0486a7810e28505f5b0d79d6a1a8",
+  "status": "locally_verified_not_deployed",
+  "results": {
+    "backend": {
+      "passed": 632,
+      "skipped": 18,
+      "subtests_passed": 2
+    },
+    "frontend": {
+      "passed": 839,
+      "files": 187
+    },
+    "postgres_integration": {
+      "passed": 5
+    },
+    "migration": "upgrade/downgrade/re-upgrade/schema check passed on disposable PostgreSQL17.11",
+    "npm_known_vulnerabilities": 0,
+    "pip_resolved_packages": 53,
+    "pip_known_vulnerabilities": 0,
+    "lint": "ESLint and Ruff passed",
+    "browser": "Chrome390px; mocked challenge gates and token reset passed; both documents blocked injected inline JS; no overflow; screenshot inspected",
+    "independent_review": "required tiny-file repair closed; bounded review no required repairs"
+  },
+  "source_sha256": {
+    "backend/app/api/edge_cache.py": "b5e3cc4c829f86a3d80d98d5aa19dfc7b8befd6858ebb3d1e022753b6ccf6a2b",
+    "backend/app/api/routes_pit_scouting.py": "2bd3afeaf834da6d8ba544473eada34d0f9ee7468802261a2537a3105d024888",
+    "backend/app/api/routes_push.py": "8e06f6a79d7158ac5f6c240044f95020499ea5032e0bdf1f4150eb99bec9b9ab",
+    "backend/app/api/routes_scouting_rooms.py": "95694518cac6eeb15e81d741608de85e5dcbaf4d9c60c08365cfc3118d1c102e",
+    "backend/app/api/routes_tracks.py": "16cbdf5fad554ea571c4e70737c8086165b7d9d8f6798d8f63faed3de4439d3d",
+    "backend/app/api/routes_workspaces.py": "d7b82b208527a9cbb1b8711373ecd72b919ac2d297716aace44938cd21e116bf",
+    "backend/app/core/config.py": "8454a4aa6f9510193a7acae1be664aa5c6809d97dd60053326a8f894da37ba9b",
+    "backend/app/core/security.py": "49349b48c8a63042601e0781fb5ee01ee1eec6b382bc94281e1ed77d9c443935",
+    "backend/app/db/models.py": "d5eba768202f26ec0062ad6e9cb74c98242360007ef546788852debb93620955",
+    "backend/app/services/workspace_limits.py": "e9955134ee05a38ec83ddf1796ff432902cf1c2c7e10bbaa9a40fef5c8efc67f",
+    "backend/app/services/signup_challenge.py": "b9ce60bf72e3ae533f6eb050ec0bf869f996314618df11aa393a1ee78a88ae41",
+    "backend/app/services/scouting_rooms/team.py": "460d4b8ba909f992c310fb0390575b7b171fc98459c8f24e470b95954b4a1c06",
+    "backend/app/services/push/subscriptions.py": "2d6e6f48ba57c8039defdad9c8e46ab8aba8ca72c985e9cc62b953c8674a4814",
+    "backend/app/services/push/sender.py": "615e3e68e305e413772bbc90bd80da3884b63162f59110eb112a74f972b2e15a",
+    "backend/app/services/push/match_alerts.py": "512b937823d59b9aed260ab2201143a5e1831a91ed4c4de0b2c2676e109cc759",
+    "backend/alembic/versions/20261017_0027_scout_entry_authors.py": "d18f91517875ef2728fa1925a133d36201a4255bbee8f956e0e97e157db00968",
+    "backend/requirements.txt": "a80bbce6ab58fa36f1b0bea189d23e82828626906a500abbd5f81c3b8297b45a",
+    "ScoutingApp/package-lock.json": "b217675b9813ada3dcb85f73abc1ee69b0bd03582cdb3976e75e48f0d8d9b557",
+    "ScoutingApp/build/contentSecurityPolicy.ts": "5bc8c9fc7cacf5292aabae31179e63b04fa9fba92aba76eb39ea312752132ae5",
+    "ScoutingApp/src/features/workspace/TurnstileChallenge.tsx": "2cc421ab71da1dce2eb4d86a4accbd433891451ce7d7f73c689311c0f6f1ce7c",
+    "ScoutingApp/src/pages/MyTeamPage.tsx": "b5df581dc814c5d72614dcb13615a69699246f75864ff1ffb58166951d0d2eda",
+    "ScoutingApp/src/api.ts": "186a2c95246f6f20d2790d84177c8f5982fcfb4a3ce07fe99b0fcf0aabf6eeb0",
+    "ScoutingApp/src/pages/PrivacyPolicyPage.tsx": "fd76cb90398e3069660542aa484a8ebcdd6d07cb2efbd0f4d65eb2e60867332d"
+  },
+  "not_verified": [
+    "live deployment/CDN/firewall",
+    "real Turnstile keys and provider integration",
+    "deployed Linux image and OS packages",
+    "current secrets and historical credential rotation",
+    "backup access and restore"
+  ]
+}

@@ -6,7 +6,7 @@ This service parses official TBA scorebreakdowns and extracts structured, per-te
 
 TBA provides detailed scorebreakdowns for every match — exactly how many auto points each alliance scored, which teams climbed, how many fouls were called, and so on. The structure of that JSON changes every season as the game changes. This service handles that parsing in a season-aware way and produces clean, structured output.
 
-The output from this service feeds into the climb backfill (in the climb service), integrity checks, and any place where official scores are needed as ground truth.
+The output from this service feeds event ingest (official climbs and scores), integrity checks, and any place where official scores are needed as ground truth.
 
 ## Files
 

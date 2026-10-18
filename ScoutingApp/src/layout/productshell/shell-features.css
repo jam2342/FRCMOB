@@ -852,8 +852,7 @@
    kept the full outline, as a new container on /home — and it was right to. A
    message is not a thing you can act on, so it should not look like one. */
 .product-shell .center-callout.warning,
-.product-shell .center-callout.danger,
-.product-shell .center-callout-list {
+.product-shell .center-callout.danger {
   text-align: left;
   padding: 8px 0 8px 14px;
   border: 0;
@@ -1252,7 +1251,6 @@
 /*  Compare Page — Mobile Summary Cards                                */
 /* ================================================================== */
 
-
 /* ================================================================== */
 /*  Strategy Briefing Page                                             */
 /* ================================================================== */
@@ -1325,11 +1323,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.briefing-synergy-label {
-  font-size: var(--font-size-2xs);
-  color: var(--color-text-muted);
 }
 
 /* Tactics section */
@@ -1564,45 +1557,6 @@
 /*  DATA VISUALIZATION DASHBOARD                                       */
 /* ================================================================== */
 
-.dataviz-page .dviz-panel-toggle {
-  display: flex;
-  gap: 4px;
-  margin: 12px 0 16px;
-  /* theme-adaptive subtle fill (light overlay in dark, dark overlay in light)
-     — was an invisible white-on-white panel in light mode. */
-  background: color-mix(in srgb, var(--color-text) 5%, transparent);
-  border-radius: 8px;
-  padding: 3px;
-  width: fit-content;
-}
-
-.dviz-toggle-btn {
-  padding: 7px 18px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.dviz-toggle-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-text);
-}
-
-.dviz-toggle-btn.active {
-  background: color-mix(in srgb, var(--color-info) 18%, transparent);
-  color: var(--color-info-text);
-}
-
-.dviz-toggle-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
 .dviz-chart-container {
   padding: 12px 0;
   overflow-x: auto;
@@ -1764,67 +1718,6 @@
   padding: 20px 0;
 }
 
-/* ── donut chart ─────────────────────────────── */
-.dviz-zone-container {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 0;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.dviz-donut-svg {
-  flex-shrink: 0;
-}
-
-.dviz-donut-slice {
-  stroke: rgba(0, 0, 0, 0.3);
-  stroke-width: 1;
-  transition: opacity 0.15s;
-}
-
-.dviz-donut-slice:hover {
-  opacity: 0.8;
-}
-
-.dviz-donut-center {
-  fill: rgba(255, 255, 255, 0.7);
-  font-size: var(--font-size-lg);
-  font-weight: 600;
-}
-
-.dviz-zone-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.dviz-zone-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dviz-zone-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.dviz-zone-legend-label {
-  font-size: var(--font-size-2xs);
-  color: rgba(255, 255, 255, 0.6);
-  flex: 1;
-}
-
-.dviz-zone-legend-val {
-  font-size: var(--font-size-2xs);
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
-}
-
 /* ── rankings table ──────────────────────────── */
 
 .dviz-nick {
@@ -1910,15 +1803,6 @@
 
 /* ── light theme overrides ───────────────────── */
 
-.product-shell.theme-light .dviz-toggle-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.product-shell.theme-light .dviz-toggle-btn.active {
-  background: color-mix(in srgb, var(--color-info) 12%, transparent);
-  color: var(--color-info-text);
-}
-
 .product-shell.theme-light .dviz-radar-ring {
   stroke: rgba(0, 0, 0, 0.08);
 }
@@ -1967,28 +1851,10 @@
   background: rgba(0, 0, 0, 0.03);
 }
 
-.product-shell.theme-light .dviz-donut-slice {
-  stroke: color-mix(in srgb, var(--color-surface) 60%, transparent);
-}
-
-.product-shell.theme-light .dviz-donut-center {
-  fill: rgba(0, 0, 0, 0.7);
-}
-
-.product-shell.theme-light .dviz-zone-legend-label {
-  color: rgba(0, 0, 0, 0.55);
-}
-
-.product-shell.theme-light .dviz-zone-legend-val {
-  color: rgba(0, 0, 0, 0.75);
-}
-
-
 .product-shell.theme-light .dviz-rating-pill {
   background: color-mix(in srgb, var(--color-info) 10%, transparent);
   color: #2563eb;
 }
-
 
 .product-shell.theme-light .dviz-proscons-label {
   color: rgba(0, 0, 0, 0.65);
@@ -1999,8 +1865,6 @@
 }
 
 /* ── autopath-drawer ──────────────────────────────────── */
-
-
 
 .autopath-toolbar {
   display: flex;

@@ -74,7 +74,7 @@ try {
   await page.getByText('Match alerts are not available in this app build yet.', { exact: true }).waitFor({ state: 'attached' });
   assert.equal(await page.getByRole('button', { name: 'Enable match alerts', exact: true }).count(), 0);
   await page.goto(`${base}/#/scouting/record`);
-  await page.getByText('On-Device Match Breakdown', { exact: true }).waitFor();
+  await page.getByText('On-Device Breakdown', { exact: true }).waitFor();
   assert.equal(new URL(page.url()).pathname, '/', 'Native recorder attempted a web-only document redirect');
   await page.waitForFunction(() => Boolean(window.__nativeListeners.backButton));
   assert.ok(await page.evaluate(() => document.documentElement.classList.contains('native-app')));

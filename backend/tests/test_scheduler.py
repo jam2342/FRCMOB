@@ -15,7 +15,6 @@ class SchedulerContextTests(unittest.TestCase):
             "app_env": scheduler.settings.app_env,
             "strict_startup_env_validation": scheduler.settings.strict_startup_env_validation,
             "intel_snapshot_refresh_enabled": scheduler.settings.intel_snapshot_refresh_enabled,
-            "climb_official_backfill_enabled": scheduler.settings.climb_official_backfill_enabled,
             "automation_regional_enabled": scheduler.settings.automation_regional_enabled,
             "automation_regional_halfday_scheduler_enabled": scheduler.settings.automation_regional_halfday_scheduler_enabled,
             "ops_smoke_check_enabled": scheduler.settings.ops_smoke_check_enabled,
@@ -123,7 +122,6 @@ class SchedulerContextTests(unittest.TestCase):
         scheduler.settings.app_env = "production"
         scheduler.settings.strict_startup_env_validation = False
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = False
         scheduler.settings.automation_regional_halfday_scheduler_enabled = False
         scheduler.settings.ops_smoke_check_enabled = False
@@ -143,7 +141,6 @@ class SchedulerContextTests(unittest.TestCase):
         scheduler.settings.app_env = "development"
         scheduler.settings.strict_startup_env_validation = False
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = False
         scheduler.settings.automation_regional_halfday_scheduler_enabled = False
         scheduler.settings.ops_smoke_check_enabled = False
@@ -163,7 +160,6 @@ class SchedulerContextTests(unittest.TestCase):
         scheduler.settings.app_env = "development"
         scheduler.settings.strict_startup_env_validation = False
         scheduler.settings.intel_snapshot_refresh_enabled = False
-        scheduler.settings.climb_official_backfill_enabled = False
         scheduler.settings.automation_regional_enabled = True
         scheduler.settings.automation_regional_halfday_scheduler_enabled = True
         scheduler.settings.ops_smoke_check_enabled = False

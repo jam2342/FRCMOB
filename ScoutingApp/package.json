@@ -15,6 +15,7 @@
     "guard:hierarchy": "node e2e/guard-hierarchy.mjs",
     "guard:overflow": "node e2e/guard-overflow.mjs",
     "guard:type": "node e2e/guard-type.mjs",
+    "e2e:regression": "node e2e/regression/run.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "probe:heroes": "node e2e/probe-conditional-heroes.mjs",

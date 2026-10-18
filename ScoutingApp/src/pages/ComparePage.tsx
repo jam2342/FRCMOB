@@ -1,8 +1,9 @@
 import { breakdownFromIntel, ratingFromIntel, type TeamIntelBreakdown } from './teamIntel';
+import { ratingRangeLabel } from './teamCenterOfficial';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageViewBar } from '../components/PageViewBar';
-import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
+import { COMPARE_VIEWS, viewTitle } from '../components/pageViewBarConfig';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import {
   getEventTeamsIntel,
@@ -28,17 +29,16 @@ import {
   asRecord,
   CURRENT_SEASON_YEAR,
   metric,
-  metricUnit,
   normalizeTeamKeyInput,
   parseNumber,
   pct,
   relativeFromTimestamp,
-  summarizeFreshness,
   teamNumberFromTeamKey,
   titleizeKey,
 } from './centerUtils';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { resolveTab } from './tabUtils';
+import { storageGet, storageSet, storageRemove } from '../platform/safeStorage';
 const COMPARE_STORAGE_KEYS = {
   event: 'scouting_compare_event_key',
   teams: 'scouting_compare_team_keys',
@@ -84,7 +84,7 @@ function normalizeEventKeyInput(raw: string): string {
 }
 
 function readStoredCompareTeamKeys(): string[] {
-  const raw = window.localStorage.getItem(COMPARE_STORAGE_KEYS.teams);
+  const raw = storageGet(COMPARE_STORAGE_KEYS.teams);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -159,7 +159,7 @@ export function ComparePage() {
 
   const defaultEventKey = normalizeEventKeyInput(
     searchParams.get('event') ||
-      window.localStorage.getItem(COMPARE_STORAGE_KEYS.event) ||
+      storageGet(COMPARE_STORAGE_KEYS.event) ||
       readStoredCenterContext().eventKey ||
       '',
   );
@@ -233,12 +233,12 @@ export function ComparePage() {
     }
 
     if (normalizedEvent) {
-      window.localStorage.setItem(COMPARE_STORAGE_KEYS.event, normalizedEvent);
+      storageSet(COMPARE_STORAGE_KEYS.event, normalizedEvent);
     } else {
-      window.localStorage.removeItem(COMPARE_STORAGE_KEYS.event);
+      storageRemove(COMPARE_STORAGE_KEYS.event);
     }
 
-    window.localStorage.setItem(COMPARE_STORAGE_KEYS.teams, JSON.stringify(compareTeamKeys));
+    storageSet(COMPARE_STORAGE_KEYS.teams, JSON.stringify(compareTeamKeys));
     writeCenterContext({ eventKey: normalizedEvent, sourcePath: '/compare' });
   }, [activeTab, compareTeamKeys, searchParams, selectedEventKey, setSearchParams, urlSync]);
 
@@ -276,7 +276,6 @@ export function ComparePage() {
     try {
       const payload = await getEventTeamsIntel(selectedEventKey, {
         include_tba: true,
-        include_statbotics: false,
         include_season_fallback: true,
         include_rating_details: false,
         include_rating_signals: false,
@@ -353,7 +352,6 @@ export function ComparePage() {
             preferred_year: CURRENT_SEASON_YEAR,
             fallback_year: CURRENT_SEASON_YEAR - 1,
             include_tba: true,
-            include_statbotics: false,
             allow_season_fallback: true,
             auto_heal_ratings: true,
             refresh: forceNetwork,
@@ -548,7 +546,8 @@ export function ComparePage() {
     },
     { key: 'rating', label: 'Rating', numeric: true, render: (row) => metric(row.rating?.rating_0_100, 1) },
     { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.rating?.confidence_0_1, 1) },
-    { key: 'robot', label: 'Robot', numeric: true, render: (row) => metric(row.rating?.robot_level_0_100, 1) },
+    { key: 'points', label: 'Pts / match', numeric: true, render: (row) => metric(row.rating?.expected_points?.total, 0) },
+    { key: 'range', label: 'Likely rating', render: (row) => ratingRangeLabel(row.rating?.rating_range_80) ?? '—' },
     {
       key: 'rank',
       label: 'TBA Rank',
@@ -559,12 +558,9 @@ export function ComparePage() {
       },
     },
     { key: 'fuel', label: 'Fuel/active min', numeric: true, render: (row) => metric(row.breakdown?.averages?.fuel_scoring_rate, 1) },
-    { key: 'cycle', label: 'Cycle', numeric: true, render: (row) => metric(row.breakdown?.averages?.cycle_time_sec, 2) },
     { key: 'auto', label: 'Auto', numeric: true, render: (row) => metric(row.breakdown?.averages?.auto_contribution, 2) },
     { key: 'climb', label: 'Climb', numeric: true, render: (row) => pct(row.breakdown?.averages?.climb_success_prob, 1) },
-    { key: 'reliability', label: 'Reliability', numeric: true, render: (row) => pct(row.breakdown?.averages?.reliability_score, 1) },
-    { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.breakdown?.matches_analyzed ?? 'N/A' },
-    { key: 'freshness', label: 'Freshness', render: (row) => summarizeFreshness(row.breakdown?.data_freshness || null).label },
+    { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.rating?.matches_here ?? '—' },
   ];
 
   /* Below the breakpoint a compare row becomes a compact metric grid rather
@@ -573,18 +569,14 @@ export function ComparePage() {
      columns above through renderCell, so there is one definition of how a
      compare figure is formatted — the second copy that used to live here is
      what let the mobile view quietly drift two metrics behind the desktop one. */
-  const CARD_METRIC_KEYS = ['rating', 'robot', 'rank', 'climb', 'fuel', 'cycle', 'auto', 'reliability'];
+  const CARD_METRIC_KEYS = ['rating', 'robot', 'rank', 'climb', 'fuel', 'auto', 'matches'];
   const renderSummaryCards = (rows: CompareRow[]) => (
     <div className={styles.mobileList}>
       {rows.map((row) => {
-        const freshness = summarizeFreshness(row.breakdown?.data_freshness || null);
         return (
           <article key={`compare-mobile-${row.team_key}`} className={styles.mobileCard}>
             <div className={styles.mobileHead}>
               {renderCell(summaryColumns[0], row)}
-              <Chip size="sm" tone={freshness.state === 'stale' ? 'warn' : 'neutral'}>
-                {freshness.label}
-              </Chip>
             </div>
             <div className={styles.mobileMetrics}>
               {summaryColumns
@@ -618,28 +610,11 @@ export function ComparePage() {
         format: (value: number) => metric(value, 2),
       },
       {
-        id: 'cycle',
-        label: 'Cycle Time (sec)',
-        better: 'low' as const,
-        getValue: (row: (typeof compareRows)[number]) => row.breakdown?.averages?.cycle_time_sec ?? null,
-        format: (value: number) => metric(value, 2),
-      },
-      {
         id: 'climb',
         label: 'Climb Success',
         better: 'high' as const,
         getValue: (row: (typeof compareRows)[number]) => {
           const value = row.breakdown?.averages?.climb_success_prob;
-          return value === null || value === undefined ? null : value * 100;
-        },
-        format: (value: number) => `${metric(value, 1)}%`,
-      },
-      {
-        id: 'reliability',
-        label: 'Reliability',
-        better: 'high' as const,
-        getValue: (row: (typeof compareRows)[number]) => {
-          const value = row.breakdown?.averages?.reliability_score;
           return value === null || value === undefined ? null : value * 100;
         },
         format: (value: number) => `${metric(value, 1)}%`,
@@ -777,7 +752,7 @@ export function ComparePage() {
     }
 
     setRefreshingCompare(true);
-    setStatusText('Refreshing...');
+    setStatusText('Refreshing…');
     try {
       await Promise.all(compareTeamKeys.map((teamKey) => loadCompareBundle(teamKey, true, true)));
       setLastUpdatedAt(Date.now());
@@ -828,7 +803,7 @@ export function ComparePage() {
           className="compare-controls-card"
         >
           <label className="center-label" htmlFor="compare-event-input">
-            Event Context
+            Event
           </label>
           <div className="center-input-row">
             <select
@@ -862,7 +837,7 @@ export function ComparePage() {
               aria-label="Add compare team"
             />
             <button type="submit" className="center-btn" disabled={addingTeam}>
-              {addingTeam ? 'Adding...' : 'Add'}
+              {addingTeam ? 'Adding…' : 'Add'}
             </button>
           </form>
 
@@ -873,7 +848,7 @@ export function ComparePage() {
               onClick={() => void refreshCompare()}
               disabled={refreshingCompare}
             >
-              {refreshingCompare ? 'Refreshing...' : 'Refresh Compare'}
+              {refreshingCompare ? 'Refreshing…' : 'Refresh Compare'}
             </button>
             <button type="button" className="center-btn ghost" onClick={clearCompare}>
               Clear
@@ -899,7 +874,7 @@ export function ComparePage() {
               ? 'Teams at this event. Tap one to add it.'
               : 'Pick an event to see its teams.'
           }
-          right={<span className="center-chip">{loadingEventTeams ? 'Loading...' : `${eventTeamPool.length} team${eventTeamPool.length === 1 ? '' : 's'}`}</span>}
+          right={<span className="center-chip">{loadingEventTeams ? 'Loading…' : `${eventTeamPool.length} team${eventTeamPool.length === 1 ? '' : 's'}`}</span>}
           className="compare-pool-card"
         >
           {!selectedEventKey ? (
@@ -953,7 +928,7 @@ export function ComparePage() {
 
       <section className="center-main">
         <SurfaceCard
-          title="Compare Center"
+          title={viewTitle(COMPARE_VIEWS, '/compare')}
           className="compare-header-card"
         >
           {compareTeamKeys.length > 0 ? (
@@ -1059,21 +1034,15 @@ export function ComparePage() {
             <div className="compare-deep-grid">
               {compareRows.map((row) => (
                 <article key={`compare-deep-${row.team_key}`} className="compare-deep-card">
-                  {(() => {
-                    const freshness = summarizeFreshness(row.breakdown?.data_freshness || null);
-                    return (
-                      <div className="center-status-row compact">
-                        <span className={`center-chip freshness ${freshness.state}`}>Data: {freshness.label}</span>
-                        <span className="center-chip">Matches: {row.breakdown?.matches_analyzed ?? 0}</span>
-                      </div>
-                    );
-                  })()}
+                  <div className="center-status-row compact">
+                    <span className="center-chip">Matches here: {row.rating?.matches_here ?? 0}</span>
+                  </div>
                   <header>
                     <h4>{row.breakdown?.team.nickname || row.team_key}</h4>
                     <small>Updated {relativeFromTimestamp(row.last_updated_at)}</small>
                   </header>
 
-                  {row.loading ? <p className="center-callout muted">Loading bundle...</p> : null}
+                  {row.loading ? <p className="center-callout muted">Loading bundle…</p> : null}
                   {row.error ? <p className="center-callout danger">{row.error}</p> : null}
 
                   <div className="center-kpi-grid">
@@ -1088,10 +1057,6 @@ export function ComparePage() {
                     <div className="center-kpi-card">
                       <span>Fuel / active min</span>
                       <strong>{metric(row.breakdown?.averages?.fuel_scoring_rate, 1)}</strong>
-                    </div>
-                    <div className="center-kpi-card">
-                      <span>Cycle Time</span>
-                      <strong>{metricUnit(row.breakdown?.averages?.cycle_time_sec, 2, 's')}</strong>
                     </div>
                     <div className="center-kpi-card">
                       <span>Auto Contribution</span>
@@ -1135,20 +1100,13 @@ export function ComparePage() {
                     </div>
                   ) : null}
 
-                  {(() => {
-                    const freshness = summarizeFreshness(row.breakdown?.data_freshness || null);
-                    if (!freshness.detail) return null;
-                    return (
-                      <p className={`center-callout ${freshness.state === 'stale' ? 'warning' : 'muted'}`}>
-                        {freshness.detail}
-                      </p>
-                    );
-                  })()}
-
-                  <p className="center-callout muted">
-                    Model signals: robot {metric(row.rating?.robot_level_0_100, 1)} · driver{' '}
-                    {metric(row.rating?.driver_skill_0_100, 1)}
-                  </p>
+                  {row.rating?.expected_points ? (
+                    <p className="center-callout muted">
+                      About {metric(row.rating.expected_points.total, 0)} points a match: teleop{' '}
+                      {metric(row.rating.expected_points.teleop, 0)} · auto {metric(row.rating.expected_points.auto, 0)} · climb{' '}
+                      {metric(row.rating.expected_points.climb, 0)}
+                    </p>
+                  ) : null}
 
                   <div className="center-kpi-grid">
                     <div className="center-kpi-card">

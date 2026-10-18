@@ -2,8 +2,8 @@ import { ScheduleStatus } from '../features/workspace/ScheduleStatus';
 import { useMemo, useState } from 'react';
 import type { EventScheduleItem, TeamRoomAssignment, TeamRoomAssignmentChange, TeamRoomMember } from '../api';
 import { EventPicker } from '../components/EventPicker';
-import { PageViewBar } from '../components/PageViewBar';
-import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
+import { ScoutingViewBar } from '../components/ScoutingViewBar';
+import { scoutingViewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, Modal, Stat } from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
@@ -218,8 +218,14 @@ function ScoutingAssignWorkspacePage() {
   };
 
   const eventCard = (
-    <SurfaceCard title="Assignments">
+    <SurfaceCard
+      title={scoutingViewTitle('/scouting/assignments')}
+      subtitle="Who scouts which robot in each match. Your team sees changes as you make them."
+      expandable={false}
+      mobileCollapsible={false}
+    >
       <EventPicker
+        label="Event"
         value={eventKey}
         onSelect={selectEvent}
         inputValue={eventInput}
@@ -462,7 +468,7 @@ function ScoutingAssignWorkspacePage() {
 // Team-only: scouting assignments are private to a workspace, so nothing loads until
 // the device has joined one.
 export function ScoutingAssignPage() {
-  const viewBar = <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />;
+  const viewBar = <ScoutingViewBar />;
   return (
     <WorkspaceGate feature="Scouting assignments" viewBar={viewBar}>
       {viewBar}

@@ -58,8 +58,6 @@ function readInputSize(session: ort.InferenceSession, inputName: string): number
 // The bundled models are chosen per engine (modelArtifact.ts); VITE_ONDEVICE_MODEL_URL
 // swaps in one export for both, e.g. to try a new one against the benchmark.
 const CONFIGURED_MODEL_URL = resolveModelUrl(import.meta.env.VITE_ONDEVICE_MODEL_URL);
-// Named in "detector unavailable" messages.
-export const ON_DEVICE_MODEL_URL = CONFIGURED_MODEL_URL ?? `${GPU_MODEL.url} or ${CPU_MODEL.url}`;
 export const ON_DEVICE_MODEL_VERSION = String(
   import.meta.env.VITE_ONDEVICE_MODEL_VERSION || GPU_MODEL.version,
 );

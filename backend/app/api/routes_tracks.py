@@ -24,7 +24,7 @@ from app.core.security import (
 )
 from app.db import models
 from app.db.session import get_db
-from app.services.analysis.runs import best_on_device_run
+from app.services.analysis.runs import best_on_device_run, visible_sessions
 from app.services.auto_scout.scouting import withdraw_drafts_for_run
 from app.services.analysis.runs import RUN_KIND_ON_DEVICE
 # On-device source/version identifiers live in shift_play (the engine layer) so
@@ -34,6 +34,7 @@ from app.services.game_config import classify_point, load_game_config
 from app.services.workspaces import (
     WORKSPACE_REVOKED_DETAIL,
     lock_workspace_actor,
+    require_workspace_actor,
     resolve_workspace_actor,
     workspace_access_token_from_request,
 )
@@ -114,14 +115,17 @@ def get_team_heatmap(
     grid_rows: int = Query(default=24, ge=4, le=64),
     sigma: float = Query(default=0.6, gt=0.1, le=3.0),
     include_unreviewed: bool = Query(default=False),
+    include_workspace: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
     # Where a robot spent its time, as a normalised density grid (row-major, 0..1)
     # built from phone recordings. Only operator-accepted sessions count unless an
-    # operator asks for the unreviewed ones too.
+    # operator asks for the unreviewed ones too, or a team asks to include its own
+    # (include_workspace; edge_cache keeps those answers private).
     if include_unreviewed:
         require_admin_access(request, "Unreviewed on-device tracks")
     statuses = ("accepted", "provisional") if include_unreviewed else ("accepted",)
+    workspace_id = require_workspace_actor(request, db).workspace_id if include_workspace else None
     base = (
         db.query(models.RobotTrack)
         .join(
@@ -133,7 +137,7 @@ def get_team_heatmap(
             models.RobotTrack.event_key == event_key,
             models.RobotTrack.field_x.isnot(None),
             models.RobotTrack.field_y.isnot(None),
-            models.OnDeviceSession.status.in_(statuses),
+            visible_sessions(statuses, workspace_id),
         )
     )
     if match_key:
@@ -142,10 +146,13 @@ def get_team_heatmap(
     # scouts filming one match used to be blended (and counted twice) here.
     match_keys = [row[0] for row in base.with_entities(models.RobotTrack.match_key).distinct().all() if row[0]]
     chosen_runs = []
+    own_unreviewed_matches = 0
     for key in match_keys:
-        best = best_on_device_run(db, match_key=key, team_key=team_key, statuses=statuses)
+        best = best_on_device_run(db, match_key=key, team_key=team_key, statuses=statuses, workspace_id=workspace_id)
         if best is not None:
             chosen_runs.append(best[0].id)
+            if workspace_id is not None and best[1].status != "accepted":
+                own_unreviewed_matches += 1
     base = base.filter(models.RobotTrack.analysis_run_id.in_(chosen_runs or [-1]))
 
     raw_points: list[tuple[float, float]] = [
@@ -174,6 +181,8 @@ def get_team_heatmap(
         "total_points": len(raw_points),
         "match_count": match_count,
         "include_unreviewed": include_unreviewed,
+        # Matches here that only this team's own, not yet reviewed, recordings cover.
+        "own_unreviewed_matches": own_unreviewed_matches,
         "field_length_m": FIELD_LENGTH_M,
         "field_width_m": FIELD_WIDTH_M,
         "grid_cols": grid_cols,
@@ -186,17 +195,21 @@ def get_team_heatmap(
 @router.get("/shift-play/{team_key}")
 def get_team_shift_play(
     team_key: str,
+    request: Request,
     event_key: str = Query(...),
+    include_workspace: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
     # Shift-based offense/defense + attack/defense heat maps for a team at an event,
     # aggregated across the team's analyzed matches using the season shift schedule.
     from app.services.auto_scout.shift_play import summarize_team_shift_play
 
+    workspace_id = require_workspace_actor(request, db).workspace_id if include_workspace else None
     return summarize_team_shift_play(
         db,
         team_key=str(team_key).strip().lower(),
         event_key=str(event_key).strip().lower(),
+        workspace_id=workspace_id,
     )
 
 
@@ -649,6 +662,8 @@ def ingest_on_device_session(
         if (
             room is None
             or sender is None
+            or room_payload.get("mid") != sender.member.id
+            or room_payload.get("scout_profile") != sender.member.display_name
             or room.workspace_id != sender.workspace_id
             or bool(room.archived)
             or not room.event_key
@@ -771,10 +786,16 @@ def ingest_on_device_session(
         session_row = existing_session
     else:
         # Cap distinct on-device runs per match so a client cannot mint unbounded
-        # runs by varying its session id.
+        # runs by varying its session id. Counted per team (or per caller outside a
+        # workspace): one shared cap let anyone fill a match and lock every team out.
+        owner_filter = (
+            models.OnDeviceSession.workspace_id == workspace_id
+            if workspace_id is not None
+            else models.OnDeviceSession.principal_hash == principal_hash
+        )
         run_count = (
             db.query(func.count(models.OnDeviceSession.id))
-            .filter(models.OnDeviceSession.match_key == match_key)
+            .filter(models.OnDeviceSession.match_key == match_key, owner_filter)
             .scalar()
         ) or 0
         if run_count >= settings.on_device_sync_max_runs_per_match:

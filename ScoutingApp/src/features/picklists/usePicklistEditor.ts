@@ -1,3 +1,4 @@
+import { setItemMakingRoom } from '../../utils/apiCacheSpace';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { QueuedForSyncError, updatePicklist, type Picklist } from '../../api';
 import { getWorkspaceSession } from '../workspace/workspaceSession';
@@ -35,7 +36,7 @@ export function usePicklistEditor(workspaceId: number) {
   const persist = useCallback((draft: Draft) => {
     const key = keyFor(workspaceId, draft.doc.id);
     memory.set(key, draft);
-    try { localStorage.setItem(key, JSON.stringify(draft)); }
+    try { setItemMakingRoom(key, JSON.stringify(draft)); }
     catch {
       draft.error = 'Device storage is full. Keep this tab open until your changes are shared.';
     }
@@ -56,8 +57,9 @@ export function usePicklistEditor(workspaceId: number) {
 
   const save = useCallback(async (id: number) => {
     const draft = read(id);
-    // Never start a delayed write under a different workspace's access.
-    if (!draft || draft.conflict || flights.current.has(id) || !mounted.current || getWorkspaceSession()?.workspace.id !== workspaceId) return;
+    // Never start a delayed write under a different workspace's access. It may run after
+    // the page closed (leaving sends what was waiting); publish() checks that itself.
+    if (!draft || draft.conflict || flights.current.has(id) || getWorkspaceSession()?.workspace.id !== workspaceId) return;
     const sent = draft.doc;
     flights.current.add(id);
     if (active.current?.id === id) publish(active.current);
@@ -102,7 +104,12 @@ export function usePicklistEditor(workspaceId: number) {
     window.addEventListener('beforeunload', warn);
     return () => {
       mounted.current = false;
-      for (const timer of timerMap.values()) clearTimeout(timer);
+      // Leaving within the save delay used to drop the change: the timer died with the
+      // page and nothing sent it later. Send what was waiting now instead.
+      for (const [id, timer] of timerMap.entries()) {
+        clearTimeout(timer);
+        void saveRef.current(id);
+      }
       timerMap.clear();
       window.removeEventListener('beforeunload', warn);
     };
@@ -115,7 +122,11 @@ export function usePicklistEditor(workspaceId: number) {
     const draft = read(server.id);
     if (draft && draft.doc.event_key === server.event_key) {
       if (draft.doc.version < server.version) persist({ ...draft, conflict: server });
-      publish(read(server.id)!.doc);
+      const settled = read(server.id)!;
+      publish(settled.doc);
+      // A change kept on this device with nothing in its way: share it now, not only
+      // when the scout finds the Retry button.
+      if (!settled.conflict && !settled.error && !timers.current.has(server.id)) void saveRef.current(server.id);
     } else publish(server);
   }, [persist, publish, read]);
 

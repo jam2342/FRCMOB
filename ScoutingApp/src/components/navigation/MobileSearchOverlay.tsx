@@ -136,7 +136,7 @@ export function MobileSearchOverlay({ open, onClose, onSubmit, busy, jumpRegion 
             className="mso__input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search teams, events, matches..."
+            placeholder="Search teams, events, matches…"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}

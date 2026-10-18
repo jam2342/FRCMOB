@@ -9,6 +9,7 @@ import {
   getApiHealth,
   getEventAlliances,
   getEventAwards,
+  getEventRatings,
   getEventSchedule,
   getEventTeamLiveForm,
   ingestEvent,
@@ -21,6 +22,7 @@ import type {
   EventScheduleItem,
   EventSearchItem,
   EventTeamLiveFormResponse,
+  EventTeamRatingItem,
   EventTeamsHistoryResponse,
 } from '../api';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
@@ -28,6 +30,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { EventForecast } from '../features/forecast/EventForecast';
 import { Table } from '../components/ui/primitives';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { eventTypeTags } from '../features/events/eventTags';
@@ -60,7 +63,7 @@ import {
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { type QuickJumpRegion } from '../layout/userSettings';
 import {
-  GridIcon, ListIcon, PieChartIcon, TrophyIcon, UsersIcon,
+  BarChartIcon, GridIcon, ListIcon, PieChartIcon, TrophyIcon, UsersIcon,
   LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, RefreshIcon, CloudSyncIcon,
   CopyIcon, DownloadIcon,
   ScoreboardIcon, BracketIcon, ChevronDownIcon,
@@ -83,7 +86,7 @@ import { loadEventsRankings, loadEventsTeamsHistory } from '../features/prefetch
 import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 
-const EVENT_TABS = ['overview', 'schedule', 'breakdown', 'rankings', 'teams'] as const;
+const EVENT_TABS = ['overview', 'schedule', 'breakdown', 'rankings', 'forecast', 'teams'] as const;
 type EventTab = (typeof EVENT_TABS)[number];
 
 const EVENT_TAB_ICONS: Record<EventTab, React.ReactNode> = {
@@ -91,6 +94,7 @@ const EVENT_TAB_ICONS: Record<EventTab, React.ReactNode> = {
   schedule: <ListIcon className="icon-inline" />,
   breakdown: <PieChartIcon className="icon-inline" />,
   rankings: <TrophyIcon className="icon-inline" />,
+  forecast: <BarChartIcon className="icon-inline" />,
   teams: <UsersIcon className="icon-inline" />,
 };
 type EventRegionFilter = QuickJumpRegion;
@@ -495,13 +499,17 @@ export function EventsPage() {
   const nowMs = usePageClock(pageVisible);
   const liveRefreshSec = useLiveRefreshSetting();
 
-  const defaultEventKey =
-    (searchParams.get('event') || readStoredCenterContext().eventKey).trim().toLowerCase();
   const defaultQuery = (searchParams.get('q') || '').trim();
+  // Arriving with a search and no event (the header search sends plain words here)
+  // means "find this event": run it and open the match, rather than showing the
+  // last event viewed while the search is never started.
+  const arrivingToSearch = Boolean(defaultQuery) && !searchParams.get('event');
+  const defaultEventKey =
+    (searchParams.get('event') || (arrivingToSearch ? '' : readStoredCenterContext().eventKey)).trim().toLowerCase();
   const defaultRegion = normalizeRegionFilter(searchParams.get('region'));
   const tabParam = searchParams.get('tab');
   const defaultTab = resolveTab(tabParam, EVENT_TABS, 'overview');
-  const lastHandledUrlQueryRef = useRef(defaultQuery.toLowerCase());
+  const lastHandledUrlQueryRef = useRef(arrivingToSearch ? '' : defaultQuery.toLowerCase());
   const suppressNextLiveSearchRef = useRef(false);
   const searchRequestSeqRef = useRef(0);
 
@@ -515,6 +523,8 @@ export function EventsPage() {
   const [calendarSeasonEvents, setCalendarSeasonEvents] = useState<EventSearchItem[]>([]);
   const [searchResultsRaw, setSearchResultsRaw] = useState<EventSearchItem[]>([]);
   const [eventTeams, setEventTeams] = useState<EventTeamsHistoryResponse | null>(null);
+  // The FRCMOB rating per team for the Teams tab (the cached summary other pages read).
+  const [teamRatings, setTeamRatings] = useState<{ eventKey: string; byTeam: Record<string, EventTeamRatingItem> } | null>(null);
   const [eventSchedule, setEventSchedule] = useState<EventScheduleItem[]>([]);
   const [eventScheduleName, setEventScheduleName] = useState<string | null>(null);
   const [eventRankings, setEventRankings] = useState<EventRankingsResponse | null>(null);
@@ -529,6 +539,10 @@ export function EventsPage() {
   const [loadingSuggested, setLoadingSuggested] = useState(false);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [loadingEventData, setLoadingEventData] = useState(false);
+  // Placeholders and "nothing here" notes only on an event's first load. Background polls also
+  // set loadingEventData; keying the screen off it flashed skeletons over live data every poll.
+  const [eventLoadedKey, setEventLoadedKey] = useState('');
+  const firstEventLoad = loadingEventData && eventLoadedKey !== selectedEventKey;
   const [syncingEvent, setSyncingEvent] = useState(false);
 
   const [searchError, setSearchError] = useState('');
@@ -797,6 +811,20 @@ export function EventsPage() {
       // Attach rejection handlers immediately: any parallel request can fail
       // before the schedule finishes (especially on a dropped connection).
       const secondaryResults = Promise.allSettled([formPromise, rankingsPromise, teamsPromise, awardsPromise]);
+      // Each card fills in as its own data lands. Waiting for all of them held the rankings
+      // (0.4 s) behind the teams history, which takes 3-4 s for a Championship field.
+      void formPromise.then((value) => { if (stillCurrent()) setEventLiveForm(value); }).catch(() => undefined);
+      if (shouldRefreshStatic) {
+        void rankingsPromise.then((value) => {
+          if (value && stillCurrent()) {
+            setEventRankings(value);
+            setRankingsFailed(false);
+          }
+        }).catch(() => undefined);
+        void awardsPromise.then((value) => {
+          if (value && stillCurrent()) setEventAwards(value);
+        }).catch(() => undefined);
+      }
       const errors: string[] = [];
       let scheduleCount = 0;
       let teamCount = 0;
@@ -876,6 +904,7 @@ export function EventsPage() {
       return errors.length === 0;
     } finally {
       setLoadingEventData(false);
+      if (currentEventKeyRef.current === selectedEventKey) setEventLoadedKey(selectedEventKey);
     }
   }, [eventHasLiveScoreWindow, selectedEventKey]);
 
@@ -942,7 +971,8 @@ export function EventsPage() {
         return {
           team_key: teamKey,
           team_number: teamInfo?.number ?? teamNumberFromTeamKey(teamKey) ?? 0,
-          nickname: teamInfo?.nickname || teamKey,
+          // Until the team list arrives (it's the slow request), "Team 254", never "frc254".
+          nickname: teamInfo?.nickname || `Team ${teamInfo?.number ?? teamNumberFromTeamKey(teamKey) ?? teamKey}`,
           rank: parseNumber(row.rank),
           matches_played: parseNumber(row.matches_played),
           record:
@@ -997,6 +1027,13 @@ export function EventsPage() {
         : playedMatchCount > 0
           ? 'Under way'
           : 'Not started';
+
+  // No schedule yet because it's still loading or didn't load: "0 matches · Not started"
+  // read as fact for a finished event. Show that it isn't known instead.
+  const countsUnknown = eventSchedule.length === 0 && (firstEventLoad || Boolean(eventError));
+  const matchCountLabel = countsUnknown ? '—' : String(eventSchedule.length);
+  const teamCountLabel = countsUnknown && effectiveTeamCount === 0 ? '—' : String(effectiveTeamCount);
+  const eventStatusShown = countsUnknown ? (firstEventLoad ? 'Loading…' : '—') : eventStatusLabel;
 
   const hasClientAdminKey = clientAdminKeyAvailable();
   const canSyncEvent = useMemo(() => {
@@ -1377,6 +1414,25 @@ export function EventsPage() {
       };
     });
   }, [parsedEventAwards]);
+
+  useEffect(() => {
+    if (!selectedEventKey || activeTab !== 'teams' || teamRatings?.eventKey === selectedEventKey) return;
+    let live = true;
+    getEventRatings(selectedEventKey)
+      .then((response) => {
+        if (!live) return;
+        const byTeam: Record<string, EventTeamRatingItem> = {};
+        for (const row of response.ratings || []) byTeam[row.team_key.toLowerCase()] = row;
+        setTeamRatings({ eventKey: selectedEventKey, byTeam });
+      })
+      .catch(() => {
+        // The table still shows everything else; the rating columns read "—".
+      });
+    return () => { live = false; };
+  }, [selectedEventKey, activeTab, teamRatings?.eventKey]);
+  const ratingFor = (teamKey: string): EventTeamRatingItem | null =>
+    teamRatings?.eventKey === selectedEventKey ? teamRatings.byTeam[teamKey.toLowerCase()] || null : null;
+  const eventFinished = eventStatusLabel === 'Finished';
 
   const eventTeamRows = useMemo(() => {
     const rows = [...effectiveEventTeams];
@@ -1860,7 +1916,7 @@ export function EventsPage() {
               ))}
             </select>
             <button type="submit" className="center-btn event-search-submit-btn" disabled={loadingSearch}>
-              {loadingSearch ? 'Searching...' : 'Find Event'}
+              {loadingSearch ? 'Searching…' : 'Find Event'}
             </button>
           </form>
 
@@ -1902,7 +1958,7 @@ export function EventsPage() {
                 </div>
               ) : null}
               {!loadingSuggested && visibleSuggestedEvents.length === 0 ? (
-                <EmptyState compact title="No suggested events" description="No suggested events available." />
+                <EmptyState compact title="Nothing to suggest right now" description="Search for any event above." />
               ) : null}
               {visibleSuggestedEvents.map((event) => (
                 <button
@@ -2018,32 +2074,35 @@ export function EventsPage() {
                       onClick={() => void handleSyncEvent()}
                       disabled={!selectedEventKey || syncingEvent}
                     >
-                      {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync</>}
+                      {syncingEvent ? 'Syncing…' : <><CloudSyncIcon className="icon-inline" /> Sync</>}
                     </button>
                   ) : null}
                 </div>
               </div>
               <div className="fm-event-header-stats">
                 <div className="fm-event-stat">
-                  <strong>{eventSchedule.length}</strong>
+                  <strong>{matchCountLabel}</strong>
                   <span>Matches</span>
                 </div>
                 <div className="fm-event-stat">
-                  <strong>{effectiveTeamCount}</strong>
+                  <strong>{teamCountLabel}</strong>
                   <span>Teams</span>
                 </div>
                 <div className="fm-event-stat">
-                  <strong>{eventStatusLabel}</strong>
+                  <strong>{eventStatusShown}</strong>
                 </div>
               </div>
               {eventError ? <p className="fm-event-header-error" title={eventError}>Some of this event's data didn't load. It retries on its own.</p> : null}
               {/* Only once loading is done: the schedule arrives before the team list,
                   so the notice flashed in and out on every load. */}
-              {usingScheduleFallbackTeams && !loadingEventData ? (
+              {usingScheduleFallbackTeams && !firstEventLoad ? (
                 <p className="fm-event-header-notice">Using roster from published match schedule.</p>
               ) : null}
               <SegmentedTabs
                 className="fm-tab-bar"
+                motion
+                swipe
+                ink
                 itemClassName="fm-tab"
                 ariaLabel="Event center tabs"
                 value={activeTab}
@@ -2070,7 +2129,7 @@ export function EventsPage() {
                   onClick={() => void handleSyncEvent()}
                   disabled={!selectedEventKey || syncingEvent}
                 >
-                  {syncingEvent ? 'Syncing...' : <><CloudSyncIcon className="icon-inline" /> Sync Event</>}
+                  {syncingEvent ? 'Syncing…' : <><CloudSyncIcon className="icon-inline" /> Sync Event</>}
                 </button>
               ) : null}
             </div>
@@ -2081,7 +2140,7 @@ export function EventsPage() {
               <span className="center-chip"><TagIcon className="icon-inline icon-muted" /> {statusText}</span>
             ) : null}
             <span className="center-chip"><ClockIcon className="icon-inline icon-muted" /> Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
-            <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {eventSchedule.length} match{eventSchedule.length === 1 ? '' : 'es'} · {effectiveTeamCount} team{effectiveTeamCount === 1 ? '' : 's'}</span>
+            <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {countsUnknown ? 'Matches —' : `${eventSchedule.length} match${eventSchedule.length === 1 ? '' : 'es'} · ${effectiveTeamCount} team${effectiveTeamCount === 1 ? '' : 's'}`}</span>
             {liveMatchCount > 0 ? (
               <span className="center-chip"><LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> {liveMatchCount} live</span>
             ) : null}
@@ -2099,12 +2158,13 @@ export function EventsPage() {
             </p>
           ) : null}
           {eventError ? <EmptyState compact type="offline" title="Couldn't load everything" description="Some of this event&apos;s data didn&apos;t load. It retries on its own." /> : null}
-          {usingScheduleFallbackTeams && !loadingEventData ? (
+          {usingScheduleFallbackTeams && !firstEventLoad ? (
             <p className="center-callout muted helper-text">Team history unavailable, using roster from published match schedule.</p>
           ) : null}
           <div className="center-tabs-header">
             <SegmentedTabs
               className="center-tabs"
+              motion
               itemClassName="center-tab-btn"
               ariaLabel="Event center tabs"
               value={activeTab}
@@ -2144,7 +2204,7 @@ export function EventsPage() {
                     <h4>Top Rankings</h4>
                     <p>Current leaderboard</p>
                   </div>
-                  {rankingRows.length === 0 && loadingEventData && !eventRankings ? (
+                  {rankingRows.length === 0 && firstEventLoad && !eventRankings ? (
                     <>
                       <TopListPlaceholder rows={6} label="Loading rankings" />
                       <div className="center-actions-row compact" style={{ padding: '8px 12px 10px' }} aria-hidden="true">
@@ -2158,7 +2218,7 @@ export function EventsPage() {
                       {rankingRows.slice(0, 6).map((row) => (
                         <li key={`fm-overview-rank-${row.team_key}`}>
                           <span className="fm-top-rank">{row.rank ?? '-'}</span>
-                          <button type="button" className="fm-top-team-btn" onClick={() => openTeamCenter(row.team_key)}>
+                          <button type="button" className="fm-top-team-btn" data-team-peek={row.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(row.team_key)}>
                             #{row.team_number} {row.nickname}
                           </button>
                           <span className="fm-top-value">{row.record}</span>
@@ -2180,7 +2240,7 @@ export function EventsPage() {
                     <h4>Top Fuel Rate</h4>
                     <p>Teleop fuel per active-hub minute</p>
                   </div>
-                  {topFuelTeams.length === 0 && loadingEventData ? (
+                  {topFuelTeams.length === 0 && firstEventLoad ? (
                     <TopListPlaceholder rows={5} label="Loading fuel rates" />
                   ) : topFuelTeams.length === 0 ? (
                     <EmptyState compact title="No fuel metrics yet" description="Fuel rates show up once matches are played." />
@@ -2189,7 +2249,7 @@ export function EventsPage() {
                       {topFuelTeams.map((team, idx) => (
                         <li key={`fm-fuel-${team.team_key}`}>
                           <span className="fm-top-rank">{idx + 1}</span>
-                          <button type="button" className="fm-top-team-btn" onClick={() => openTeamCenter(team.team_key)}>
+                          <button type="button" className="fm-top-team-btn" data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}>
                             #{team.team_number} {team.nickname || team.team_key}
                           </button>
                           <span className="fm-top-value">{metric(team.averages?.fuel_scoring_rate ?? null, 1)}/active min</span>
@@ -2205,7 +2265,7 @@ export function EventsPage() {
             {!isMobileLayout ? (
             <div className="center-content-grid">
             <SurfaceCard title="Overview" compactable>
-              {loadingEventData ? (
+              {firstEventLoad ? (
                 <div className="center-loading-state">
                   <SkeletonBlock rows={3} compact />
                 </div>
@@ -2213,19 +2273,19 @@ export function EventsPage() {
               <div className="center-kpi-grid">
                 <article className="center-kpi-card">
                   <span><LiveDotIcon className="icon-inline icon-muted" /> Status</span>
-                  <strong>{eventStatusLabel}</strong>
+                  <strong>{eventStatusShown}</strong>
                 </article>
                 <article className="center-kpi-card">
                   <span><ScoreboardIcon className="icon-inline icon-muted" /> Matches Published</span>
-                  <strong>{eventSchedule.length}</strong>
+                  <strong>{matchCountLabel}</strong>
                 </article>
                 <article className="center-kpi-card">
                   <span><UsersIcon className="icon-inline icon-muted" /> Teams Registered</span>
-                  <strong>{effectiveTeamCount}</strong>
+                  <strong>{teamCountLabel}</strong>
                 </article>
                 <article className="center-kpi-card">
                   <span><CheckCircleIcon className="icon-inline icon-muted" /> Matches Played</span>
-                  <strong>{playedMatchCount}</strong>
+                  <strong>{countsUnknown ? '—' : playedMatchCount}</strong>
                 </article>
               </div>
             </SurfaceCard>
@@ -2237,7 +2297,7 @@ export function EventsPage() {
                 <ul className="center-simple-list">
                   {topFuelTeams.map((team) => (
                     <li key={`fuel-${team.team_key}`}>
-                      <button type="button" className="center-inline-link" onClick={() => openTeamCenter(team.team_key)}>
+                      <button type="button" className="center-inline-link" data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}>
                         #{team.team_number} {team.nickname || team.team_key}
                       </button>
                       <span>{metric(team.averages?.fuel_scoring_rate ?? null, 1)} fuel/active min</span>
@@ -2255,13 +2315,13 @@ export function EventsPage() {
             <SurfaceCard title="Schedule" compactable>
             {/* Only until rows exist: shown alongside them, it pushed the list down
                 and then vanished while the rest of the event was still loading. */}
-            {loadingEventData && eventSchedule.length === 0 ? (
+            {firstEventLoad && eventSchedule.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
               </div>
             ) : null}
-            {!loadingEventData && eventSchedule.length === 0 ? (
-              <EmptyState compact title="No schedule rows" description="No schedule rows for this event." />
+            {!firstEventLoad && eventSchedule.length === 0 ? (
+              <EmptyState compact mascot title="Schedule not posted yet" description="Matches show up here as soon as the event publishes them." />
             ) : null}
             <div className="center-list-stack">
               {visibleScheduleRows.map((match) => {
@@ -2307,7 +2367,7 @@ export function EventsPage() {
                             type="button"
                             key={`${match.match_key}-red-${team.team_key}`}
                             className="center-team-chip"
-                            onClick={() => openTeamCenter(team.team_key)}
+                            data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                             title={`View Team ${team.team_number}`}
                           >
                             <span>
@@ -2334,7 +2394,7 @@ export function EventsPage() {
                             type="button"
                             key={`${match.match_key}-blue-${team.team_key}`}
                             className="center-team-chip"
-                            onClick={() => openTeamCenter(team.team_key)}
+                            data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                             title={`View Team ${team.team_number}`}
                           >
                             <span>
@@ -2818,7 +2878,7 @@ export function EventsPage() {
               </header>
               {eventAwardsError ? <EmptyState compact type="offline" title="Awards unavailable" description={eventAwardsError} /> : null}
               {!eventAwardsError && (eventAwards?.count ?? 0) === 0 ? (
-                <EmptyState compact title="No awards yet" description="No awards were returned for this event yet." />
+                <EmptyState compact title="No awards yet" description="Awards show up here as they're announced." />
               ) : null}
               {breakdownAwardRows.length > 0 ? (
                 <div className="event-awards-grid">
@@ -2838,12 +2898,12 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'rankings' ? (
             <SurfaceCard title="Rankings" compactable>
-            {loadingEventData && rankingRows.length === 0 ? (
+            {firstEventLoad && rankingRows.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
               </div>
             ) : null}
-            {!loadingEventData && rankingRows.length === 0 ? (
+            {!firstEventLoad && rankingRows.length === 0 ? (
               <RankingsEmpty failed={rankingsFailed} loading={false} />
             ) : null}
             {rankingRows.length > 0 ? (
@@ -2863,7 +2923,7 @@ export function EventsPage() {
                         <button
                           type="button"
                           className="center-inline-link"
-                          onClick={() => openTeamCenter(row.team_key)}
+                          data-team-peek={row.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(row.team_key)}
                           title={`View Team ${row.team_number} · Record: ${row.record}`}
                         >
                           #{row.team_number} {row.nickname}
@@ -2904,7 +2964,7 @@ export function EventsPage() {
                           key={`ranking-fm-${row.team_key}`}
                           type="button"
                           className="fm-standings-row"
-                          onClick={() => openTeamCenter(row.team_key)}
+                          data-team-peek={row.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(row.team_key)}
                           title={`View Team ${row.team_number} · Record: ${row.record}`}
                         >
                           <span className="fm-standings-rank">{row.rank ?? '-'}</span>
@@ -2938,15 +2998,23 @@ export function EventsPage() {
 
         ) : null}
 
+        {selectedEventKey && activeTab === 'forecast' ? (
+          <EventForecast eventKey={selectedEventKey} onOpenTeam={openTeamCenter} />
+        ) : null}
+
         {selectedEventKey && activeTab === 'teams' ? (
-            <SurfaceCard title="Teams" compactable>
-            {loadingEventData && eventTeamRows.length === 0 ? (
+            <SurfaceCard
+              title="Teams"
+              subtitle="Fuel, auto and climb from this event's matches; rating and points per match from the whole season so far."
+              compactable
+            >
+            {firstEventLoad && eventTeamRows.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
               </div>
             ) : null}
-            {!loadingEventData && eventTeamRows.length === 0 ? (
-              <EmptyState compact title="No teams yet" description="No team rows available." />
+            {!firstEventLoad && eventTeamRows.length === 0 ? (
+              <EmptyState compact mascot title="Teams not listed yet" description="They show up once the event publishes its team list." />
             ) : null}
             {eventTeamRows.length > 0 ? (
               <>
@@ -2960,17 +3028,30 @@ export function EventsPage() {
                         <button
                           type="button"
                           className="center-inline-link"
-                          onClick={() => openTeamCenter(team.team_key)}
+                          data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                         >
                           #{team.team_number} {team.nickname || team.team_key}
                         </button>
                       ),
                     },
                     {
+                      key: 'rating',
+                      label: 'Rating',
+                      numeric: true,
+                      render: (team) => metric(ratingFor(team.team_key)?.rating_0_100 ?? null, 1),
+                    },
+                    {
+                      key: 'points',
+                      label: 'Pts / match',
+                      numeric: true,
+                      render: (team) => metric(ratingFor(team.team_key)?.expected_points?.total ?? null, 0),
+                    },
+                    // Who is on the field right now: nobody, once the event is over.
+                    ...(eventFinished ? [] : [{
                       key: 'live',
                       label: 'Live',
-                      align: 'center',
-                      render: (team) => {
+                      align: 'center' as const,
+                      render: (team: (typeof visibleEventTeamRows)[number]) => {
                         const entry = liveStatusByTeam[team.team_key.toLowerCase()] || null;
                         return entry?.is_live ? (
                           <span className="center-live-chip">
@@ -2981,7 +3062,7 @@ export function EventsPage() {
                           <span className="center-muted">-</span>
                         );
                       },
-                    },
+                    }]),
                     {
                       key: 'form',
                       label: 'Form',
@@ -2990,8 +3071,8 @@ export function EventsPage() {
                     { key: 'history_count', label: 'Matches', numeric: true, sortable: true },
                     {
                       key: 'fuel',
-                      // This event's matches; Team Center's figure covers the season.
-                      label: 'Fuel/active min (this event)',
+                      // This event's matches (the subtitle says so); Team Center's covers the season.
+                      label: 'Fuel / active min',
                       numeric: true,
                       render: (team) => metric(team.averages?.fuel_scoring_rate ?? null, 1),
                     },

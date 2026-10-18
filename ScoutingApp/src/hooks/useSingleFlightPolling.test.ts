@@ -78,3 +78,27 @@ describe('useSingleFlightPolling', () => {
     expect(reasons).toEqual(['initial', 'update']);
   });
 });
+
+describe('pull-to-refresh registry', () => {
+  it('refreshes every visible poll once and forgets polls that stop', async () => {
+    const { activePollCount, refreshActivePolls } = await import('./useSingleFlightPolling');
+    const runs: SingleFlightPollReason[] = [];
+    const run = vi.fn(async (reason: SingleFlightPollReason) => {
+      runs.push(reason);
+    });
+    const hidden = vi.fn();
+    const visible = renderHook(() => useSingleFlightPolling({ enabled: true, intervalMs: 60000, run }));
+    renderHook(() => useSingleFlightPolling({ enabled: true, visible: false, intervalMs: 60000, run: hidden }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(activePollCount()).toBe(1);
+    await act(async () => {
+      expect(await refreshActivePolls()).toBe(1);
+    });
+    expect(runs).toEqual(['initial', 'manual']);
+    expect(hidden).not.toHaveBeenCalled();
+    visible.unmount();
+    expect(activePollCount()).toBe(0);
+  });
+});

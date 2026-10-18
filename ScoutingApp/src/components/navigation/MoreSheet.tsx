@@ -134,6 +134,7 @@ interface MoreSheetProps {
 export function MoreSheet({ open, onClose }: MoreSheetProps) {
   const [closing, setClosing] = useState(false);
   const touchStartY = useRef(0);
+  const startedAtTop = useRef(true);
   const sheetRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -194,11 +195,14 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartY.current = e.touches[0].clientY;
+    // The sheet scrolls on short and landscape screens: a drag down then means
+    // "scroll back up", and only a drag from the very top means "close".
+    startedAtTop.current = (sheetRef.current?.scrollTop ?? 0) <= 0;
   }
 
   function handleTouchEnd(e: React.TouchEvent) {
     const delta = e.changedTouches[0].clientY - touchStartY.current;
-    if (delta > SWIPE_CLOSE_THRESHOLD) startClose();
+    if (delta > SWIPE_CLOSE_THRESHOLD && startedAtTop.current) startClose();
   }
 
   if (!open && !closing) return null;

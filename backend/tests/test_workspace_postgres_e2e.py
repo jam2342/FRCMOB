@@ -23,7 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateSchema, DropSchema
 import uvicorn
 
-from app.api import routes_scouting_rooms, routes_tracks
+from app.api import routes_scouting_rooms, routes_tracks, routes_workspaces
 from app.api.routes_picklists import router as picklists_router
 from app.api.routes_pit_scouting import router as pit_router
 from app.api.routes_tracks import router as tracks_router
@@ -62,6 +62,9 @@ def beta(monkeypatch):
     monkeypatch.setattr(settings, "enforce_admin_auth_for_writes", True)
     monkeypatch.setattr(settings, "admin_api_key", "disposable-local-beta-only")
     monkeypatch.setattr(settings, "admin_session_token_secret", "disposable-local-beta-signing-secret-only")
+    # "test" counts as production-like, which demands Turnstile on signup; these
+    # tests are about concurrency, not the challenge (test_prelaunch_storage_signup).
+    monkeypatch.setattr(routes_workspaces, "verify_signup_challenge", lambda token: None)
     monkeypatch.setattr(routes_scouting_rooms.scouting_room_hub, "_redis_presence_enabled", False)
     monkeypatch.setattr(routes_scouting_rooms, "SessionLocal", session_local)
     app = FastAPI()

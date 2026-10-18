@@ -7,7 +7,7 @@ from app.services.analysis.runs import (
     RUN_KIND_ON_DEVICE,
     RUN_KIND_VIDEO,
 )
-from app.services.ratings.data_loader import load_event_rating_data
+from app.services.ratings.model import recompute_event_ratings
 from tests.conftest import DBTestCase
 
 
@@ -59,29 +59,7 @@ class AnalysisRunProvenanceTests(DBTestCase):
         )
         return run
 
-    def _track(self, run: models.AnalysisRun, *, event_key: str, source: str) -> None:
-        self.db.add(
-            models.RobotTrack(
-                analysis_run_id=run.id,
-                match_key=run.match_key,
-                event_key=event_key,
-                team_key="frc118",
-                track_id=1,
-                frame_index=1,
-                time_sec=1.0,
-                bbox_x1=0.0,
-                bbox_y1=0.0,
-                bbox_x2=1.0,
-                bbox_y2=1.0,
-                centroid_x=0.5,
-                centroid_y=0.5,
-                field_x=1.0,
-                field_y=1.0,
-                source=source,
-            )
-        )
-
-    def test_ratings_loader_quarantines_on_device_findings(self):
+    def test_ratings_read_only_official_findings(self):
         event_key, match_key = self._seed()
         self.db.add(models.EventTeam(event_key=event_key, team_key="frc118"))
         now = datetime.now(timezone.utc)
@@ -116,8 +94,9 @@ class AnalysisRunProvenanceTests(DBTestCase):
             )
         self.db.commit()
 
-        data = load_event_rating_data(self.db, event_key, {"season_year": 2026})
-
-        self.assertEqual(len(data.raw_finding_rows), 1)
-        self.assertEqual(data.raw_finding_rows[0].analysis_run_id, video.id)
-        self.assertNotIn(on_device.id, data.accepted_run_ids)
+        # Video and phone findings can be wrong or unreviewed: the rating rests on
+        # official results only, so this team is rated as the season's typical robot.
+        recompute_event_ratings(self.db, event_key)
+        row = self.db.get(models.EventTeamRating, (event_key, "frc118"))
+        self.assertEqual(row.details_json["basis"], "season_typical")
+        self.assertEqual(row.details_json["matches_here"], 0)

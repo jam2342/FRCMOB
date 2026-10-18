@@ -1,20 +1,13 @@
 import unittest
 from types import SimpleNamespace
 
-try:
-    from app.api.routes_synergy import (
-        _build_model_rank_map,
-        _selection_strength_from_rating,
-        _simulate_alliance_selection,
-        _softmax_probabilities,
-    )
-
-    _IMPORT_ERROR: Exception | None = None
-except Exception as exc:  # pragma: no cover - dependency-gated test import
-    _IMPORT_ERROR = exc
+from app.api.routes_alliances import (
+    _build_model_rank_map,
+    _simulate_alliance_selection,
+    _softmax_probabilities,
+)
 
 
-@unittest.skipIf(_IMPORT_ERROR is not None, f"optional synergy deps unavailable: {_IMPORT_ERROR}")
 class AllianceSelectionModelTests(unittest.TestCase):
     def test_softmax_probabilities_rank_order_and_normalization(self):
         desirability = {"frc1": 1900.0, "frc2": 1800.0, "frc3": 1700.0}
@@ -36,14 +29,6 @@ class AllianceSelectionModelTests(unittest.TestCase):
         self.assertEqual(rank_map["frc3"], 2)
         self.assertEqual(rank_map["frc1"], 3)
 
-    def test_selection_strength_prefers_epa_when_available(self):
-        rating = SimpleNamespace(
-            rating_0_100=50.0,
-            details_json={"epa_context": {"raw_value": 2020.0}},
-        )
-        strength, source = _selection_strength_from_rating(rating)  # type: ignore[arg-type]
-        self.assertEqual(source, "statbotics_norm_epa")
-        self.assertEqual(strength, 2020.0)
 
     def test_simulation_prefers_higher_desirability_team(self):
         event_team_keys = ["frc1", "frc2", "frc3", "frc4", "frc5"]

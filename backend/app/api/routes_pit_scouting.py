@@ -6,6 +6,7 @@
 
 import base64
 import binascii
+import io
 import logging
 import re
 import uuid
@@ -14,12 +15,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import sign_media_path
 from app.db import models
 from app.db.session import get_db
+from app.core.config import settings
+from app.services.workspace_limits import guard_pit_photo_storage, lock_pit_photo_storage, pit_photo_bytes_used
 from app.services.workspaces import require_workspace_actor, require_workspace_writer
 
 logger = logging.getLogger(__name__)
@@ -35,6 +39,7 @@ _TEAM_KEY_RE = re.compile(r"^frc\d{1,5}$")
 MAX_PHOTO_BYTES = 6 * 1024 * 1024
 MAX_PHOTOS_PER_TEAM = 12
 MAX_PAYLOAD_FIELDS = 80
+MAX_PHOTO_PIXELS = 16 * 1024 * 1024
 
 _IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
     (b"\xff\xd8\xff", ".jpg"),
@@ -98,6 +103,26 @@ def _detect_image_extension(data: bytes) -> str | None:
                 continue
             return extension
     return None
+
+
+def _validate_photo(data: bytes) -> str:
+    extension = _detect_image_extension(data)
+    if extension is None:
+        raise HTTPException(status_code=400, detail="Unsupported image format (JPEG/PNG/WebP only)")
+    try:
+        with Image.open(io.BytesIO(data), formats=["JPEG", "PNG", "WEBP"]) as image:
+            if image.width * image.height > MAX_PHOTO_PIXELS:
+                raise HTTPException(status_code=413, detail="Photo dimensions are too large. Resize it and try again.")
+            if getattr(image, "n_frames", 1) != 1:
+                raise HTTPException(status_code=400, detail="Upload a single still photo.")
+            image.verify()
+        # Header verification alone does not reject a truncated JPEG payload.
+        # Pixel and request limits bound the decode before any file is stored.
+        with Image.open(io.BytesIO(data), formats=["JPEG", "PNG", "WEBP"]) as image:
+            image.load()
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+        raise HTTPException(status_code=400, detail="This photo is damaged or invalid. Choose a different photo.") from None
+    return extension
 
 class PitEntryUpsertRequest(BaseModel):
     event_key: str
@@ -189,9 +214,19 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
     if len(data) > MAX_PHOTO_BYTES:
         raise HTTPException(status_code=413, detail="Photo too large (6 MB max)")
 
-    extension = _detect_image_extension(data)
-    if extension is None:
-        raise HTTPException(status_code=400, detail="Unsupported image format (JPEG/PNG/WebP only)")
+    extension = _validate_photo(data)
+
+    guard_pit_photo_storage(db, actor.workspace_id, len(data), photos_root=PIT_PHOTOS_ROOT)
+    quota = int(settings.pit_photo_quota_bytes_per_workspace_event or 0)
+    used = pit_photo_bytes_used(db, actor.workspace_id, normalized_event, photos_root=PIT_PHOTOS_ROOT)
+    if quota > 0 and used + len(data) > quota:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Your team's pit photos for this event have reached {quota // (1024 * 1024)} MB. "
+                "Delete a few old ones first."
+            ),
+        )
 
     row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
@@ -226,7 +261,12 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
     photo_url = f"/media/pit_photos/{normalized_event}/{normalized_team}/{file_name}"
     photos.append(photo_url)
     row.photos = photos
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # A failed transaction must not leave an unaccounted permanent upload.
+        file_path.unlink(missing_ok=True)
+        raise
     db.refresh(row)
     return {"ok": True, "photo": photo_url, "photo_url": sign_media_path(photo_url), "entry": _serialize_entry(row)}
 
@@ -246,6 +286,7 @@ def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Sessi
     if photo_path not in photos:
         raise HTTPException(status_code=404, detail="Photo not found on this entry")
 
+    lock_pit_photo_storage(db)
     # Only ever delete files inside the pit photos root for this entry.
     expected_prefix = f"/media/pit_photos/{normalized_event}/{normalized_team}/"
     if photo_path.startswith(expected_prefix):
@@ -254,10 +295,24 @@ def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Sessi
         if candidate.is_relative_to(PIT_PHOTOS_ROOT.resolve()) and candidate.is_file():
             try:
                 candidate.unlink()
+                # Upload/delete churn must not leave unbounded empty directories
+                # behind for every future global-capacity scan to traverse.
+                for directory in (candidate.parent, candidate.parent.parent):
+                    try:
+                        directory.rmdir()
+                    except OSError:
+                        break  # Another photo still uses it.
             except OSError:
                 logger.warning("Failed to delete pit photo file %s", candidate)
 
     row.photos = [item for item in photos if item != photo_path]
+    response_entry = _serialize_entry(row)
+    remove_placeholder = not row.photos and not row.payload
+    if remove_placeholder:
+        # Photo-only placeholder, with no scouting answers to preserve.
+        db.delete(row)
     db.commit()
-    db.refresh(row)
-    return {"ok": True, "entry": _serialize_entry(row)}
+    if not remove_placeholder:
+        db.refresh(row)
+        response_entry = _serialize_entry(row)
+    return {"ok": True, "entry": response_entry}

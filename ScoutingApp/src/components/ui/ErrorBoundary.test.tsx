@@ -18,3 +18,12 @@ it('keeps exception details out of the fallback and lets the page retry', () => 
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   expect(screen.getByText('Page ready')).toBeInTheDocument();
 });
+
+it('clears the error when the page it guards changes', () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  function Broken(): never { throw new Error('boom'); }
+  const { rerender } = render(<ErrorBoundary label="Strategy" resetKey="/match-center/strategy"><Broken /></ErrorBoundary>);
+  expect(screen.getByText('Strategy failed to load')).toBeInTheDocument();
+  rerender(<ErrorBoundary label="Compare" resetKey="/compare"><p>Compare ready</p></ErrorBoundary>);
+  expect(screen.getByText('Compare ready')).toBeInTheDocument();
+});

@@ -1,18 +1,20 @@
+import { matchLabel } from '../utils/matchLabel';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  getEventScheduleWithSynergy,
+  getEventPredictionSchedule,
   getEventPredictions,
   getEventSchedule,
   isClientAdminModeEnabled,
 } from '../api';
 import type {
-  EventScheduleWithSynergyResponse,
+  EventPredictionScheduleResponse,
   EventScheduleItem,
+  PredictedScheduleMatch,
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
-import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
+import { MATCH_HUB_VIEWS, viewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { usePageVisibility } from '../hooks/usePageVisibility';
@@ -41,10 +43,7 @@ function matchSortKey(m: { comp_level: string; set_number: number; match_number:
 }
 
 function matchDisplayName(m: { comp_level: string; set_number: number; match_number: number }): string {
-  const level = m.comp_level.toUpperCase();
-  if (m.comp_level === 'qm') return `Qual ${m.match_number}`;
-  if (m.comp_level === 'f') return `Final ${m.match_number}`;
-  return `${level} ${m.set_number}-${m.match_number}`;
+  return matchLabel(m.comp_level, m.set_number, m.match_number);
 }
 
 function teamNum(teamKey: string): string {
@@ -86,7 +85,7 @@ function ResultVerdict({ correct }: { correct: boolean }) {
 
 // Phones: one short card per match. The table's stacked fallback gave every
 // match six labelled lines (~230px), so an event's 141 matches ran to 40,000px.
-// Synergy and edge stay on the wider table; the call and the result are what
+// Edge and expected RP stay on the wider table; the call and the result are what
 // someone checking from the stands wants.
 function renderPredictionCards(rows: MatchPrediction[], onOpenMatch: (matchKey: string) => void) {
   return (
@@ -124,6 +123,19 @@ function renderPredictionCards(rows: MatchPrediction[], onOpenMatch: (matchKey: 
   );
 }
 
+const BONUS_RP_LABELS: Record<string, string> = { energized: 'Energized', supercharged: 'Supercharged', traversal: 'Traversal' };
+
+type BonusChances = NonNullable<PredictedScheduleMatch['prediction']>['bonus_rp_chances'];
+
+function rpSummary(chances: BonusChances): MatchPrediction['rp'] {
+  if (!chances) return null;
+  const side = (color: 'red' | 'blue') =>
+    Object.entries(chances[color])
+      .map(([rp, p]) => `${BONUS_RP_LABELS[rp] ?? rp} ${Math.round(p * 100)}%`)
+      .join(', ');
+  return { red: chances.red_expected_rp, blue: chances.blue_expected_rp, detail: `Red: ${side('red')}. Blue: ${side('blue')}.` };
+}
+
 function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn<MatchPrediction>[] {
   return [
   {
@@ -153,28 +165,27 @@ function predictionColumns(onOpenMatch: (matchKey: string) => void): TableColumn
       return (
         <>
           <span className={`prediction-label ${favoured.red ? 'text-red' : 'text-blue'}`}>{favoured.label}</span>
-          {pred.prediction_source === 'ml_model' ? <span className={styles.source}>ML</span> : null}
         </>
       );
     },
   },
   {
-    key: 'synergy',
-    label: 'Synergy',
-    render: (pred) => (
-      <span className={styles.nowrap}>
-        <span className="text-red">{metric(pred.red_synergy, 0)}</span>
-        {' vs '}
-        <span className="text-blue">{metric(pred.blue_synergy, 0)}</span>
-      </span>
-    ),
+    key: 'rp',
+    label: 'Exp. RP',
+    render: (pred) =>
+      pred.rp ? (
+        <span className={styles.nowrap} title={pred.rp.detail}>
+          <span className="text-red">{metric(pred.rp.red, 1)}</span>
+          {' vs '}
+          <span className="text-blue">{metric(pred.rp.blue, 1)}</span>
+        </span>
+      ) : '—',
   },
   {
     key: 'confidence',
     label: 'Edge',
     numeric: true,
-    // How far the call is from a coin flip. This showed the synergy projection's
-    // confidence, which is 0 for every match, so the column always read 0%.
+    // How far the call is from a coin flip.
     render: (pred) => (pred.red_prob == null ? '—' : pct(Math.abs(pred.red_prob - 0.5) * 2, 0)),
   },
   {
@@ -210,16 +221,10 @@ type MatchPrediction = {
   scheduled_time: number | null;
   red_teams: string[];
   blue_teams: string[];
-  red_synergy: number | null;
-  blue_synergy: number | null;
-  red_synergy_points: number;
-  blue_synergy_points: number;
-  red_confidence: number;
-  blue_confidence: number;
-  red_throughput: number | null;
-  blue_throughput: number | null;
   red_prob: number | null;
   blue_prob: number | null;
+  /* Quals: expected ranking points and each bonus RP's chance, per alliance. */
+  rp: { red: number; blue: number; detail: string } | null;
   prediction_source: PredictionSource | null;
   ml_edge_confidence: number | null;
   // Actual results (from schedule)
@@ -239,7 +244,7 @@ export function MatchPredictionPage() {
   const navigate = useNavigate();
 
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
-  const [synergyData, setSynergyData] = useState<EventScheduleWithSynergyResponse | null>(null);
+  const [predictionData, setPredictionData] = useState<EventPredictionScheduleResponse | null>(null);
   const [scheduleData, setScheduleData] = useState<EventScheduleItem[] | null>(null);
   const [tbaPredictions, setTbaPredictions] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -261,24 +266,24 @@ export function MatchPredictionPage() {
     if (!refresh) {
       setLoading(true);
       setErrorText('');
-      setSynergyData(null);
+      setPredictionData(null);
       setScheduleData(null);
       setScheduleError('');
       setTbaPredictions(null);
     }
 
     const results = await Promise.allSettled([
-      getEventScheduleWithSynergy(key, { include_pair_breakdown: false }),
+      getEventPredictionSchedule(key),
       getEventSchedule(key),
       getEventPredictions(key),
     ]);
     if (generation !== requestGeneration.current) return true;
 
     if (results[0].status === 'fulfilled') {
-      setSynergyData(results[0].value);
+      setPredictionData(results[0].value);
       setErrorText('');
     } else if (!refresh) {
-      setErrorText((results[0].reason as Error)?.message || 'Failed to load synergy data.');
+      setErrorText((results[0].reason as Error)?.message || 'Failed to load predictions.');
     }
 
     if (results[1].status === 'fulfilled') {
@@ -333,21 +338,18 @@ export function MatchPredictionPage() {
     ),
   });
 
-  /* --- Merge synergy + schedule into predictions --- */
+  /* --- Merge predictions + schedule results --- */
   const predictions = useMemo<MatchPrediction[]>(() => {
-    if (!synergyData?.matches) return [];
+    if (!predictionData?.matches) return [];
 
     const scheduleMap = new Map<string, EventScheduleItem>();
     for (const m of scheduleData ?? []) {
       scheduleMap.set(m.match_key, m);
     }
 
-    return synergyData.matches
+    return predictionData.matches
       .map((m): MatchPrediction => {
         const sched = scheduleMap.get(m.match_key);
-        const rSyn = m.red.synergy.alliance_synergy_score_0_100;
-        const bSyn = m.blue.synergy.alliance_synergy_score_0_100;
-
         const win = matchWinProbability(m);
         const redProb = win?.red ?? null;
         const blueProb = win?.blue ?? null;
@@ -363,16 +365,9 @@ export function MatchPredictionPage() {
           scheduled_time: m.scheduled_time,
           red_teams: m.red.teams.map((t) => t.team_key),
           blue_teams: m.blue.teams.map((t) => t.team_key),
-          red_synergy: rSyn,
-          blue_synergy: bSyn,
-          red_synergy_points: m.red.synergy.alliance_synergy_points,
-          blue_synergy_points: m.blue.synergy.alliance_synergy_points,
-          red_confidence: m.red.synergy.confidence_0_1,
-          blue_confidence: m.blue.synergy.confidence_0_1,
-          red_throughput: m.red.synergy.projected_throughput ?? m.red.synergy.expected_throughput,
-          blue_throughput: m.blue.synergy.projected_throughput ?? m.blue.synergy.expected_throughput,
           red_prob: redProb,
           blue_prob: blueProb,
+          rp: rpSummary(m.prediction?.bonus_rp_chances),
           prediction_source: source,
           ml_edge_confidence: mlEdge,
           red_score: sched?.red_score ?? null,
@@ -382,7 +377,7 @@ export function MatchPredictionPage() {
         };
       })
       .sort((a, b) => matchSortKey(a) - matchSortKey(b));
-  }, [synergyData, scheduleData]);
+  }, [predictionData, scheduleData]);
 
   // A phone got all ~140 matches at once: 20 to 38 screens of scrolling. Show a page at a time.
   const isMobileLayout = useMobileLayout();
@@ -407,17 +402,15 @@ export function MatchPredictionPage() {
       if (predictedRed === actualRed && p.winner !== 'tie') correct++;
     }
     const nonTie = completed.filter((p) => p.winner !== 'tie');
-    const mlCount = predictions.filter((p) => p.prediction_source === 'ml_model').length;
     return {
       total: predictions.length,
       completed: completed.length,
       assessed: nonTie.length,
       ties: completed.length - nonTie.length,
-      // Fuel-rate predictions use only results from before each match: real forecasts.
-      forecast: completed.filter((p) => p.prediction_source === 'fuel_model').length,
+      // Points-model predictions use only results from before each match: real forecasts.
+      forecast: completed.filter((p) => p.prediction_source === 'points_model').length,
       correct,
       accuracy: nonTie.length > 0 ? correct / nonTie.length : null,
-      ml_powered: mlCount,
     };
   }, [predictions]);
 
@@ -437,9 +430,13 @@ export function MatchPredictionPage() {
             cards and two identical "Open Match Predictions fullscreen"
             buttons. This one is a picker. */}
         <SurfaceCard
-          title="Event Finder"
+          title={viewTitle(MATCH_HUB_VIEWS, '/match-center/predictions')}
+          subtitle="Who's likely to win each match, from the official results so far."
+          expandable={false}
+          mobileCollapsible={false}
         >
           <EventPicker
+            label="Event"
             value={eventKey}
             onSelect={selectEvent}
             inputValue={eventInput}
@@ -448,7 +445,7 @@ export function MatchPredictionPage() {
             loading={loading}
           />
 
-          {synergyData ? (
+          {predictionData ? (
             <div>
               <p className="center-event-status">
                 {/* The picker above already shows the event's name. */}
@@ -464,7 +461,7 @@ export function MatchPredictionPage() {
         {/* ---- Filter + Match List ---- */}
         {predictions.length > 0 ? (
           <SurfaceCard
-            title="Match Predictions"
+            title="Matches"
             subtitle={`${filteredPredictions.length} match${filteredPredictions.length === 1 ? '' : 'es'}`}
             right={
               <div className="center-filter-chips">
@@ -508,7 +505,7 @@ export function MatchPredictionPage() {
         {/* ---- Model Accuracy ---- */}
         {stats.completed > 0 ? (
           <SurfaceCard
-            title={stats.forecast > 0 ? 'Forecast check' : 'Hindsight check'}
+            title={stats.forecast > 0 ? 'Forecast Check' : 'Hindsight Check'}
             subtitle={
               stats.forecast === stats.completed
                 ? 'Each match was predicted only from results before it, so this is how well matches were forecast.'
@@ -533,9 +530,6 @@ export function MatchPredictionPage() {
               />
               <div className="page-hero-stats">
                 <Stat size="sm" label="Matches" value={stats.total} sub={`${stats.completed} played`} />
-                {stats.ml_powered > 0 ? (
-                  <Stat size="sm" label="ML powered" value={stats.ml_powered} />
-                ) : null}
               </div>
             </div>
             {stats.ties > 0 ? (

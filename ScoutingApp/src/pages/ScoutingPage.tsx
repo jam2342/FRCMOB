@@ -1,3 +1,6 @@
+import { setItemMakingRoom } from '../utils/apiCacheSpace';
+import { storageGet, storageRemove } from '../platform/safeStorage';
+import { TEAM_NUMBER_PLACEHOLDER } from './centerUtils';
 import { exportTextFile } from '../platform/exportFile';
 import { useCallback, useEffect, useMemo, useRef, useState, useEffectEvent } from 'react';
 import { useEventNames } from '../hooks/useEventNames';
@@ -31,8 +34,8 @@ import type {
   ScoutingRoomPresenceMember,
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
-import { PageViewBar } from '../components/PageViewBar';
-import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
+import { ScoutingViewBar } from '../components/ScoutingViewBar';
+import { MatchSelect } from '../components/MatchSelect';
 import { AutoScoutEvidencePanel } from '../components/scouting/AutoScoutEvidencePanel';
 import { AutoScoutFieldBadge } from '../components/scouting/AutoScoutFieldBadge';
 import { AutoScoutReviewPanel } from '../components/scouting/AutoScoutReviewPanel';
@@ -60,6 +63,7 @@ import { readStoredCenterContext, writeCenterContext } from '../layout/centerCon
 import { countersFor, scalesFor } from '../config/gameFields';
 import { downloadCsv } from '../utils/csvExport';
 import { hapticTap, hapticUndo, hapticSuccess } from '../utils/haptics';
+import { closeToast, showToast } from '../components/ui/toast';
 import {
   PlayIcon, PauseIcon, ResetIcon, SettingsIcon, ClipboardIcon,
   ClipboardCheckIcon, ZapIcon, ClockIcon,
@@ -145,9 +149,11 @@ import {
   scoreTierLevel,
   replaceRoomEntries,
   stripEntriesForRoom,
+  withReportsFromOtherTabs,
   teamAllianceForMatch,
 } from './scoutingPage.helpers';
 import { useScoutCountdown } from './scoutDraftTimer';
+import { listFailedMutations, listQueuedMutations } from '../utils/offlineQueue';
 import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
 import { useWorkspace } from '../features/workspace/useWorkspace';
@@ -223,7 +229,7 @@ const DEFAULT_MOBILE_PANEL_PREFS: StoredMobilePanelPrefs = {
 
 function readStoredMobilePanelPrefs(): StoredMobilePanelPrefs {
   try {
-    const raw = window.localStorage.getItem(SCOUTING_MOBILE_PANEL_PREFS_STORAGE);
+    const raw = storageGet(SCOUTING_MOBILE_PANEL_PREFS_STORAGE);
     if (!raw) return DEFAULT_MOBILE_PANEL_PREFS;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const legacyReview = parsed.section === 'score' || ['mobility', 'strategy', 'notes'].includes(String(parsed.capture));
@@ -271,6 +277,7 @@ function CounterInput(props: {
 
   return (
     <FieldStepper
+      feedback
       label={label}
       badge={badge}
       value={value}
@@ -334,7 +341,7 @@ export function ScoutingPage() {
   const defaultTeamKey = (searchParams.get('team') || storedCenterContext.teamKey || '').trim().toLowerCase();
   // Only an explicit choice: "my team" switches this page to scouting that team's
   // opponents, so it doesn't fall back to the workspace's number like Strategy does.
-  const defaultMyTeamKey = (searchParams.get('my_team') || window.localStorage.getItem(SCOUT_MY_TEAM_STORAGE) || '')
+  const defaultMyTeamKey = (searchParams.get('my_team') || storageGet(SCOUT_MY_TEAM_STORAGE) || '')
     .trim()
     .toLowerCase();
   const mobilePanelPrefs = useMemo(() => readStoredMobilePanelPrefs(), []);
@@ -367,6 +374,19 @@ export function ScoutingPage() {
   const sharingEntriesRef = useRef(new Set<string>());
   const latestEntriesRef = useRef(entries);
   latestEntriesRef.current = entries;
+  // Another tab (or the installed app, which shares storage with the browser) saved:
+  // take its list, or this tab's next save would write over the report it added.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return;
+      if (event.key !== scoutingEntriesStorageKey(entriesWorkspaceRef.current)) return;
+      const next = readStoredEntries(entriesWorkspaceRef.current);
+      latestEntriesRef.current = next;
+      setEntries(next);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   // Which workspace `entries` belong to. It moves only when entries are reloaded
   // for a new team, so a render that still holds the old team's entries is
   // written under the old team's key even after the session has switched.
@@ -403,7 +423,7 @@ export function ScoutingPage() {
     normalizeScoutProfile(
       // The server knows a team member only by their workspace name, so that wins
       // over a name typed on this device before joining.
-      workspace?.me.display_name || window.localStorage.getItem(SCOUT_PROFILE_STORAGE) || '',
+      workspace?.me.display_name || storageGet(SCOUT_PROFILE_STORAGE) || '',
     ),
   );
   const [setupNameRequested] = useState(!scoutProfile);
@@ -456,7 +476,6 @@ export function ScoutingPage() {
   const [mobileFinderOpen, setMobileFinderOpen] = useState<boolean>(() =>
     searchParams.get('match') && searchParams.get('team') ? false : mobilePanelPrefs.finderOpen,
   );
-  const [matchQuery, setMatchQuery] = useState('');
   const [mobileScoutSection, setMobileScoutSection] = useState<MobileScoutSection>(() => mobilePanelPrefs.section);
   const [mobileCapturePanel, setMobileCapturePanel] = useState<MobileCapturePanel>(() => mobilePanelPrefs.capture);
   const [mobileScorePanel] = useState<MobileScorePanel>(() => mobilePanelPrefs.score);
@@ -1488,7 +1507,7 @@ export function ScoutingPage() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(scoutingEntriesStorageKey(entriesWorkspaceRef.current), JSON.stringify(entries));
+      setItemMakingRoom(scoutingEntriesStorageKey(entriesWorkspaceRef.current), JSON.stringify(entries));
       setEntryStorageFailed(false);
     } catch {
       setEntryStorageFailed(true);
@@ -1498,14 +1517,14 @@ export function ScoutingPage() {
   useEffect(() => {
     try {
       if (scoutProfile) window.localStorage.setItem(SCOUT_PROFILE_STORAGE, scoutProfile);
-      else window.localStorage.removeItem(SCOUT_PROFILE_STORAGE);
+      else storageRemove(SCOUT_PROFILE_STORAGE);
     } catch { /* The current profile remains usable. */ }
   }, [scoutProfile]);
 
   useEffect(() => {
     try {
       if (myTeamKey) window.localStorage.setItem(SCOUT_MY_TEAM_STORAGE, myTeamKey);
-      else window.localStorage.removeItem(SCOUT_MY_TEAM_STORAGE);
+      else storageRemove(SCOUT_MY_TEAM_STORAGE);
     } catch { /* The current team remains usable. */ }
   }, [myTeamKey]);
 
@@ -1553,7 +1572,7 @@ export function ScoutingPage() {
     const activeRoomKey = normalizeRoomKey(activeRoom?.room_key || '');
     try {
       // Legacy cleanup: room restore is session-scoped now, not cross-session.
-      window.localStorage.removeItem(SCOUTING_ROOM_KEY_STORAGE);
+      storageRemove(SCOUTING_ROOM_KEY_STORAGE);
     } catch {
       // ignore storage failures
     }
@@ -1708,7 +1727,6 @@ export function ScoutingPage() {
       try {
         const payload = await getEventTeamsIntel(selectedEventKey, {
           include_tba: true,
-          include_statbotics: false,
           include_season_fallback: true,
           include_rating_details: false,
           include_rating_signals: false,
@@ -1729,9 +1747,6 @@ export function ScoutingPage() {
           map[teamKey] = {
             rating_0_100: ratingScore,
             reliability_0_1: parseNumber(averages?.reliability_score) ?? parseNumber(analysis?.reliability_score),
-            // This held (1200 + rating * 8.5), our own rating relabelled as a Statbotics
-            // EPA and saved into entries under that name. There is no EPA here.
-            statbotics_norm_epa: null,
           };
         }
         setEventApiBaselineByTeam(map);
@@ -1774,13 +1789,13 @@ export function ScoutingPage() {
     if (!roomAccessToken) {
       let cancelled = false;
       setRoomConnectionState('connecting');
-      setRoomErrorText('Refreshing room access...');
+      setRoomErrorText('Refreshing room access…');
       void (async () => {
         const refreshedToken = await refreshRoomAccessSession(roomKey, { silent: true });
         if (cancelled) return;
         if (refreshedToken) {
           setRoomErrorText('');
-          setStatusText('Room session refreshed. Connecting...');
+          setStatusText('Room session refreshed. Connecting…');
           setRoomSocketNonce((current) => current + 1);
           return;
         }
@@ -2016,7 +2031,7 @@ export function ScoutingPage() {
     socket.onerror = () => {
       if (closedByEffect) return;
       setRoomConnectionState('error');
-      setRoomErrorText('Room websocket encountered an error. Attempting reconnect...');
+      setRoomErrorText('Room websocket encountered an error. Attempting reconnect…');
     };
 
     socket.onclose = (event) => {
@@ -2049,7 +2064,7 @@ export function ScoutingPage() {
             if (closedByEffect) return;
             if (refreshedToken) {
               setRoomErrorText('');
-              setStatusText('Room authorization refreshed. Reconnecting...');
+              setStatusText('Room authorization refreshed. Reconnecting…');
               setRoomSocketNonce((current) => current + 1);
               return;
             }
@@ -2164,7 +2179,7 @@ export function ScoutingPage() {
           if (cancelled) return;
           if (refreshedToken) {
             setRoomErrorText('');
-            setStatusText('Room session refreshed. Retrying HTTP sync...');
+            setStatusText('Room session refreshed. Retrying HTTP sync…');
             return;
           }
         }
@@ -2173,7 +2188,7 @@ export function ScoutingPage() {
         if (abortLike) {
           setRoomConnectionState('connecting');
           setRoomErrorText('');
-          setStatusText('Room HTTP sync request timed out. Retrying...');
+          setStatusText('Room HTTP sync request timed out. Retrying…');
           return;
         }
         setRoomConnectionState('error');
@@ -2538,6 +2553,20 @@ export function ScoutingPage() {
   // What the share loop checks before every send: right after switching events the old
   // event's room is still active for a moment, and its reports must not go there.
   const shareTargetRef = useRef({ room: '', event: '' });
+  // The report just saved, while its Undo toast is up. Nothing leaves the phone until the toast
+  // closes: Undo then takes it back cleanly, with no delete needed on the server.
+  const heldSaveRef = useRef<{ entryId: string; toastId: number } | null>(null);
+  // Bumped to run the share loop again: after a failed send, and when the phone is back online.
+  const [shareRetryNonce, setShareRetryNonce] = useState(0);
+  useEffect(() => {
+    const retry = () => setShareRetryNonce((value) => value + 1);
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, []);
+  useEffect(() => () => {
+    // Leaving the board ends the Undo window; closing the toast releases the sync.
+    if (heldSaveRef.current) closeToast(heldSaveRef.current.toastId);
+  }, []);
   shareTargetRef.current = { room: normalizeRoomKey(activeRoom?.room_key || ''), event: selectedEventKey };
   useEffect(() => {
     const roomKey = activeRoom?.room_key;
@@ -2546,10 +2575,23 @@ export function ScoutingPage() {
     if ((activeRoom?.event_key || '').toLowerCase() !== selectedEventKey) return;
     const stillTarget = () =>
       shareTargetRef.current.room === normalizeRoomKey(roomKey) && shareTargetRef.current.event === selectedEventKey;
-    const pending = latestEntriesRef.current.filter(entry => entry.event_key === selectedEventKey && !entry.server_synced && !entry.room_key);
-    if (!pending.length) return;
+    // Reports not yet on the server: ones saved before the room connected, and ones
+    // saved in this room whose send never landed (the app closed during Undo, or the
+    // server failed). Reports waiting in the offline queue are already on their way.
+    const candidates = latestEntriesRef.current.filter(entry =>
+      entry.event_key === selectedEventKey
+      && !entry.server_synced
+      && (!entry.room_key || normalizeRoomKey(entry.room_key) === normalizeRoomKey(roomKey))
+      && heldSaveRef.current?.entryId !== entry.id);
+    if (!candidates.length) return;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     void (async () => {
+      const waiting = [...await listQueuedMutations().catch(() => []), ...await listFailedMutations().catch(() => [])]
+        .filter((item) => item.url.includes('/entries'))
+        .map((item) => item.body || '');
+      const pending = candidates.filter((entry) => !waiting.some((body) => body.includes(`"${entry.id}"`)));
+      if (cancelled || !pending.length) return;
       const token = await ensureSharingAccessRef.current(roomKey).catch(() => '');
       if (cancelled) return;
       if (!token) {
@@ -2576,6 +2618,7 @@ export function ScoutingPage() {
           // Keep anything the phone added while this was in flight (the API snapshot).
           setEntries(current => {
             const latest = current.find(row => row.id === entry.id);
+            if (!latest) return current;
             return mergeEntry(current, {
               ...synced,
               api_snapshot: latest?.api_snapshot ?? synced.api_snapshot,
@@ -2589,12 +2632,14 @@ export function ScoutingPage() {
           if (cancelled) return;
           if (error instanceof QueuedForSyncError) {
             setEntries(current => {
-              const latest = current.find(row => row.id === entry.id) ?? entry;
+              const latest = current.find(row => row.id === entry.id);
+              if (!latest) return current;
               return mergeEntry(current, { ...latest, room_key: roomKey, server_synced: false });
             });
             queued += 1;
           } else {
-            setRoomErrorText('Could not share your saved reports. They are still on this phone; reconnect to your team to try again.');
+            setRoomErrorText('Could not share your saved reports. They are still on this phone; trying again shortly.');
+            if (!retryTimer) retryTimer = setTimeout(() => setShareRetryNonce((value) => value + 1), 30_000);
           }
         } finally {
           sharingEntriesRef.current.delete(key);
@@ -2605,8 +2650,11 @@ export function ScoutingPage() {
         queued ? `${queued} saved report${queued === 1 ? ' is' : 's are'} queued to share when you reconnect.` : '',
       ].filter(Boolean).join(' ')});
     })();
-    return () => { cancelled = true; };
-  }, [activeRoom?.room_key, activeRoom?.event_key, teamRoomKey, selectedEventKey, workspaceId, hasScoutProfile, scoutProfile]);
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [activeRoom?.room_key, activeRoom?.event_key, teamRoomKey, selectedEventKey, workspaceId, hasScoutProfile, scoutProfile, shareRetryNonce]);
 
   function roomSyncedLabel(roomKey: string): string {
     return isTeamRoomKey(roomKey) ? 'Synced with your team.' : `Synced to room ${roomKey}.`;
@@ -2772,7 +2820,6 @@ export function ScoutingPage() {
         preferred_year: CURRENT_SEASON_YEAR,
         fallback_year: FALLBACK_SEASON_YEAR,
         include_tba: true,
-        include_statbotics: false,
         allow_season_fallback: true,
         auto_heal_ratings: true,
       });
@@ -2816,6 +2863,7 @@ export function ScoutingPage() {
     const savedAt = Date.now();
     let followUp: Parameters<typeof finishEntryInBackground>[1] | null;
     let savedEntry: SavedScoutingEntry | null;
+    let replacedReport: SavedScoutingEntry | null;
     try {
       let entrySource: SavedScoutingEntry['entry_source'] = 'manual';
       let autoScoutMeta: SavedScoutingEntry['auto_scout_meta'] = null;
@@ -2850,12 +2898,23 @@ export function ScoutingPage() {
         && row.team_key === selectedTeam.team_key
         && row.scout_profile === scoutProfile
         && (row.room_key || null) === entryRoomKey);
+      // A second tap on Save while the first save's Undo is still up: same report,
+      // nothing new to replace it with. Asking "Replace?" here confused everyone.
+      if (
+        previousReport
+        && heldSaveRef.current?.entryId === previousReport.id
+        && savedAt - (previousReport.saved_at_ms ?? 0) < 3000
+      ) {
+        setStatusText(`Already saved ${scoutingTeamLabel(selectedTeam.team_key)}.`);
+        return;
+      }
       if (previousReport && !window.confirm(
         `You already saved ${scoutingTeamLabel(selectedTeam.team_key)} in ${selectedMatch.display_name}. Replace that report with this one?`,
       )) {
         setStatusText('Not saved. Your earlier report is unchanged.');
         return;
       }
+      replacedReport = previousReport ?? null;
       const entry = buildSavedScoutingEntry({
         id: previousReport?.id ?? `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
         saved_at_ms: savedAt,
@@ -2885,10 +2944,11 @@ export function ScoutingPage() {
         setErrorText('Your team workspace changed while saving. Switch back to the original workspace to save this report.');
         return;
       }
-      const nextEntries = [entry, ...latestEntriesRef.current.filter((row) => row.id !== previousReport?.id)].slice(0, 600);
+      const current = withReportsFromOtherTabs(latestEntriesRef.current, readStoredEntries(workspaceId));
+      const nextEntries = [entry, ...current.filter((row) => row.id !== previousReport?.id)].slice(0, 600);
       try {
         // Confirm storage before reporting success or clearing a rapid form.
-        window.localStorage.setItem(scoutingEntriesStorageKey(workspaceId), JSON.stringify(nextEntries));
+        setItemMakingRoom(scoutingEntriesStorageKey(workspaceId), JSON.stringify(nextEntries));
       } catch {
         setEntryStorageFailed(true);
         setErrorText('Could not save this report because device storage is full or unavailable. Your form is still here. Free some space, then try Save again.');
@@ -2927,7 +2987,59 @@ export function ScoutingPage() {
     } finally {
       setSavingEntry(false);
     }
-    if (savedEntry && followUp) void finishEntryInBackground(savedEntry, followUp);
+    if (savedEntry && followUp) holdSaveForUndo(savedEntry, followUp, replacedReport);
+  }
+
+  function holdSaveForUndo(
+    entry: SavedScoutingEntry,
+    context: Parameters<typeof finishEntryInBackground>[1],
+    replaced: SavedScoutingEntry | null,
+  ) {
+    let settled = false;
+    const toastId = showToast({
+      message: `${replaced ? 'Updated' : 'Saved'} ${scoutingTeamLabel(entry.team_key)} in ${entry.match_display}`,
+      actionLabel: 'Undo',
+      onAction: () => {
+        settled = true;
+        if (heldSaveRef.current?.toastId === toastId) heldSaveRef.current = null;
+        undoSavedEntry(entry, replaced);
+      },
+      onClose: (reason) => {
+        if (reason === 'action' || settled) return;
+        settled = true;
+        if (heldSaveRef.current?.toastId === toastId) heldSaveRef.current = null;
+        void finishEntryInBackground(entry, context);
+      },
+    });
+    heldSaveRef.current = { entryId: entry.id, toastId };
+  }
+
+  function undoSavedEntry(entry: SavedScoutingEntry, replaced: SavedScoutingEntry | null) {
+    if (entriesWorkspaceRef.current !== workspaceId) return;
+    const without = withReportsFromOtherTabs(latestEntriesRef.current, readStoredEntries(workspaceId)).filter((row) => row.id !== entry.id);
+    const nextEntries = replaced ? [replaced, ...without].slice(0, 600) : without;
+    try {
+      setItemMakingRoom(scoutingEntriesStorageKey(workspaceId), JSON.stringify(nextEntries));
+    } catch {
+      setErrorText('Could not undo: device storage is unavailable. The report is still saved on this phone.');
+      return;
+    }
+    latestEntriesRef.current = nextEntries;
+    setEntries(nextEntries);
+    setLastSavedEntryId(replaced?.id ?? '');
+    // Back to an unsaved draft, so the counters survive a reload like any other draft.
+    const draftKey = scoutDraftKey(workspaceId, entry.match_key, entry.team_key);
+    setDraftStorageFailed(!writeScoutDraft(draftKey, {
+      form: entry.form, notes: entry.notes ?? '', saved_at_ms: Date.now(),
+    }));
+    if (selectedDraftKey === draftKey) {
+      setForm({ ...EMPTY_FORM, ...entry.form });
+      setScoutNotes(entry.notes ?? '');
+    }
+    hapticUndo();
+    setStatusText(replaced
+      ? 'Undone. Your earlier report is back, and this one is a draft again.'
+      : 'Undone. This report is a draft again on this phone.');
   }
 
   // After the entry is safely on the phone: fill in team intel if it wasn't
@@ -2957,12 +3069,25 @@ export function ScoutingPage() {
         };
         setEntries((current) => {
           const latest = current.find(row => row.id === entry.id);
-          return mergeEntry(current, { ...entry, room_key: latest?.room_key ?? entry.room_key, server_synced: latest?.server_synced ?? entry.server_synced });
+          // Undone or cleared while team stats loaded: don't bring it back.
+          if (!latest) return current;
+          return mergeEntry(current, { ...entry, room_key: latest.room_key ?? entry.room_key, server_synced: latest.server_synced ?? entry.server_synced });
         });
       }
     }
     const roomKey = context.roomKey;
     if (!roomKey) return;
+    // The share loop skips a report this is already sending.
+    const sharingKey = `${savedWorkspaceId}|${roomKey}|${entry.id}`;
+    sharingEntriesRef.current.add(sharingKey);
+    try {
+      await syncEntryToRoom(entry, roomKey, context.label);
+    } finally {
+      sharingEntriesRef.current.delete(sharingKey);
+    }
+  }
+
+  async function syncEntryToRoom(entry: SavedScoutingEntry, roomKey: string, label: string) {
     let syncSuffix: string;
     let roomAccessToken = await ensureRoomAccessToken(roomKey);
     if (!roomAccessToken) {
@@ -2984,7 +3109,7 @@ export function ScoutingPage() {
             room_key: normalizeRoomKey(sync.entry.room_key || roomKey) || syncedEntry.room_key || null,
             server_synced: true,
           } satisfies SavedScoutingEntry;
-          setEntries((current) => mergeEntry(current, syncedWithRoom));
+          setEntries((current) => (current.some((row) => row.id === syncedWithRoom.id) ? mergeEntry(current, syncedWithRoom) : current));
         }
       };
       try {
@@ -2995,7 +3120,7 @@ export function ScoutingPage() {
         if (error instanceof QueuedForSyncError) {
           // Queued, not failed: the offline queue replays it on reconnect.
           setRoomErrorText('');
-          setStatusText(`${context.label} ${SAVED_ON_PHONE_NOTICE}`);
+          setStatusText(`${label} ${SAVED_ON_PHONE_NOTICE}`);
           return;
         }
         const detail = (error as Error).message || 'Room sync failed.';
@@ -3006,12 +3131,12 @@ export function ScoutingPage() {
             try {
               await syncOnce(roomAccessToken);
               setRoomErrorText('');
-              setStatusText(`${context.label} ${roomSyncedLabel(roomKey)}`);
+              setStatusText(`${label} ${roomSyncedLabel(roomKey)}`);
               return;
             } catch (retryError) {
               if (retryError instanceof QueuedForSyncError) {
                 setRoomErrorText('');
-                setStatusText(`${context.label} ${SAVED_ON_PHONE_NOTICE}`);
+                setStatusText(`${label} ${SAVED_ON_PHONE_NOTICE}`);
                 return;
               }
               nextDetail = roomRequestErrorMessage((retryError as Error).message || detail, 'Saving to the scouting room');
@@ -3019,10 +3144,13 @@ export function ScoutingPage() {
           }
         }
         setRoomErrorText(nextDetail);
-        syncSuffix = `Saved on this phone; room sync failed (${nextDetail}).`;
+        syncSuffix = `Saved on this phone; room sync failed (${nextDetail}). Trying again shortly.`;
+        // The share loop resends unsynced room reports; run it again once the server
+        // has had a moment, instead of waiting for a reload or a reconnect.
+        window.setTimeout(() => setShareRetryNonce((value) => value + 1), 30_000);
       }
     }
-    setStatusText(`${context.label} ${syncSuffix}`);
+    setStatusText(`${label} ${syncSuffix}`);
   }
 
   function clearAllEntries() {
@@ -3082,7 +3210,8 @@ export function ScoutingPage() {
       .join('\n');
 
     const eventLabel = selectedEventKey ? eventDisplayName(selectedEventKey) : 'All Events';
-    const exportedAt = new Date().toLocaleString();
+    // A file outlives the day it was made, so it keeps the year.
+    const exportedAt = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -3244,7 +3373,7 @@ export function ScoutingPage() {
     }
     setRoomConnectionState('connecting');
     setRoomSocketNonce((current) => current + 1);
-    setStatusText(`Reconnecting room...`);
+    setStatusText(`Reconnecting room…`);
   }
 
   function focusSidebarSection(section: SidebarSection) {
@@ -3289,10 +3418,10 @@ export function ScoutingPage() {
       : 'Set scout name, event, match, and team to enable save.';
   const activeSectionTitle =
     sidebarSection === 'setup'
-      ? 'Setup'
+      ? 'Robot'
       : sidebarSection === 'room'
         ? 'Room'
-        : 'Data';
+        : 'Saved';
   const activeSectionSummary =
     sidebarSection === 'setup'
       ? setupSectionSummary
@@ -3464,7 +3593,7 @@ export function ScoutingPage() {
               <p className="center-callout warning">Scout name required before saving or joining a room.</p>
             ) : null}
             <label className="center-label" htmlFor="scout-my-team-input">
-              Your Team
+              Your team
             </label>
             <div className="center-input-row">
               <input
@@ -3478,7 +3607,7 @@ export function ScoutingPage() {
                   if (normalized) setMyTeamKey(normalized);
                   else setMyTeamKey(raw.toLowerCase());
                 }}
-                placeholder="Team number (e.g., 254)"
+                placeholder={TEAM_NUMBER_PLACEHOLDER}
                 inputMode="numeric"
               />
               {myTeamKey ? (
@@ -3560,7 +3689,7 @@ export function ScoutingPage() {
             ) : workspace && selectedEventKey && teamRoom.status === 'loading' ? (
               <p className="center-callout muted">Opening your team's room…</p>
             ) : workspace && !selectedEventKey ? (
-              <p className="center-callout muted">Pick an event in Setup and you'll join your team's room for it.</p>
+              <p className="center-callout muted">Pick an event under Robot and you'll join your team's room for it.</p>
             ) : null}
             <details className={styles.otherRooms} open={isMobileLayout || !workspace || (!inTeamRoom && Boolean(activeRoom?.room_key))}>
             <summary>{inTeamRoom || !activeRoom?.room_key ? 'Use a room key instead' : 'Room key'}</summary>
@@ -4011,7 +4140,7 @@ export function ScoutingPage() {
     <>
     {/* Related scouting pages stay on Robot and Saved so Scout opens directly on capture. */}
     {isMobileLayout && !mobileFinderOpen ? null : (
-      <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" />
+      <ScoutingViewBar />
     )}
     {draftStorageFailed || entryStorageFailed ? (
       <p className="center-callout danger" role="alert">
@@ -4110,7 +4239,7 @@ export function ScoutingPage() {
                   }}
                   disabled={!saveReady || savingEntry}
                 >
-                  {savingEntry ? 'Saving...' : <><SaveIcon className="icon-inline" /> Save Entry</>}
+                  {savingEntry ? 'Saving…' : <><SaveIcon className="icon-inline" /> Save Entry</>}
                 </button>
               </div>
             </div>
@@ -4127,14 +4256,14 @@ export function ScoutingPage() {
               setSetupHeaderManuallyCollapsed(true);
             }}
             aria-expanded={!setupHeaderCollapsed}
-            aria-label={setupHeaderCollapsed ? 'Expand setup controls' : 'Collapse setup controls'}
+            aria-label={setupHeaderCollapsed ? 'Expand scouting controls' : 'Collapse scouting controls'}
           >
             {setupHeaderCollapsed ? <ChevronDownIcon className="icon-inline" /> : <ChevronUpIcon className="icon-inline" />}
             {/* Names its region, like the three shell toggles. On the 52px rail
                 there is no room, and the section icons underneath say what the
                 rail is — the same reason the collapsed nav shows icons rather
                 than eight identical dashes. */}
-            {!scoutingSidebarSideCollapsed ? <span>Setup</span> : null}
+            {!scoutingSidebarSideCollapsed ? <span>Controls</span> : null}
           </button>
 
           <SegmentedTabs
@@ -4150,9 +4279,9 @@ export function ScoutingPage() {
             value={sidebarSection}
             onChange={focusSidebarSection}
             items={[
-              { value: 'setup', label: 'Setup', icon: <SettingsIcon className="icon-inline" />, panelId: 'scouting-sidebar-setup' },
+              { value: 'setup', label: 'Robot', icon: <SettingsIcon className="icon-inline" />, panelId: 'scouting-sidebar-setup' },
               { value: 'room', label: 'Room', icon: <UsersIcon className="icon-inline" />, panelId: 'scouting-sidebar-room' },
-              { value: 'data', label: 'Data', icon: <SaveIcon className="icon-inline" />, panelId: 'scouting-sidebar-data' },
+              { value: 'data', label: 'Saved', icon: <SaveIcon className="icon-inline" />, panelId: 'scouting-sidebar-data' },
             ]}
           />
         </div>
@@ -4169,7 +4298,7 @@ export function ScoutingPage() {
         >
           {!isMobileLayout ? (
             <div className="scout-sidebar-section-head">
-              <span className="scout-sidebar-section-label">Setup</span>
+              <span className="scout-sidebar-section-label">Robot</span>
               <span className="scout-sidebar-section-note">{setupSectionSummary}</span>
             </div>
           ) : null}
@@ -4248,7 +4377,6 @@ export function ScoutingPage() {
           </label>
           <EventPicker
             value={selectedEventKey}
-            inlineResults={isMobileLayout}
             inputId="scout-event-select"
             onSelect={(key) => {
               const next = normalizeEventKeyInput(key);
@@ -4268,40 +4396,17 @@ export function ScoutingPage() {
             placeholder={'Search events — try "houston district" or "2026txhou"'}
           />
 
-          {isMobileLayout ? (
-            <div className={styles.matchPicker}>
-              <FieldText label="Find match" value={matchQuery} onChange={(event) => setMatchQuery(event.target.value)} placeholder="Match name or number" />
-              <div className={styles.matchChoices} role="group" aria-label="Match">
-                {scheduleRows.filter((match) => `${match.display_name} ${match.match_number}`.toLowerCase().includes(matchQuery.trim().toLowerCase())).map((match) => (
-                  <button type="button" className={`center-btn ${match.match_key.toLowerCase() === selectedMatchKey ? '' : 'ghost'}`} key={match.match_key}
-                    aria-pressed={match.match_key.toLowerCase() === selectedMatchKey}
-                    onClick={() => { if (confirmDraftScopeChange(match.match_key.toLowerCase() !== selectedMatchKey)) setSelectedMatchKey(match.match_key.toLowerCase()); }}>{match.display_name}</button>
-                ))}
-              </div>
-              {scheduleRows.length === 0 ? <p className="center-callout muted">{loadingSchedule ? 'Loading schedule…' : errorText ? 'Schedule unreachable' : 'No schedule loaded.'}</p> : null}
-            </div>
-          ) : (<>
-          <label className="center-label" htmlFor="scout-match-select">
-            Match
-          </label>
-          <select
+          <MatchSelect
             id="scout-match-select"
-            className="center-input"
+            matches={scheduleRows}
             value={selectedMatchKey}
-            onChange={(event) => {
-              const next = event.target.value.trim().toLowerCase();
-              setSelectedMatchKey(next);
+            loading={loadingSchedule}
+            emptyText={errorText ? 'Schedule unreachable' : 'No schedule yet'}
+            onChange={(next) => {
+              const key = next.trim().toLowerCase();
+              if (confirmDraftScopeChange(key !== selectedMatchKey)) setSelectedMatchKey(key);
             }}
-            disabled={scheduleRows.length === 0}
-          >
-            <option value="">{loadingSchedule ? 'Loading schedule...' : errorText ? 'Schedule unreachable' : 'Select match'}</option>
-            {scheduleRows.map((match) => (
-              <option key={`scout-match-${match.match_key}`} value={match.match_key.toLowerCase()}>
-                {match.display_name} · {fmtDateShort(matchStartTime(match))}
-              </option>
-            ))}
-          </select>
-          </>)}
+          />
           {isMobileLayout ? (
             <div className="scout-match-quick-actions">
               <button
@@ -4417,7 +4522,7 @@ export function ScoutingPage() {
 
               <p className="center-callout muted">
                 {loadingSuggested
-                  ? 'Loading events...'
+                  ? 'Loading events…'
                   : scheduleName
                     ? `Schedule: ${scheduleName}.`
                     : 'No schedule loaded.'}
@@ -4425,7 +4530,7 @@ export function ScoutingPage() {
 
               <p className="center-callout muted">
                 {loadingEventIntel
-                  ? 'Loading API baseline...'
+                  ? 'Loading API baseline…'
                   : eventIntelError
                     ? `API baseline unavailable: ${eventIntelError}`
                     : `API baseline: ${Object.keys(eventApiBaselineByTeam).length} team${Object.keys(eventApiBaselineByTeam).length === 1 ? '' : 's'}`}
@@ -4541,7 +4646,7 @@ export function ScoutingPage() {
               }}
               disabled={Boolean(saveBlockedReason) || savingEntry}
             >
-              {savingEntry ? 'Saving...' : <><SaveIcon className="icon-inline" /> Save Scouting Entry</>}
+              {savingEntry ? 'Saving…' : <><SaveIcon className="icon-inline" /> Save Scouting Entry</>}
             </button>
             {saveBlockedReason ? <span className={styles.saveHint}>{saveBlockedReason}</span> : null}
           </div>
@@ -4604,7 +4709,7 @@ export function ScoutingPage() {
                   }}
                   disabled={Boolean(saveBlockedReason) || savingEntry}
                 >
-                  {savingEntry ? 'Saving...' : <><SaveIcon className="icon-inline" /> Save</>}
+                  {savingEntry ? 'Saving…' : <><SaveIcon className="icon-inline" /> Save</>}
                 </button>
               </div>
               <div className="fm-scout-hero-context" role="list" aria-label="Core scouting context">

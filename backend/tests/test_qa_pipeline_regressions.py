@@ -3,11 +3,11 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.api import routes_events, routes_tracks
+from app.api import routes_scouting, routes_events, routes_tracks
 from app.db import models
 from app.services.events.ingest import upsert_score_breakdown_truth
-from app.services.events.fuel_win_probability import fuel_margin_details
-from app.services.ml.synergy import SYNERGY_MODEL_VERSION
+from app.services.events.win_probability import match_predictions
+from app.services.scoring.alliance_results import upsert_alliance_results
 from app.services.auto_scout.scouting import generate_auto_scout_draft, summarize_team_auto_scout_profile
 from app.services.auto_scout.shift_play import analyze_run_shift_play
 from app.services.analysis.evidence import evidence_rejection_reason
@@ -46,6 +46,7 @@ class QAPipelineRegressionTests(DBTestCase):
 
     def _ingest(self, matches):
         upsert_score_breakdown_truth(self.db, event_key="2026qa", season_year=2026, matches=matches)
+        upsert_alliance_results(self.db, event_key="2026qa", season_year=2026, matches=matches)
         self.db.commit()
 
     def test_official_zero_fuel_is_a_known_zero_not_missing(self):
@@ -53,21 +54,27 @@ class QAPipelineRegressionTests(DBTestCase):
         finding = self.db.query(models.TeamMatchFinding).filter_by(match_key="2026qa_qm1", team_key="frc1").one()
         self.assertEqual(finding.fuel_scoring_rate, 0.0)
 
-    def test_zero_fuel_history_still_enables_fuel_prediction(self):
+    def test_zero_fuel_history_still_counts_as_a_prediction_input(self):
         self._ingest([self._official_match(1, 0, 90)])
-        details = fuel_margin_details(self.db, "2026qa", [("2026qa_qm1", RED, BLUE), ("2026qa_qm3", RED, BLUE)], event_start=10000)
-        margins = {key: margin for key, (margin, _seen) in details.items()}
+        details = match_predictions(self.db, "2026qa", [("2026qa_qm1", RED, BLUE), ("2026qa_qm3", RED, BLUE)])
+        margins = {key: margin for key, (margin, _sd, _seen, _prediction, _features) in details.items()}
         self.assertIn("2026qa_qm3", margins)
         self.assertLess(margins["2026qa_qm3"], 0.0)
 
     def test_later_postponed_match_does_not_inform_earlier_prediction(self):
+        def qm3_prediction():
+            payload = routes_events.get_event_schedule_with_synergy(
+                "2026qa", db=self.db,
+            )
+            return next(row for row in payload["matches"] if row["match_key"] == "2026qa_qm3")["prediction"]
+
+        # qm3 (10020) was played before the postponed qm2 (10030).
+        self._ingest([self._official_match(3, 120, 100)])
+        before = qm3_prediction()
         self._ingest([self._official_match(2, 180, 60)])
-        payload = routes_events.get_event_schedule_with_synergy(
-            "2026qa", SimpleNamespace(), synergy_model_version=SYNERGY_MODEL_VERSION,
-            include_pair_breakdown=False, include_ml_predictions=True, refresh=False, db=self.db,
-        )
-        match = next(row for row in payload["matches"] if row["match_key"] == "2026qa_qm3")
-        self.assertEqual(match["prediction"]["source_label"], "deterministic_rating_synergy_v1")
+        after = qm3_prediction()
+        self.assertEqual(after["source_label"], "deterministic_team_model_v3")
+        self.assertEqual(after["red_win_prob"], before["red_win_prob"])
 
     def test_rejected_nonofficial_finding_cannot_suppress_official_ingest(self):
         self.assertIsNotNone(evidence_rejection_reason({"video_evidence": {"ratings_eligible": False}}))
@@ -139,12 +146,36 @@ class QAPipelineRegressionTests(DBTestCase):
         self.assertEqual(session.status, "rejected")
         self.assertFalse(profile()["available"])
 
+    def _breakdown(self):
+        return routes_scouting.get_team_breakdown(
+            "frc1", event_key="2026qa", match_limit=20, event_limit=400, track_limit=800, db=self.db,
+        )
+
+    def test_breakdown_shows_official_matches(self):
+        # The Data Dashboard's per-match trends: they read only broadcast video before.
+        self._ingest([self._official_match(1, 90, 60)])
+        breakdown = self._breakdown()
+        self.assertEqual(breakdown["matches_analyzed"], 1)
+        self.assertEqual([m["match_key"] for m in breakdown["recent_matches"]], ["2026qa_qm1"])
+        self.assertIsNotNone(breakdown["averages"]["fuel_scoring_rate"])
+
+    def test_breakdown_tracks_come_from_the_best_accepted_recording(self):
+        # Auto Paths: tracks were filtered to video runs, so phone recordings never showed.
+        self._phone_run(quality=0.6, x=14)
+        best_run, _ = self._phone_run(quality=0.9, x=2)
+        _rejected_run, rejected = self._phone_run(quality=0.99, x=8)
+        rejected.status = "rejected"
+        self.db.commit()
+        points = self._breakdown()["recent_track_points"]
+        self.assertTrue(points)
+        self.assertEqual({p["analysis_run_id"] for p in points}, {best_run.id})
+
     def test_heatmap_uses_one_best_recording_per_match_like_shift_play(self):
         self._phone_run(quality=0.9, x=2)
         self._phone_run(quality=0.6, x=14)
         heatmap = routes_tracks.get_team_heatmap(
             "frc1", SimpleNamespace(), event_key="2026qa", match_key=None,
-            grid_cols=48, grid_rows=24, sigma=0.6, include_unreviewed=False, db=self.db,
+            grid_cols=48, grid_rows=24, sigma=0.6, include_unreviewed=False, include_workspace=False, db=self.db,
         )
         self.assertEqual(heatmap["match_count"], 1)
         self.assertEqual(heatmap["total_points"], 480)

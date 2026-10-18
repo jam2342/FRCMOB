@@ -24,7 +24,12 @@ class _FakePipe:
     def expire(self, key, seconds):  # noqa: ANN001
         self.ops.append(("expire", key, seconds))
 
+    def hexists(self, key, field):  # noqa: ANN001
+        self.ops.append(("hexists", key, field))
+
     def execute(self):
+        if self.ops and all(op[0] == "hexists" for op in self.ops):
+            return [op[2] in self.redis.hashes.get(op[1], {}) for op in self.ops]
         for op in self.ops:
             if op[0] == "hincrby":
                 bucket = self.redis.hashes.setdefault(op[1], {})
@@ -49,6 +54,9 @@ class _FakeRedis:
 
     def hgetall(self, key):  # noqa: ANN001
         return dict(self.hashes.get(key, {}))
+
+    def hlen(self, key):  # noqa: ANN001
+        return len(self.hashes.get(key, {}))
 
 
 def _sample(**overrides):
@@ -95,6 +103,14 @@ class TelemetryVitalsTests(unittest.TestCase):
         [day] = self.redis.hashes.values()
         self.assertEqual(sum(int(v) for v in day.values()), routes_telemetry.MAX_BEACONS_PER_MINUTE)
         self.assertTrue(all(len(key.split(":")[-1]) == 24 for key in self.redis.counters))
+
+    def test_a_full_day_keeps_counting_known_cells_but_adds_no_new_ones(self):
+        with mock.patch.object(routes_telemetry, "MAX_FIELDS_PER_DAY", 1):
+            self.assertEqual(self._post([_sample()]).status_code, 204)
+            self.assertEqual(self._post([_sample(), _sample(route="/made-up-route")]).status_code, 204)
+        [day] = self.redis.hashes.values()
+        self.assertEqual(len(day), 1)
+        self.assertEqual(list(day.values()), ["2"])
 
     def test_bad_bodies_are_refused(self):
         self.assertEqual(self.client.post("/telemetry/vitals", content="nope").status_code, 400)

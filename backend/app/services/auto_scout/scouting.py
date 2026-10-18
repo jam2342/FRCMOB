@@ -23,7 +23,6 @@ from app.services.auto_scout.specs import (
     mapper_version_for_season,
     season_support_payload,
 )
-from app.services.game_config import load_game_config
 
 
 READY_STATUSES = {"ready", "low_confidence"}
@@ -268,13 +267,6 @@ def withdraw_drafts_for_run(db: Session, run_id: int) -> int:
     return len(rows)
 
 
-def _match_auto_sec() -> float:
-    try:
-        return float(load_game_config().phases.auto_sec)
-    except Exception:
-        return 20.0
-
-
 def _zone_dwell_breakdown(tracks: list[models.RobotTrack]) -> dict[str, float]:
     if len(tracks) < 2:
         return {}
@@ -393,7 +385,6 @@ def _build_ready_payload(
     season_year: int,
     team_key: str,
     run: models.AnalysisRun,
-    run_context: models.AnalysisRunContext | None,
     tracks: list[models.RobotTrack],
     shift_cache: dict[int, dict[str, Any] | None] | None = None,
 ) -> tuple[str, dict[str, Any], dict[str, float], dict[str, str], dict[str, list[dict[str, Any]]], dict[str, Any], list[str]]:
@@ -540,33 +531,6 @@ def get_auto_scout_draft(
         match_key=_normalize_key(match_key),
         team_key=_normalize_key(team_key),
     )
-
-
-def list_event_auto_scout_drafts(
-    db: Session,
-    *,
-    event_key: str,
-) -> list[models.AutoScoutDraft]:
-    rows = (
-        db.query(models.AutoScoutDraft)
-        .filter(
-            models.AutoScoutDraft.event_key == _normalize_key(event_key),
-            models.AutoScoutDraft.superseded_at.is_(None),
-        )
-        .order_by(
-            models.AutoScoutDraft.match_key.asc(),
-            models.AutoScoutDraft.team_key.asc(),
-            models.AutoScoutDraft.generated_at.desc(),
-            models.AutoScoutDraft.id.desc(),
-        )
-        .all()
-    )
-    latest_by_slot: dict[tuple[str, str], models.AutoScoutDraft] = {}
-    for row in rows:
-        key = (row.match_key, row.team_key)
-        if key not in latest_by_slot:
-            latest_by_slot[key] = row
-    return list(latest_by_slot.values())
 
 
 # Confidence-bucket boundaries: a "high-confidence" prediction is one we currently
@@ -923,7 +887,6 @@ def generate_auto_scout_draft(
         season_year=season_year,
         team_key=normalized_team_key,
         run=current_run,
-        run_context=current_context,
         tracks=tracks,
         shift_cache=shift_cache,
     )

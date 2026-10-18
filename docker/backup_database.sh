@@ -33,12 +33,11 @@ ls -1t "$DEST"/frcmob_*.dump 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r r
 find "$DEST" -name 'neon_*.dump' -mtime +14 -delete
 echo "backup ok $name tables=$tables size=$(du -h "$DEST/$name" | cut -f1)"
 
-# Files the database points at but doesn't hold: pit photos and the ML model artifacts
-# registry rows reference. Once a day, kept for a week. Same disk as the dumps, so this
+# Files the database points at but doesn't hold: pit photos. Once a day, kept for a week. Same disk as the dumps, so this
 # covers deletion and volume damage, not losing the VM.
 media="frcmob_media_$(date -u +%Y%m%d).tar.gz"
 if [ ! -f "$DEST/$media" ]; then
-  dirs=$(docker exec "$BACKEND" sh -c 'cd /app/media && for d in pit_photos models/shadow; do [ -d "$d" ] && echo "$d"; done' || true)
+  dirs=$(docker exec "$BACKEND" sh -c 'cd /app/media && for d in pit_photos; do [ -d "$d" ] && echo "$d"; done' || true)
   if [ -n "$dirs" ]; then
     docker exec "$BACKEND" tar -C /app/media -czf - $dirs > "$DEST/$media.tmp"
     mv "$DEST/$media.tmp" "$DEST/$media"

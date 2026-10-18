@@ -63,7 +63,6 @@
   line-height: var(--type-caption-line);
 }
 
-
 /* ── foundation-shell ─────────────────────────────────── */
 
 .product-shell {
@@ -349,8 +348,6 @@
   background: radial-gradient(circle at 50% 38%, rgba(136, 160, 181, 0.13), transparent 62%);
   pointer-events: none;
 }
-
-
 
 .product-shell.sidebar-collapsed .ps-nav-link:hover,
 .product-shell.sidebar-collapsed .ps-nav-link.active {
@@ -1105,17 +1102,6 @@ select.center-input option,
 .page-view-bar + .center-page-container,
 .page-view-menu + .center-page-container {
   padding-top: 0;
-}
-
-/* Some pages render the bar as a sibling of the page container and some render
-   it inside — Auto Paths and the Data Dashboard put it in. Inside, the
-   container's own 16px grid gap already separates it from what follows, so the
-   bar's margin lands on top and those two pages sat 32px down while their five
-   siblings sat at 16. guard-consistency found this after the fix that started
-   it; the spacing is the container's job there. */
-.center-page-container > .page-view-bar,
-.center-page-container > .page-view-menu {
-  margin-bottom: 0;
 }
 
 .page-view-tab {
@@ -1880,29 +1866,6 @@ select.center-input option,
   gap: 6px;
 }
 
-.center-timer-progress-track {
-  width: 100%;
-  height: 7px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  overflow: hidden;
-}
-
-.center-timer-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #4f94ea, #7ab3ff);
-}
-
-.center-timer-progress-fill.live {
-  background: linear-gradient(90deg, var(--color-accent-strong), #53d18f);
-}
-
-.center-timer-progress-fill.ended {
-  background: linear-gradient(90deg, #b68f3a, #d7b66a);
-}
-
 .center-alliance-split {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2061,7 +2024,8 @@ select.center-input option,
 
 .center-form-strip {
   display: inline-flex;
-  flex-wrap: wrap;
+  /* Five pills read as one sequence; in a squeezed table column they stacked. */
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
 }
@@ -3774,12 +3738,11 @@ select.center-input option,
 .compare-header-card,
 .compare-summary-card,
 .compare-deep-shell,
-.compare-theoretical-card,
 .favorites-manager-card,
 .favorites-snapshot-card,
 .favorites-header-card,
 .favorites-events-shell,
-.favorites-teams-shell{
+.favorites-teams-shell {
   border-color: var(--color-border);
 }
 
@@ -4914,11 +4877,6 @@ select.center-input option,
   box-shadow: 0 0 0 2px rgba(34, 182, 105, 0.2);
 }
 
-.product-shell.theme-light .center-timer-progress-track {
-  border-color: #cbd8e6;
-  background: var(--color-surface-muted);
-}
-
 .product-shell.theme-light .center-team-logo,
 .product-shell.theme-light .center-team-logo-fallback {
   border-color: var(--color-border);
@@ -4966,17 +4924,15 @@ select.center-input option,
 .product-shell.theme-light .compare-header-card,
 .product-shell.theme-light .compare-summary-card,
 .product-shell.theme-light .compare-deep-shell,
-.product-shell.theme-light .compare-theoretical-card,
 .product-shell.theme-light .favorites-manager-card,
 .product-shell.theme-light .favorites-snapshot-card,
 .product-shell.theme-light .favorites-header-card,
 .product-shell.theme-light .favorites-events-shell,
-.product-shell.theme-light .favorites-teams-shell{
+.product-shell.theme-light .favorites-teams-shell {
   border-color: var(--color-border);
   background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 94%, transparent), color-mix(in srgb, var(--color-surface-soft) 94%, transparent));
   box-shadow: 0 10px 20px rgba(42, 71, 112, 0.08);
 }
-
 
 .product-shell.theme-light .compare-header-card .center-tabs,
 .product-shell.theme-light .favorites-header-card .center-tabs,
@@ -5227,7 +5183,6 @@ select.center-input option,
   }
 }
 
-
 /* ── Page hero ──────────────────────────────────────────────────────
    One per route, named in the hero table in src/styles/README.md. The value
    the page exists to answer sits on the display step with its baseline
@@ -5290,15 +5245,6 @@ select.center-input option,
     justify-content: flex-start;
     gap: var(--space-4);
   }
-}
-
-/* More than one warning is a list, not a sentence with pipes in it. */
-.center-callout-list {
-  margin: 0;
-  padding-left: 20px;
-  text-align: left;
-  display: grid;
-  gap: 4px;
 }
 
 /* ── Secondary view-bar items ───────────────────────────────────────

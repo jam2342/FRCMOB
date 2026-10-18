@@ -1,3 +1,4 @@
+import { formatTime } from '../../utils/formatTime';
 import { Link } from 'react-router-dom';
 import { scoutLink, type MyAssignment } from './teamAssignments';
 import styles from './NextAssignment.module.css';
@@ -6,7 +7,7 @@ function timeLabel(startTime: number | null): string {
   if (!startTime) return '';
   const date = new Date(startTime * 1000);
   if (Number.isNaN(date.getTime())) return '';
-  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const time = formatTime(date.getTime());
   const sameDay = date.toDateString() === new Date().toDateString();
   return sameDay ? `~${time}` : `${date.toLocaleDateString([], { weekday: 'short' })} ~${time}`;
 }

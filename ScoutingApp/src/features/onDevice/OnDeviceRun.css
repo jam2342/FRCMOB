@@ -129,10 +129,13 @@
   flex-direction: column;
   gap: var(--space-1);
 }
+/* Same look as .center-label, which every other scouting page uses for its field labels. */
 .odr-label {
-  font-size: var(--type-caption-size);
+  font-size: var(--font-size-2xs);
   font-weight: 700;
-  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
 }
 .on-device-run .odr-input,
 .on-device-run .odr-select {

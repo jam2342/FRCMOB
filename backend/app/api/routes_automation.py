@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 import redis
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,6 @@ from app.services.events.regional_automation import (
     RegionalAutomationError,
     run_regional_automation_tick,
 )
-from app.services.ml.synergy import QUALITY_THRESHOLD_DEFAULT, SYNERGY_MODEL_VERSION
 from app.services.utils import (
     automation_redis_key as _automation_redis_key,
     decode_redis_float as _decode_redis_float,
@@ -38,8 +37,6 @@ def automate_regional_post_event_breakdowns_tick(
     max_teams: int | None = None,
     run_post_compute: bool | None = None,
     refresh_all: bool = False,
-    synergy_model_version: str = Query(default=SYNERGY_MODEL_VERSION, alias="model_version"),
-    quality_threshold: float = QUALITY_THRESHOLD_DEFAULT,
     db: Session = Depends(get_db),
 ):
     _ensure_automation_write_enabled()
@@ -56,8 +53,6 @@ def automate_regional_post_event_breakdowns_tick(
             max_teams=max_teams,
             run_post_compute=run_post_compute,
             refresh_all=refresh_all,
-            synergy_model_version=synergy_model_version,
-            quality_threshold=quality_threshold,
             db=db,
         )
     except RegionalAutomationError as exc:

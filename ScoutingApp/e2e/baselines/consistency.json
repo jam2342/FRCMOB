@@ -1,7 +1,7 @@
 {
   "/home": {
     "startOffset": null,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -36,17 +36,26 @@
         "Open"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": null,
+      "barLeft": null,
+      "barWidth": null,
+      "activeLabel": null,
+      "title": null,
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/events": {
-    "startOffset": null,
-    "contentTop": 160,
+    "startOffset": 16,
+    "contentTop": 162,
     "scrollers": [
       "center-list-scroll"
     ],
     "duplicates": [
-      "#27 Team RUSH x2",
-      "Home x2"
+      "Events x2"
     ],
     "destinations": {
       "/home": [
@@ -75,15 +84,31 @@
       ],
       "/settings": [
         "Settings"
+      ],
+      "/events/export": [
+        "Export"
+      ],
+      "/events/dashboard": [
+        "Dashboard"
       ]
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Events",
+      "title": "Event Finder",
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/events/export": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Download CSV x5",
@@ -126,11 +151,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Export",
+      "title": "Data Export",
+      "columnWidth": 1200,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 1
+    }
   },
   "/events/dashboard": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Events x2"
@@ -172,11 +207,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Dashboard",
+      "title": "Team Rating Distribution",
+      "columnWidth": 1200,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 1
+    }
   },
   "/scouting": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Match Center x12",
@@ -234,11 +279,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Live Scouting",
+      "title": "Scouting Mode",
+      "columnWidth": null,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/scouting/pit": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -290,11 +345,21 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Pit Scouting",
+      "title": null,
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/scouting/assignments": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -346,11 +411,21 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Assignments",
+      "title": null,
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/scouting/coverage": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -402,11 +477,21 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Coverage",
+      "title": null,
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/scouting/auto-paths": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -459,13 +544,25 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Auto Paths",
+      "title": "Auto Paths",
+      "columnWidth": 1200,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/scouting/calibrate": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
-    "duplicates": [],
+    "duplicates": [
+      "On-Device Breakdown x2"
+    ],
     "destinations": {
       "/home": [
         "Home"
@@ -514,11 +611,21 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Field Calibration",
+      "title": "Field Calibration",
+      "columnWidth": 1200,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/scouting/record": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -569,11 +676,23 @@
         "On-Device Breakdown"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [
+      "16px"
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "On-Device Breakdown",
+      "title": "On-Device Breakdown",
+      "columnWidth": 1200,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/team-center": {
     "startOffset": null,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -591,8 +710,7 @@
         "My Team"
       ],
       "/match-center": [
-        "Match Center",
-        "This team’s matches"
+        "Match Center"
       ],
       "/team-center": [
         "Team Center"
@@ -609,11 +727,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": null,
+      "barLeft": null,
+      "barWidth": null,
+      "activeLabel": null,
+      "title": "Team Finder",
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/match-center": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [
       "center-list-scroll"
     ],
@@ -657,11 +785,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Match",
+      "title": "Match Finder",
+      "columnWidth": null,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 1
+    }
   },
   "/match-center/predictions": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -702,11 +840,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Predictions",
+      "title": "Event Finder",
+      "columnWidth": 1200,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 1
+    }
   },
   "/match-center/strategy": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -747,11 +895,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Strategy",
+      "title": "Match Strategy Briefing",
+      "columnWidth": 1200,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 1
+    }
   },
   "/compare": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [
       "center-list-scroll",
       "center-sidebar"
@@ -797,11 +955,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Compare",
+      "title": "Compare Controls",
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/compare/alliance-advisor": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Compare x2"
@@ -843,11 +1011,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Alliance Advisor",
+      "title": "Alliance Selection Advisor",
+      "columnWidth": null,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 1
+    }
   },
   "/compare/picklist": {
     "startOffset": 16,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Compare x2"
@@ -888,11 +1066,21 @@
         "Picklist"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": "tabs",
+      "barLeft": 216,
+      "barWidth": 1200,
+      "activeLabel": "Picklist",
+      "title": null,
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/favorites": {
     "startOffset": null,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Events x2",
@@ -929,11 +1117,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": null,
+      "barLeft": null,
+      "barWidth": null,
+      "activeLabel": null,
+      "title": "Favorite Manager",
+      "columnWidth": null,
+      "eventBoxes": 1,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/settings": {
     "startOffset": null,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -973,11 +1171,21 @@
     },
     "cardGaps": [
       "16px"
-    ]
+    ],
+    "shape": {
+      "bar": null,
+      "barLeft": null,
+      "barWidth": null,
+      "activeLabel": null,
+      "title": "Appearance",
+      "columnWidth": null,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/privacy": {
     "startOffset": null,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [],
     "destinations": {
@@ -1013,11 +1221,21 @@
         "Terms of Service"
       ]
     },
-    "cardGaps": []
+    "cardGaps": [],
+    "shape": {
+      "bar": null,
+      "barLeft": null,
+      "barWidth": null,
+      "activeLabel": null,
+      "title": "Privacy Policy",
+      "columnWidth": 960,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   },
   "/terms": {
     "startOffset": null,
-    "contentTop": 160,
+    "contentTop": 162,
     "scrollers": [],
     "duplicates": [
       "Privacy Policy x2"
@@ -1054,88 +1272,16 @@
         "Privacy Policy"
       ]
     },
-    "cardGaps": []
-  },
-  "/primitives": {
-    "startOffset": null,
-    "contentTop": 160,
-    "scrollers": [],
-    "duplicates": [
-      "Team x2"
-    ],
-    "destinations": {
-      "/home": [
-        "Home"
-      ],
-      "/events": [
-        "Events"
-      ],
-      "/scouting": [
-        "Scouting"
-      ],
-      "/my-team": [
-        "My Team"
-      ],
-      "/match-center": [
-        "Match Center"
-      ],
-      "/team-center": [
-        "Team Center"
-      ],
-      "/compare": [
-        "Compare"
-      ],
-      "/favorites": [
-        "Favorites"
-      ],
-      "/settings": [
-        "Link button",
-        "Settings"
-      ]
-    },
-    "cardGaps": [
-      "16px"
-    ]
-  },
-  "/primitives?state=modal": {
-    "startOffset": null,
-    "contentTop": 160,
-    "scrollers": [],
-    "duplicates": [
-      "Team x2"
-    ],
-    "destinations": {
-      "/home": [
-        "Home"
-      ],
-      "/events": [
-        "Events"
-      ],
-      "/scouting": [
-        "Scouting"
-      ],
-      "/my-team": [
-        "My Team"
-      ],
-      "/match-center": [
-        "Match Center"
-      ],
-      "/team-center": [
-        "Team Center"
-      ],
-      "/compare": [
-        "Compare"
-      ],
-      "/favorites": [
-        "Favorites"
-      ],
-      "/settings": [
-        "Link button",
-        "Settings"
-      ]
-    },
-    "cardGaps": [
-      "16px"
-    ]
+    "cardGaps": [],
+    "shape": {
+      "bar": null,
+      "barLeft": null,
+      "barWidth": null,
+      "activeLabel": null,
+      "title": "Terms of Service",
+      "columnWidth": 960,
+      "eventBoxes": 0,
+      "unlabelledEventBoxes": 0
+    }
   }
 }

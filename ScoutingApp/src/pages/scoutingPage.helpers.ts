@@ -15,8 +15,6 @@ import type {
   Level1To5,
   ManualScoutingRating,
   MatchTeamOption,
-  MobileCapturePanel,
-  MobileScorePanel,
   OverallScoutRating,
   SavedScoutingEntry,
   ScoutFormState,
@@ -41,6 +39,7 @@ import {
 } from './centerUtils';
 import { SCOUT_POINTS_SCALE, SEASON } from '../config/season';
 import { inferMatchCompleted, matchHasScores } from './matchStatus';
+import { storageGet } from '../platform/safeStorage';
 
 export { inferMatchCompleted };
 
@@ -88,22 +87,6 @@ const ENDGAME_DRIVER_FACTOR: Record<EndgameMode, number> = {
 };
 
 const MAX_ENDGAME_POINTS = Math.max(...Object.values(ENDGAME_POINTS));
-
-export const MOBILE_CAPTURE_PANEL_TABS: Array<{ id: MobileCapturePanel; label: string }> = [
-  { id: 'auto', label: 'Auto' },
-  { id: 'teleop', label: 'Teleop' },
-  { id: 'endgame', label: 'Endgame' },
-  { id: 'mobility', label: 'Mobility' },
-  { id: 'strategy', label: 'Strategy' },
-  { id: 'notes', label: 'Notes' },
-  { id: 'auto-paths', label: 'Paths' },
-];
-
-export const MOBILE_SCORE_PANEL_TABS: Array<{ id: MobileScorePanel; label: string }> = [
-  { id: 'points', label: 'Points' },
-  { id: 'live', label: 'Live' },
-];
-
 
 export const EMPTY_FORM: ScoutFormState = {
   auto_mobility: false,
@@ -657,10 +640,6 @@ export function overallScoutRating(
   };
 }
 
-function normalizeEpaTo100(value: number | null): number | null {
-  if (value === null || !Number.isFinite(value)) return null;
-  return clampNumber((value - 1200) / 8.5, 0, 100);
-}
 
 function firstDefinedNumber(...values: Array<number | null | undefined>): number | null {
   for (const value of values) {
@@ -677,8 +656,6 @@ export function scoutingApiRating(
   const strengthSignal = firstDefinedNumber(
     apiSnapshot?.rating_0_100,
     baseline?.rating_0_100,
-    normalizeEpaTo100(apiSnapshot?.statbotics_norm_epa ?? null),
-    normalizeEpaTo100(baseline?.statbotics_norm_epa ?? null),
   );
   const reliabilitySignal = firstDefinedNumber(
     apiSnapshot?.reliability_0_1 !== null && apiSnapshot?.reliability_0_1 !== undefined
@@ -872,7 +849,6 @@ function normalizeApiSnapshot(raw: Record<string, unknown> | null): ApiTeamSnaps
     auto_contribution: parseNumber(raw.auto_contribution),
     climb_success_prob: parseNumber(raw.climb_success_prob),
     cycle_time_sec: parseNumber(raw.cycle_time_sec),
-    statbotics_norm_epa: parseNumber(raw.statbotics_norm_epa),
     tba_rank: parseNumber(raw.tba_rank),
     warnings: Array.isArray(raw.warnings) ? raw.warnings.map((value) => String(value)) : [],
   };
@@ -1136,9 +1112,9 @@ function parseStoredEntries(raw: string | null): SavedScoutingEntry[] {
 
 export function readStoredEntries(workspaceId: number | null = null): SavedScoutingEntry[] {
   const unscoped = () =>
-    window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE) || window.localStorage.getItem(SCOUTING_ENTRIES_STORAGE_LEGACY);
+    storageGet(SCOUTING_ENTRIES_STORAGE) || storageGet(SCOUTING_ENTRIES_STORAGE_LEGACY);
   if (!workspaceId) return parseStoredEntries(unscoped());
-  const scoped = window.localStorage.getItem(scoutingEntriesStorageKey(workspaceId));
+  const scoped = storageGet(scoutingEntriesStorageKey(workspaceId));
   if (scoped !== null) return parseStoredEntries(scoped);
   // First time in this team on this device: bring along the scout's own notes,
   // never entries that came from some room.
@@ -1260,7 +1236,7 @@ export function mergeEntries(existing: SavedScoutingEntry[], incoming: SavedScou
 
 // The phone adds the API snapshot after a save; the server's copy (an ack, a live room update or a
 // room snapshot) is the payload as sent, without it. Keep what the phone already worked out.
-export function keepLocalAnalytics(incoming: SavedScoutingEntry, local: SavedScoutingEntry | undefined): SavedScoutingEntry {
+function keepLocalAnalytics(incoming: SavedScoutingEntry, local: SavedScoutingEntry | undefined): SavedScoutingEntry {
   if (!local) return incoming;
   return {
     ...incoming,
@@ -1306,18 +1282,38 @@ export function stripEntriesForRoom(entries: SavedScoutingEntry[], roomKey: stri
 }
 
 // A room snapshot replacing that room's entries. A kept phone-only entry the snapshot
-// now contains is dropped first, or mergeEntries would keep both copies.
+// now contains is dropped first, or mergeEntries would keep both copies. Except a
+// correction still on its way: a Replace keeps the report's id, so the snapshot holds
+// the older version, and taking it would quietly undo what the scout just saved.
 export function replaceRoomEntries(
   entries: SavedScoutingEntry[],
   roomKey: string,
   snapshot: SavedScoutingEntry[],
 ): SavedScoutingEntry[] {
-  const snapshotIds = new Set(snapshot.map((entry) => entry.id));
   const localById = new Map(entries.map((entry) => [entry.id, entry]));
+  const newerOnPhone = (server: SavedScoutingEntry) => {
+    const local = localById.get(server.id);
+    return Boolean(local && !local.server_synced && (local.saved_at_ms ?? 0) > (server.saved_at_ms ?? 0));
+  };
+  const fromServer = snapshot.filter((entry) => !newerOnPhone(entry));
+  const serverIds = new Set(fromServer.map((entry) => entry.id));
   return mergeEntries(
-    stripEntriesForRoom(entries, roomKey).filter((entry) => !snapshotIds.has(entry.id)),
-    snapshot.map((entry) => keepLocalAnalytics(entry, localById.get(entry.id))),
+    stripEntriesForRoom(entries, roomKey).filter((entry) => !serverIds.has(entry.id)),
+    fromServer.map((entry) => keepLocalAnalytics(entry, localById.get(entry.id))),
   );
+}
+
+// Another tab (or the installed app sharing this browser's storage) may have saved
+// since this one loaded. Builds on this tab's list and keeps reports only the stored
+// list has, so saving here never erases a report saved there.
+export function withReportsFromOtherTabs(
+  entries: SavedScoutingEntry[],
+  stored: SavedScoutingEntry[],
+): SavedScoutingEntry[] {
+  const known = new Set(entries.map((entry) => entry.id));
+  const extra = stored.filter((entry) => !known.has(entry.id));
+  if (!extra.length) return entries;
+  return [...entries, ...extra].sort((a, b) => (b.saved_at_ms ?? 0) - (a.saved_at_ms ?? 0)).slice(0, 600);
 }
 
 export function normalizeRoomKey(raw: string): string {
@@ -1383,7 +1379,7 @@ function normalizeFloatingTimerPosition(raw: unknown): FloatingTimerPosition | n
 
 export function readStoredFloatingTimerPosition(): FloatingTimerPosition | null {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(SCOUTING_TIMER_FLOAT_STORAGE);
+  const raw = storageGet(SCOUTING_TIMER_FLOAT_STORAGE);
   if (!raw) return null;
   try {
     return normalizeFloatingTimerPosition(JSON.parse(raw));
@@ -1394,7 +1390,7 @@ export function readStoredFloatingTimerPosition(): FloatingTimerPosition | null 
 
 export function readStoredMobileCompactMode(): boolean {
   if (typeof window === 'undefined') return true;
-  const raw = String(window.localStorage.getItem(SCOUTING_MOBILE_COMPACT_STORAGE) || '').trim().toLowerCase();
+  const raw = String(storageGet(SCOUTING_MOBILE_COMPACT_STORAGE) || '').trim().toLowerCase();
   if (raw === 'false' || raw === '0' || raw === 'off') return false;
   if (raw === 'true' || raw === '1' || raw === 'on') return true;
   return true;
@@ -1451,12 +1447,8 @@ export function apiSnapshotFromIntel(intelPayload: unknown, selectedEventKey: st
   const analysis = asRecord(intel.analysis);
   const averages = asRecord(analysis?.averages);
   const climbSources = asRecord(analysis?.climb_sources);
-  const climbVideo = asRecord(climbSources?.video_only);
   const climbOfficial = asRecord(climbSources?.official_score_breakdown);
   const rating = asRecord(intel.rating);
-  const statbotics = asRecord(intel.statbotics);
-  const statboticsTeam = asRecord(statbotics?.team);
-  const statboticsNormEpa = asRecord(statboticsTeam?.norm_epa);
   const tba = asRecord(intel.tba);
   const eventStatus = asRecord(tba?.event_status);
   const qual = asRecord(eventStatus?.qual);
@@ -1475,11 +1467,9 @@ export function apiSnapshotFromIntel(intelPayload: unknown, selectedEventKey: st
     climb_success_prob: firstDefinedNumber(
       parseNumber(averages?.climb_success_prob),
       parseNumber(climbSources?.overall_climb_success_prob),
-      parseNumber(climbVideo?.climb_success_prob),
       parseNumber(climbOfficial?.climb_success_prob),
     ),
     cycle_time_sec: parseNumber(averages?.cycle_time_sec),
-    statbotics_norm_epa: parseNumber(statboticsNormEpa?.current),
     tba_rank: parseNumber(ranking?.rank),
     warnings,
   };

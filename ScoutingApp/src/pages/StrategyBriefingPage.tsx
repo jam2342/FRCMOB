@@ -1,10 +1,11 @@
+import { TEAM_NUMBER_PLACEHOLDER } from './centerUtils';
 import { exportPrintableReport } from '../platform/exportFile';
 import { isNativeApp } from '../platform/runtime';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getEventSchedule,
-  getEventScheduleWithSynergy,
+  getEventPredictionSchedule,
   getEventRatings,
   getEventTeamLiveForm,
 } from '../api';
@@ -13,12 +14,12 @@ import type {
   EventScheduleItem,
   EventTeamRatingItem,
   EventTeamLiveFormEntry,
-  ScheduleWithSynergyMatch,
+  PredictedScheduleMatch,
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { LiveRatingsPanel } from '../components/LiveRatingsPanel';
 import { PageViewBar } from '../components/PageViewBar';
-import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
+import { MATCH_HUB_VIEWS, viewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
@@ -75,8 +76,6 @@ type MatchBriefing = {
   allies: TeamProfile[];        // other 2 teams on my alliance (excluding my team)
   my_profile: TeamProfile;      // my team's profile
   opponents: TeamProfile[];     // 3 opposing teams
-  my_synergy: number | null;
-  opp_synergy: number | null;
   win_prob: number | null;      // probability MY alliance wins
   // Tactical recommendations
   strongest_opponent: TeamProfile | null;
@@ -102,7 +101,7 @@ type ClimbPlan = {
 
 function buildBriefing(
   match: EventScheduleItem,
-  synergyMatch: ScheduleWithSynergyMatch | undefined,
+  predictedMatch: PredictedScheduleMatch | undefined,
   myTeamKey: string,
   ratings: Map<string, EventTeamRatingItem>,
   liveForm: Map<string, EventTeamLiveFormEntry>,
@@ -129,18 +128,8 @@ function buildBriefing(
     .map((t) => makeProfile(t.team_key));
   const opponents = oppAllianceTeams.map((t) => makeProfile(t.team_key));
 
-  // Synergy
-  const mySyn = synergyMatch
-    ? (isRed ? synergyMatch.red.synergy : synergyMatch.blue.synergy)
-    : null;
-  const oppSyn = synergyMatch
-    ? (isRed ? synergyMatch.blue.synergy : synergyMatch.red.synergy)
-    : null;
-  const mySynergyScore = mySyn?.alliance_synergy_score_0_100 ?? null;
-  const oppSynergyScore = oppSyn?.alliance_synergy_score_0_100 ?? null;
-
   // Win probability from MY alliance perspective
-  const win = matchWinProbability(synergyMatch);
+  const win = matchWinProbability(predictedMatch);
   const winProb = win ? (isRed ? win.red : win.blue) : null;
 
   // Strongest / weakest opponent by rating
@@ -158,7 +147,7 @@ function buildBriefing(
     );
     defenseTarget = byThroughput[0] ?? null;
     // But if the strongest opponent is also the highest throughput, that's the clear target
-    if (strongest && strongest.rating!.subscores.throughput >= (defenseTarget?.rating?.subscores.throughput ?? 0)) {
+    if (strongest && (strongest.rating!.subscores.throughput ?? 0) >= (defenseTarget?.rating?.subscores.throughput ?? 0)) {
       defenseTarget = strongest;
     }
   }
@@ -176,8 +165,6 @@ function buildBriefing(
   const throughputDiff = myThroughputAvg != null && oppThroughputAvg != null ? myThroughputAvg - oppThroughputAvg : null;
   const endgameDiff = myEndgameAvg != null && oppEndgameAvg != null ? myEndgameAvg - oppEndgameAvg : null;
   const autoDiff = myAutoAvg != null && oppAutoAvg != null ? myAutoAvg - oppAutoAvg : null;
-  const synergyDiff = mySynergyScore != null && oppSynergyScore != null ? mySynergyScore - oppSynergyScore : null;
-  const myDefensePresence = myProfile.rating?.subscores.defense_presence ?? null;
   for (const profile of allAlliance) {
     const endgameScore = profile.rating?.subscores.endgame ?? 50;
     if (endgameScore >= 70) {
@@ -228,7 +215,7 @@ function buildBriefing(
   // Defensive recommendation
   let defensiveRec = 'Start offense-first and use short disruption windows only if opponents chain uncontested cycles.';
   if (defenseTarget && defenseTarget.rating) {
-    const targetThroughput = defenseTarget.rating.subscores.throughput;
+    const targetThroughput = defenseTarget.rating.subscores.throughput ?? 0;
     const targetVsAlliance = oppThroughputAvg != null ? targetThroughput - oppThroughputAvg : null;
     if (targetThroughput >= 72) {
       defensiveRec = `Target selective defense on ${teamNum(defenseTarget.team_key)} during lane transitions. They project ${metric(targetThroughput, 0)}/100 throughput`;
@@ -236,11 +223,6 @@ function buildBriefing(
         defensiveRec += ` (${signed(targetVsAlliance, 0)} vs their alliance average)`;
       }
       defensiveRec += ', so breaking a few high-value cycles can swing teleop pace.';
-      if (myDefensePresence != null && myDefensePresence >= 60) {
-        defensiveRec += ` Your defense presence is ${metric(myDefensePresence, 0)}/100, so you can absorb this role without fully sacrificing output.`;
-      } else if (myDefensePresence != null && myDefensePresence <= 40) {
-        defensiveRec += ` Your defense presence is ${metric(myDefensePresence, 0)}/100, so keep stints short and return to scoring quickly.`;
-      }
     } else if (targetThroughput >= 60) {
       defensiveRec = `Use situational pressure on ${teamNum(defenseTarget.team_key)} after securing your first cycles. Their throughput is ${metric(targetThroughput, 0)}/100; full-time defense is likely lower value than maintaining your own scoring cadence.`;
     } else {
@@ -251,9 +233,6 @@ function buildBriefing(
   }
 
   const strategyWhy: string[] = [];
-  if (synergyDiff != null) {
-    strategyWhy.push(`Synergy differential: ${signed(synergyDiff, 0)} (${metric(mySynergyScore, 0)} vs ${metric(oppSynergyScore, 0)}).`);
-  }
   if (throughputDiff != null) {
     strategyWhy.push(`Throughput projection: ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}).`);
   }
@@ -290,13 +269,6 @@ function buildBriefing(
       );
     }
   }
-  // Check for penalty-prone opponents
-  for (const opp of opponents) {
-    const pd = opp.rating?.subscores.penalty_discipline;
-    if (pd != null && pd <= 30) {
-      warnings.push(`${teamNum(opp.team_key)} is foul-prone (discipline ${metric(pd, 0)}/100). Keep pressure on legal lanes and avoid protected-zone contacts.`);
-    }
-  }
   if (strongest?.rating && myProfile.rating) {
     const ratingGap = strongest.rating.rating_0_100 - myProfile.rating.rating_0_100;
     if (ratingGap >= 12) {
@@ -304,9 +276,6 @@ function buildBriefing(
         `Top opponent ${teamNum(strongest.team_key)} is rated ${signed(ratingGap, 0)} above your robot (${metric(strongest.rating.rating_0_100, 0)} vs ${metric(myProfile.rating.rating_0_100, 0)}). Avoid isolated pace races.`,
       );
     }
-  }
-  if (synergyDiff != null && synergyDiff <= -8) {
-    warnings.push(`Opponent synergy edge is ${signed(synergyDiff, 0)}. Missed handoffs or blocked lanes are more costly than usual in this matchup.`);
   }
   if (endgameDiff != null && endgameDiff <= -10) {
     warnings.push(`Endgame projection trails ${signed(endgameDiff, 0)}. Bank points earlier and start setup sooner than normal.`);
@@ -323,8 +292,6 @@ function buildBriefing(
     allies,
     my_profile: myProfile,
     opponents,
-    my_synergy: mySynergyScore,
-    opp_synergy: oppSynergyScore,
     win_prob: winProb,
     strongest_opponent: strongest,
     weakest_opponent: weakest,
@@ -364,7 +331,7 @@ export function StrategyBriefingPage() {
   // a gap before playoffs are published is not the end, so keep refreshing.
   const finals = schedule ? schedule.filter((match) => match.comp_level === 'f') : [];
   const eventOver = finals.length > 0 && finals.every((match) => match.is_completed);
-  const [synergyMatches, setSynergyMatches] = useState<ScheduleWithSynergyMatch[]>([]);
+  const [predictedMatches, setPredictedMatches] = useState<PredictedScheduleMatch[]>([]);
   const [ratings, setRatings] = useState<EventTeamRatingItem[]>([]);
   const [liveFormStatuses, setLiveFormStatuses] = useState<Record<string, EventTeamLiveFormEntry>>({});
 
@@ -390,7 +357,7 @@ export function StrategyBriefingPage() {
       loadedEventKey.current = key;
       setSchedule(null);
       setEventName('');
-      setSynergyMatches([]);
+      setPredictedMatches([]);
       setRatings([]);
       setLiveFormStatuses({});
     }
@@ -399,9 +366,9 @@ export function StrategyBriefingPage() {
 
     const results = await Promise.allSettled([
       getEventSchedule(key, false, undefined, fresh ? { bypassCache: true } : { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.schedule }),
-      getEventScheduleWithSynergy(key, fresh
-        ? { include_pair_breakdown: false, bypassCache: true }
-        : { include_pair_breakdown: false, bypassCache: false, showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.matchData }),
+      getEventPredictionSchedule(key, fresh
+        ? { bypassCache: true }
+        : { showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.matchData }),
       getEventRatings(key, false, fresh ? { bypassCache: true } : { bypassCache: false, showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.eventData }),
       getEventTeamLiveForm(key, undefined, { bypassCache: fresh }),
     ]);
@@ -416,7 +383,7 @@ export function StrategyBriefingPage() {
     }
 
     if (results[1].status === 'fulfilled') {
-      setSynergyMatches(results[1].value.matches);
+      setPredictedMatches(results[1].value.matches);
     }
 
     if (results[2].status === 'fulfilled') {
@@ -468,21 +435,21 @@ export function StrategyBriefingPage() {
     return map;
   }, [liveFormStatuses]);
 
-  const synergyMap = useMemo(() => {
-    const map = new Map<string, ScheduleWithSynergyMatch>();
-    for (const m of synergyMatches) map.set(m.match_key, m);
+  const predictionMap = useMemo(() => {
+    const map = new Map<string, PredictedScheduleMatch>();
+    for (const m of predictedMatches) map.set(m.match_key, m);
     return map;
-  }, [synergyMatches]);
+  }, [predictedMatches]);
 
   // Build briefings
   const briefings = useMemo<MatchBriefing[]>(() => {
     if (!schedule || !myTeamKey) return [];
     return schedule
       .filter((m) => !m.is_completed)
-      .map((m) => buildBriefing(m, synergyMap.get(m.match_key), myTeamKey, ratingsMap, liveFormMap))
+      .map((m) => buildBriefing(m, predictionMap.get(m.match_key), myTeamKey, ratingsMap, liveFormMap))
       .filter((b): b is MatchBriefing => b !== null)
       .sort((a, b) => matchSortKey(a) - matchSortKey(b));
-  }, [schedule, myTeamKey, synergyMap, ratingsMap, liveFormMap]);
+  }, [schedule, myTeamKey, predictionMap, ratingsMap, liveFormMap]);
 
   const myTeamPlaysHere = useMemo(
     () => Boolean(schedule && myTeamKey && schedule.some((m) => [...m.red, ...m.blue].some((t) => t.team_key === myTeamKey))),
@@ -516,10 +483,14 @@ export function StrategyBriefingPage() {
 
         {/* ---- Event + Team Selection ---- */}
         <SurfaceCard
-          title="Match Strategy Briefing"
+          title={viewTitle(MATCH_HUB_VIEWS, '/match-center/strategy')}
+          subtitle="Your next matches: who you're with, who you're against, and what to watch."
           className="no-print"
+          expandable={false}
+          mobileCollapsible={false}
         >
           <EventPicker
+            label="Event"
             value={eventKey}
             onSelect={selectEvent}
             inputValue={eventInput}
@@ -546,14 +517,15 @@ export function StrategyBriefingPage() {
           {errorText ? <p className="center-callout warning">{errorText}</p> : null}
 
           {/* My Team Input */}
-          <div className="center-input-row" style={{ marginTop: '0.75rem' }}>
+          <label className="center-label" htmlFor="strategy-my-team">Your team</label>
+          <div className="center-input-row">
             <input
+              id="strategy-my-team"
               className="center-input"
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              placeholder="Your team number"
-              aria-label="Your team number"
+              placeholder={TEAM_NUMBER_PLACEHOLDER}
               value={myTeamInput}
               onChange={(e) => setMyTeamInput(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => e.key === 'Enter' && commitMyTeam()}
@@ -572,7 +544,8 @@ export function StrategyBriefingPage() {
             </p>
           ) : null}
 
-          {!myTeamKey && schedule ? (
+          {/* From the start, not once the schedule lands: appearing late pushed the page down. */}
+          {!myTeamKey ? (
             <p className="center-callout muted" style={{ marginTop: '0.5rem' }}>
               Enter your team number to generate briefings.
             </p>
@@ -711,11 +684,6 @@ export function StrategyBriefingPage() {
                       </button>
                     ))}
                   </div>
-                  {briefing.my_synergy != null ? (
-                    <div className="briefing-synergy-label">
-                      Synergy: <strong>{metric(briefing.my_synergy, 0)}</strong>/100
-                    </div>
-                  ) : null}
                 </div>
                 <div className="briefing-alliance-col">
                   <div className={`briefing-alliance-label ${briefing.my_alliance === 'red' ? 'blue' : 'red'}`}>
@@ -734,11 +702,6 @@ export function StrategyBriefingPage() {
                       </button>
                     ))}
                   </div>
-                  {briefing.opp_synergy != null ? (
-                    <div className="briefing-synergy-label">
-                      Synergy: <strong>{metric(briefing.opp_synergy, 0)}</strong>/100
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
@@ -813,7 +776,6 @@ export function StrategyBriefingPage() {
                               <span>Endgame <strong>{metric(opp.rating.subscores.endgame, 0)}</strong></span>
                               <span>Auto <strong>{metric(opp.rating.subscores.auto_contribution ?? null, 0)}</strong></span>
                               <span>Consistency <strong>{metric(opp.rating.subscores.consistency, 0)}</strong></span>
-                              <span>Defense <strong>{metric(opp.rating.subscores.defense_presence ?? null, 0)}</strong></span>
                             </div>
                           ) : (
                             <p className="text-muted text-sm">No rating data available.</p>
@@ -876,7 +838,8 @@ export function StrategyBriefingPage() {
             <LiveRatingsPanel
               eventKey={eventKey}
               live={eventHasMatchesLeft}
-              title={eventHasMatchesLeft ? 'Event ratings — live' : 'Event ratings'}
+              showLive={schedule != null && eventHasMatchesLeft}
+              title={schedule != null && eventHasMatchesLeft ? 'Event ratings — live' : 'Event ratings'}
             />
           </SurfaceCard>
         ) : null}

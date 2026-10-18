@@ -2,7 +2,7 @@ import { shouldPrefetchRoutes } from '../../routePrefetch';
 import {
   loadEventsRankings,
   loadEventsTeamsHistory,
-  loadMatchCenterSynergy,
+  loadMatchCenterPredictions,
   loadTeamCenterIntel,
   loadTeamCenterLogo,
 } from './pageRequests';
@@ -45,7 +45,7 @@ export function prefetchForHref(href: string, base: string): Prefetch | null {
   if (path === '/match-center') {
     return {
       key: `match|${event}`,
-      run: () => [loadMatchCenterSynergy(event), import('../../pages/MatchCenterPage')],
+      run: () => [loadMatchCenterPredictions(event), import('../../pages/MatchCenterPage')],
     };
   }
   if (path === '/events') {

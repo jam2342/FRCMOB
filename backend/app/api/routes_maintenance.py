@@ -18,17 +18,15 @@ from app.core.security import (
     admin_api_key_authorized,
     issue_admin_session_token,
     require_admin_access,
-    require_write_access,
 )
 from app.db import models
 from app.db.session import get_db
-from app.services.climb.official_backfill import (
+from app.services.climb.coverage import (
     climb_signal_coverage,
-    run_official_climb_backfill,
 )
 from app.services.calibration.fuel_rate import get_fuel_phase_calibration
 from app.services.scheduler import get_scheduler_runtime_metrics
-from app.services.clients import statbotics as statbotics_client
+from app.services.workspace_limits import creation_budget_status
 from app.services.utils import (
     MEDIA_ROOT,
     automation_redis_key as _automation_redis_key,
@@ -144,22 +142,6 @@ def _ops_alerts_from_metrics(metrics: dict[str, Any]) -> list[dict[str, Any]]:
                 "threshold": lock_streak_threshold,
             }
         )
-    statbotics_runtime = (
-        metrics.get("statbotics_runtime")
-        if isinstance(metrics.get("statbotics_runtime"), dict)
-        else {}
-    )
-    circuits = statbotics_runtime.get("circuits") if isinstance(statbotics_runtime.get("circuits"), dict) else {}
-    open_count = int(circuits.get("open_count") or 0)
-    if open_count > 0:
-        alerts.append(
-            {
-                "level": "warning",
-                "code": "statbotics_circuit_open",
-                "message": "Statbotics circuit breaker is open for one or more endpoints.",
-                "value": open_count,
-            }
-        )
     return alerts
 
 
@@ -259,7 +241,6 @@ def _ops_metrics_payload(db: Session, sample_days: int) -> dict[str, Any]:
         )
 
     scheduler_metrics = get_scheduler_runtime_metrics()
-    statbotics_runtime = statbotics_client.runtime_metrics()
     fuel_rate_calibration = get_fuel_phase_calibration(force_refresh=False)
     on_device_status_rows = (
         db.query(
@@ -296,9 +277,50 @@ def _ops_metrics_payload(db: Session, sample_days: int) -> dict[str, Any]:
             "auto": fuel_rate_calibration.get("auto"),
         },
         "scheduler": scheduler_metrics,
-        "statbotics_runtime": statbotics_runtime,
         "automation": _regional_automation_snapshot(),
     }
+
+
+def _security_signals() -> dict[str, Any]:
+    from app.api.routes_telemetry import csp_violation_rows
+
+    return {
+        "csp_violations_24h": csp_violation_rows(1),
+        "workspace_creation": creation_budget_status(),
+    }
+
+
+def _security_alerts(signals: dict[str, Any]) -> list[dict[str, Any]]:
+    alerts: list[dict[str, Any]] = []
+    violations = signals.get("csp_violations_24h") or []
+    blocked = sum(int(row.get("count") or 0) for row in violations)
+    if blocked:
+        top = violations[0]
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "csp_violations",
+                "message": (
+                    "Browsers blocked something the page tried to load in the last day "
+                    f"(most often {top['directive']} {top['blocked']} on {top['page']}). "
+                    "A new outside service may need adding to build/contentSecurityPolicy.ts."
+                ),
+                "value": blocked,
+                "threshold": 0,
+            }
+        )
+    hits = (signals.get("workspace_creation") or {}).get("budget_hit_hours_24h") or []
+    if hits:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "workspace_creation_budget_reached",
+                "message": "New workspaces hit the hourly limit; someone may be creating them in bulk.",
+                "value": len(hits),
+                "threshold": 0,
+            }
+        )
+    return alerts
 
 
 @router.get("/ops/dashboard")
@@ -309,7 +331,8 @@ def get_ops_dashboard(
 ):
     require_admin_access(request, "Ops dashboard")
     metrics = _ops_metrics_payload(db, sample_days)
-    alerts = _ops_alerts_from_metrics(metrics)
+    security = _security_signals()
+    alerts = _ops_alerts_from_metrics(metrics) + _security_alerts(security)
     # metrics already contains automation from _ops_metrics_payload; reuse it instead
     # of making a second Redis round-trip.
     automation = metrics.get("automation") or {}
@@ -326,23 +349,6 @@ def get_ops_dashboard(
         "automation": automation,
         "media_usage": media,
         "climb_signal_coverage": climb_coverage,
+        "security": security,
     }
-
-
-@router.post("/climb/official-backfill/run")
-def run_climb_official_backfill(
-    request: Request,
-    event_key: str | None = None,
-    max_events: int = Query(default=int(settings.climb_official_backfill_max_events_per_run), ge=1, le=40),
-    db: Session = Depends(get_db),
-):
-    require_admin_access(request, "Climb official backfill")
-    require_write_access("Climb official backfill")
-    result = run_official_climb_backfill(
-        db,
-        event_key=event_key,
-        max_events=int(max_events),
-    )
-    return {"ok": bool(result.get("ok")), "result": result}
-
 

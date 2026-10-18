@@ -3,7 +3,7 @@ import { readStoredCenterContext } from '../../layout/centerContext';
 import { matchStartTime } from '../../pages/centerUtils';
 import { shouldPrefetchRoutes } from '../../routePrefetch';
 import { readMyTeamKey } from '../workspace/myTeam';
-import { loadMatchCenterSynergy, loadTeamCenterIntel } from './pageRequests';
+import { loadMatchCenterPredictions, loadTeamCenterIntel } from './pageRequests';
 
 // With the app open, fetch what a team looks at before its match (Match Center and
 // the six teams' pages) once that match is under 15 minutes away, so opening them
@@ -33,7 +33,7 @@ export function nextMatchToWarm(matches: EventScheduleItem[], teamKey: string, n
   return best;
 }
 
-export async function warmUpcomingMatch(nowMs = Date.now()): Promise<string | null> {
+async function warmUpcomingMatch(nowMs = Date.now()): Promise<string | null> {
   const eventKey = readStoredCenterContext().eventKey;
   const teamKey = readMyTeamKey();
   if (!eventKey || !teamKey) return null;
@@ -42,7 +42,7 @@ export async function warmUpcomingMatch(nowMs = Date.now()): Promise<string | nu
   if (!match || warmed.has(match.match_key)) return null;
   warmed.add(match.match_key);
   const teams = [...(match.red || []), ...(match.blue || [])].map((slot) => slot.team_key).filter(Boolean);
-  const pending: Array<Promise<unknown>> = [loadMatchCenterSynergy(eventKey), ...teams.map((team) => loadTeamCenterIntel(team, eventKey))];
+  const pending: Array<Promise<unknown>> = [loadMatchCenterPredictions(eventKey), ...teams.map((team) => loadTeamCenterIntel(team, eventKey))];
   for (const request of pending) request.catch(() => undefined);
   return match.match_key;
 }

@@ -188,7 +188,7 @@ def test_rename_remove_name_reuse_and_coverage(team):
         db.commit()
     assert team[0].get(PATH, headers=team[4]).json()["assignments"][0]["covered"] is False
     with team[1]() as db:
-        db.add(models.ScoutingRoomEntry(room_key="other-room", match_key=MATCH, team_key="frc1", scout_profile="Amy"))
+        db.add(models.ScoutingRoomEntry(room_key="other-room", match_key=MATCH, team_key="frc1", scout_profile="Amy", author_member_id=scout))
         db.commit()
     assignment = team[0].get(PATH, headers=team[4]).json()["assignments"][0]
     assert assignment["covered"] and assignment["covered_by_me"]

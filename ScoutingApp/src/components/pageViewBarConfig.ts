@@ -12,6 +12,18 @@ export const SCOUTING_VIEWS: ViewBarItem[] = [
   { label: 'On-Device Breakdown', to: '/scouting/record', preserveSearch: true, secondary: true },
 ];
 
+// The title a scouting page shows is the name its menu entry uses.
+export function scoutingViewTitle(path: string): string {
+  return viewTitle(SCOUTING_VIEWS, path);
+}
+
+// Any section's page is titled with the name its menu entry uses.
+export function viewTitle(views: readonly ViewBarItem[], path: string): string {
+  const item = views.find((view) => view.to === path);
+  if (!item) throw new Error(`No view for ${path}`);
+  return item.label;
+}
+
 export const EVENTS_VIEWS: ViewBarItem[] = [
   { label: 'Events', to: '/events', preserveSearch: true },
   { label: 'Export', to: '/events/export', preserveSearch: true, desktopOnly: true },

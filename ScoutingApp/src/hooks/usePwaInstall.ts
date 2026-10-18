@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { storageGet, storageSet } from '../platform/safeStorage';
 
 /**
  * Hook that captures the `beforeinstallprompt` event and provides
@@ -24,7 +25,7 @@ export function usePwaInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(() => installedInStandaloneMode());
   const [dismissed, setDismissed] = useState<boolean>(() => {
-    const ts = localStorage.getItem(DISMISSED_STORAGE);
+    const ts = storageGet(DISMISSED_STORAGE);
     if (!ts) return false;
     return Date.now() - Number(ts) < DISMISS_COOLDOWN_MS;
   });
@@ -66,7 +67,7 @@ export function usePwaInstall() {
 
   const dismiss = useCallback(() => {
     setDismissed(true);
-    localStorage.setItem(DISMISSED_STORAGE, String(Date.now()));
+    storageSet(DISMISSED_STORAGE, String(Date.now()));
   }, []);
 
   return { canPrompt, isInstalled, promptInstall, dismiss };

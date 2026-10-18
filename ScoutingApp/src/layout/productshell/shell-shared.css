@@ -25,7 +25,6 @@
    beat every component rule in shell-foundation no matter how it was written —
    :where() could not save it. A default has to live in the earliest layer. */
 
-
 /* ── Header signatures: subtle byline in both shell headers */
 
 .product-shell .ps-topbar-brand-meta {
@@ -175,71 +174,6 @@
   gap: var(--ui-card-gap);
 }
 
-/* ── Compact overflow menu for secondary actions */
-.product-shell .action-overflow {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.product-shell .action-overflow-toggle {
-  min-height: var(--touch-target-compact);
-  gap: var(--space-1);
-}
-
-.product-shell .action-overflow-caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
-  opacity: 0.72;
-}
-
-.product-shell .action-overflow-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: var(--z-dropdown);
-  display: grid;
-  gap: 4px;
-  min-width: 148px;
-  padding: 6px;
-  border: var(--ui-border-subtle);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-surface-soft) 96%, transparent);
-  box-shadow: var(--shadow-lg);
-  animation: dsMenuIn var(--motion-fast) var(--motion-ease) both;
-}
-
-.product-shell .action-overflow.align-left .action-overflow-menu {
-  left: 0;
-  right: auto;
-}
-
-.product-shell .action-overflow-item {
-  min-height: 34px;
-  border: var(--ui-border-subtle);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
-  color: var(--color-text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  text-decoration: none;
-  font-size: var(--type-caption-size);
-  font-weight: var(--type-caption-weight);
-  padding: 0 10px;
-  cursor: pointer;
-}
-
-.product-shell .action-overflow-item:hover,
-.product-shell .action-overflow-item:focus-visible {
-  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
-  background: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-surface-soft));
-}
-
 /* ── Status visuals: one consistent treatment */
 .product-shell .center-status-pill,
 .product-shell .home-match-state,
@@ -303,16 +237,6 @@
   color: var(--status-warning-color);
   border-color: color-mix(in srgb, var(--status-warning-color) 56%, transparent);
   background: color-mix(in srgb, var(--status-warning-soft) 86%, transparent);
-}
-
-.product-shell .fm-progress-fill.live,
-.product-shell .center-timer-progress-fill.live {
-  background: var(--status-live-color);
-}
-
-.product-shell .fm-progress-fill.ended,
-.product-shell .center-timer-progress-fill.ended {
-  background: var(--status-final-color);
 }
 
 /* ── Loading + empty states */
@@ -390,17 +314,6 @@
   width: 100%;
 }
 
-@keyframes dsMenuIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @keyframes dsPanelIn {
   from {
     opacity: 0;
@@ -424,8 +337,6 @@
   .surface-card-expand-btn,
   .surface-card-collapse-btn,
   .home-card-collapse-btn,
-  .action-overflow-item,
-  .action-overflow-menu,
   .btb__tab
 ) {
   transition-duration: var(--motion-fast);
@@ -482,26 +393,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .product-shell .mobile-finder-layout .center-actions-row.primary-actions .action-overflow {
-    width: 100%;
-  }
-
-  .product-shell .mobile-finder-layout .center-actions-row.primary-actions .action-overflow-toggle {
-    width: 100%;
-  }
-
   .product-shell .mobile-finder-layout .center-advanced-panel .center-actions-row {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .product-shell .action-overflow:not(.compact) .action-overflow-menu {
-    left: 0;
-    right: 0;
-    min-width: 0;
-  }
-
-  .product-shell .action-overflow.compact {
-    width: auto;
   }
 
   .product-shell .fm-event-header-actions {
@@ -509,10 +402,6 @@
     min-width: 0;
     justify-content: space-between;
     overflow: hidden;
-  }
-
-  .product-shell .fm-event-header-actions .action-overflow.compact .action-overflow-toggle {
-    min-width: 94px;
   }
 
   .product-shell .home-teams-controls {
@@ -533,15 +422,12 @@
     .surface-card-expand-btn,
     .surface-card-collapse-btn,
     .home-card-collapse-btn,
-    .action-overflow-item,
-    .action-overflow-menu,
     .btb__tab
   ) {
     transition: none !important;
   }
 
-  .product-shell .center-advanced-panel,
-  .product-shell .action-overflow-menu {
+  .product-shell .center-advanced-panel {
     animation: none !important;
   }
 }
@@ -964,10 +850,13 @@
   gap: var(--card-stack-gap);
 }
 
-.product-shell .center-main > .surface-card,
-.product-shell .home-fotmob-feed > .home-event-section {
+/* Skipped rendering for cards further down only. The first two are on screen when they appear,
+   and with an estimated 420px they drew one frame at that size and then snapped to their real
+   height, moving everything below (Match Center's snapshot: 454px, then 161px). */
+.product-shell .center-main > .surface-card:nth-child(n + 3),
+.product-shell .home-fotmob-feed > .home-event-section:nth-child(n + 3) {
   content-visibility: auto;
-  contain-intrinsic-size: 420px;
+  contain-intrinsic-size: auto 420px;
 }
 
 /* Estimated off-screen card heights change the scroll range as they render.
@@ -1402,25 +1291,6 @@
   grid-column: 1 / -1;
 }
 
-.mobile-view-toggle-btn {
-  min-height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--ui-border);
-  background: var(--ui-surface-soft);
-  color: var(--ui-text-muted);
-  padding: 6px 12px;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.mobile-view-toggle-btn.active {
-  border-color: var(--ui-accent);
-  background: color-mix(in srgb, var(--ui-accent-soft) 20%, var(--ui-surface-soft));
-  color: var(--ui-text);
-  font-weight: 700;
-}
-
 .product-shell.theme-light .center-inline-link {
   color: #2f5e88;
 }
@@ -1692,16 +1562,6 @@
     padding: 6px;
     width: 100%;
     box-sizing: border-box;
-  }
-
-  .mobile-view-toggle-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: 32px;
-    font-size: var(--font-size-2xs);
-    padding: 4px 8px;
-    box-sizing: border-box;
-    text-align: center;
   }
 
   .mobile-finder-layout .center-sidebar {
@@ -2037,18 +1897,6 @@
     width: 100%;
     max-width: 100% !important;
   }
-  .product-shell .center-page-header {
-    margin-bottom: 8px;
-  }
-  .product-shell .center-page-title {
-    font-size: var(--font-size-xl) !important;
-    line-height: 1.2;
-    margin-bottom: 4px;
-  }
-  .product-shell .center-page-subtitle {
-    font-size: var(--font-size-sm);
-    margin-bottom: 8px;
-  }
 }
 
 /* ── shared-controls ──────────────────────────────────── */
@@ -2085,11 +1933,11 @@
   scroll-snap-type: x mandatory;
 }
 
-.product-shell :where(.segmented-tabs, .page-view-bar, .center-tabs, .fm-tab-bar, .mobile-view-toggle, .fm-scout-panel-tabs) {
+.product-shell :where(.segmented-tabs, .page-view-bar, .center-tabs, .fm-tab-bar, .mobile-view-toggle) {
   scrollbar-width: none;
 }
 
-.product-shell :where(.segmented-tabs, .page-view-bar, .center-tabs, .fm-tab-bar, .mobile-view-toggle, .fm-scout-panel-tabs)::-webkit-scrollbar {
+.product-shell :where(.segmented-tabs, .page-view-bar, .center-tabs, .fm-tab-bar, .mobile-view-toggle)::-webkit-scrollbar {
   display: none;
 }
 
@@ -2248,9 +2096,6 @@
   .center-tab-btn,
   .page-view-tab,
   .fm-tab,
-  .mobile-view-toggle-btn,
-  .fm-scout-section-tab,
-  .fm-scout-panel-pill,
   .ps-nav-link,
   .scout-sidebar-nav-pill,
   .surface-card-collapse-btn,
@@ -2272,9 +2117,6 @@
   .center-tab-btn,
   .page-view-tab,
   .fm-tab,
-  .mobile-view-toggle-btn,
-  .fm-scout-section-tab,
-  .fm-scout-panel-pill,
   .ps-nav-link,
   .scout-sidebar-nav-pill,
   .surface-card-collapse-btn,
@@ -2337,10 +2179,7 @@
 .product-shell :where(
   .center-tab-btn,
   .page-view-tab,
-  .fm-tab,
-  .mobile-view-toggle-btn,
-  .fm-scout-section-tab,
-  .fm-scout-panel-pill
+  .fm-tab
 ) {
   min-height: var(--control-min-height-dense);
   padding: 0 var(--control-padding-inline);
@@ -2369,9 +2208,6 @@
   .center-tab-btn,
   .page-view-tab,
   .fm-tab,
-  .mobile-view-toggle-btn,
-  .fm-scout-section-tab,
-  .fm-scout-panel-pill,
   .ps-nav-link,
   .scout-sidebar-nav-pill,
   .surface-card-collapse-btn,
@@ -2400,9 +2236,6 @@
   .center-tab-btn.active,
   .page-view-tab.active,
   .fm-tab.active,
-  .mobile-view-toggle-btn.active,
-  .fm-scout-section-tab.active,
-  .fm-scout-panel-pill.active,
   .ps-nav-link.active,
   .scout-sidebar-nav-pill.active,
   .center-sort-chip.active,
@@ -2603,10 +2436,6 @@
 
 .product-shell .center-live-dot {
   animation: uiLivePulse 1.55s ease-out infinite;
-}
-
-.product-shell .center-timer-progress-fill {
-  transition: width var(--motion-base) linear, background-color var(--motion-fast) ease;
 }
 
 .product-shell .ps-nav-link,

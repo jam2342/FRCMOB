@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { revealThemeChange } from '../utils/viewTransition';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { PushNotificationsCard } from '../components/ui/PushNotificationsCard';
 import {
@@ -22,7 +23,6 @@ import {
   getStoredClientAdminSessionExpiresAtUnix,
   getStoredClientAdminSessionToken,
   isClientAdminModeEnabled,
-  runClimbOfficialBackfill,
   setClientAdminModeEnabled,
   setStoredClientAdminSessionToken,
 } from '../api';
@@ -49,6 +49,7 @@ import {
 import { REGION_FILTER_OPTIONS } from '../utils/regionFilters';
 import { relativeFromTimestamp } from './centerUtils';
 import { AUTHOR_NAME, AUTHOR_SITE_URL } from './legalContent';
+import { storageGet, storageRemove } from '../platform/safeStorage';
 
 const COMPARE_KEYS = {
   event: 'scouting_compare_event_key',
@@ -65,7 +66,7 @@ type LocalDiagnostics = {
 type AdminAuthStatusTone = 'muted' | 'success' | 'warning' | 'danger';
 
 function readCompareTeamCount(): number {
-  const raw = window.localStorage.getItem(COMPARE_KEYS.teams);
+  const raw = storageGet(COMPARE_KEYS.teams);
   if (!raw) return 0;
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -82,7 +83,7 @@ function readLocalDiagnostics(): LocalDiagnostics {
   return {
     favoriteEventsCount: readFavoriteEvents().length,
     favoriteTeamsCount: readFavoriteTeams().length,
-    compareEventKey: (window.localStorage.getItem(COMPARE_KEYS.event) || '').trim().toLowerCase(),
+    compareEventKey: (storageGet(COMPARE_KEYS.event) || '').trim().toLowerCase(),
     compareTeamCount: readCompareTeamCount(),
   };
 }
@@ -102,7 +103,7 @@ export function SettingsPage() {
   // clear things with no visible sign anything happened.
   const [maintenanceNote, setMaintenanceNote] = useState('');
   const [tutorialSeenCount, setTutorialSeenCount] = useState<number>(() => countSeenTutorials());
-  const [healthStatus, setHealthStatus] = useState<string>('Checking API...');
+  const [healthStatus, setHealthStatus] = useState<string>('Checking API…');
   const [publicReadonlyMode, setPublicReadonlyMode] = useState<boolean | null>(null);
   const [writeAuthEnforced, setWriteAuthEnforced] = useState<boolean | null>(null);
   const [writeAuthHeader, setWriteAuthHeader] = useState<string>('X-Admin-Key');
@@ -112,8 +113,6 @@ export function SettingsPage() {
   const [opsDashboard, setOpsDashboard] = useState<OpsDashboardResponse | null>(null);
   const [opsLoading, setOpsLoading] = useState<boolean>(false);
   const [opsErrorText, setOpsErrorText] = useState<string>('');
-  const [climbBackfillBusy, setClimbBackfillBusy] = useState<boolean>(false);
-  const [climbBackfillStatus, setClimbBackfillStatus] = useState<string>('');
   const [adminApiKeyInput, setAdminApiKeyInput] = useState<string>('');
   const [adminSessionExpiresAtUnix, setAdminSessionExpiresAtUnix] = useState<number | null>(() =>
     getStoredClientAdminSessionExpiresAtUnix(),
@@ -169,25 +168,6 @@ export function SettingsPage() {
       setOpsErrorText((error as Error).message || 'Unable to load ops dashboard.');
     } finally {
       setOpsLoading(false);
-    }
-  }
-
-  async function runClimbBackfillNow() {
-    setClimbBackfillBusy(true);
-    setClimbBackfillStatus('Running climb official backfill...');
-    try {
-      const payload = await runClimbOfficialBackfill();
-      const totals = payload.result?.totals;
-      setClimbBackfillStatus(
-        payload.ok
-          ? `Backfill complete: ${totals?.updated_findings ?? 0} updated, ${totals?.inserted_findings ?? 0} inserted.`
-          : 'Backfill finished with errors. Check backend logs.',
-      );
-      await refreshOpsDashboard();
-    } catch (error) {
-      setClimbBackfillStatus((error as Error).message || 'Backfill failed.');
-    } finally {
-      setClimbBackfillBusy(false);
     }
   }
 
@@ -291,9 +271,13 @@ export function SettingsPage() {
     setStatusText('Settings saved.');
   }
 
-  function updateTheme(next: ThemeMode) {
-    setThemeMode(next);
-    persistSettings({ theme: next });
+  // Spreads out from the Theme field rather than flipping the whole screen at once.
+  function updateTheme(next: ThemeMode, from?: Element | null) {
+    const rect = from?.getBoundingClientRect();
+    revealThemeChange(() => {
+      setThemeMode(next);
+      persistSettings({ theme: next });
+    }, rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null);
   }
 
   function updateDensity(next: DensityMode) {
@@ -326,7 +310,7 @@ export function SettingsPage() {
       return;
     }
     setAdminAuthBusy(true);
-    setAdminAuthStatus('Creating admin session...');
+    setAdminAuthStatus('Creating admin session…');
     setAdminAuthStatusTone('muted');
     try {
       const result = await createAdminSession(candidate, 7200);
@@ -396,8 +380,8 @@ export function SettingsPage() {
 
   function clearFavorites() {
     if (!window.confirm('Remove all your favorite teams and events from this device?')) return;
-    window.localStorage.removeItem(FAVORITES_KEYS.events);
-    window.localStorage.removeItem(FAVORITES_KEYS.teams);
+    storageRemove(FAVORITES_KEYS.events);
+    storageRemove(FAVORITES_KEYS.teams);
     refreshDiagnostics();
     setStatusText('Favorite teams/events cleared.');
     setMaintenanceNote('Favorites cleared.');
@@ -405,8 +389,8 @@ export function SettingsPage() {
 
   function clearCompareCache() {
     if (!window.confirm('Clear the teams saved in Compare on this device?')) return;
-    window.localStorage.removeItem(COMPARE_KEYS.event);
-    window.localStorage.removeItem(COMPARE_KEYS.teams);
+    storageRemove(COMPARE_KEYS.event);
+    storageRemove(COMPARE_KEYS.teams);
     refreshDiagnostics();
     setStatusText('Compare cache cleared.');
     setMaintenanceNote('Saved comparisons cleared.');
@@ -457,7 +441,7 @@ export function SettingsPage() {
             <FieldSelect
               label="Theme"
               value={themeMode}
-              onChange={(event) => updateTheme(event.target.value as ThemeMode)}
+              onChange={(event) => updateTheme(event.target.value as ThemeMode, event.currentTarget)}
             >
               <option value="dark">Dark</option>
               <option value="light">Light</option>
@@ -541,7 +525,7 @@ export function SettingsPage() {
           />
           <div className={styles.actions}>
             <Button variant="primary" onClick={() => void validateAndEnableAdminMode()} loading={adminAuthBusy}>
-              {adminAuthBusy ? 'Creating Session...' : 'Create Admin Session'}
+              {adminAuthBusy ? 'Creating Session…' : 'Create Admin Session'}
             </Button>
             <Button variant="quiet" onClick={disableAdminMode} disabled={adminAuthBusy}>
               Disable Admin Mode
@@ -590,17 +574,13 @@ export function SettingsPage() {
         <CardBody>
           <div className={styles.actions}>
             <Button variant="quiet" onClick={() => void refreshOpsDashboard()} loading={opsLoading}>
-              {opsLoading ? 'Refreshing...' : 'Refresh Ops Snapshot'}
-            </Button>
-            <Button variant="quiet" onClick={() => void runClimbBackfillNow()} loading={climbBackfillBusy}>
-              {climbBackfillBusy ? 'Backfilling...' : 'Run Climb Backfill'}
+              {opsLoading ? 'Refreshing…' : 'Refresh Ops Snapshot'}
             </Button>
           </div>
           {opsErrorText ? (
             <p className={`${styles.note} ${styles.noteWarning}`} role="alert">{opsErrorText}</p>
           ) : null}
-          {climbBackfillStatus ? <p className={styles.note}>{climbBackfillStatus}</p> : null}
-          {opsLoading && !opsDashboard ? <p className={styles.note}>Loading...</p> : null}
+          {opsLoading && !opsDashboard ? <p className={styles.note}>Loading…</p> : null}
           {opsDashboard ? (
             <>
               <CardGrid dense>

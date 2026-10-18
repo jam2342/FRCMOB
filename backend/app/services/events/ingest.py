@@ -16,13 +16,13 @@ from app.core.config import settings
 from app.db import models
 from app.services.analysis.evidence import evidence_rejection_reason
 from app.services.events.match_times import match_times_from_payload
+from app.services.scoring.alliance_results import upsert_alliance_results
 from app.services.scoring.truth import (
     _extract_score_breakdown_truth_rows,
     _rebuilt_active_hub_duration_sec,
     _truth_context,
 )
 from app.services.scoring.official_team_stats import COPR_METRICS_BY_SEASON
-from app.services.ml.synergy import SYNERGY_MODEL_VERSION
 from app.services.utils import _as_float
 from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH
 from app.services.season_config import REBUILT_SEASON_YEAR, require_known_season_rules
@@ -194,17 +194,11 @@ def clear_existing_score_breakdown_rows(
     if not stale_run_ids:
         return 0
 
-    db.query(models.TeamMatchThroughput).filter(
-        models.TeamMatchThroughput.analysis_run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
     db.query(models.MatchEvent).filter(
         models.MatchEvent.analysis_run_id.in_(stale_run_ids)
     ).delete(synchronize_session=False)
     db.query(models.RobotTrack).filter(
         models.RobotTrack.analysis_run_id.in_(stale_run_ids)
-    ).delete(synchronize_session=False)
-    db.query(models.AnalysisQuality).filter(
-        models.AnalysisQuality.run_id.in_(stale_run_ids)
     ).delete(synchronize_session=False)
     db.query(models.TeamMatchFinding).filter(
         models.TeamMatchFinding.analysis_run_id.in_(stale_run_ids)
@@ -585,6 +579,7 @@ def ingest_event(
                 team_key=team_key,
                 team_number=team["team_number"],
                 nickname=team.get("nickname"),
+                rookie_year=team.get("rookie_year") if isinstance(team.get("rookie_year"), int) else None,
             )
         )
         db.merge(
@@ -658,6 +653,12 @@ def ingest_event(
         matches=[match for match in matches if isinstance(match, dict)],
         auto_fuel_copr_by_team=auto_fuel_copr_by_team,
     )
+    alliance_results = upsert_alliance_results(
+        db,
+        event_key=event_key,
+        season_year=int(event.get("year") or 0),
+        matches=[match for match in matches if isinstance(match, dict)],
+    )
 
     stats_upserted, stats_source = upsert_event_team_stats_from_tba(db, tba, event_key)
     if stats_upserted == 0:
@@ -668,13 +669,6 @@ def ingest_event(
         "detail": None,
         "model_version": None,
         "count": 0,
-        "ml_shadow": None,
-        "ml_shadow_auto_train": None,
-    }
-    synergy_precompute: dict[str, Any] = {
-        "triggered": False,
-        "ok": False,
-        "detail": None,
     }
     should_run_post_compute = (
         bool(run_post_compute)
@@ -682,13 +676,11 @@ def ingest_event(
         else bool(settings.events_ingest_run_post_compute)
     )
     if should_run_post_compute and not settings.public_readonly_mode:
-        # The same rebuild refresh_event runs (synergy, ratings, optional ML training),
-        # so there is one implementation of it.
+        # The same rebuild refresh_event runs, so there is one implementation of it.
         from app.services.events.pipeline import post_compute_event
 
-        rebuilt = post_compute_event(db, event_key=event_key, train_ml=True)
+        rebuilt = post_compute_event(db, event_key=event_key)
         ratings_payload = rebuilt["ratings"] if isinstance(rebuilt.get("ratings"), dict) else {}
-        synergy_payload = rebuilt["synergy"] if isinstance(rebuilt.get("synergy"), dict) else {}
         ratings_recompute = {
             "triggered": True,
             "ok": bool(ratings_payload.get("ok", False)),
@@ -696,15 +688,6 @@ def ingest_event(
             "model_version": ratings_payload.get("model_version"),
             "count": int(ratings_payload.get("count", 0) or 0),
             "quality_gate": ratings_payload.get("quality_gate"),
-            "ml_shadow": ratings_payload.get("ml_shadow"),
-            "ml_shadow_auto_train": rebuilt.get("ml_shadow"),
-        }
-        synergy_precompute = {
-            "triggered": True,
-            "ok": bool(synergy_payload.get("ok", True)),
-            "model_version": SYNERGY_MODEL_VERSION,
-            "projection_count": int((synergy_payload.get("projections") or {}).get("count", 0) or 0),
-            "detail": synergy_payload.get("detail"),
         }
     elif should_run_post_compute and settings.public_readonly_mode:
         ratings_recompute = {
@@ -713,27 +696,19 @@ def ingest_event(
             "detail": "Skipped in public mode.",
             "model_version": None,
             "count": 0,
-            "ml_shadow": None,
-            "ml_shadow_auto_train": None,
-        }
-        synergy_precompute = {
-            "triggered": False,
-            "ok": False,
-            "detail": "Skipped in public mode.",
         }
 
     _ingest_elapsed_ms = round((_time.perf_counter() - _ingest_t0) * 1000, 1)
     logger.info(
         "event_ingest.completed event=%s elapsed_ms=%.1f "
         "teams=%d matches=%d stats_upserted=%d "
-        "ratings_ok=%s synergy_ok=%s",
+        "ratings_ok=%s",
         event_key,
         _ingest_elapsed_ms,
         len(teams),
         len(matches),
         stats_upserted,
         ratings_recompute.get("ok"),
-        synergy_precompute.get("ok"),
     )
     return {
         "ok": True,
@@ -744,7 +719,7 @@ def ingest_event(
         "event_team_stats_upserted": stats_upserted,
         "event_team_stats_source": stats_source,
         "score_breakdown_truth": score_breakdown_truth,
+        "alliance_results": alliance_results,
         "run_post_compute": should_run_post_compute,
         "ratings_recompute": ratings_recompute,
-        "synergy_precompute": synergy_precompute,
     }

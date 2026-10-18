@@ -57,7 +57,7 @@ _RULES: list[tuple[re.Pattern[str], str, str | None]] = [
     (re.compile(r"^/events/suggested$"), "catalog", None),
     (re.compile(r"^/events/search$"), "catalog", None),
     (re.compile(r"^/teams/search$"), "catalog", None),
-    (re.compile(r"^/events/(?P<ev>[^/]+)/(?:schedule-with-synergy|rankings|predictions)$"), "live", "path"),
+    (re.compile(r"^/events/(?P<ev>[^/]+)/(?:schedule-with-synergy|rankings|predictions|pick-values|forecast|alliance-outlook|selection-model)$"), "live", "path"),
     (re.compile(r"^/events/(?P<ev>[^/]+)/awards$"), "event", "path"),
     (re.compile(r"^/matches/event/(?P<ev>[^/]+)/(?:schedule|team-live-form|live-stream|alliances)$"), "live", "path"),
     (re.compile(r"^/matches/schedules$"), "live", None),
@@ -67,6 +67,7 @@ _RULES: list[tuple[re.Pattern[str], str, str | None]] = [
     (re.compile(r"^/teams/event/(?P<ev>[^/]+)/intel$"), "event", "path"),
     (re.compile(r"^/teams/[^/]+/intel$"), "event", "query"),
     (re.compile(r"^/teams/[^/]+/(?:logo|robot-image)$"), "static", None),
+    (re.compile(r"^/teams/[^/]+/rating-history$"), "event", None),
     (re.compile(r"^/tracks/(?:heatmap|shift-play)/[^/]+$"), "event", "query"),
 ]
 
@@ -116,6 +117,11 @@ def policy_for(path: str, query_string: str) -> Policy | None:
     query = parse_qs(query_string, keep_blank_values=True)
     if query.get("refresh", ["false"])[0].lower() == "true":
         return None
+    # A team's own unreviewed recordings (tracks routes) are for that team only.
+    # Parsing booleans again is unsafe: FastAPI accepts 1/yes/on and uses the last
+    # duplicate parameter. Its mere presence makes this a potentially private read.
+    if "include_workspace" in query:
+        return None
     for pattern, name, event_source in _RULES:
         match = pattern.match(normalized)
         if match is None:
@@ -135,7 +141,8 @@ def policy_for(path: str, query_string: str) -> Policy | None:
 def _has_admin_credentials(headers: list[tuple[bytes, bytes]]) -> bool:
     admin_header = str(getattr(settings.security, "admin_api_header", "") or "X-Admin-Key").lower().encode()
     for name, value in headers:
-        if name in (admin_header, b"x-admin-key", b"x-admin-session") and value.strip():
+        # Authorization too: security.py accepts an admin session as a Bearer token.
+        if name in (admin_header, b"x-admin-key", b"x-admin-session", b"authorization", b"x-workspace-access", b"x-room-access-token") and value.strip():
             return True
     return False
 

@@ -1,0 +1,76 @@
+.season + .season {
+  margin-top: 16px;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: var(--font-size-sm, 14px);
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 600;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.row {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.name {
+  font-weight: 600;
+  min-width: 0;
+}
+
+.figures {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm, 14px);
+}
+
+.figures strong {
+  color: var(--color-text);
+}
+
+.won {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-success-text) 18%, transparent);
+  color: var(--color-success-text);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+}
+
+.note {
+  margin: 12px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs, 12px);
+}

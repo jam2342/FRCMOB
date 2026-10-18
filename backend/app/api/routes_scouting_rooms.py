@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import DatabaseError, IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.exc import StaleDataError
 
 from app.core.config import settings
 from app.core.security import (
@@ -24,8 +23,10 @@ from app.core.security import (
     ROOM_ROLE_MEMBER,
     issue_room_access_token,
     parse_room_access_token,
+    parse_workspace_access_token,
     require_write_access,
     room_access_allows,
+    workspace_access_token_from_request,
 )
 from app.db import models
 from app.db.session import SessionLocal, get_db
@@ -202,6 +203,18 @@ def _member_scout_profile(actor: WorkspaceActor) -> str:
     # A room identity is the member's workspace name, never one the client types:
     # otherwise any teammate could claim the room owner's name and get owner rights.
     return _normalize_scout_profile(actor.member.display_name)
+
+
+def _room_access_allows_actor(payload: dict[str, Any] | None, actor: WorkspaceActor, *, room_key: str) -> bool:
+    # A name-only token can belong to a removed membership with a recycled name.
+    # Old clients obtain a newly bound token by joining their room again.
+    return bool(
+        payload
+        and payload.get("mid") == actor.member.id
+        and room_access_allows(
+            payload, room_key=room_key, scout_profile=_member_scout_profile(actor), require_write=True,
+        )
+    )
 
 def _clamp_0_100(value: float) -> float:
     return _clamp(float(value), 0.0, 100.0)
@@ -755,175 +768,6 @@ def _touch_room_activity(db: Session, room: models.ScoutingRoom, *, commit: bool
             ) from exc
         raise
 
-def _upsert_room_assignment(
-    db: Session,
-    *,
-    room: models.ScoutingRoom,
-    match_key: str,
-    team_key: str,
-    assigned_scout_profile: str,
-    assigned_by_scout_profile: str,
-    event_key: str | None,
-    commit: bool = True,
-    _allow_stale_retry: bool = True,
-) -> models.ScoutingRoomAssignment:
-    normalized_match_key = _normalize_match_key(match_key)
-    normalized_team_key = _normalize_team_key(team_key)
-    if not normalized_match_key or not normalized_team_key:
-        raise HTTPException(status_code=400, detail="match_key and team_key are required for room assignments.")
-
-    match = db.get(models.Match, normalized_match_key)
-    if match is None:
-        raise HTTPException(status_code=400, detail=f"Match {normalized_match_key} was not found.")
-    team = db.get(models.Team, normalized_team_key)
-    if team is None:
-        raise HTTPException(status_code=400, detail=f"Team {normalized_team_key} was not found.")
-
-    normalized_assigned_scout = _normalize_scout_profile(assigned_scout_profile)
-    if not normalized_assigned_scout:
-        raise HTTPException(status_code=400, detail="assigned_scout_profile is required.")
-    normalized_assigned_by = _normalize_scout_profile(assigned_by_scout_profile)
-    if not normalized_assigned_by:
-        raise HTTPException(status_code=400, detail="assigned_by_scout_profile is required.")
-
-    normalized_event = _normalize_event_key(event_key) or _normalize_event_key(match.event_key) or room.event_key
-
-    try:
-        row = (
-            db.query(models.ScoutingRoomAssignment)
-            .filter(
-                models.ScoutingRoomAssignment.room_key == room.room_key,
-                models.ScoutingRoomAssignment.match_key == normalized_match_key,
-                models.ScoutingRoomAssignment.team_key == normalized_team_key,
-            )
-            .first()
-        )
-        now = datetime.now(timezone.utc)
-        if row is None:
-            row = models.ScoutingRoomAssignment(
-                room_key=room.room_key,
-                event_key=normalized_event,
-                match_key=normalized_match_key,
-                team_key=normalized_team_key,
-                assigned_scout_profile=normalized_assigned_scout,
-                assigned_scout_profile_norm=_normalize_scout_profile_lookup(normalized_assigned_scout),
-                assigned_by_scout_profile=normalized_assigned_by,
-                assigned_by_scout_profile_norm=_normalize_scout_profile_lookup(normalized_assigned_by),
-                created_at=now,
-                updated_at=now,
-            )
-            db.add(row)
-        else:
-            row.event_key = normalized_event
-            row.assigned_member_id = None
-            row.assigned_scout_profile = normalized_assigned_scout
-            row.assigned_scout_profile_norm = _normalize_scout_profile_lookup(normalized_assigned_scout)
-            row.assigned_by_scout_profile = normalized_assigned_by
-            row.assigned_by_scout_profile_norm = _normalize_scout_profile_lookup(normalized_assigned_by)
-            row.updated_at = now
-            db.add(row)
-
-        if normalized_event and not room.event_key:
-            room.event_key = normalized_event
-        _touch_room_activity(db, room, commit=False)
-        db.add(room)
-        if commit:
-            db.commit()
-            db.refresh(row)
-            db.refresh(room)
-        else:
-            db.flush()
-        return row
-    except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if _is_missing_table_error(exc, "scouting_room_assignments"):
-            _report_missing_room_table(db, "scouting_room_assignments", exc)
-        if _is_table_unavailable_error(exc, "scouting_room_assignments"):
-            if commit:
-                db.rollback()
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Scouting room assignments are temporarily unavailable. "
-                    "Apply database migration 20260305_0005_scouting_room_assignments "
-                    "and ensure DB privileges for scouting_room_assignments."
-                ),
-            ) from exc
-        raise
-    except StaleDataError as exc:
-        # Concurrent assignment replace/delete can invalidate the row selected above.
-        # Retry once against a fresh transaction so high-concurrency updates do not 500.
-        if _allow_stale_retry:
-            if commit:
-                db.rollback()
-            return _upsert_room_assignment(
-                db,
-                room=room,
-                match_key=match_key,
-                team_key=team_key,
-                assigned_scout_profile=assigned_scout_profile,
-                assigned_by_scout_profile=assigned_by_scout_profile,
-                event_key=event_key,
-                commit=commit,
-                _allow_stale_retry=False,
-            )
-        if commit:
-            db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Assignment update conflicted with a concurrent room sync. "
-                "Retry the request."
-            ),
-        ) from exc
-
-def _clear_room_assignment(
-    db: Session,
-    *,
-    room: models.ScoutingRoom,
-    match_key: str,
-    team_key: str,
-    commit: bool = True,
-) -> models.ScoutingRoomAssignment | None:
-    normalized_match_key = _normalize_match_key(match_key)
-    normalized_team_key = _normalize_team_key(team_key)
-    if not normalized_match_key or not normalized_team_key:
-        raise HTTPException(status_code=400, detail="match_key and team_key are required for room assignments.")
-    try:
-        row = (
-            db.query(models.ScoutingRoomAssignment)
-            .filter(
-                models.ScoutingRoomAssignment.room_key == room.room_key,
-                models.ScoutingRoomAssignment.match_key == normalized_match_key,
-                models.ScoutingRoomAssignment.team_key == normalized_team_key,
-            )
-            .first()
-        )
-        if row is None:
-            return None
-        db.delete(row)
-        _touch_room_activity(db, room, commit=False)
-        db.add(room)
-        if commit:
-            db.commit()
-        else:
-            db.flush()
-        return row
-    except (ProgrammingError, OperationalError, DatabaseError) as exc:
-        if _is_missing_table_error(exc, "scouting_room_assignments"):
-            _report_missing_room_table(db, "scouting_room_assignments", exc)
-        if _is_table_unavailable_error(exc, "scouting_room_assignments"):
-            if commit:
-                db.rollback()
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Scouting room assignments are temporarily unavailable. "
-                    "Apply database migration 20260305_0005_scouting_room_assignments "
-                    "and ensure DB privileges for scouting_room_assignments."
-                ),
-            ) from exc
-        raise
-
 def _load_room_or_404(db: Session, room_key: str, workspace_id: int) -> models.ScoutingRoom:
     try:
         room = db.get(models.ScoutingRoom, room_key)
@@ -1181,8 +1025,16 @@ def _persist_room_entry(
     room: models.ScoutingRoom,
     entry_payload: dict[str, Any],
     scout_profile: str,
+    author_member_id: int,
     client_entry_id: str | None,
 ) -> tuple[models.ScoutingRoomEntry, bool]:
+    # Serialize against removal/rename, then re-read identity before any write.
+    lock_workspace_row(db, room.workspace_id)
+    author = db.get(models.TeamWorkspaceMember, author_member_id, populate_existing=True)
+    if author is None or author.removed_at is not None or author.workspace_id != room.workspace_id:
+        raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
+    if _normalize_scout_profile(author.display_name) != scout_profile:
+        raise HTTPException(status_code=403, detail="Your scout name changed. Join the room again.")
     normalized_client_id = str(client_entry_id or "").strip()[:120] or None
     if normalized_client_id:
         existing = (
@@ -1194,12 +1046,15 @@ def _persist_room_entry(
             .first()
         )
         if existing is not None:
+            if existing.author_member_id is None or existing.author_member_id != author_member_id:
+                # Do not return the other author's payload as if this save succeeded.
+                raise HTTPException(status_code=409, detail="This report belongs to another or unknown author. Save a new report.")
             # A retry carries the same saved_at_ms and changes nothing. The same scout
             # re-saving that report later (correcting it) replaces it, so teammates
             # see the correction instead of the first version forever.
             previous_saved = _float_or_none((existing.payload or {}).get("saved_at_ms")) or 0.0
             incoming_saved = _float_or_none(entry_payload.get("saved_at_ms")) or 0.0
-            if existing.scout_profile != scout_profile or incoming_saved <= previous_saved:
+            if incoming_saved <= previous_saved:
                 return existing, False
             payload = {**dict(entry_payload), "id": (existing.payload or {}).get("id") or normalized_client_id}
             payload["scout_profile"] = scout_profile
@@ -1237,6 +1092,7 @@ def _persist_room_entry(
         match_key=match_key,
         team_key=team_key,
         scout_profile=scout_profile,
+        author_member_id=author_member_id,
         client_entry_id=normalized_client_id,
         payload=payload,
         total_points=_entry_metric(payload, "points", "total"),
@@ -1374,7 +1230,7 @@ def rename_scout_in_workspace_rooms(
     for entry in db.execute(
         select(models.ScoutingRoomEntry).where(models.ScoutingRoomEntry.room_key.in_(room_keys))
     ).scalars():
-        if _normalize_scout_profile_lookup(entry.scout_profile) == old_norm:
+        if member_id is not None and entry.author_member_id == member_id:
             entry.scout_profile = new_profile
 
 def _websocket_write_access_allowed(websocket: WebSocket) -> tuple[bool, str | None]:
@@ -1400,21 +1256,6 @@ class RoomEntryCreateRequest(BaseModel):
     entry: dict[str, Any]
     scout_profile: str | None = Field(default=None, max_length=40)
     client_entry_id: str | None = Field(default=None, max_length=120)
-
-class RoomAssignmentUpsertRequest(BaseModel):
-    match_key: str = Field(..., min_length=1, max_length=80)
-    team_key: str = Field(..., min_length=1, max_length=24)
-    assigned_scout_profile: str | None = Field(default=None, max_length=40)
-    event_key: str | None = Field(default=None, max_length=48)
-
-class RoomAssignmentRowRequest(BaseModel):
-    match_key: str = Field(..., min_length=1, max_length=80)
-    team_key: str = Field(..., min_length=1, max_length=24)
-    assigned_scout_profile: str = Field(..., min_length=1, max_length=40)
-
-class RoomAssignmentReplaceRequest(BaseModel):
-    event_key: str | None = Field(default=None, max_length=48)
-    assignments: list[RoomAssignmentRowRequest] = Field(default_factory=list)
 
 class RoomKickRequest(BaseModel):
     scout_profile: str = Field(..., min_length=1, max_length=40)
@@ -1473,6 +1314,7 @@ async def create_or_join_team_room(
     role = ROOM_ROLE_OWNER if actor.is_leader else ROOM_ROLE_MEMBER
     access = issue_room_access_token(
         room_key=room.room_key, scout_profile=actor.member.display_name, role=role,
+        workspace_member_id=actor.member.id,
     )
     await _safe_touch_http_presence(
         room.room_key, scout_profile=actor.member.display_name,
@@ -1605,6 +1447,7 @@ async def create_or_join_room(
         room_key=room.room_key,
         scout_profile=scout_profile,
         role=room_role,
+        workspace_member_id=actor.member.id,
     )
     rows: list[models.ScoutingRoomEntry] = []
     assignments: list[models.ScoutingRoomAssignment] = []
@@ -1713,6 +1556,7 @@ async def get_room_state(
                 room_key=room.room_key,
                 scout_profile=normalized_profile,
                 role=room_role,
+                workspace_member_id=actor.member.id,
             )
             access_payload = {
                 "room_role": room_role,
@@ -1806,286 +1650,6 @@ def get_room_entries(
         "entries": [_serialize_entry(row) for row in rows],
     }
 
-@router.get("/{room_key}/assignments")
-async def get_room_assignments(
-    room_key: str,
-    http_request: Request,
-    event_key: str | None = Query(default=None, max_length=48),
-    for_scout_profile: str | None = Query(default=None, max_length=40),
-    client_id: str | None = Query(default=None, max_length=80),
-    presence_heartbeat: bool = Query(default=False),
-    db: Session = Depends(get_db),
-):
-    actor = require_workspace_actor(http_request, db)
-    normalized = _normalize_room_key(room_key)
-    if not normalized:
-        raise HTTPException(status_code=400, detail="Invalid room key")
-
-    room = _load_room_or_404(db, normalized, actor.workspace_id)
-    presence = await _safe_presence_snapshot(normalized, context="get room assignments")
-    normalized_profile = _normalize_scout_profile(for_scout_profile)
-    normalized_client_id = str(client_id or "").strip()[:80] or None
-    existing_room_access_payload = parse_room_access_token(
-        str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
-    )
-    if (
-        normalized_profile
-        and presence_heartbeat
-        and room_access_allows(
-            existing_room_access_payload,
-            room_key=room.room_key,
-            scout_profile=normalized_profile,
-            require_write=True,
-        )
-    ):
-        presence = await _safe_touch_http_presence(
-            room.room_key,
-            scout_profile=normalized_profile,
-            client_id=normalized_client_id,
-            context="get room assignments",
-            fallback_presence=presence,
-        )
-
-    rows = _load_room_assignments(db, normalized, event_key=event_key or room.event_key, limit=2000)
-    secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
-    my_rows = _assignments_for_scout(rows, for_scout_profile)
-    leader_profile, leader_source = _resolve_room_leader(
-        room,
-        presence,
-        secondary_leader_profiles=secondary_leaders,
-    )
-    room_role = None
-    if normalized_profile:
-        room_role = _resolve_room_role_with_presence(
-            room,
-            normalized_profile,
-            presence=presence,
-            secondary_leader_profiles=secondary_leaders,
-            workspace_leader=actor.is_leader,
-        )
-    return {
-        "ok": True,
-        "room_key": normalized,
-        "event_key": _normalize_event_key(event_key) or room.event_key,
-        "count": len(rows),
-        "leader_scout_profile": leader_profile,
-        "leader_source": leader_source,
-        "room_role": room_role,
-        "secondary_leader_scout_profiles": secondary_leaders,
-        "presence": presence,
-        "assignments": [_serialize_assignment(row) for row in rows],
-        "my_assignments": [_serialize_assignment(row) for row in my_rows],
-    }
-
-@router.post("/{room_key}/assignments")
-async def upsert_room_assignment(
-    room_key: str,
-    request: RoomAssignmentUpsertRequest,
-    http_request: Request,
-    db: Session = Depends(get_db),
-):
-    require_write_access("Scouting room assignment update")
-
-    actor = require_workspace_actor(http_request, db)
-    normalized = _normalize_room_key(room_key)
-    if not normalized:
-        raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized, actor.workspace_id)
-
-    room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
-    room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _member_scout_profile(actor)
-    if not room_access_allows(
-        room_access_payload,
-        room_key=normalized,
-        scout_profile=actor_profile,
-        require_write=True,
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Assignment update requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
-        )
-    if not actor_profile:
-        raise HTTPException(status_code=403, detail="Assignment update requires a bound scout profile.")
-    secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
-    actor = _current_actor(db, actor)
-    actor_role = await _resolve_room_action_actor_role(
-        room,
-        actor_profile,
-        secondary_leader_profiles=secondary_leaders,
-        fallback_context="assignment update role check",
-        workspace_leader=actor.is_leader,
-    )
-    if actor_role != ROOM_ROLE_OWNER:
-        raise HTTPException(
-            status_code=403,
-            detail="Only room leaders can update scouting room assignments.",
-        )
-
-    assigned_scout_profile = _normalize_scout_profile(request.assigned_scout_profile)
-    if assigned_scout_profile:
-        row = _upsert_room_assignment(
-            db,
-            room=room,
-            match_key=request.match_key,
-            team_key=request.team_key,
-            assigned_scout_profile=assigned_scout_profile,
-            assigned_by_scout_profile=actor_profile,
-            event_key=request.event_key or room.event_key,
-        )
-        serialized = _serialize_assignment(row)
-        await _broadcast_room_message(
-            normalized,
-            {
-                "type": "assignment_updated",
-                "room_key": normalized,
-                "assignment": serialized,
-                "server_time": datetime.now(timezone.utc).isoformat(),
-                "assigned_by": actor_profile,
-            },
-        )
-        return {
-            "ok": True,
-            "room_key": normalized,
-            "deleted": False,
-            "assignment": serialized,
-        }
-
-    deleted = _clear_room_assignment(
-        db,
-        room=room,
-        match_key=request.match_key,
-        team_key=request.team_key,
-    )
-    deleted_payload = {
-        "match_key": _normalize_match_key(request.match_key),
-        "team_key": _normalize_team_key(request.team_key),
-    }
-    await _broadcast_room_message(
-        normalized,
-        {
-            "type": "assignment_deleted",
-            "room_key": normalized,
-            "assignment": deleted_payload,
-            "server_time": datetime.now(timezone.utc).isoformat(),
-            "assigned_by": actor_profile,
-        },
-    )
-    return {
-        "ok": True,
-        "room_key": normalized,
-        "deleted": bool(deleted is not None),
-        "assignment": deleted_payload,
-    }
-
-@router.post("/{room_key}/assignments/replace")
-async def replace_room_assignments(
-    room_key: str,
-    request: RoomAssignmentReplaceRequest,
-    http_request: Request,
-    db: Session = Depends(get_db),
-):
-    require_write_access("Scouting room assignment replace")
-
-    actor = require_workspace_actor(http_request, db)
-    normalized = _normalize_room_key(room_key)
-    if not normalized:
-        raise HTTPException(status_code=400, detail="Invalid room key")
-    room = _load_room_or_404(db, normalized, actor.workspace_id)
-
-    room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
-    room_access_payload = parse_room_access_token(room_access_token)
-    actor_profile = _member_scout_profile(actor)
-    if not room_access_allows(
-        room_access_payload,
-        room_key=normalized,
-        scout_profile=actor_profile,
-        require_write=True,
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Assignment replace requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
-        )
-    if not actor_profile:
-        raise HTTPException(status_code=403, detail="Assignment replace requires a bound scout profile.")
-    secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
-    actor = _current_actor(db, actor)
-    actor_role = await _resolve_room_action_actor_role(
-        room,
-        actor_profile,
-        secondary_leader_profiles=secondary_leaders,
-        fallback_context="assignment replace role check",
-        workspace_leader=actor.is_leader,
-    )
-    if actor_role != ROOM_ROLE_OWNER:
-        raise HTTPException(
-            status_code=403,
-            detail="Only room leaders can replace scouting room assignments.",
-        )
-
-    normalized_event = _normalize_event_key(request.event_key) or room.event_key
-
-    def _replace_rows() -> None:
-        try:
-            if normalized_event:
-                (
-                    db.query(models.ScoutingRoomAssignment)
-                    .filter(models.ScoutingRoomAssignment.room_key == normalized)
-                    .filter(models.ScoutingRoomAssignment.event_key == normalized_event)
-                    .delete(synchronize_session=False)
-                )
-
-            for row in request.assignments:
-                _upsert_room_assignment(
-                    db,
-                    room=room,
-                    match_key=row.match_key,
-                    team_key=row.team_key,
-                    assigned_scout_profile=row.assigned_scout_profile,
-                    assigned_by_scout_profile=actor_profile,
-                    event_key=normalized_event,
-                    commit=False,
-                )
-            db.commit()
-            db.refresh(room)
-        except (ProgrammingError, OperationalError, DatabaseError) as exc:
-            if _is_missing_table_error(exc, "scouting_room_assignments"):
-                _report_missing_room_table(db, "scouting_room_assignments", exc)
-            if _is_table_unavailable_error(exc, "scouting_room_assignments"):
-                db.rollback()
-                raise HTTPException(
-                    status_code=503,
-                    detail=(
-                        "Scouting room assignments are temporarily unavailable. "
-                        "Apply database migration 20260305_0005_scouting_room_assignments "
-                        "and ensure DB privileges for scouting_room_assignments."
-                    ),
-                ) from exc
-            raise
-
-    _replace_rows()
-
-    rows = _load_room_assignments(db, normalized, event_key=normalized_event, limit=2000)
-    serialized_rows = [_serialize_assignment(row) for row in rows]
-    await _broadcast_room_message(
-        normalized,
-        {
-            "type": "assignments_replaced",
-            "room_key": normalized,
-            "event_key": normalized_event,
-            "assignments": serialized_rows,
-            "server_time": datetime.now(timezone.utc).isoformat(),
-            "assigned_by": actor_profile,
-        },
-    )
-    return {
-        "ok": True,
-        "room_key": normalized,
-        "event_key": normalized_event,
-        "count": len(serialized_rows),
-        "assignments": serialized_rows,
-    }
-
 @router.post("/{room_key}/leaders")
 async def add_room_secondary_leader(
     room_key: str,
@@ -2104,15 +1668,10 @@ async def add_room_secondary_leader(
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
     actor_profile = _member_scout_profile(actor)
-    if not room_access_allows(
-        room_access_payload,
-        room_key=normalized,
-        scout_profile=actor_profile,
-        require_write=True,
-    ):
+    if not _room_access_allows_actor(room_access_payload, actor, room_key=normalized):
         raise HTTPException(
             status_code=403,
-            detail=f"Leader promote requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
+            detail=f"Leader promote requires a valid {ROOM_ACCESS_HEADER} token bound to your membership. Join the room again.",
         )
     if not actor_profile:
         raise HTTPException(status_code=403, detail="Leader promote requires a bound scout profile.")
@@ -2190,15 +1749,10 @@ async def remove_room_secondary_leader(
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
     actor_profile = _member_scout_profile(actor)
-    if not room_access_allows(
-        room_access_payload,
-        room_key=normalized,
-        scout_profile=actor_profile,
-        require_write=True,
-    ):
+    if not _room_access_allows_actor(room_access_payload, actor, room_key=normalized):
         raise HTTPException(
             status_code=403,
-            detail=f"Leader demote requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
+            detail=f"Leader demote requires a valid {ROOM_ACCESS_HEADER} token bound to your membership. Join the room again.",
         )
     if not actor_profile:
         raise HTTPException(status_code=403, detail="Leader demote requires a bound scout profile.")
@@ -2269,15 +1823,10 @@ async def kick_room_member(
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
     actor_profile = _member_scout_profile(actor)
-    if not room_access_allows(
-        room_access_payload,
-        room_key=normalized,
-        scout_profile=actor_profile,
-        require_write=True,
-    ):
+    if not _room_access_allows_actor(room_access_payload, actor, room_key=normalized):
         raise HTTPException(
             status_code=403,
-            detail=f"Kick member requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
+            detail=f"Kick member requires a valid {ROOM_ACCESS_HEADER} token bound to your membership. Join the room again.",
         )
     if not actor_profile:
         raise HTTPException(status_code=403, detail="Kick member requires a bound scout profile.")
@@ -2385,21 +1934,17 @@ async def save_room_entry(
     scout_profile = _member_scout_profile(actor)
     room_access_token = str(http_request.headers.get(ROOM_ACCESS_HEADER) or "").strip()
     room_access_payload = parse_room_access_token(room_access_token)
-    if not room_access_allows(
-        room_access_payload,
-        room_key=normalized,
-        scout_profile=scout_profile,
-        require_write=True,
-    ):
+    if not _room_access_allows_actor(room_access_payload, actor, room_key=normalized):
         raise HTTPException(
             status_code=403,
-            detail=f"Room entry save requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
+            detail=f"Room entry save requires a valid {ROOM_ACCESS_HEADER} token bound to your membership. Join the room again.",
         )
     row, created = _persist_room_entry(
         db,
         room=room,
         entry_payload=request.entry,
         scout_profile=scout_profile,
+        author_member_id=actor.member.id,
         client_entry_id=request.client_entry_id,
     )
     serialized = _serialize_entry(row)
@@ -2452,7 +1997,7 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
     ):
         await websocket.close(
             code=4403,
-            reason=f"Room websocket requires a valid {ROOM_ACCESS_HEADER} token for this scout profile.",
+            reason=f"Room websocket requires a valid {ROOM_ACCESS_HEADER} token bound to your membership. Join the room again.",
         )
         return
     event_key = _normalize_event_key(websocket.query_params.get("event_key"))
@@ -2464,8 +2009,10 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
     db = SessionLocal()
     try:
         actor = require_workspace_actor(websocket, db)
-        if not _scout_profiles_match(scout_profile, _member_scout_profile(actor)):
-            raise HTTPException(status_code=403, detail="Connect with your workspace name.")
+        if scout_profile != _member_scout_profile(actor) or not _room_access_allows_actor(
+            room_access_payload, actor, room_key=normalized,
+        ):
+            raise HTTPException(status_code=403, detail="Join the room again with your current workspace name.")
         room = _load_room_or_404(db, normalized, actor.workspace_id)
         room = _sync_room_metadata_for_join(
             db,
@@ -2554,8 +2101,14 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
             # On every message and every quiet interval: a removed member's socket
             # closes even if it only listens.
             db.refresh(actor.member)
-            if actor.member.removed_at is not None:
+            if actor.member.removed_at is not None or parse_workspace_access_token(
+                workspace_access_token_from_request(websocket)
+            ) is None:
                 raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
+            if scout_profile != _member_scout_profile(actor) or not _room_access_allows_actor(
+                parse_room_access_token(room_access_token), actor, room_key=normalized,
+            ):
+                raise HTTPException(status_code=403, detail="Your room access changed or expired. Join the room again.")
             if payload is None:
                 continue
             if not isinstance(payload, dict):
@@ -2640,6 +2193,7 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                     room=_load_room_or_404(db, normalized, actor.workspace_id),
                     entry_payload=entry,
                     scout_profile=scout_profile,
+                    author_member_id=actor.member.id,
                     client_entry_id=(str(payload.get("client_entry_id") or "").strip() or None),
                 )
                 serialized = _serialize_entry(row)

@@ -1,0 +1,63 @@
+.clock {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.track {
+  display: flex;
+  gap: 3px;
+  height: 8px;
+}
+
+.segment {
+  position: relative;
+  overflow: hidden;
+  flex-basis: 0;
+  border-radius: 2px;
+  background: var(--color-surface-muted);
+}
+
+.fill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent);
+  transform-origin: left center;
+  transition: transform 1s linear;
+}
+
+.current .fill {
+  animation: clockBreathe 1.4s ease-in-out infinite;
+}
+
+.labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.now {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+@keyframes clockBreathe {
+  50% {
+    filter: brightness(1.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+
+  .current .fill {
+    animation: none;
+  }
+}

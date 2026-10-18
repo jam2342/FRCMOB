@@ -4,12 +4,6 @@ export const CURRENT_SEASON_YEAR = SEASON.year;
 export const FALLBACK_SEASON_YEAR = SEASON.fallbackYear;
 const MATCH_DURATION_SEC = SEASON.matchSec;
 
-export type FreshnessSummary = {
-  state: 'fresh' | 'stale' | 'unknown';
-  label: string;
-  detail: string | null;
-};
-
 export function metric(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
   return value.toFixed(digits);
@@ -26,17 +20,15 @@ export function pct(value: number | null | undefined, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
-export function fmtUnix(seconds: number | null): string {
-  if (!seconds) return 'Unknown';
-  return new Date(seconds * 1000).toLocaleString();
-}
+// Every team-number box asks the same way.
+export const TEAM_NUMBER_PLACEHOLDER = 'Team number, e.g. 254';
 
 export function fmtDateShort(seconds: number | null): string {
   if (!seconds) return 'TBD';
   return new Date(seconds * 1000).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
   });
 }
@@ -46,6 +38,16 @@ function fmtTimer(totalSeconds: number): string {
   const minutes = Math.floor(safeSeconds / 60);
   const seconds = safeSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+// A start hours away read as "1134:45". Minutes and seconds only for the last hour.
+function fmtCountdown(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  if (safeSeconds < 3600) return fmtTimer(safeSeconds);
+  const days = Math.floor(safeSeconds / 86400);
+  const hours = Math.floor((safeSeconds % 86400) / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  return days > 0 ? `${days}d ${hours}h` : `${hours}h ${String(minutes).padStart(2, '0')}m`;
 }
 
 type MatchTimes = {
@@ -83,7 +85,7 @@ export function liveTimerLabel(
     return {
       state: 'upcoming',
       label: 'Starts In',
-      value: fmtTimer(startSec - nowSec),
+      value: fmtCountdown(startSec - nowSec),
     };
   }
   if (nowSec < endSec) {
@@ -248,85 +250,3 @@ export function isTransientAbortLikeError(error: unknown): boolean {
   );
 }
 
-/* "151.7d old" is a decimal place on a day count — precision the number does
-   not have and nobody reads. Rounds to the unit a person would actually say. */
-export function humanAge(days: number): string {
-  if (days < 1) return 'today';
-  if (days < 2) return 'yesterday';
-  if (days < 14) return `${Math.round(days)} days ago`;
-  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
-  if (days < 365) return `${Math.round(days / 30)} months ago`;
-  const years = days / 365;
-  return years < 1.5 ? 'over a year ago' : `${Math.round(years)} years ago`;
-}
-
-// The backend's warnings are written for operators ("No analyzed matches
-// available for 2026."). Users see them verbatim on Team Center, so the known
-// ones get a plain-language version; anything else passes through untouched.
-const DATA_WARNING_REWRITES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
-  [/^No event-specific rating found; using latest available team rating\.?$/i,
-    () => "No rating for this event yet, so this shows the team's latest rating."],
-  [/^No analyzed matches available for (\d{4})\.?$/i,
-    (match) => `Nobody has scouted this team in ${match[1]} yet.`],
-  [/^No analyzed matches available in the current season scope\.?$/i,
-    () => 'Nobody has scouted this team this season yet.'],
-];
-
-export function friendlyDataWarning(text: string): string {
-  const trimmed = String(text || '').trim();
-  for (const [pattern, rewrite] of DATA_WARNING_REWRITES) {
-    const match = trimmed.match(pattern);
-    if (match) return rewrite(match);
-  }
-  return trimmed;
-}
-
-export function summarizeFreshness(payload: unknown): FreshnessSummary {
-  const row = asRecord(payload);
-  if (!row) return { state: 'unknown', label: 'Freshness: N/A', detail: null };
-
-  const isOutdated = Boolean(row.is_outdated);
-  const ageDays = parseNumber(row.latest_match_age_days);
-  const warnings = Array.isArray(row.warnings)
-    ? row.warnings.map((value) => friendlyDataWarning(String(value || ''))).filter(Boolean)
-    : [];
-
-  // Freshness here is about scouting data. A team nobody has scouted isn't
-  // "stale" — it has official results, just no scouting — and a red Stale
-  // chip next to 71 official matches read as broken data. The backend says so
-  // directly with `unscouted` (PR #59); older payloads are inferred from the
-  // row counts until that deploy has rolled out everywhere.
-  const scoutedMatches = (parseNumber(row.accepted_matches) ?? 0) + (parseNumber(row.raw_matches) ?? 0);
-  const unscouted = typeof row.unscouted === 'boolean'
-    ? row.unscouted
-    : ageDays === null && scoutedMatches === 0 && ('accepted_matches' in row || 'raw_matches' in row);
-  // Rows the quality gate rejected leave the backend saying "outdated" with no
-  // match date; with nothing accepted there is nothing to be stale.
-  const acceptedMatches = parseNumber(row.accepted_matches);
-  if (unscouted || (ageDays === null && acceptedMatches === 0)) {
-    return { state: 'unknown', label: 'Not scouted yet', detail: warnings[0] || null };
-  }
-
-  if (isOutdated) {
-    const detail = warnings[0] || (ageDays !== null ? `Latest analysed match was ${humanAge(ageDays)}.` : null);
-    return {
-      state: 'stale',
-      label: ageDays !== null ? `Stale · ${humanAge(ageDays)}` : 'Stale',
-      detail,
-    };
-  }
-
-  if (ageDays !== null) {
-    return {
-      state: 'fresh',
-      label: ageDays < 1 ? 'Fresh · today' : `Fresh · ${humanAge(ageDays)}`,
-      detail: warnings[0] || null,
-    };
-  }
-
-  return {
-    state: warnings.length > 0 ? 'stale' : 'unknown',
-    label: warnings.length > 0 ? 'Potentially stale' : 'Freshness: N/A',
-    detail: warnings[0] || null,
-  };
-}

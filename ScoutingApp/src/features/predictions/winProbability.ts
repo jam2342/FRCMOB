@@ -1,11 +1,11 @@
-import type { ScheduleWithSynergyMatch } from '../../api';
+import type { PredictedScheduleMatch } from '../../api';
 
-// One answer to "who wins this match" for every page. The server's prediction comes
-// first: official fuel rates from earlier matches, or the rating formula when there are
-// none yet (blended with the ML model when that is switched on). A logistic on the
-// synergy-score gap is the fallback when the server has none.
+// One answer to "who wins this match" for every page: the server's prediction, which is
+// each alliance's expected points from results before the match (the team model the
+// rating reads), or a rating-margin fallback when an alliance is incomplete. No
+// prediction means no number; pages say so instead of guessing.
 
-export type WinProbabilitySource = 'ml_model' | 'fuel_model' | 'rating_model' | 'synergy_derived';
+export type WinProbabilitySource = 'points_model' | 'rating_model';
 
 export type WinProbability = {
   red: number;
@@ -14,35 +14,14 @@ export type WinProbability = {
   edgeConfidence: number | null;
 };
 
-// A 15-point synergy-score gap moves the odds by a factor of e.
-const SYNERGY_LOGISTIC_SCALE = 15;
-
-export function synergyWinProbability(
-  redSynergy: number | null | undefined,
-  blueSynergy: number | null | undefined,
-): number | null {
-  if (typeof redSynergy !== 'number' || typeof blueSynergy !== 'number') return null;
-  if (!Number.isFinite(redSynergy) || !Number.isFinite(blueSynergy)) return null;
-  return 1 / (1 + Math.exp(-(redSynergy - blueSynergy) / SYNERGY_LOGISTIC_SCALE));
-}
-
-export function matchWinProbability(match: ScheduleWithSynergyMatch | null | undefined): WinProbability | null {
-  if (!match) return null;
-  const prediction = match.prediction;
-  if (prediction?.available && typeof prediction.red_win_prob === 'number') {
-    const red = prediction.red_win_prob;
-    return {
-      red,
-      blue: typeof prediction.blue_win_prob === 'number' ? prediction.blue_win_prob : 1 - red,
-      source: /(^|_)ml(_|$)/.test(prediction.source_label || '') ? 'ml_model'
-        : /(^|_)fuel(_|$)/.test(prediction.source_label || '') ? 'fuel_model' : 'rating_model',
-      edgeConfidence: prediction.edge_confidence_0_1 ?? null,
-    };
-  }
-  const red = synergyWinProbability(
-    match.red.synergy.alliance_synergy_score_0_100,
-    match.blue.synergy.alliance_synergy_score_0_100,
-  );
-  if (red == null) return null;
-  return { red, blue: 1 - red, source: 'synergy_derived', edgeConfidence: null };
+export function matchWinProbability(match: PredictedScheduleMatch | null | undefined): WinProbability | null {
+  const prediction = match?.prediction;
+  if (!prediction?.available || typeof prediction.red_win_prob !== 'number') return null;
+  const red = prediction.red_win_prob;
+  return {
+    red,
+    blue: typeof prediction.blue_win_prob === 'number' ? prediction.blue_win_prob : 1 - red,
+    source: /(^|_)(points|team_model)(_|$)/.test(prediction.source_label || '') ? 'points_model' : 'rating_model',
+    edgeConfidence: prediction.edge_confidence_0_1 ?? null,
+  };
 }

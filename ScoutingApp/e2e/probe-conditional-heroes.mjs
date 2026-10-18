@@ -118,24 +118,23 @@ await check('data dashboard · top rating', '/events/dashboard', null, async (pa
   await page.getByRole('button', { name: 'Load Event', exact: true }).click();
 });
 
-/* /compare/alliance-advisor — the alliance score. The teams load fine; what is
-   missing is a built alliance, and building one is a POST behind admin auth
-   which is enforced here by design. Fulfil the POST and press Analyze. */
-await check('alliance advisor · alliance score', '/compare/alliance-advisor', async (page) => {
-  await page.route(/theoretical-alliance/, async (route) => {
+/* /compare/alliance-advisor — the alliance outlook. The teams load fine; what is
+   missing is a built alliance. Stub the outlook so the probe doesn't depend on
+   the event's ratings, then press Analyze. */
+await check('alliance advisor · alliance outlook', '/compare/alliance-advisor', async (page) => {
+  await page.route(/alliance-outlook/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         ok: true,
         event_key: '2026arc',
-        weighted_total_score_0_100: 91.4,
-        compatibility: {
-          compatibility_score_0_100: 88.2,
-          alliance_synergy_points: 12.75,
-          confidence_0_1: 0.81,
-          pair_breakdown: [],
-        },
+        alliance_points: 310,
+        alliance_points_range_80: [270, 350],
+        vs_strong: { teams: [], points: 330, win_prob: 0.41 },
+        vs_typical: { teams: [], points: 250, win_prob: 0.83 },
+        bonus_rp_chances: {},
+        team_count: 75,
         teams: [],
       }),
     });

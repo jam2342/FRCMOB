@@ -1,20 +1,14 @@
 import unittest
 
-try:
-    from app.api.routes_matches import (
-        _match_score,
-        _parse_webcast_date,
-        _select_preferred_webcast_stream,
-        _serialize_webcast_stream,
-        _youtube_video_id,
-    )
-
-    _IMPORT_ERROR: Exception | None = None
-except Exception as exc:  # pragma: no cover - dependency-gated import
-    _IMPORT_ERROR = exc
+from app.api.routes_matches import (
+    _match_score,
+    _parse_webcast_date,
+    _select_preferred_webcast_stream,
+    _serialize_webcast_stream,
+    _youtube_video_id,
+)
 
 
-@unittest.skipIf(_IMPORT_ERROR is not None, f"optional api deps unavailable: {_IMPORT_ERROR}")
 class LiveStreamHelpersTests(unittest.TestCase):
     def test_youtube_video_id_parser_supports_ids_and_urls(self):
         self.assertEqual(_youtube_video_id("UqumHWHa9Qs"), "UqumHWHa9Qs")

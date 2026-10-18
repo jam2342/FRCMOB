@@ -58,34 +58,6 @@ def _seed_pipeline_rows(db: Session) -> None:
     )
     db.add(finding)
     db.flush()
-    db.add(
-        models.TeamMatchThroughput(
-            finding_id=finding.id,
-            analysis_run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            team_key=team_key,
-            balls_shot_total=11,
-            shooting_time_total_seconds=20.0,
-            bps_total=0.55,
-            balls_shot_active=9,
-            shooting_time_active_seconds=15.0,
-            active_bps=0.6,
-            metric_coverage={"coverage_score": 0.79, "observed_matches": 1},
-            source="video_v3_tracks",
-        )
-    )
-    db.add(
-        models.AnalysisQuality(
-            run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            tracking_quality_score=0.8,
-            identity_quality_score=0.78,
-            overall_quality_score=0.79,
-            details={},
-        )
-    )
     db.commit()
 
 
@@ -120,7 +92,6 @@ class PipelineSmokeTests(unittest.TestCase):
                 preferred_year=2026,
                 fallback_year=2025,
                 include_tba=False,
-                include_statbotics=False,
                 allow_season_fallback=True,
                 auto_heal_ratings=False,
             )

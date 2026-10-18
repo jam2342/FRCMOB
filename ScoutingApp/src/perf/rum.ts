@@ -69,7 +69,7 @@ function push(route: string, metric: string, value: number, source: Sample['sour
   if (queue.length >= MAX_QUEUE) flush();
 }
 
-export function flush(): void {
+function flush(): void {
   if (!queue.length || !endpoint) return;
   const body = JSON.stringify({ samples: queue.slice(0, 50) });
   queue = [];

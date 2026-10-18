@@ -1,3 +1,4 @@
+import { formatDayTime } from '../../utils/formatTime';
 import { coalesceRefresh } from '../onDevice/sessionChanges';
 import { exportTextFile } from '../../platform/exportFile';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -99,7 +100,7 @@ export function SyncStatusCard() {
   return (
     <SurfaceCard title="Saved on this phone" subtitle="Changes and recordings stay here until the server confirms them." expandable={false} mobileCollapsible={false}>
       <p>{queueSize} scouting change{queueSize === 1 ? '' : 's'} waiting · {recordings === null ? (readError ? 'Could not read recordings' : 'Checking recordings…') : `${recordings.length} recording${recordings.length === 1 ? '' : 's'} waiting`}</p>
-      <p>{lastSync ? `Last confirmed sync: ${new Date(lastSync).toLocaleString()}` : 'No confirmed sync on this phone yet'}</p>
+      <p>{lastSync ? `Last confirmed sync: ${formatDayTime(lastSync)}` : 'No confirmed sync on this phone yet'}</p>
       {issue ? <p role="alert">Needs attention: {issue.count} change{issue.count === 1 ? '' : 's'} {issue.reason === 'conflict' ? 'conflicted with a teammate' : issue.reason === 'server-rejected' ? 'were rejected' : 'could not be saved'}. {issue.labels.slice(0, 3).map(recoveryLabel).join(', ')} <button type="button" className="center-btn ghost" onClick={clearSyncIssue}>Dismiss</button></p> : null}
       {failedChanges > 0 ? <p role="alert">{failedChanges} change{failedChanges === 1 ? '' : 's'} {failedChanges === 1 ? 'needs' : 'need'} attention. The original edits are still saved here. Export a copy, then check the current scouting entry or picklist before saving your correction. <Button onClick={() => void downloadRecovery()}>Export unsynced changes</Button></p> : null}
       {recordings?.length ? (
@@ -111,7 +112,7 @@ export function SyncStatusCard() {
                 <strong>{session.matchKey || 'Recording'}{session.eventKey ? ` · ${session.eventKey}` : ''}</strong>
                 {session.workspaceName ? <p>Team workspace: {session.workspaceName}</p> : null}
                 <p>{RECORDING_SYNC_LABELS[state]}</p>
-                {session.syncFailure ? <p>Last upload attempt: {new Date(session.syncFailure.at).toLocaleString()}{session.syncFailure.status ? ` · server response ${session.syncFailure.status}` : ''}</p> : null}
+                {session.syncFailure ? <p>Last upload attempt: {formatDayTime(session.syncFailure.at)}{session.syncFailure.status ? ` · server response ${session.syncFailure.status}` : ''}</p> : null}
                 <a className="center-btn" href={`#/scouting/record?run=${encodeURIComponent(session.id)}`}>View results</a>
                 <Button onClick={() => void exportRecording(session)}>Export recording</Button>
               </li>

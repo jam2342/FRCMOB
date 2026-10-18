@@ -1,6 +1,6 @@
 import {
   getEventRankings,
-  getEventScheduleWithSynergy,
+  getEventPredictionSchedule,
   getEventTeamsHistory,
   getTeamIntel,
   getTeamLogo,
@@ -14,7 +14,7 @@ import { SEASON } from '../../config/season';
 // through useSingleFlightPolling, so they may be answered with a saved copy first
 // (SAVED_COPY_MAX_AGE_MS): the fresh one replaces it a moment later.
 
-export const EVENT_TEAMS_HISTORY_LIMIT = 6;
+const EVENT_TEAMS_HISTORY_LIMIT = 6;
 
 export function loadTeamCenterIntel(teamKey: string, eventKey?: string) {
   return getTeamIntel(teamKey, {
@@ -22,7 +22,6 @@ export function loadTeamCenterIntel(teamKey: string, eventKey?: string) {
     preferred_year: SEASON.year,
     fallback_year: SEASON.fallbackYear,
     include_tba: true,
-    include_statbotics: false,
     allow_season_fallback: true,
     auto_heal_ratings: true,
   }, {
@@ -35,10 +34,8 @@ export function loadTeamCenterLogo(teamKey: string, eventKey?: string) {
   return getTeamLogo(teamKey, eventKey);
 }
 
-export function loadMatchCenterSynergy(eventKey: string) {
-  return getEventScheduleWithSynergy(eventKey, {
-    refresh: false,
-    include_pair_breakdown: true,
+export function loadMatchCenterPredictions(eventKey: string) {
+  return getEventPredictionSchedule(eventKey, {
     showSavedMaxAgeMs: SAVED_COPY_MAX_AGE_MS.matchData,
   });
 }

@@ -3,7 +3,7 @@ import { shareableAppUrl } from '../platform/runtime';
 import { useCalendarExpansion, useEventCalendar } from './useEventCalendar';
 import { mergeEventLists } from '../utils/mergeEventLists';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventLiveStream,
   getEventRankings,
@@ -33,6 +33,7 @@ import {
   buildHomeFilterCounts,
   filterHomeWindowMatches,
   hasResolvedMatchScores,
+  homeStartEvent,
   nearestEventDayToken,
   nearestLoadedMatchDayMs,
   pickMobileHomeAutoEventKey,
@@ -52,6 +53,7 @@ import {
 } from '../components/ui/Icons';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { EmptyState } from '../components/ui/EmptyState';
+import { embeddableUrl } from '../config/embedHosts';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
@@ -61,7 +63,13 @@ import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import { smartSearchEvents } from '../utils/eventSearch';
 import { LiteStreamEmbed } from '../components/LiteStreamEmbed';
+import { navigateWithTransition } from '../utils/viewTransition';
+import { AwayBanner } from '../features/awaySummary/AwayBanner';
+import { markSeen, readLastSeen, summarizeAway, type AwaySummary } from '../features/awaySummary/awaySummary';
+import awayStyles from '../features/awaySummary/Away.module.css';
+import { readMyTeamKey } from '../features/workspace/myTeam';
 import { type EventDateRange, normalizeDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken, compactAllianceLabel } from './eventCalendar';
+import { storageGet, storageSet } from '../platform/safeStorage';
 
 const HOME_EVENT_VIEW_PREFS_STORAGE = 'scouting_home_event_view_prefs_v1';
 const HOME_MOBILE_AUTO_EVENT_GUARD_STORAGE = 'scouting_home_mobile_auto_event_guard_v1';
@@ -137,7 +145,7 @@ function normalizeEventKey(eventKey: string): string {
 
 function readHomeEventViewPrefs(): Record<string, HomeEventViewPrefs> {
   try {
-    const raw = window.localStorage.getItem(HOME_EVENT_VIEW_PREFS_STORAGE);
+    const raw = storageGet(HOME_EVENT_VIEW_PREFS_STORAGE);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -148,7 +156,7 @@ function readHomeEventViewPrefs(): Record<string, HomeEventViewPrefs> {
 }
 
 function writeHomeEventViewPrefs(next: Record<string, HomeEventViewPrefs>) {
-  window.localStorage.setItem(HOME_EVENT_VIEW_PREFS_STORAGE, JSON.stringify(next));
+  storageSet(HOME_EVENT_VIEW_PREFS_STORAGE, JSON.stringify(next));
 }
 
 function readHomeMobileAutoEventGuard(): HomeMobileAutoEventGuard | null {
@@ -220,6 +228,13 @@ function parseEventDateToken(value: string | null | undefined): string | null {
   if (!value || typeof value !== 'string') return null;
   const token = value.trim().slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(token) ? token : null;
+}
+
+function dayFromParam(value: string | null): number | null {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const ms = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+  return Number.isFinite(ms) ? ms : null;
 }
 
 function localDateTokenFromMs(ms: number): string {
@@ -306,13 +321,24 @@ export function HomePage() {
   const [loadingHome, setLoadingHome] = useState(true);
   const [homeReloadToken, setHomeReloadToken] = useState(0);
   const [loadingSelectedContext, setLoadingSelectedContext] = useState(false);
-  const [, setStatusText] = useState('Loading Home feed...');
+  const [, setStatusText] = useState('Loading Home feed…');
   const [errorText, setErrorText] = useState('');
   // Rankings and the stream link are extras on top of the schedule. When TBA
   // hiccups on them, say so quietly; the matches themselves still loaded.
   const [contextErrorText, setContextErrorText] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
-  const [selectedDayMs, setSelectedDayMs] = useState(() => startOfLocalDay(Date.now()));
+  // The day picked is kept in the address (?day=2026-05-02), so Back from a match lands on it
+  // again; the Home tab (plain /home) is today.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedDayMs, setSelectedDayMs] = useState(() => dayFromParam(searchParams.get('day')) ?? startOfLocalDay(Date.now()));
+  useEffect(() => {
+    const token = selectedDayMs === startOfLocalDay(Date.now()) ? null : localDateTokenFromMs(selectedDayMs);
+    if ((searchParams.get('day') || null) === token) return;
+    const next = new URLSearchParams(searchParams);
+    if (token) next.set('day', token);
+    else next.delete('day');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, selectedDayMs, setSearchParams]);
   const [teamsPanelOpen, setTeamsPanelOpen] = useState(false);
   const [teamsQueryInput, setTeamsQueryInput] = useState('');
   const [teamsQuery, setTeamsQuery] = useState('');
@@ -479,9 +505,7 @@ export function HomePage() {
         setSuggestedEvents(events);
 
         const normalizedEventKeys = events.map((event) => normalizeEventKey(event.event_key));
-        const stored = readStoredCenterContext().eventKey;
-        const preferredEventKey =
-          stored && normalizedEventKeys.includes(stored) ? stored : normalizedEventKeys[0] || '';
+        const preferredEventKey = homeStartEvent(readStoredCenterContext().eventKey, normalizedEventKeys);
 
         setSelectedEventKey(preferredEventKey);
 
@@ -580,6 +604,20 @@ export function HomePage() {
       cancelled = true;
     };
   }, [homeReloadToken]);
+
+  // Nothing to show after a load (the server was down, or the connection dropped):
+  // try again by itself, soon and when the phone reconnects, instead of sitting on
+  // an empty day until someone thinks to press Retry.
+  useEffect(() => {
+    if (loadingHome || suggestedEvents.length > 0) return;
+    const retry = () => setHomeReloadToken((n) => n + 1);
+    const timer = window.setTimeout(retry, 20_000);
+    window.addEventListener('online', retry);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('online', retry);
+    };
+  }, [loadingHome, suggestedEvents.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -849,6 +887,59 @@ export function HomePage() {
     maxBackoffMs: 60000,
   });
 
+  // "While you were away": results on today's schedule that came in since you last looked.
+  // Home records the time you leave (hide the app, leave the page); coming back compares to it.
+  const awayLastSeenRef = useRef<number | null>(readLastSeen());
+  const [awayChecked, setAwayChecked] = useState(false);
+  const [awaySummary, setAwaySummary] = useState<AwaySummary | null>(null);
+  const [awayNewKeys, setAwayNewKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [awayFlash, setAwayFlash] = useState(0);
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        markSeen();
+        return;
+      }
+      awayLastSeenRef.current = readLastSeen();
+      setAwayChecked(false);
+    };
+    const onLeave = () => markSeen();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onLeave);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onLeave);
+      markSeen();
+    };
+  }, []);
+  const viewingToday = selectedDayMs === startOfLocalDay(nowMs);
+  const todaysMatches = useMemo(
+    () => (viewingToday ? Object.values(scheduleByEvent).flatMap((schedule) => selectHomeDayMatches(schedule.matches, selectedDayMs)) : []),
+    [scheduleByEvent, selectedDayMs, viewingToday],
+  );
+  useEffect(() => {
+    if (awayChecked || todaysMatches.length === 0) return;
+    setAwayChecked(true);
+    const summary = summarizeAway(todaysMatches, awayLastSeenRef.current, Date.now(), readMyTeamKey());
+    setAwaySummary(summary);
+    setAwayNewKeys(new Set(summary?.newMatchKeys ?? []));
+  }, [awayChecked, todaysMatches]);
+  const showAwayResults = () => {
+    const first = awaySummary?.newMatchKeys[0];
+    setAwaySummary(null);
+    setAwayFlash((count) => count + 1);
+    markSeen();
+    if (!first) return;
+    const row = document.querySelector<HTMLElement>(`[data-home-match="${CSS.escape(first)}"]`);
+    const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    row?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+  };
+  const dismissAway = () => {
+    setAwaySummary(null);
+    setAwayNewKeys(new Set());
+    markSeen();
+  };
+
   const feedSections = useMemo<HomeFeedSection[]>(() => {
     return feedEventKeys
       .map((eventKey) => {
@@ -1058,7 +1149,7 @@ export function HomePage() {
     return preferred?.watch_url || fallback?.watch_url || selectedEventStream.game_day_url || null;
   }, [selectedEventStream]);
 
-  const selectedStreamEmbedUrl = selectedEventStream?.preferred_stream?.embed_url || null;
+  const selectedStreamEmbedUrl = embeddableUrl(selectedEventStream?.preferred_stream?.embed_url);
   const selectedEventFinished = useMemo(() => {
     const endToken = parseEventDateToken(eventByKey[selectedEventKey]?.end_date ?? null);
     return endToken !== null && endToken < localDateTokenFromMs(Date.now());
@@ -1313,7 +1404,7 @@ export function HomePage() {
       key: 'team',
       label: 'Team',
       render: (row) => (
-        <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)}>
+        <button type="button" className="center-inline-link" data-team-peek={row.team_key.toLowerCase()} onClick={() => openTeamCenter(row.team_key)}>
           #{row.team_number}
           {row.nickname && row.nickname !== row.team_key ? ` ${row.nickname}` : ''}
         </button>
@@ -1331,7 +1422,7 @@ export function HomePage() {
   }, [teamsPage, teamsPerPage, teamsTotalCount]);
 
   const streamCardSummary = useMemo(() => {
-    if (loadingSelectedContext) return 'Loading stream context...';
+    if (loadingSelectedContext) return 'Loading stream context…';
     if (!selectedEventStream) return 'No stream data available.';
     if (!selectedEventStream.available) return selectedEventStream.detail || 'No webcast available.';
     const streamCount = selectedEventStream.streams.length;
@@ -1339,20 +1430,20 @@ export function HomePage() {
   }, [loadingSelectedContext, selectedEventDisplay, selectedEventStream]);
 
   const leaderboardSummary = useMemo(() => {
-    if (loadingSelectedContext) return 'Loading rankings...';
+    if (loadingSelectedContext) return 'Loading rankings…';
     if (leaderboardRows.length === 0) return 'No rankings available yet.';
     const topRow = leaderboardRows[0];
     return `Top team: #${topRow.team_number} (${topRow.record})`;
   }, [leaderboardRows, loadingSelectedContext]);
 
   const liveEventsSummary = useMemo(() => {
-    if (loadingHome) return 'Loading today events...';
+    if (loadingHome) return 'Loading today events…';
     if (liveEvents.length === 0) return 'No events scheduled for today in current feed.';
     return `${liveEvents.length} event(s) today`;
   }, [liveEvents.length, loadingHome]);
 
   const teamsInsightsSummary = useMemo(() => {
-    if (loadingSelectedContext) return 'Loading event rankings...';
+    if (loadingSelectedContext) return 'Loading event rankings…';
     if (sortedTeamsRows.length === 0) return 'No team rows matched current filters.';
     return `${pagedTeamsRows.length} row(s) · ${teamsPageSummary}`;
   }, [loadingSelectedContext, pagedTeamsRows.length, sortedTeamsRows.length, teamsPageSummary]);
@@ -1551,8 +1642,14 @@ export function HomePage() {
   const liveStreamCollapsed = isCardCollapsed('live-stream');
   const leaderboardCollapsed = isCardCollapsed('leaderboard');
 
-  function openMatch(eventKey: string, matchKey: string) {
-    navigate(buildMatchCenterPath(eventKey, matchKey));
+  // The tapped row grows into the Match Center header where the browser can animate it.
+  function openMatch(eventKey: string, matchKey: string, from?: Element | null) {
+    navigateWithTransition(navigate, buildMatchCenterPath(eventKey, matchKey), {
+      direction: 'forward',
+      morphFrom: from ?? null,
+      morphName: 'match-hero',
+      morphTarget: '.fm-score-hero, .mc-hero-card',
+    });
   }
 
   async function copyMatchDeepLink(eventKey: string, matchKey: string) {
@@ -2002,6 +2099,7 @@ export function HomePage() {
           />
         ) : !hasAnySelectedDayMatches ? (
           <EmptyState
+            mascot
             className="home-feed-state es--top"
             title="No matches on this day"
             description={
@@ -2022,6 +2120,7 @@ export function HomePage() {
           </p>
         ) : null}
 
+        {awaySummary ? <AwayBanner summary={awaySummary} onShow={showAwayResults} onDismiss={dismissAway} /> : null}
         <div className="home-fotmob-feed">
           {feedSections.map((section) => {
             const feedCardKey = `feed-${section.event_key}`;
@@ -2104,8 +2203,14 @@ export function HomePage() {
                           const compactBlue = compactAllianceLabel(match.blue);
                           return (
                             <article
-                              key={`home-match-${section.event_key}-${match.match_key}`}
-                              className={`home-match-row ${winnerClass} ${isMobileLayout ? 'mobile-compact' : ''}`.trim()}
+                              key={`home-match-${section.event_key}-${match.match_key}-${awayNewKeys.has(match.match_key) ? awayFlash : 0}`}
+                              data-home-match={match.match_key}
+                              className={[
+                                'home-match-row', winnerClass, isMobileLayout ? 'mobile-compact' : '',
+                                awayNewKeys.has(match.match_key) ? awayStyles.newRow : '',
+                                awayNewKeys.has(match.match_key) && awayFlash > 0 ? awayStyles.flash : '',
+                              ].filter(Boolean).join(' ')}
+                              aria-label={awayNewKeys.has(match.match_key) ? `${match.display_name}, new since your last visit` : undefined}
                             >
                               <button
                                 type="button"
@@ -2113,7 +2218,7 @@ export function HomePage() {
                                 // One tap opens the match on phones too. Rows used to expand first
                                 // and need a second tap; the expanded part only repeated what Match
                                 // Center shows (teams, a share link).
-                                onClick={() => openMatch(section.event_key, match.match_key)}
+                                onClick={(event) => openMatch(section.event_key, match.match_key, event.currentTarget.closest('.home-match-row'))}
                                 title={`Open ${match.display_name} in Match Center`}
                               >
                                 {isMobileLayout ? (
@@ -2163,7 +2268,7 @@ export function HomePage() {
                                         key={`home-match-red-${match.match_key}-${team.team_key}`}
                                         type="button"
                                         className="home-team-pill red"
-                                        onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
+                                        data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={section.event_key} onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
                                         title={`View Team ${team.team_number}`}
                                       >
                                         <TeamAvatar teamKey={team.team_key.toLowerCase()} teamNumber={team.team_number} eventKey={section.event_key} size={18} />
@@ -2175,7 +2280,7 @@ export function HomePage() {
                                         key={`home-match-blue-${match.match_key}-${team.team_key}`}
                                         type="button"
                                         className="home-team-pill blue"
-                                        onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
+                                        data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={section.event_key} onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
                                         title={`View Team ${team.team_number}`}
                                       >
                                         <TeamAvatar teamKey={team.team_key.toLowerCase()} teamNumber={team.team_number} eventKey={section.event_key} size={18} />
@@ -2268,7 +2373,7 @@ export function HomePage() {
             <div id={cardContentId('live-stream')} className="home-card-panel-body">
               {loadingSelectedContext ? (
                 <div className="home-stream-loading">
-                  <p className="center-callout muted">Loading stream...</p>
+                  <p className="center-callout muted">Loading stream…</p>
                 </div>
               ) : null}
               {!loadingSelectedContext && !selectedEventStream ? (
@@ -2312,7 +2417,7 @@ export function HomePage() {
             </p>
           ) : (
             <div id={cardContentId('leaderboard')} className="home-card-panel-body">
-              {loadingSelectedContext ? <p className="center-callout muted">Loading rankings...</p> : null}
+              {loadingSelectedContext ? <p className="center-callout muted">Loading rankings…</p> : null}
               {!loadingSelectedContext && leaderboardRows.length === 0 ? (
                 <p className="center-callout muted">No rankings available yet.</p>
               ) : null}
@@ -2323,7 +2428,7 @@ export function HomePage() {
                       key={`home-rank-${row.team_key}`}
                       type="button"
                       className="home-ranking-row"
-                      onClick={() => openTeamCenter(row.team_key)}
+                      data-team-peek={row.team_key.toLowerCase()} onClick={() => openTeamCenter(row.team_key)}
                       title={`View Team ${row.team_number} · Record: ${row.record}`}
                     >
                       <span className="rank">#{row.rank ?? '-'}</span>
@@ -2457,7 +2562,7 @@ export function HomePage() {
             <section className="home-drawer-section">
               <h4><TrophyIcon className="icon-inline" /> Leaderboard</h4>
               <small>{selectedEventDisplay}</small>
-              {loadingSelectedContext ? <p className="center-callout muted">Loading...</p> : null}
+              {loadingSelectedContext ? <p className="center-callout muted">Loading…</p> : null}
               {!loadingSelectedContext && leaderboardRows.length === 0 ? (
                 <p className="center-callout muted">Rankings not published yet.</p>
               ) : null}
@@ -2468,7 +2573,7 @@ export function HomePage() {
                       key={`drawer-rank-${row.team_key}`}
                       type="button"
                       className="home-ranking-row"
-                      onClick={() => { openTeamCenter(row.team_key); setMobileDrawerOpen(false); }}
+                      data-team-peek={row.team_key.toLowerCase()} onClick={() => { openTeamCenter(row.team_key); setMobileDrawerOpen(false); }}
                       title={`View Team ${row.team_number}`}
                     >
                       <span className="rank">#{row.rank ?? '-'}</span>

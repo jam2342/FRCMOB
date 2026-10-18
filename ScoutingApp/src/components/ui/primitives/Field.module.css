@@ -114,9 +114,58 @@
    shift width as it counts up, and no keyboard trap — the value is a real
    input so it can be typed or corrected. */
 .stepper {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: var(--space-2);
+}
+
+/* "+3" rising off the button that was pressed. It sits over the label above, never in the
+   flow, so tapping fast can't move the buttons. */
+.burst {
+  position: absolute;
+  bottom: 100%;
+  width: var(--touch-target-min);
+  margin-bottom: -6px;
+  text-align: center;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: stepperBurst 700ms var(--motion-ease) both;
+}
+
+.burstIncrease {
+  right: 0;
+  color: var(--color-accent-text);
+}
+
+.burstDecrease {
+  left: 0;
+  color: var(--color-text-muted);
+}
+
+.popUpA { animation: stepperPopUpA 260ms var(--motion-spring); }
+.popUpB { animation: stepperPopUpB 260ms var(--motion-spring); }
+.popDownA { animation: stepperPopDownA 220ms var(--motion-ease); }
+.popDownB { animation: stepperPopDownB 220ms var(--motion-ease); }
+
+/* Two copies of each so the class can alternate: the same animation name re-applied would not
+   restart on a second tap. */
+@keyframes stepperPopUpA { 40% { transform: scale(1.14); } }
+@keyframes stepperPopUpB { 40% { transform: scale(1.14); } }
+@keyframes stepperPopDownA { 40% { transform: scale(0.9); } }
+@keyframes stepperPopDownB { 40% { transform: scale(0.9); } }
+
+@keyframes stepperBurst {
+  0% { opacity: 0; transform: translateY(8px) scale(0.7); }
+  18% { opacity: 1; transform: translateY(-4px) scale(1.12); }
+  100% { opacity: 0; transform: translateY(-34px) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burst { display: none; }
+  .popUpA, .popUpB, .popDownA, .popDownB { animation: none; }
 }
 
 .stepperButton {
@@ -208,7 +257,8 @@
     min-height: 52px;
   }
 
-  .stepperButton {
+  .stepperButton,
+  .burst {
     width: 52px;
   }
 }

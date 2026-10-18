@@ -13,7 +13,8 @@
 }
 
 .ps-topbar-search-form {
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* Field, Search, and the ⌘K palette chip (desktop only; the whole search hides on phones). */
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 /* The toolbar sizes to its contents; with the Auto/Team/Event switch gone the box shrank to

@@ -3,6 +3,7 @@ import { copyTextToClipboard } from './centerUtils';
 import {
   createWorkspace,
   getMyWorkspace,
+  getWorkspaceSignupPolicy,
   joinWorkspace,
   leaveWorkspace,
   removeWorkspaceMember,
@@ -11,6 +12,7 @@ import {
   setWorkspaceMemberRole,
   updateMyWorkspace,
   type WorkspaceMemberRecord,
+  type WorkspaceSignupPolicy,
   type WorkspaceStateResponse,
 } from '../api';
 import { OfflineReadyCard } from '../components/ui/OfflineReadyCard';
@@ -20,6 +22,8 @@ import { Button, Chip, FieldCheckbox, FieldText, Modal } from '../components/ui/
 import { TeamScoutingCard } from '../features/workspace/TeamScoutingCard';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 import { issuedJoinCodeFor, workspaceEndReason } from '../features/workspace/workspaceSession';
+import { TurnstileChallenge } from '../features/workspace/TurnstileChallenge';
+import { isNativeApp, shareableAppUrl } from '../platform/runtime';
 import { hapticSuccess } from '../utils/haptics';
 import './MyTeamPage.css';
 
@@ -53,6 +57,22 @@ function SetUpTeam() {
   const [creatorName, setCreatorName] = useState('');
   const [busy, setBusy] = useState<'join' | 'create' | null>(null);
   const [error, setError] = useState<{ form: 'join' | 'create'; text: string } | null>(null);
+  const [signupPolicy, setSignupPolicy] = useState<WorkspaceSignupPolicy | null>(null);
+  const [signupUnavailable, setSignupUnavailable] = useState(false);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [challengeAttempt, setChallengeAttempt] = useState(0);
+  const nativeChallenge = isNativeApp() && signupPolicy?.required;
+  const canCreate = Boolean(signupPolicy && (!signupPolicy.required || (signupPolicy.site_key && challengeToken && !nativeChallenge)));
+
+  useEffect(() => {
+    let active = true;
+    getWorkspaceSignupPolicy().then((policy) => {
+      if (active) setSignupPolicy(policy);
+    }).catch(() => {
+      if (active) setSignupUnavailable(true);
+    });
+    return () => { active = false; };
+  }, []);
 
   const submitJoin = async (event: FormEvent) => {
     event.preventDefault();
@@ -78,6 +98,7 @@ function SetUpTeam() {
     if (!workspaceName.trim() || !creatorName.trim()) { setError({form:'create',text:'Enter a workspace name and your name.'}); return; }
     const number = parseTeamNumber(teamNumber);
     if (Number.isNaN(number)) { setError({form:'create',text:'Enter a valid team number using digits only, from 1 to 99999, or leave it blank.'}); return; }
+    if (!canCreate) return;
     setBusy('create');
     setError(null);
     try {
@@ -85,11 +106,15 @@ function SetUpTeam() {
         name: workspaceName.trim(),
         frc_team_number: number,
         display_name: creatorName.trim(),
+        challenge_token: signupPolicy?.required ? challengeToken : null,
       });
       hapticSuccess();
     } catch (err) {
       setError({ form: 'create', text: errorMessage(err) });
     } finally {
+      // Challenge tokens are single-use, including when the request fails.
+      setChallengeToken(null);
+      setChallengeAttempt((attempt) => attempt + 1);
       setBusy(null);
     }
   };
@@ -168,8 +193,15 @@ function SetUpTeam() {
               maxLength={40}
               required
             />
+            {signupUnavailable || (signupPolicy?.required && !signupPolicy.site_key) ? (
+              <p className="center-callout warning" role="status">Workspace creation is temporarily unavailable. You can still join your team with its code.</p>
+            ) : nativeChallenge ? (
+              <p className="my-team__note">Create your workspace in a browser to complete the security check, then join here with its code. <a href={shareableAppUrl('/my-team')} target="_blank" rel="noopener noreferrer">Open My Team in a browser</a></p>
+            ) : signupPolicy?.required && signupPolicy.site_key ? (
+              <TurnstileChallenge key={challengeAttempt} siteKey={signupPolicy.site_key} onToken={setChallengeToken} />
+            ) : !signupPolicy ? <p className="my-team__note" role="status">Checking workspace availability…</p> : null}
             {error?.form === 'create' ? <p className="center-callout warning" role="alert">{error.text}</p> : null}
-            <Button type="submit" variant="primary" fullWidth loading={busy === 'create'} disabled={busy !== null}>
+            <Button type="submit" variant="primary" fullWidth loading={busy === 'create'} disabled={busy !== null || !canCreate}>
               Create workspace
             </Button>
           </form>

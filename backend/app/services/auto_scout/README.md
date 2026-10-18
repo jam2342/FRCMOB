@@ -27,11 +27,10 @@ The reliability net. `backfill_missing_auto_scout_drafts()` finds recently accep
 **`shift_play.py`**
 The offense/defense analysis engine. The 2026 REBUILT match alternates which alliance's hub is active, so the game itself defines when a robot should attack vs. defend. This engine reads that intent out of positional tracking — per robot, per shift it scores offense and defense and produces two heat maps (attack pattern on own shifts, defense pattern on opponent shifts). ORM-free (operates on plain `TrackPoint` lists) so the same logic runs server-side and, later, on-device.
 
-**`on_device.py`**
-The device-free core math for the on-device (offline PWA) match breakdown — Part B. Turns per-frame robot detections + a per-frame field homography into the same `TrackPoint` stream `shift_play.py` consumes, with robustness layers (low-confidence filtering, last-good-pose fallback, velocity-spike rejection, median smoothing). Also handles field-corner tap calibration (`calibrate_from_taps`), pose carry through camera motion (`carry_pose`), and closed-set-of-6 bumper-OCR temporal voting for track identity. Deliberately OpenCV-free so the PWA can mirror it in-browser; fully unit-tested.
-
-**`tests/on_device_cv_reference.py`** (moved out of the app: nothing on the server runs it)
-The OpenCV counterpart to `on_device.py`, kept separate so the core stays cv2-free. Provides Lucas-Kanade optical-flow camera stabilization (`StabilizedPose`): real-footage testing showed the field's AprilTags are unresolvable from stands distance, so instead of re-detecting tags every frame a scout taps the 4 field corners once and this module carries that base pose frame-to-frame via optical flow.
+The on-device recorder's math (calibration, tracking, identity) lives in the PWA,
+`ScoutingApp/src/features/onDevice/`, with its own tests. The Python mirror of it
+(`on_device.py` and an OpenCV reference) was removed on 2026-10-17: nothing on the
+server ran it; it's in git history.
 
 **`specs.py`**
 Configuration for the scouting form itself — the form fields a draft can carry, valid value ranges, and season-specific priors for the derived insights.

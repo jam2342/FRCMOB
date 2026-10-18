@@ -1,6 +1,7 @@
 import { isNativeApp } from '../../platform/runtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useEventNames } from '../../hooks/useEventNames';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { readStoredCenterContext } from '../../layout/centerContext';
 import { subscribeWorkspaceSession } from '../../features/workspace/workspaceSession';
@@ -44,6 +45,7 @@ function isStandalone(): boolean {
 export function OfflineReadyCard({ compact = false }: { compact?: boolean }) {
   const { online } = useOnlineStatus();
   const eventKey = readStoredCenterContext().eventKey;
+  const eventName = useEventNames();
   const [recorderReady, setRecorderReady] = useState<boolean | null>(null);
   const [pack, setPack] = useState<SavedEventPack | null>(null);
   const [storageProtected, setStorageProtected] = useState<boolean | null>(null);
@@ -124,7 +126,7 @@ export function OfflineReadyCard({ compact = false }: { compact?: boolean }) {
           </span>
         </li>
         <li>
-          <span className="offline-ready__item">{eventKey ? `Event data (${eventKey.slice(0, 4)} ${eventKey.slice(4).toUpperCase()})` : 'Event data'}</span>
+          <span className="offline-ready__item">{eventKey ? `Event data (${eventName(eventKey)})` : 'Event data'}</span>
           <span className={eventReady ? 'offline-ready__ok' : 'offline-ready__todo'}>
             {!eventKey ? 'Pick your event on Events first' : eventReady && eventAt ? `${missing.length ? 'Core verified' : 'Verified'} · oldest data ${ago(eventAt)}` : pack ? 'Partly saved' : 'Not verified yet'}
           </span>

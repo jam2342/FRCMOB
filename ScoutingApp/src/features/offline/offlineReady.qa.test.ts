@@ -28,7 +28,7 @@ describe('QA: prepared event packs serve the actual page requests', () => {
     const { getEventTeamsIntel } = await import('../../api');
     // These are the exact options PitScoutingPage, PicklistPage and ScoutingPage use.
     const teams = await getEventTeamsIntel('2026arc', {
-      include_tba: true, include_statbotics: false, include_season_fallback: fallback,
+      include_tba: true, include_season_fallback: fallback,
       include_rating_details: false, include_rating_signals: false,
     });
     expect(teams.teams).toHaveLength(1);

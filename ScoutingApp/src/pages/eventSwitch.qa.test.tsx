@@ -2,13 +2,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getEventSchedule, getEventScheduleWithSynergy, getScoutingCoverage } from '../api';
+import { getEventSchedule, getEventPredictionSchedule, getScoutingCoverage } from '../api';
 import { MatchPredictionPage } from './MatchPredictionPage';
 import { ScoutingCoveragePage } from './ScoutingCoveragePage';
 import { StrategyBriefingPage } from './StrategyBriefingPage';
 
 vi.mock('../api', () => ({
-  getEventScheduleWithSynergy: vi.fn(),
+  getEventPredictionSchedule: vi.fn(),
   getEventSchedule: vi.fn(async () => ({ matches: [] })),
   getEventPredictions: vi.fn(async () => ({ predictions: null })),
   getScoutingCoverage: vi.fn(),
@@ -26,9 +26,9 @@ vi.mock('../features/workspace/WorkspaceGate', () => ({ WorkspaceGate: ({ childr
 vi.mock('../components/LiveRatingsPanel', () => ({ LiveRatingsPanel: () => null }));
 
 function prediction(event: string, number: number) {
-  const alliance = { teams: [{ team_key: `frc${number}`, team_number: number, station: 'r1' }], synergy: { available: false, pair_breakdown: [] } };
+  const alliance = { teams: [{ team_key: `frc${number}`, team_number: number, station: 'r1' }] };
   return { ok: true, event_key: event, matches: [{ match_key: `${event}_qm1`, comp_level: 'qm', set_number: 1, match_number: 1,
-    red: alliance, blue: alliance, prediction: { available: true, red_win_prob: 0.9, blue_win_prob: 0.1, source_label: 'deterministic_fuel_v1' } }] };
+    red: alliance, blue: alliance, prediction: { available: true, red_win_prob: 0.9, blue_win_prob: 0.1, source_label: 'deterministic_points_v2' } }] };
 }
 function coverage(event: string, number: number) {
   return { ok: true, event_key: event, summary: { coverage_pct: 100, covered_slots: 1, total_slots: 1, total_entries: 1, scout_count: 1, outlier_count: 0 },
@@ -44,7 +44,7 @@ describe('QA: changing events while a request is pending', () => {
     const load = (event: string): Promise<never> => event === '2026old'
       ? new Promise<never>(resolve => { finishOld = resolve; })
       : Promise.resolve(payload('2026new', 2222) as never);
-    if (page === 'predictions') vi.mocked(getEventScheduleWithSynergy).mockImplementation(load);
+    if (page === 'predictions') vi.mocked(getEventPredictionSchedule).mockImplementation(load);
     else vi.mocked(getScoutingCoverage).mockImplementation(load);
     render(<MemoryRouter initialEntries={['/?event=2026old']}>
       {page === 'predictions' ? <MatchPredictionPage /> : <ScoutingCoveragePage />}
@@ -62,7 +62,7 @@ describe('QA: changing events while a request is pending', () => {
     vi.mocked(getEventSchedule).mockImplementation(event => event === '2026old'
       ? Promise.resolve({ matches: [], event_name: 'Old Event' } as never)
       : Promise.reject(new Error('New event schedule unavailable')));
-    vi.mocked(getEventScheduleWithSynergy).mockResolvedValue({ matches: [] } as never);
+    vi.mocked(getEventPredictionSchedule).mockResolvedValue({ matches: [] } as never);
     render(<MemoryRouter initialEntries={['/?event=2026old']}><StrategyBriefingPage /></MemoryRouter>);
     // The old event's (empty) schedule is on screen, then must be gone once the new one fails.
     await screen.findByText('No schedule published yet.');

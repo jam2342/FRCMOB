@@ -1,0 +1,11 @@
+.note {
+  display: block;
+  text-align: center;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 2px 0;
+}
+
+.red { color: var(--color-alliance-red-text); }
+.blue { color: var(--color-alliance-blue-text); }

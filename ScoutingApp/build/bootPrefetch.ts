@@ -106,7 +106,9 @@ export function bootPrefetch(): Plugin {
         const scripts: string[] = []
         if (apiBase) {
           const url = JSON.stringify(`${apiBase}${bootSuggestedEventsPath()}`)
-          scripts.push(`<script>try{window.__frcmobBoot={};window.__frcmobBoot[${url}]=fetch(${url},{headers:{Accept:"application/json"}});setTimeout(function(){window.__frcmobBoot={}},30000)}catch(e){}</script>`)
+          // The empty catch marks the promise handled: offline it rejects before the app
+          // takes it, which surfaced as an uncaught "Failed to fetch". The app still gets the rejection.
+          scripts.push(`<script>try{window.__frcmobBoot={};var b=fetch(${url},{headers:{Accept:"application/json"}});b.catch(function(){});window.__frcmobBoot[${url}]=b;setTimeout(function(){window.__frcmobBoot={}},30000)}catch(e){}</script>`)
         }
         if (isBuild && ctx.bundle) {
           const map = routeAssetMap(ctx.bundle as unknown as BundleLike, base)

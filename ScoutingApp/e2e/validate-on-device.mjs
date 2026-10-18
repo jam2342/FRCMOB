@@ -114,7 +114,7 @@ await page.route('http://localhost:8000/tracks/on-device-session', async (route)
 
 try {
   await page.goto(`${baseUrl}/#/scouting/record`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.getByRole('heading', { name: 'On-Device Match Breakdown' }).waitFor();
+  await page.getByRole('heading', { name: 'On-Device Breakdown' }).waitFor();
   await page.screenshot({ path: `${screenshotDir}/ondevice-${browserName}-iphone-setup.png`, fullPage: true });
 
   const benchmark = await page.evaluate(async ({ count }) => {

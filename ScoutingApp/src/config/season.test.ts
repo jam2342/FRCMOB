@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SEASON } from './season';
+import { MATCH_PHASES, SEASON } from './season';
 import { FIELD_ZONES } from '../features/onDevice/fieldZones';
 
 type TemplateZone = { key: string; kind: string; polygon: { x: number; y: number }[] };
@@ -19,6 +19,13 @@ describe('frontend season snapshot', () => {
     expect(SEASON.endgameSec).toBe(config.phases.endgame_sec);
     expect(SEASON.fieldLengthM).toBe(config.field.length_m);
     expect(SEASON.fieldWidthM).toBe(config.field.width_m);
+  });
+
+  it('splits the match into the backend shift schedule', () => {
+    const windows = config.shift_schedule.windows as Array<{ key: string; start_sec: number; end_sec: number }>;
+    expect(MATCH_PHASES.map(({ key, startSec, endSec }) => ({ key, start_sec: startSec, end_sec: endSec })))
+      .toEqual(windows.map(({ key, start_sec, end_sec }) => ({ key, start_sec, end_sec })));
+    expect(MATCH_PHASES.at(-1)?.endSec).toBe(SEASON.matchSec);
   });
 
   it('tags on-device points with the backend zones', () => {

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from app.game_config.schema import ShiftSchedule
-from app.services.analysis.runs import best_on_device_run
+from app.services.analysis.runs import best_on_device_run, visible_sessions
 from app.services.game_config import load_game_config
 
 # On-device PWA sync identifiers (single source of truth). Tracks/runs produced by
@@ -575,8 +575,11 @@ def _normalized_heatmap_payload(
     }
 
 
-def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict[str, Any]:
-    # Aggregate shift-play across a team's reviewed phone recordings at an event: summed
+def summarize_team_shift_play(
+    db: Any, *, team_key: str, event_key: str, workspace_id: int | None = None
+) -> dict[str, Any]:
+    # Aggregate shift-play across a team's reviewed phone recordings at an event (plus,
+    # with workspace_id, the recordings that workspace hasn't had reviewed): summed
     # attack/defense heat maps and coverage-weighted offense/defense levels. Powers
     # the Team Center "Attack vs Defense" view. Lazy/on-demand (loads tracks per run).
     from app.db import models  # local import to keep the engine import-light
@@ -607,6 +610,7 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
     defense_conf_sum = 0.0
     defense_assessable_count = 0
     sample_matches = 0
+    own_unreviewed_matches = 0
 
     # Most matches have no reviewed recording: find the few that do in one query
     # instead of asking per match.
@@ -615,7 +619,7 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
         for (mk,) in db.query(models.OnDeviceSession.match_key)
         .filter(
             models.OnDeviceSession.match_key.in_(match_keys),
-            models.OnDeviceSession.status == "accepted",
+            visible_sessions(workspace_id=workspace_id),
         )
         .distinct()
         .all()
@@ -624,10 +628,12 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
     for match_key in match_keys:
         if match_key not in recorded:
             continue
-        run_row = best_on_device_run(db, match_key=match_key, team_key=normalized_team_key)
+        run_row = best_on_device_run(
+            db, match_key=match_key, team_key=normalized_team_key, workspace_id=workspace_id
+        )
         if run_row is None:
             continue
-        run, _session = run_row
+        run, session = run_row
         try:
             results = analyze_run_shift_play(
                 db,
@@ -645,6 +651,8 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
         if float(coverage.get("tracked_attack_sec") or 0.0) <= 0.0 and float(coverage.get("tracked_opponent_sec") or 0.0) <= 0.0:
             continue  # team not resolved in this match
         sample_matches += 1
+        if session.status != "accepted":
+            own_unreviewed_matches += 1
 
         for r in range(GRID_Y):
             for c in range(GRID_X):
@@ -672,6 +680,7 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
             "event_key": normalized_event_key,
             "available": False,
             "sample_matches": 0,
+            "own_unreviewed_matches": 0,
             "offense": None,
             "defense": None,
             "attack_heatmap": None,
@@ -693,6 +702,7 @@ def summarize_team_shift_play(db: Any, *, team_key: str, event_key: str) -> dict
         "event_key": normalized_event_key,
         "available": True,
         "sample_matches": sample_matches,
+        "own_unreviewed_matches": own_unreviewed_matches,
         "offense": {"level_1_5": offense_level, "confidence_0_1": offense_conf},
         "defense": {
             "level_1_5": defense_level,

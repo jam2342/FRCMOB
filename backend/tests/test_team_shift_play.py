@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 from app.db import models
 from app.services.auto_scout.shift_play import summarize_team_shift_play
 from tests.conftest import DBTestCase
+from tests.workspace_helpers import seed_workspace
 
 
 class TeamShiftPlaySummaryTests(DBTestCase):
-    def _seed_attacker(self, status: str = "accepted"):
+    def _seed_attacker(self, status: str = "accepted", workspace_id: int | None = None):
         db = self.db
         db.add(models.Event(event_key="2026txhou", name="Houston", year=2026))
         db.add(models.Team(team_key="frc118", team_number=118, nickname="Robonauts"))
@@ -39,6 +40,7 @@ class TeamShiftPlaySummaryTests(DBTestCase):
             shift1_active_alliance="red",
             quality_score=0.9,
             status=status,
+            workspace_id=workspace_id,
         ))
 
         def add(t, zone, x, spd):
@@ -62,6 +64,16 @@ class TeamShiftPlaySummaryTests(DBTestCase):
         self._seed_attacker(status="provisional")
         res = summarize_team_shift_play(self.db, team_key="frc118", event_key="2026txhou")
         self.assertFalse(res["available"])
+
+    def test_a_team_sees_its_own_unreviewed_recording(self):
+        workspace, _member, _headers = seed_workspace(self.db)
+        other, _other_member, _other_headers = seed_workspace(self.db, name="Other Team")
+        self._seed_attacker(status="provisional", workspace_id=workspace.id)
+        own = summarize_team_shift_play(self.db, team_key="frc118", event_key="2026txhou", workspace_id=workspace.id)
+        theirs = summarize_team_shift_play(self.db, team_key="frc118", event_key="2026txhou", workspace_id=other.id)
+        self.assertTrue(own["available"])
+        self.assertEqual(own["own_unreviewed_matches"], 1)
+        self.assertFalse(theirs["available"])
 
     def test_summary_available_for_attacker(self):
         self._seed_attacker()

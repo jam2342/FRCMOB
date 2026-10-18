@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRobotSignal, officialMetricsNote, parseOfficialStats, scoreAgainst, signalRankLabel } from './teamCenterOfficial';
+import { isRobotSignal, officialMetricsNote, parseOfficialStats, ratingRangeLabel, scoreAgainst, signalRankLabel, signedChange } from './teamCenterOfficial';
 import { SEASON_BENCHMARKS } from '../config/season';
 
 const PAYLOAD_254 = {
@@ -34,7 +34,7 @@ describe('parseOfficialStats', () => {
 describe('officialMetricsNote', () => {
   it('names the source and how much data it rests on', () => {
     expect(officialMetricsNote(parseOfficialStats(PAYLOAD_254))).toBe(
-      "Nobody has scouted this team yet. Fuel and auto are TBA's per-team estimates from 67 official matches at 2 events this season, so one event's numbers can differ; climb is its official record.",
+      "From official results. Fuel and auto are TBA's per-team estimates from 67 official matches at 2 events this season, so one event's numbers can differ; climb is its official record.",
     );
   });
 
@@ -70,7 +70,24 @@ describe('plainSignalLabel', () => {
   it('turns analyst signal names into plain words and leaves unknown ones alone', async () => {
     const { plainSignalLabel } = await import('./teamCenterOfficial');
     expect(plainSignalLabel('RP threshold contributor')).toBe('Helps earn bonus ranking points');
-    expect(plainSignalLabel('External EPA baseline is low')).toBe('Weak Statbotics rating');
     expect(plainSignalLabel('Something new')).toBe('Something new');
+  });
+});
+
+describe('ratingRangeLabel', () => {
+  it('keeps a decimal while tight and drops it once wide', () => {
+    expect(ratingRangeLabel([96.7, 97.84])).toBe('96.7–97.8');
+    expect(ratingRangeLabel([43.11, 70.8])).toBe('43–71');
+    expect(ratingRangeLabel(null)).toBeNull();
+  });
+});
+
+describe('signedChange', () => {
+  it('signs moves and never shows -0', () => {
+    expect(signedChange(1.23)).toBe('+1.2');
+    expect(signedChange(-0.34)).toBe('−0.3');
+    expect(signedChange(-0.04)).toBe('0.0');
+    expect(signedChange(-0.4, 0)).toBe('0');
+    expect(signedChange(3.6, 0)).toBe('+4');
   });
 });
