@@ -47,7 +47,7 @@
     "@capacitor/browser": "8.0.4",
     "@capacitor/core": "8.5.2",
     "@capacitor/filesystem": "8.1.4",
-    "@capacitor/ios": "8.5.2",
+    "@capacitor/ios": "8.5.3",
     "@capacitor/share": "8.0.3",
     "@techstark/opencv-js": "^4.5.2",
     "@vercel/analytics": "^2.0.1",
