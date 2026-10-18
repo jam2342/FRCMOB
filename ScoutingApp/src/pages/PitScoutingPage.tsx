@@ -462,7 +462,6 @@ function PitScoutingWorkspacePage() {
           <SurfaceCard
             title={scoutingViewTitle('/scouting/pit')}
             subtitle="Robot specs, claimed capabilities, and photos — one entry per team."
-            expandable={false}
             mobileCollapsible={false}
             right={
               completion.total > 0 ? (
@@ -497,7 +496,6 @@ function PitScoutingWorkspacePage() {
             <SurfaceCard
               title="Teams"
               subtitle="Tap a team to fill out its pit form. Green = completed, camera = has photos."
-              expandable={false}
               mobileCollapsible={false}
             >
               {isMobile ? <label className="pit-unscouted-filter">
@@ -552,7 +550,6 @@ function PitScoutingWorkspacePage() {
                   {savingForm ? 'Saving…' : 'Save entry'}
                 </button>
               }
-              expandable={false}
               mobileCollapsible={false}
             >
               {formDirty ? <p className="my-team__note" role="status">{draftStored ? "Draft saved on this device. Save entry shares it with your team." : "Unsaved changes — keep this page open until you save."}</p> : null}

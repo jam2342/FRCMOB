@@ -263,6 +263,7 @@
   --control-padding-inline-dense: 10px;
   --control-gap: 6px;
   --control-radius: var(--radius-control);
+  --control-font-size: var(--font-size-sm);
   --control-border: color-mix(in srgb, var(--color-border) 90%, transparent);
   --control-border-strong: color-mix(in srgb, var(--color-border-strong) 72%, var(--color-accent));
   --control-bg: color-mix(in srgb, var(--color-surface-soft) 92%, transparent);
@@ -457,9 +458,17 @@
    touch target. Moved here alongside the control tokens themselves. */
 @media (max-width: 1120px) {
   :root {
-    --control-min-height: 48px;
+    /* 44px, the same as every button here; text boxes were 44 on some pages and 48 on others. */
+    --control-min-height: 44px;
     --control-min-height-dense: 44px;
     --control-padding-inline: 12px;
     --control-padding-inline-dense: 10px;
+  }
+}
+
+/* 16px is the iOS zoom-on-focus threshold: below it Safari zooms the page when a box is tapped. */
+@media (max-width: 768px) {
+  :root {
+    --control-font-size: max(16px, var(--font-size-base));
   }
 }

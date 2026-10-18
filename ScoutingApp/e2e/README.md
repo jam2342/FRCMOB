@@ -45,6 +45,7 @@ phantom losses.
 | `npm run guard:contrast` | 3 | Text that fails WCAG AA in either theme |
 | `npm run guard:overflow` | 4 | Horizontal scroll at 320px and 390px |
 | `npm run guard:affordances` | 1 | A button/label/card that disappeared |
+| `npm run guard:uniformity` | 10 | The same kind of thing looking different somewhere: text boxes, tabs, card and page titles, cut text, tables wider than their card, stray fullscreen buttons, "N/A" and "-0.0" (see `src/styles/README.md` rule 5) |
 | `npm run guard` | all | Runs the four in sequence |
 
 Guard 5 is the only one that needs no browser, so it is first in the sequence —

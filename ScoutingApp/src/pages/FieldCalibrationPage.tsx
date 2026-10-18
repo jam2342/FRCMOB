@@ -14,7 +14,6 @@ export function FieldCalibrationPage() {
           <SurfaceCard
             title={scoutingViewTitle('/scouting/calibrate')}
             subtitle="Tap the four field corners to map this camera view to field coordinates — the first step of the offline on-device match breakdown."
-            expandable={false}
             mobileCollapsible={false}
           >
             <FieldCalibration />

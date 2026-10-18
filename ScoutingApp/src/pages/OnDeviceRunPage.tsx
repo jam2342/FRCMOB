@@ -13,7 +13,6 @@ export function OnDeviceRunPage() {
           <SurfaceCard
             title={scoutingViewTitle('/scouting/record')}
             subtitle="Film or upload a match, identify the robots, then view their position heatmaps. Offense and defense estimates appear after sync when enough data is available."
-            expandable={false}
             mobileCollapsible={false}
           >
             <OnDeviceRun />

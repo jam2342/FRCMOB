@@ -217,7 +217,7 @@ export function MobileSearchOverlay({ open, onClose, onSubmit, busy, jumpRegion 
             </button>
             <div className="mso__hint">
               <span className="mso__hint-label">Team</span>
-              <span className="mso__hint-example">frc118, 254, "team citrus"</span>
+              <span className="mso__hint-example">frc5417, 5417, or a team name</span>
             </div>
             <div className="mso__hint">
               <span className="mso__hint-label">Event</span>

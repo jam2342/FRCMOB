@@ -108,10 +108,25 @@ dump from `/home/ubuntu/backups`) before touching production.
   keeps the newest 72 in `/home/ubuntu/backups` (mode 600, root only, log in `backup.log`),
   then restores that dump into Neon in one transaction — the off-site copy. Never point
   anything at Neon's `-pooler` host for dump/restore (it leaks `search_path`; the script refuses).
+- **Pit photos off-site, hourly** (same script, since 2026-10-18): `rclone copy` adds new
+  photos to the Object Storage bucket `frcmob-media-backup` (namespace `axdzkwqzv9hk`,
+  Phoenix, private, Always Free 20 GB; photos are capped at 5 GB). rclone v1.75 is at
+  `/usr/local/bin/rclone` (official release, checksum-verified; Ubuntu's 1.60 has no Oracle
+  backend); its config `/root/.config/rclone/rclone.conf` holds no secret: the VM signs in
+  as itself through dynamic group `frcmob-backend-vm` (Default domain, matches this
+  instance's OCID). Policy `frcmob-media-backup` allows only `OBJECT_CREATE`,
+  `OBJECT_INSPECT` and `OBJECT_READ` on that bucket, so the VM can't delete or overwrite
+  a backed-up photo; deleting needs a person signed in to OCI. **A new VM needs its OCID
+  added to the dynamic group's matching rule.** New IAM rules take about a minute to apply.
+  Restore: `sudo /usr/local/bin/rclone copy oos:frcmob-media-backup/pit_photos <media volume>/pit_photos`.
+  The same bucket's `archive/ocir-2026-10-18/` holds the record of the old container-registry
+  images (deleted 2026-10-18): see `docs/OCIR_ARCHIVE_2026-10-18.md`.
 
 ## If the VM or its disk is lost
 
-Neon has the database as of the last hourly backup. Point `DATABASE_URL` in `.env` at
+Neon has the database as of the last hourly backup, and the Object Storage bucket has
+the pit photos (see above for the restore command; on a new VM, add its OCID to the
+`frcmob-backend-vm` dynamic group first). Point `DATABASE_URL` in `.env` at
 `NEON_BACKUP_URL` (the pooler host is fine for the app), set `REDIS_URL` to any Redis
 (or the Upstash one in `.env.bak-before-local-db`), and bring the stack up on a new VM.
 To move back later, repeat the 2026-09-27 cutover: stop the backend, dump Neon

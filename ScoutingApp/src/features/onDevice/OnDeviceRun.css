@@ -236,7 +236,7 @@
   color: #e0a35c;
 }
 
-/* ── capture mode toggle (reuses segmented-tabs look) ───────────────── */
+/* ── capture mode toggle ───────────────────────────────────────────── */
 .odr-mode {
   align-self: flex-start;
 }

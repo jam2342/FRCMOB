@@ -146,7 +146,6 @@ function ScoutingCoverageWorkspacePage() {
           <SurfaceCard
             title={scoutingViewTitle('/scouting/coverage')}
             subtitle="Who has scouted what — find the holes before alliance selection does."
-            expandable={false}
             mobileCollapsible={false}
           >
             <EventPicker
@@ -198,9 +197,9 @@ function ScoutingCoverageWorkspacePage() {
 
           {data ? (
             <SurfaceCard
+              expandable
               title="Details"
               right={!isMobile ? coverageTabs : undefined}
-              expandable={false}
               mobileCollapsible={false}
             >
               {isMobile ? <div className="coverage-mobile-tabs">{coverageTabs}</div> : null}

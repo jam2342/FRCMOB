@@ -50,6 +50,7 @@ import { REGION_FILTER_OPTIONS } from '../utils/regionFilters';
 import { relativeFromTimestamp } from './centerUtils';
 import { AUTHOR_NAME, AUTHOR_SITE_URL } from './legalContent';
 import { storageGet, storageRemove } from '../platform/safeStorage';
+import { MISSING } from '../utils/formatValue';
 
 const COMPARE_KEYS = {
   event: 'scouting_compare_event_key',
@@ -560,7 +561,7 @@ export function SettingsPage() {
               Session expires:{' '}
               {adminSessionExpiresAtUnix && adminSessionExpiresAtUnix > 0
                 ? relativeFromTimestamp(adminSessionExpiresAtUnix * 1000)
-                : 'N/A'}
+                : MISSING}
             </Chip>
             <Chip>Status: {statusText}</Chip>
           </div>
@@ -602,7 +603,7 @@ export function SettingsPage() {
                   value={
                     typeof opsDashboard.media_usage.total_gb === 'number'
                       ? opsDashboard.media_usage.total_gb.toFixed(2)
-                      : 'N/A'
+                      : MISSING
                   }
                   unit={typeof opsDashboard.media_usage.total_gb === 'number' ? 'GB' : undefined}
                 />
@@ -611,7 +612,7 @@ export function SettingsPage() {
                   value={
                     typeof opsDashboard.media_usage.disk_free_gb === 'number'
                       ? opsDashboard.media_usage.disk_free_gb.toFixed(2)
-                      : 'N/A'
+                      : MISSING
                   }
                   unit={typeof opsDashboard.media_usage.disk_free_gb === 'number' ? 'GB' : undefined}
                 />
@@ -620,7 +621,7 @@ export function SettingsPage() {
                   value={
                     typeof opsDashboard.climb_signal_coverage?.summary?.coverage_any_pct === 'number'
                       ? opsDashboard.climb_signal_coverage.summary.coverage_any_pct.toFixed(1)
-                      : 'N/A'
+                      : MISSING
                   }
                   unit={
                     typeof opsDashboard.climb_signal_coverage?.summary?.coverage_any_pct === 'number'
@@ -633,7 +634,7 @@ export function SettingsPage() {
                   value={
                     typeof opsDashboard.climb_signal_coverage?.summary?.coverage_official_pct === 'number'
                       ? opsDashboard.climb_signal_coverage.summary.coverage_official_pct.toFixed(1)
-                      : 'N/A'
+                      : MISSING
                   }
                   unit={
                     typeof opsDashboard.climb_signal_coverage?.summary?.coverage_official_pct === 'number'

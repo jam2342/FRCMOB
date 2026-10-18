@@ -58,6 +58,8 @@ export interface EventPickerProps {
   // "Event", so the same control reads the same everywhere.
   label?: string;
   inlineResults?: boolean;
+  /** Focus the box on mount (a search that opens from a button). */
+  autoFocus?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -79,6 +81,7 @@ export function EventPicker({
   inputId: inputIdProp,
   label,
   inlineResults = false,
+  autoFocus = false,
 }: EventPickerProps) {
   const generatedId = useId();
   const inputId = inputIdProp ?? (label ? generatedId : undefined);
@@ -115,6 +118,10 @@ export function EventPicker({
       width: rect.width,
     });
   }, []);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   /* ---- Load suggested events once ---- */
   useEffect(() => {

@@ -11,7 +11,7 @@ export { Chip } from './Chip';
 
 export { Stat } from './Stat';
 
-export { CardBody, CardEmpty, CardGrid, CardRow } from './Card';
+export { CardBody, CardGrid, CardRow } from './Card';
 
 export {
   FieldCheckbox,

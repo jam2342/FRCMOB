@@ -131,9 +131,4 @@ export function ratingRangeLabel(range: readonly [number, number] | null | undef
   return `${low.toFixed(digits)}–${high.toFixed(digits)}`;
 }
 
-// A rating or points move as "+1.2" / "−0.3" / "0": never "-0" for a move that rounds away.
-export function signedChange(value: number, digits = 1): string {
-  const rounded = Number(value.toFixed(digits));
-  if (rounded === 0 || Number.isNaN(rounded)) return (0).toFixed(digits);
-  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(digits)}`;
-}
+export { signedChange } from '../utils/formatValue';

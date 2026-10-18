@@ -19,10 +19,6 @@
   max-width: 100%;
 }
 
-.coverage-view-tabs .segmented-tabs__item {
-  white-space: nowrap;
-}
-
 /* Beats `.coverage-grid th`'s muted colour, which is why the plain utility
    class did nothing here. */
 .coverage-grid th.coverage-head--red { color: var(--color-danger-text); }
@@ -172,19 +168,6 @@
 @media (max-width: 720px) {
   .coverage-mobile-tabs {
     margin-bottom: var(--space-3);
-  }
-
-  .coverage-mobile-tabs .coverage-view-tabs {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-1);
-    overflow: visible;
-  }
-
-  .coverage-mobile-tabs .segmented-tabs__item {
-    width: 100%;
-    padding-inline: var(--space-2);
-    font-size: var(--font-size-2xs);
   }
 
   .coverage-grid {

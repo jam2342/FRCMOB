@@ -390,7 +390,6 @@ function ExportPageContent() {
         <SurfaceCard
           title={viewTitle(EVENTS_VIEWS, '/events/export')}
           subtitle="Download this event's data as spreadsheets (CSV)."
-          expandable={false}
           mobileCollapsible={false}
         >
           <EventPicker
@@ -475,6 +474,7 @@ function ExportPageContent() {
         {/* ---- Ratings Preview ---- */}
         {ratings && ratings.length > 0 ? (
           <SurfaceCard
+            expandable
             title="Ratings Preview"
             subtitle={`Top teams by rating at ${eventName || 'the selected event'}.`}
             collapsible

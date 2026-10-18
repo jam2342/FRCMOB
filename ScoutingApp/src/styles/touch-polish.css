@@ -30,10 +30,7 @@ textarea {
      44px. The comment used to promise 44px while the rule gave 36px. */
   button,
   [role="button"],
-  a,
-  input,
-  select,
-  textarea {
+  a {
     min-height: var(--touch-target-compact);
   }
 
@@ -47,6 +44,14 @@ textarea {
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* Prevent iOS zoom on input focus (keep font-size >= 16px). Matches --control-font-size here;
+     kept as the floor for boxes a module sizes itself. */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, var(--font-size-base));
+  }
+
   /* Better focus-visible for keyboard users on mobile */
   :focus-visible {
     outline: 2px solid var(--color-accent);
@@ -54,23 +59,16 @@ textarea {
     border-radius: var(--radius-sm);
   }
 
-  /* Prevent iOS zoom on input focus (keep font-size >= 16px) */
-  input,
-  select,
-  textarea {
-    font-size: max(16px, var(--font-size-base));
-  }
 }
 
 /* A finger on a phone, not a mouse in a narrow window: 44px, the platform guideline. Inline text
    links are unaffected (min-height doesn't apply to inline boxes). */
 @media (max-width: 768px) and (pointer: coarse) {
   /* Switches keep their drawn 44x26 track; Field.module.css widens their tap area instead. */
+  /* Text boxes and selects get their height from styles/uniform.css (44px on phones). */
   button:not([role="switch"]),
   [role="button"],
   [role="tab"],
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  select,
   /* Loading rows stand in for buttons (Events' top lists): same height. */
   .fm-top-placeholder,
   /* Page tabs (Live Scouting / Pit Scouting / ...) are links, so the button rule above missed them. */

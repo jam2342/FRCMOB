@@ -109,7 +109,6 @@ allowed to have no hero. It is not allowed to have four.
 | `/scouting/pit` | — | A form |
 | `/scouting/assignments` | — | A grid |
 | `/scouting/coverage` | Coverage percentage | Baselined by slots covered |
-| `/scouting/auto-paths` | — | A canvas |
 | `/scouting/calibrate` | — | A canvas |
 | `/scouting/record` | Match clock | |
 | `/compare` | — | Two columns; a hero would pick a side |
@@ -175,6 +174,34 @@ siblings sat at 16.
 
 ---
 
+## 5. One look per kind of thing
+
+Rule 4 is about sibling pages. This one is about every copy of a thing, anywhere. A sweep of
+every route at 390px and 1366px on 2026-10-18 found each of these broken in several places,
+always the same way: a page built its own copy of a shared piece, and nothing compared the
+copies. Each law names the one piece that owns the look, and what enforces it.
+`consistency.test.ts` reads the source (it runs with `npm test`); `guard:uniformity` renders
+every route at phone and desktop size and compares what came out.
+
+| Law | The one piece | Was |
+|---|---|---|
+| **One text box.** Every text box, search box and select has the same height, corner, border, fill, padding and text size. | `styles/uniform.css` + the `--control-*` tokens | Set in six places: Favorites' boxes had 16px text beside 13px ones, the phone search was white with an 11px corner, the header search a pill, two boxes showed Chrome's blue ×. |
+| **One event search.** Searching for an event is `EventPicker`, with one results list and one "no results" message. | `components/EventPicker.tsx` | Home had its own search with its own dropdown, rows, hover and "No events found". |
+| **One tab look.** Switching views is `SegmentedTabs`, which picks the look itself: an underline strip on phones, a pill group on desktop. A strip with more tabs past an edge fades at that edge. `variant="board"` is the scouting board's large segments, nothing else. | `components/ui/SegmentedTabs.tsx` | Five looks: pages passed class names (underline on one phone page, boxed pills on the next), Predictions used filter chips, Home and the recorder hand-built tab rows, Coverage had its own grid. Events' strip showed "Fo" for Forecast with nothing saying it scrolls. |
+| **One card title** and **one page title.** | `styles/uniform.css` | Card titles came in four weight/spacing combinations. On phones an event's name was 14px and cut to one line, a team's 19px and wrapped. |
+| **Text is never cut silently.** Text cut with "…" or a line clamp carries its full text as a title. | each component; `guard:uniformity` finds misses | Live Ratings names, Compare's team pool, Events standings and collapsed card titles were cut with no way to read them. |
+| **A table fits its card.** When the columns don't fit, the rows show as cards; when there's room again, as a table. | `Table` primitive (measures its own box) | Four tables scrolled sideways on a 1366px desktop, cut at the card edge: Team Center's schedule needed 611px in a 371px column. |
+| **Fullscreen is for content that outgrows a card**: a table, chart, heat map, video. Opt in with `expandable`. | `SurfaceCard` (off by default) | On by default: ~120 cards, five or six identical corner buttons per desktop screen. |
+| **One empty state.** | `EmptyState` | A second component (`CardEmpty`) drew a dashed box inside the card: a box in a box. |
+| **A missing value is "—"**, a change is `signedChange` ("+1.2", "−0.3", "0.0", never "-0.0"), a stat has one decimal. | `utils/formatValue.ts`, `metric()` | "N/A" wherever `metric()` ran and "—" elsewhere, often on one screen; Live Ratings showed "▼ -0.0"; Auto read 67.30 on Compare and 67.3 on Team Center. TBA's ranking score keeps its two decimals. |
+| **A page's change/back actions sit in one row at the top** ("Change event", "‹ Back to QM 1"). | `MobileViewActions` | Match Center hand-built both, one inside the score card and one in the sidebar. |
+
+Exceptions are explicit, never per page: a control that is a different kind of thing (a
+stepper's number, the ⌘K palette's line, the hidden date input behind Home's day switcher)
+says so with its own module or `data-control="bare"`.
+
+---
+
 ## Guards
 
 `npm run guard` runs, in order — cheapest and least flaky first:
@@ -189,6 +216,7 @@ siblings sat at 16.
 | `guard:contrast` | Both themes, all routes | yes |
 | `guard:overflow` | 390px and up | yes |
 | `guard:affordances` | Named, reachable controls | yes |
+| `guard:uniformity` | One look per kind of thing (rule 5), phone and desktop | yes |
 
 **A hero must be a value, not a label.** The guard checks the hero's text for a
 digit, because a 36px word is the page shouting the name of the thing instead of

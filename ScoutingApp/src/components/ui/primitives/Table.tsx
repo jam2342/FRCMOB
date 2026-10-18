@@ -1,5 +1,5 @@
 import { cx } from './cx';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import styles from './Table.module.css';
 import { renderCell, type TableColumn } from './tableCell';
 
@@ -56,6 +56,40 @@ function useIsNarrow(breakpoint: number) {
   return narrow;
 }
 
+// A table never scrolls sideways inside its card. Four did on a 1366px desktop (Team Center's
+// schedule needed 611px in a 371px column, Compare 977 in 782), cutting columns off at the card
+// edge with nothing saying more was there. When the columns don't fit the box they're in, the
+// rows show as cards; once the box is wide enough again, as a table.
+function useOverflowsBox(enabled: boolean, rowCount: number) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const neededRef = useRef(0);
+  const [overflows, setOverflows] = useState(false);
+
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!enabled || !box) return undefined;
+    const measure = () => {
+      const table = box.querySelector('table');
+      if (table) {
+        const needed = table.scrollWidth;
+        if (needed > box.clientWidth + 1) {
+          neededRef.current = needed;
+          setOverflows(true);
+        }
+      } else if (box.clientWidth >= neededRef.current) {
+        setOverflows(false);
+      }
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [enabled, overflows, rowCount]);
+
+  return { boxRef, overflows: enabled && overflows };
+}
+
 function SortIcon({ direction }: { direction: SortDirection | null }) {
   return (
     <svg className={styles.sortIcon} viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -92,7 +126,9 @@ export function Table<Row>({
   className,
   caption,
 }: TableProps<Row>) {
-  const narrow = useIsNarrow(cardBreakpoint);
+  const narrowScreen = useIsNarrow(cardBreakpoint);
+  const { boxRef, overflows } = useOverflowsBox(!narrowScreen && rows.length > 0, rows.length);
+  const narrow = narrowScreen || overflows;
 
   // Clicking the active column flips direction; a new column starts ascending.
   const toggleSort = (key: string) => {
@@ -116,7 +152,7 @@ export function Table<Row>({
     const [first, ...restColumns] = columns;
     const sortables = columns.filter((column) => column.sortable);
     return (
-      <div className={className}>
+      <div className={className} ref={boxRef} data-table="">
         {onSort && sortables.length > 0 ? (
           <div className={styles.cardSortBar}>
             {sortables.map((column) => {
@@ -158,7 +194,7 @@ export function Table<Row>({
   }
 
   return (
-    <div className={cx(styles.scroller, className)}>
+    <div className={cx(styles.scroller, className)} ref={boxRef} data-table="">
       <table
         className={cx(
           styles.table,

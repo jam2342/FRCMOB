@@ -30,9 +30,9 @@ it.each([false, true])('shows predictions before accuracy and defaults to Upcomi
   const accuracy = await screen.findByText('Forecast Check');
   const list = screen.getByRole('heading', {name:'Matches'});
   expect(list.compareDocumentPosition(accuracy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByRole('button',{name:'Upcoming'})).toHaveClass('active');
+  expect(screen.getByRole('tab',{name:'Upcoming'})).toHaveAttribute('aria-selected','true');
   expect(screen.queryByText('QM 1')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'All'}));
+  fireEvent.click(screen.getByRole('tab',{name:'All'}));
   expect(screen.getByText('QM 1')).toBeInTheDocument();
 });
 it('defaults to All when every match is completed', async () => {
@@ -41,7 +41,7 @@ it('defaults to All when every match is completed', async () => {
   vi.mocked(getEventSchedule).mockResolvedValue({matches:[{match_key:'2026old_qm1',is_completed:true}]} as never);
   render(<MemoryRouter initialEntries={['/?event=2026old']}><MatchPredictionPage /></MemoryRouter>);
   await screen.findByRole('heading',{name:'Matches'});
-  expect(screen.getByRole('button',{name:'All'})).toHaveClass('active');
+  expect(screen.getByRole('tab',{name:'All'})).toHaveAttribute('aria-selected','true');
 });
 it('shows a phone 20 matches at a time', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));

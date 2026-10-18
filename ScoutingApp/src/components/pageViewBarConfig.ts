@@ -5,7 +5,6 @@ export const SCOUTING_VIEWS: ViewBarItem[] = [
   { label: 'Pit Scouting', to: '/scouting/pit', preserveSearch: true },
   { label: 'Assignments', to: '/scouting/assignments', preserveSearch: true },
   { label: 'Coverage', to: '/scouting/coverage', preserveSearch: true },
-  { label: 'Auto Paths', to: '/scouting/auto-paths', preserveSearch: true },
   // Tools, not peer views: one calibrates a camera and one runs an offline
   // breakdown on a phone. They sat beside Live Scouting as equals.
   { label: 'Field Calibration', to: '/scouting/calibrate', preserveSearch: true, secondary: true },

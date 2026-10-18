@@ -35,9 +35,9 @@ async function pageFor(width,signedIn=true,failRead=false){
 async function check(page,label,condition){let passed=false;for(let i=0;i<30;i++){passed=await condition();if(passed)break;await page.waitForTimeout(50);}findings.push({label,passed});if(!passed)await page.screenshot({path:out+'/'+label+'.png',fullPage:true});console.log(passed?'PASS':'FAIL',label);}
 try{
  for(const width of [390,1440]){
-  const page=await pageFor(width,false);await page.goto(base+'/#/my-team');await page.getByPlaceholder('Robonauts Scouting').waitFor();
-  const create=page.locator('form').filter({has:page.getByPlaceholder('Robonauts Scouting')});
-  await create.getByPlaceholder('Robonauts Scouting').fill('Test');await create.getByRole('textbox',{name:'Your name',exact:true}).fill('Scout');await create.getByRole('textbox',{name:'FRC team number'}).fill('-254');
+  const page=await pageFor(width,false);await page.goto(base+'/#/my-team');await page.getByPlaceholder('Eagle Robotics Scouting').waitFor();
+  const create=page.locator('form').filter({has:page.getByPlaceholder('Eagle Robotics Scouting')});
+  await create.getByPlaceholder('Eagle Robotics Scouting').fill('Test');await create.getByRole('textbox',{name:'Your name',exact:true}).fill('Scout');await create.getByRole('textbox',{name:'FRC team number'}).fill('-254');
   const before=writes.length;await create.getByRole('button',{name:'Create workspace'}).click();await page.waitForTimeout(300);
   await check(page,'invalid-team-'+width,async()=>writes.length===before && /whole|positive|digits|valid team number/.test(await create.innerText()));
   await create.getByRole('textbox',{name:'FRC team number'}).fill('254');await create.getByRole('textbox',{name:'Your name',exact:true}).fill('   ');

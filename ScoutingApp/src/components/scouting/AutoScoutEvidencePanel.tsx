@@ -5,6 +5,7 @@ import { SurfaceCard } from '../ui/SurfaceCard';
 import { FieldHeatmap } from '../cv/FieldHeatmap';
 import type { TeamHeatmapResponse } from '../../api';
 import type { AutoScoutDraftRecord } from '../../pages/scoutingPage.types';
+import { MISSING } from '../../utils/formatValue';
 
 type AutoScoutEvidencePanelProps = {
   open: boolean;
@@ -54,7 +55,7 @@ function EvidenceBody({
     <div className="auto-scout-evidence">
       <div className="auto-scout-evidence__summary">
         <strong>{formatFieldLabel(fieldName)}</strong>
-        <span>Confidence {typeof confidence === 'number' ? `${Math.round(confidence * 100)}%` : 'N/A'}</span>
+        <span>Confidence {typeof confidence === 'number' ? `${Math.round(confidence * 100)}%` : MISSING}</span>
         <span>Source: {fieldSourceLabel(draft.field_provenance?.[fieldName])}</span>
       </div>
 

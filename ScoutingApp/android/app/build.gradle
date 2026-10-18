@@ -10,10 +10,10 @@ if (uploadPresent.any { it } && !uploadPresent.every { it }) {
 def uploadConfigured = uploadPresent.every { it }
 
 android {
-    namespace = "app.frcmob.scouting"
+    namespace = "com.frcmob.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.frcmob.scouting"
+        applicationId "com.frcmob.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 2

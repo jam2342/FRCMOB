@@ -498,7 +498,7 @@ export type TeamBreakdownResponse = {
   };
   event_key: string | null;
   season_scope?: SeasonScope;
-  /* Official matches in the breakdown (Data Dashboard, Auto Paths). */
+  /* Official matches in the breakdown (Data Dashboard). */
   matches_analyzed: number;
   averages: MetricAverages | null;
   climb_sources?: {

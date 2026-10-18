@@ -24,6 +24,7 @@ import { buildMatchCenterPath, metric, pct, teamNumberFromTeamKey } from './cent
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
 import { Stat, Table, type TableColumn } from '../components/ui/primitives';
 import styles from './MatchPredictionPage.module.css';
+import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 
 const PHONE_PAGE_SIZE = 20;
 import { matchWinProbability, type WinProbabilitySource } from '../features/predictions/winProbability';
@@ -432,7 +433,6 @@ export function MatchPredictionPage() {
         <SurfaceCard
           title={viewTitle(MATCH_HUB_VIEWS, '/match-center/predictions')}
           subtitle="Who's likely to win each match, from the official results so far."
-          expandable={false}
           mobileCollapsible={false}
         >
           <EventPicker
@@ -461,21 +461,20 @@ export function MatchPredictionPage() {
         {/* ---- Filter + Match List ---- */}
         {predictions.length > 0 ? (
           <SurfaceCard
+            expandable
             title="Matches"
             subtitle={`${filteredPredictions.length} match${filteredPredictions.length === 1 ? '' : 'es'}`}
             right={
-              <div className="center-filter-chips">
-                {(['all', 'upcoming', 'completed'] as FilterMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`center-chip clickable ${filterMode === mode ? 'active' : ''}`}
-                    onClick={() => setFilterMode(mode)}
-                  >
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                  </button>
-                ))}
-              </div>
+              <SegmentedTabs<FilterMode>
+                ariaLabel="Which matches"
+                value={filterMode}
+                onChange={setFilterMode}
+                items={[
+                  { value: 'all', label: 'All' },
+                  { value: 'upcoming', label: 'Upcoming' },
+                  { value: 'completed', label: 'Completed' },
+                ]}
+              />
             }
           >
             <Table

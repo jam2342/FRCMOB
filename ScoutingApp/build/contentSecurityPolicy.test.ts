@@ -59,7 +59,6 @@ describe('content security policy', () => {
       'vercel.com': 'Vercel Web Analytics privacy link',
       'portfolio-wine-three-iox2jn0bx6.vercel.app': "author's site, a link",
       'i.ytimg.com': 'YouTube thumbnail image (img-src allows https:)',
-      'frcmob.app': 'example text in the primitives showcase',
       'frcmob-api-cache.invalid': 'Cache Storage key prefix, never fetched',
     }
     const allowed = new Set([

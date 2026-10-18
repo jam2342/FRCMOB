@@ -14,7 +14,7 @@ describe('ProductShell mobile regressions', () => {
 
   it('forces home layout into a single mobile column', () => {
     expect(css).toMatch(
-      /@media\s*\(max-width:\s*1120px\)\s*\{[\s\S]*?\.home-fotmob-layout\s*\{[\s\S]*?grid-template-columns:\s*1fr;[\s\S]*?\}/m,
+      /@media\s*\(max-width:\s*1120px\)\s*\{[\s\S]*?\.home-board-layout\s*\{[\s\S]*?grid-template-columns:\s*1fr;[\s\S]*?\}/m,
     );
   });
 

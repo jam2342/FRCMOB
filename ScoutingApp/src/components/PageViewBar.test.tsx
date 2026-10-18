@@ -70,15 +70,15 @@ describe('PageViewBar', () => {
 
     const links = [...container.querySelectorAll('a')];
     const assignmentsLink = links.find((link) => link.textContent === 'Assignments');
-    const autoPathsLink = links.find((link) => link.textContent === 'Auto Paths');
+    const coverageLink = links.find((link) => link.textContent === 'Coverage');
 
     expect(assignmentsLink).toHaveAttribute(
       'href',
       '/scouting/assignments?event=2026week0&match=2026week0_qm1&team=frc118&my_team=frc148',
     );
-    expect(autoPathsLink).toHaveAttribute(
+    expect(coverageLink).toHaveAttribute(
       'href',
-      '/scouting/auto-paths?event=2026week0&match=2026week0_qm1&team=frc118&my_team=frc148',
+      '/scouting/coverage?event=2026week0&match=2026week0_qm1&team=frc118&my_team=frc148',
     );
   });
 
@@ -113,13 +113,14 @@ describe('PageViewBar', () => {
     const trigger = screen.getByRole('button', { name: 'Switch scouting tool' });
     expect(trigger).toHaveTextContent('Pit Scouting');
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Auto Paths' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Coverage' })).toBeNull();
 
     // Opening the pill reveals every sub-view, with scouting query context kept.
     fireEvent.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    const autoPaths = screen.getByRole('menuitem', { name: 'Auto Paths' });
-    expect(autoPaths).toHaveAttribute('href', '/scouting/auto-paths?event=2026week0&team=frc118');
+    const coverage = screen.getByRole('menuitem', { name: 'Coverage' });
+    expect(coverage).toHaveAttribute('href', '/scouting/coverage?event=2026week0&team=frc118');
+    expect(screen.queryByRole('menuitem', { name: 'Auto Paths' })).toBeNull();
   });
 
   it('positions the portaled dropdown under the trigger and tracks viewport movement', () => {
@@ -178,7 +179,7 @@ describe('PageViewBar', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Switch scouting tool' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Auto Paths' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Coverage' })).toBeInTheDocument();
   });
 
   it('closes an open mobile dropdown when switching to desktop and does not reopen it on return', () => {
@@ -204,7 +205,7 @@ describe('PageViewBar', () => {
     act(() => media.setMatches(false));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Switch scouting tool' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Auto Paths' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Coverage' })).toBeInTheDocument();
     expect(removeDocumentListener).toHaveBeenCalledWith('pointerdown', expect.any(Function));
     expect(removeWindowListener).toHaveBeenCalledWith('keydown', expect.any(Function));
 

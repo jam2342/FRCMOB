@@ -48,6 +48,7 @@ import './OnDeviceRun.css';
 import { TrackIdentityList, type PathSuggestion } from './TrackIdentityList';
 import { getWorkspaceSession, getWorkspaceToken } from '../workspace/workspaceSession';
 import { readCenterContextFromSearch } from '../../layout/centerContext';
+import { SegmentedTabs } from '../../components/ui/SegmentedTabs';
 
 function initialContext(): { eventKey: string; matchKey: string } {
   if (typeof window === 'undefined') return { eventKey: '', matchKey: '' };
@@ -930,27 +931,22 @@ export function OnDeviceRun() {
 
       {stage === 'capture' ? (
         <div className="odr-section">
-          <div className="segmented-tabs odr-mode" role="tablist" aria-label="Capture source">
-            {(['camera', 'video'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                role="tab"
-                aria-selected={captureMode === mode}
-                disabled={captureBusy}
-                className={`segmented-tabs__item${captureMode === mode ? ' active' : ''}`}
-                onClick={() => {
-                  if (mode === captureMode || captureBusy) return;
-                  if (capturedRef.current.length && !window.confirm('Discard these captured frames and switch source?')) return;
-                  resetRunState();
-                  setCaptureMode(mode);
-                  setTimingAnchorSec(0);
-                }}
-              >
-                {mode === 'camera' ? 'Record' : 'Upload video'}
-              </button>
-            ))}
-          </div>
+          <SegmentedTabs<'camera' | 'video'>
+            className="odr-mode"
+            ariaLabel="Capture source"
+            value={captureMode}
+            onChange={(mode) => {
+              if (captureBusy) return;
+              if (capturedRef.current.length && !window.confirm('Discard these captured frames and switch source?')) return;
+              resetRunState();
+              setCaptureMode(mode);
+              setTimingAnchorSec(0);
+            }}
+            items={[
+              { value: 'camera', label: 'Record', disabled: captureBusy },
+              { value: 'video', label: 'Upload video', disabled: captureBusy },
+            ]}
+          />
 
           <label className="odr-field">
             <span className="odr-label">

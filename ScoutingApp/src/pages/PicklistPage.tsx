@@ -478,7 +478,6 @@ function PicklistWorkspacePage() {
             title={isMobile && doc ? doc.title : viewTitle(COMPARE_VIEWS, '/compare/picklist')}
             subtitle={isMobile && doc ? "Shared with your team · Saves automatically." : "Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."}
             className="no-print"
-            expandable={false}
             mobileCollapsible={false}
           >
             {!isMobile || !doc ? eventPicker : null}
@@ -547,7 +546,6 @@ function PicklistWorkspacePage() {
                   </button>
                 </span>
               }
-              expandable={false}
               mobileCollapsible={false}
             >
               {slots.length === 0 ? (
@@ -770,7 +768,6 @@ function PicklistWorkspacePage() {
             <SurfaceCard
               title="No picklist yet"
               subtitle="Create one to start ranking teams."
-              expandable={false}
               mobileCollapsible={false}
             >
               <EmptyState
