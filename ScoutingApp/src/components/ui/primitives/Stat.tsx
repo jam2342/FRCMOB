@@ -1,6 +1,7 @@
 import { cx } from './cx';
 import type { ReactNode } from 'react';
 import styles from './Stat.module.css';
+import { signedChange } from '../../../utils/formatValue';
 
 type StatTone = 'default' | 'accent' | 'success' | 'warning' | 'danger';
 
@@ -90,7 +91,7 @@ export function Stat({
             )}
           >
             <TrendIcon direction={direction} />
-            {`${trend! > 0 ? '+' : ''}${trend}${trendSuffix}`}
+            {`${signedChange(trend!, Number.isInteger(trend) ? 0 : 1)}${trendSuffix}`}
           </span>
         ) : null}
       </span>

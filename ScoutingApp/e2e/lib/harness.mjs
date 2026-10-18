@@ -19,7 +19,6 @@ export const ROUTES = [
   '/scouting/pit',
   '/scouting/assignments',
   '/scouting/coverage',
-  '/scouting/auto-paths',
   '/scouting/calibrate',
   '/scouting/record',
   '/team-center',

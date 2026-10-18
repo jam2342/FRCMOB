@@ -101,7 +101,7 @@ def send_web_push(
             subscription_info=subscription_info,
             data=json.dumps(payload, default=str),
             vapid_private_key=str(settings.vapid_private_key).strip(),
-            vapid_claims={"sub": str(settings.vapid_subject or "mailto:admin@frcmob.app").strip()},
+            vapid_claims={"sub": str(settings.vapid_subject or "https://scouting-app-iryg.vercel.app").strip()},
             ttl=int(settings.push_ttl_sec or 1800),
             timeout=PUSH_SEND_TIMEOUT_SEC,
         )

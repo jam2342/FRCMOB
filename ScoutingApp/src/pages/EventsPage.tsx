@@ -85,6 +85,7 @@ import { resolveTab } from './tabUtils';
 import { loadEventsRankings, loadEventsTeamsHistory } from '../features/prefetch/pageRequests';
 import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
+import { MISSING } from '../utils/formatValue';
 
 const EVENT_TABS = ['overview', 'schedule', 'breakdown', 'rankings', 'forecast', 'teams'] as const;
 type EventTab = (typeof EVENT_TABS)[number];
@@ -978,7 +979,7 @@ export function EventsPage() {
           record:
             record && (record.wins !== undefined || record.losses !== undefined || record.ties !== undefined)
               ? `${parseNumber(record.wins) ?? 0}-${parseNumber(record.losses) ?? 0}-${parseNumber(record.ties) ?? 0}`
-              : 'N/A',
+              : MISSING,
           sort_orders: sortOrders,
         } satisfies RankingRow;
       })
@@ -1367,7 +1368,7 @@ export function EventsPage() {
     const rows = allianceSelectionRows.flatMap((alliance) => (
       alliance.teams.length > 0
         ? alliance.teams.map((team) => [alliance.number, alliance.name, team.slot, team.teamNumber, team.name || ''])
-        : [[alliance.number, alliance.name, 'N/A', '', '']]
+        : [[alliance.number, alliance.name, MISSING, '', '']]
     ));
     void downloadCsv(`${selectedEventKey || 'event'}-alliances.csv`, headers, rows)
       .then(exported => setAllianceActionStatus(exported ? 'Alliance CSV export ready.' : 'Export cancelled.'))
@@ -2057,7 +2058,7 @@ export function EventsPage() {
       </aside>
 
       <section className="center-main">
-        {/* ── Mobile: FotMob-style event header ── */}
+        {/* ── Mobile: event header ── */}
         {isMobileLayout && selectedEventKey ? (
           <>
             <div className="fm-event-header">
@@ -2099,11 +2100,8 @@ export function EventsPage() {
                 <p className="fm-event-header-notice">Using roster from published match schedule.</p>
               ) : null}
               <SegmentedTabs
-                className="fm-tab-bar"
                 motion
                 swipe
-                ink
-                itemClassName="fm-tab"
                 ariaLabel="Event center tabs"
                 value={activeTab}
                 onChange={setActiveTab}
@@ -2163,9 +2161,7 @@ export function EventsPage() {
           ) : null}
           <div className="center-tabs-header">
             <SegmentedTabs
-              className="center-tabs"
               motion
-              itemClassName="center-tab-btn"
               ariaLabel="Event center tabs"
               value={activeTab}
               onChange={setActiveTab}
@@ -2193,7 +2189,7 @@ export function EventsPage() {
         ) : null}
 
         {selectedEventKey && activeTab === 'overview' ? (<>
-            {/* ── Mobile: FotMob-style overview ── */}
+            {/* ── Mobile: overview ── */}
             {isMobileLayout ? (
               <div className="fm-content-stack">
                 {/* Matches / Teams / Status are already in the event header right above.
@@ -2551,12 +2547,12 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'breakdown' ? (
             <SurfaceCard
+              expandable
               title="Event Breakdown"
               compactable
             >
             <SegmentedTabs
-              className="center-tabs event-breakdown-stage-tabs"
-              itemClassName="center-tab-btn"
+              className="event-breakdown-stage-tabs"
               ariaLabel="Breakdown match type tabs"
               value={breakdownStage}
               onChange={(next) => {
@@ -2653,7 +2649,7 @@ export function EventsPage() {
                           render: (match) =>
                             matchHasScores(match)
                               ? `${match.red_score}-${match.blue_score}`
-                              : <span className="center-muted">N/A</span>,
+                              : <span className="center-muted">{MISSING}</span>,
                         },
                         {
                           key: 'winner',
@@ -2897,7 +2893,7 @@ export function EventsPage() {
         ) : null}
 
         {selectedEventKey && activeTab === 'rankings' ? (
-            <SurfaceCard title="Rankings" compactable>
+            <SurfaceCard expandable title="Rankings" compactable>
             {firstEventLoad && rankingRows.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
@@ -2914,7 +2910,7 @@ export function EventsPage() {
                     cards of six labelled lines do not. */}
                 <Table
                   columns={[
-                    { key: 'rank', label: 'Rank', numeric: true, sortable: true, width: '80px', render: (row) => row.rank ?? 'N/A' },
+                    { key: 'rank', label: 'Rank', numeric: true, sortable: true, width: '80px', render: (row) => row.rank ?? MISSING },
                     {
                       key: 'team_number',
                       label: 'Team',
@@ -2931,18 +2927,18 @@ export function EventsPage() {
                       ),
                     },
                     { key: 'record', label: 'Record', align: 'center', width: '110px' },
-                    { key: 'matches_played', label: 'Played', numeric: true, sortable: true, width: '90px', render: (row) => row.matches_played ?? 'N/A' },
+                    { key: 'matches_played', label: 'Played', numeric: true, sortable: true, width: '90px', render: (row) => row.matches_played ?? MISSING },
                     {
                       key: 'sort0',
                       label: rankingSortLabels[0] || 'S1',
                       numeric: true,
-                      render: (row) => row.sort_orders[0] ?? 'N/A',
+                      render: (row) => row.sort_orders[0] ?? MISSING,
                     },
                     {
                       key: 'sort1',
                       label: rankingSortLabels[1] || 'S2',
                       numeric: true,
-                      render: (row) => row.sort_orders[1] ?? 'N/A',
+                      render: (row) => row.sort_orders[1] ?? MISSING,
                     },
                   ]}
                   rows={visibleRankingRows}
@@ -2970,7 +2966,7 @@ export function EventsPage() {
                           <span className="fm-standings-rank">{row.rank ?? '-'}</span>
                           <div className="fm-standings-team">
                             <strong>#{row.team_number}</strong>
-                            <small>{row.nickname}</small>
+                            <small title={row.nickname}>{row.nickname}</small>
                           </div>
                           <span className="fm-standings-stat">{row.matches_played ?? '-'}</span>
                           <span className="fm-standings-stat">{row.record}</span>
@@ -3004,6 +3000,7 @@ export function EventsPage() {
 
         {selectedEventKey && activeTab === 'teams' ? (
             <SurfaceCard
+              expandable
               title="Teams"
               subtitle="Fuel, auto and climb from this event's matches; rating and points per match from the whole season so far."
               compactable
@@ -3090,7 +3087,7 @@ export function EventsPage() {
                       key: 'auto',
                       label: 'Auto',
                       numeric: true,
-                      render: (team) => metric(team.averages?.auto_contribution ?? null, 2),
+                      render: (team) => metric(team.averages?.auto_contribution ?? null, 1),
                     },
                     {
                       key: 'climb',

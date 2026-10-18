@@ -29,7 +29,7 @@ export function SavedRuns() {
     }
   }, [availableId]);
   return (
-    <SurfaceCard title="Saved Runs" subtitle="Reopen a run to see its robot heatmaps and any analysis saved at sync. Runs belong to the workspace that recorded them." expandable={false} mobileCollapsible={false}>
+    <SurfaceCard title="Saved Runs" subtitle="Reopen a run to see its robot heatmaps and any analysis saved at sync. Runs belong to the workspace that recorded them." mobileCollapsible={false}>
       {error ? <p role="alert">{error}</p> : null}
       {loading ? <p>Loading saved runs…</p> : sessions.length === 0 && !error ? <p>No saved runs for your current workspace on this device.</p> : null}
       <ul className="odr-saved-runs" aria-label="Saved runs">

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { MISSING } from '../../utils/formatValue';
 
 // A number that counts up the first time it appears (a team's rating when you open them), then
-// eases to new values instead of jumping. Missing values read "N/A" like metric(). Screen readers
+// eases to new values instead of jumping. Missing values read "—" like metric(). Screen readers
 // and reduced motion get the final number straight away.
 
 const FIRST_MS = 800;
@@ -46,7 +47,7 @@ export function CountUp({ value, digits = 0, prefix = '' }: { value: number | nu
     return () => cancelAnimationFrame(frame);
   }, [target]);
 
-  if (target === null) return <>N/A</>;
+  if (target === null) return <>{MISSING}</>;
   // The frame where the number first arrives (before the count starts) shows the starting zero,
   // not the final value: showing it there made the rating flash in full, drop to 0, and count up.
   const display = shown ?? (reducedMotion() ? target : 0);

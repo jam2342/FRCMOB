@@ -29,6 +29,7 @@ import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { metric, pct, normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
 import { readMyTeamKey, saveMyTeamKey, workspaceTeamKey } from '../features/workspace/myTeam';
 import { matchWinProbability } from '../features/predictions/winProbability';
+import { MISSING, signedChange } from '../utils/formatValue';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & types                                                  */
@@ -55,8 +56,7 @@ function averageMetric(values: Array<number | null | undefined>): number | null 
 }
 
 function signed(value: number, digits: number = 0): string {
-  if (!Number.isFinite(value)) return '0';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+  return signedChange(Number.isFinite(value) ? value : 0, digits);
 }
 
 type TeamProfile = {
@@ -486,7 +486,6 @@ export function StrategyBriefingPage() {
           title={viewTitle(MATCH_HUB_VIEWS, '/match-center/strategy')}
           subtitle="Your next matches: who you're with, who you're against, and what to watch."
           className="no-print"
-          expandable={false}
           mobileCollapsible={false}
         >
           <EventPicker
@@ -592,7 +591,7 @@ export function StrategyBriefingPage() {
                       const probs = briefings.filter((b) => b.win_prob != null).map((b) => b.win_prob!);
                       return probs.length > 0
                         ? pct(probs.reduce((a, b) => a + b, 0) / probs.length, 0)
-                        : 'N/A';
+                        : MISSING;
                     })()}
                   </strong>
                 </div>

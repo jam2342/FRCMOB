@@ -60,7 +60,7 @@ export function EventForecast({ eventKey, onOpenTeam }: Props) {
 
   if (data?.finished) {
     return (
-      <SurfaceCard title="Final result" subtitle={subtitle} compactable>
+      <SurfaceCard expandable title="Final result" subtitle={subtitle} compactable>
         {data.winners?.length ? (
           <p className={styles.result}>
             <strong>Winners</strong> {data.winners.map(teamLabel).join(' · ')}
@@ -117,7 +117,7 @@ export function EventForecast({ eventKey, onOpenTeam }: Props) {
   }
 
   return (
-    <SurfaceCard title="Forecast" subtitle={subtitle} compactable>
+    <SurfaceCard expandable title="Forecast" subtitle={subtitle} compactable>
       {!data && !failed ? <SkeletonBlock rows={6} compact /> : null}
       {failed ? <EmptyState compact type="offline" title="Couldn't load the forecast" description="It retries when you come back to this tab." /> : null}
       {data && data.teams.length === 0 ? <EmptyState compact title="No teams yet" description="The forecast starts once the team list is out." /> : null}

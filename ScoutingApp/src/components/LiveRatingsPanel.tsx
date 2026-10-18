@@ -29,7 +29,7 @@ function formatAgo(fetchedAtMs: number | null, nowMs: number): string {
   return `${min}m ago`;
 }
 
-// SofaScore-style live rating board: ranked teams whose values update on a
+// Live rating board: ranked teams whose values update on a
 // poll, with a momentum sparkline + delta badge and a green flash on any row
 // whose rating moved since the last poll.
 export function LiveRatingsPanel({
@@ -124,7 +124,7 @@ export function LiveRatingsPanel({
                   {row.team_number ?? row.team_key.replace(/^frc/, '')}
                 </span>
                 {row.nickname ? (
-                  <span className="live-ratings-row__nick">{row.nickname}</span>
+                  <span className="live-ratings-row__nick" title={row.nickname ?? undefined}>{row.nickname}</span>
                 ) : null}
               </span>
               <RatingSparkline trend={row.rating_trend} className="live-ratings-row__spark" />

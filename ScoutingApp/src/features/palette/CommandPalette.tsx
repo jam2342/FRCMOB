@@ -197,7 +197,7 @@ export function CommandPalette({ open, onClose, recentEvents, recentTeams, onSta
         </div>
         <div ref={listRef} id={listId} role="listbox" aria-label="Results" className={styles.list}>
           {items.length === 0 ? (
-            <p className={styles.empty}>Nothing matches “{query.trim()}”. Try a team number like 254, or an event name.</p>
+            <p className={styles.empty}>Nothing matches “{query.trim()}”. Try a team number like 5417, or an event name.</p>
           ) : null}
           {items.map((item, index) => (
             <div key={item.id} className={styles.itemWrap}>

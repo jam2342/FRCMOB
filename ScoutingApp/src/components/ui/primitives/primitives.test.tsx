@@ -3,7 +3,6 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   Button,
-  CardEmpty,
   CardRow,
   Chip,
   FieldRadioGroup,
@@ -128,12 +127,6 @@ describe('Card insides', () => {
   it('leaves a static row out of the tab order', () => {
     render(<CardRow label="Drivetrain" value="Swerve" />);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
-  });
-
-  it('renders an empty state with its own copy', () => {
-    render(<CardEmpty title="No pit data yet">Ask at the pit.</CardEmpty>);
-    expect(screen.getByText('No pit data yet')).toBeInTheDocument();
-    expect(screen.getByText('Ask at the pit.')).toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,7 @@
 import { cx } from './primitives/cx';
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { switchTabWithTransition, type TransitionDirection } from '../../utils/viewTransition';
+import { useMobileLayout } from '../../hooks/useMobileLayout';
 import './SegmentedTabs.css';
 
 
@@ -41,8 +42,15 @@ type SegmentedTabsProps<T extends string> = {
   value: T;
   onChange: (next: T) => void;
   ariaLabel: string;
+  /** Layout only (spacing, alignment). The look is the component's: see `variant`. */
   className?: string;
+  /** Only with variant="board". */
   itemClassName?: string;
+  /** 'tabs' is the app's one tab look: an underline strip on phones, a pill group on desktop.
+   *  Pages used to choose by passing class names, so the same kind of tabs was an underline
+   *  strip on one phone page and boxed pills on the next. 'board' is the scouting board's
+   *  large gloves-on segments, styled by the board itself. */
+  variant?: 'tabs' | 'board';
   /** Page-level tabs: the content slides toward the picked tab while this tab bar and its
    *  header hold still. */
   motion?: boolean;
@@ -83,11 +91,20 @@ export function SegmentedTabs<T extends string>({
   ariaLabel,
   className = '',
   itemClassName = '',
+  variant = 'tabs',
   motion = false,
   swipe = false,
-  ink = false,
+  ink: inkProp = false,
 }: SegmentedTabsProps<T>) {
+  const phone = useMobileLayout();
+  const board = variant === 'board';
+  const listClass = board ? '' : phone ? 'fm-tab-bar' : 'center-tabs';
+  const tabClass = board ? itemClassName : phone ? 'fm-tab' : 'center-tab-btn';
+  const ink = board ? inkProp : phone;
   const listRef = useRef<HTMLDivElement | null>(null);
+  // Which ends of a scrolling strip have more tabs past them. A strip cut at the screen edge
+  // showed "Fo" for Forecast with nothing saying it scrolls; the faded edge does.
+  const [more, setMore] = useState<'' | 'start' | 'end' | 'both'>('');
   const [inkBox, setInkBox] = useState<{ x: number; width: number; ready: boolean } | null>(null);
 
   const change = (next: T) => {
@@ -155,6 +172,24 @@ export function SegmentedTabs<T extends string>({
     if (tab.left < box.left) scroller.scrollLeft -= box.left - tab.left + margin;
     else if (tab.right > box.right) scroller.scrollLeft += tab.right - box.right + margin;
   }, [value, items.length]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return undefined;
+    const measure = () => {
+      const start = list.scrollLeft > 2;
+      const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 2;
+      setMore(start && end ? 'both' : start ? 'start' : end ? 'end' : '');
+    };
+    measure();
+    list.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(list);
+    return () => {
+      list.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [items.length, phone]);
 
   useEffect(() => {
     if (!swipe) return undefined;
@@ -238,7 +273,8 @@ export function SegmentedTabs<T extends string>({
   return (
     <div
       ref={listRef}
-      className={cx('segmented-tabs', ink && 'segmented-tabs--ink', className)}
+      className={cx('segmented-tabs', listClass, ink && 'segmented-tabs--ink', className)}
+      data-more={more || undefined}
       role="tablist"
       aria-label={ariaLabel}
       aria-orientation="horizontal"
@@ -254,7 +290,7 @@ export function SegmentedTabs<T extends string>({
             aria-label={item.ariaLabel}
             aria-controls={item.panelId}
             tabIndex={active || index === fallbackFocusIndex ? 0 : -1}
-            className={cx('segmented-tabs__item', itemClassName, item.className, active && 'active')}
+            className={cx('segmented-tabs__item', tabClass, item.className, active && 'active')}
             onClick={() => change(item.value)}
             onKeyDown={(event) => handleKeyDown(event, index)}
             disabled={item.disabled}

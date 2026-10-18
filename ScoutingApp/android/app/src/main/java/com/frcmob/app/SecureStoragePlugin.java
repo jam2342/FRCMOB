@@ -1,4 +1,4 @@
-package app.frcmob.scouting;
+package com.frcmob.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;

@@ -65,7 +65,7 @@ const CONDITIONAL = new Map([
 // in src/styles/README.md.
 const HEROLESS = new Set([
   '/events', '/match-center/strategy', '/scouting/pit', '/scouting/assignments',
-  '/scouting/auto-paths', '/scouting/calibrate', '/compare', '/compare/picklist',
+  '/scouting/calibrate', '/compare', '/compare/picklist',
   '/favorites', '/settings', '/privacy', '/terms', '/primitives',
   '/primitives?state=modal', '/events/export',
 ]);

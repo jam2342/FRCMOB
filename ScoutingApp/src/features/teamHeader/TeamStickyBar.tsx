@@ -104,9 +104,6 @@ export function TeamStickyBar<T extends string>({ watchRef, teamNumber, nickname
           <span className={styles.rating}>{rating}</span>
         </div>
         <SegmentedTabs
-          ink={phone}
-          className={phone ? 'fm-tab-bar' : 'center-tabs'}
-          itemClassName={phone ? 'fm-tab' : 'center-tab-btn'}
           ariaLabel="Team center tabs"
           value={tab}
           onChange={pickTab}

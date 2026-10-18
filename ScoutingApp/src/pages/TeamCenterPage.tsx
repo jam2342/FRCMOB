@@ -76,6 +76,7 @@ import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
 import { loadTeamCenterIntel, loadTeamCenterLogo } from '../features/prefetch/pageRequests';
 import { useWorkspace } from '../features/workspace/useWorkspace';
+import { MISSING } from '../utils/formatValue';
 
 const BASE_TEAM_TABS = ['overview', 'performance', 'events', 'media'] as const;
 /* titleizeKey turns 'events' into "Events", which is also the name of a
@@ -1154,7 +1155,7 @@ export function TeamCenterPage() {
       {
         label: 'Auto Contribution',
         value: teamBreakdown?.averages?.auto_contribution ?? null,
-        display: metric(teamBreakdown?.averages?.auto_contribution ?? null, 2),
+        display: metric(teamBreakdown?.averages?.auto_contribution ?? null, 1),
         score: scoreAgainst(teamBreakdown?.averages?.auto_contribution, SEASON_BENCHMARKS.eliteAutoPoints),
       },
       {
@@ -1221,7 +1222,7 @@ export function TeamCenterPage() {
     const qual = asRecord(status?.qual);
     const ranking = asRecord(qual?.ranking);
     const record = asRecord(ranking?.record);
-    if (!record) return 'N/A';
+    if (!record) return MISSING;
     const wins = parseNumber(record.wins) ?? 0;
     const losses = parseNumber(record.losses) ?? 0;
     const ties = parseNumber(record.ties) ?? 0;
@@ -1230,9 +1231,9 @@ export function TeamCenterPage() {
 
   const tbaOverallStatus = useMemo(() => {
     const status = asRecord(teamTbaEventStatus);
-    if (typeof status?.overall_status_str !== 'string') return 'N/A';
+    if (typeof status?.overall_status_str !== 'string') return MISSING;
     const cleaned = stripHtmlTags(status.overall_status_str);
-    return cleaned || 'N/A';
+    return cleaned || MISSING;
   }, [teamTbaEventStatus]);
 
   const tbaSeasonAwardsCount = teamTbaAwards.length;
@@ -1471,13 +1472,13 @@ export function TeamCenterPage() {
                     </div>
                     {selectedEventKey ? (
                       <div className="fm-team-hero-stat" title="Official ranking at this event">
-                        <strong>{tbaRank !== null ? `#${tbaRank}` : 'N/A'}</strong>
+                        <strong>{tbaRank !== null ? `#${tbaRank}` : MISSING}</strong>
                         <span>Rank</span>
                       </div>
                     ) : (
                       // No event picked: an event rank can't exist, so show how many events the season covers.
                       <div className="fm-team-hero-stat" title="Events this team is registered for this season">
-                        <strong>{registeredEventOptions.length || 'N/A'}</strong>
+                        <strong>{registeredEventOptions.length || MISSING}</strong>
                         <span>Events</span>
                       </div>
                     )}
@@ -1496,11 +1497,8 @@ export function TeamCenterPage() {
                       all the tabs and push the page sideways on a narrow phone. */}
                   <div ref={heroTabsRef} style={{ minWidth: 0, maxWidth: '100%' }}>
                   <SegmentedTabs
-                    className="fm-tab-bar"
                     motion
                     swipe
-                    ink
-                    itemClassName="fm-tab"
                     ariaLabel="Team center tabs"
                     value={activeTab}
                     onChange={setActiveTab}
@@ -1563,16 +1561,14 @@ export function TeamCenterPage() {
                         {Math.round(officialStats.fuel_per_match)} fuel/match
                       </span>
                     ) : null}
-                    <span className="center-chip">Qual rank: {tbaRank !== null ? `#${tbaRank}` : 'N/A'}</span>
+                    <span className="center-chip">Qual rank: {tbaRank !== null ? `#${tbaRank}` : MISSING}</span>
                   </div>
                 </div>
               </div>
 
               <div className="center-tabs-header" ref={heroTabsRef}>
                 <SegmentedTabs
-                  className="center-tabs"
                   motion
-                  itemClassName="center-tab-btn"
                   ariaLabel="Team center tabs"
                   value={activeTab}
                   onChange={setActiveTab}
@@ -1659,7 +1655,7 @@ export function TeamCenterPage() {
                       </article>
                       <article className="center-kpi-card">
                         <span><GaugeIcon className="icon-inline icon-muted" /> Likely rating</span>
-                        <strong>{ratingRange ?? 'N/A'}</strong>
+                        <strong>{ratingRange ?? MISSING}</strong>
                         <small>80% range: narrows as matches come in</small>
                       </article>
                       <article className="center-kpi-card">
@@ -1759,7 +1755,7 @@ export function TeamCenterPage() {
                         <>
                           <article className="center-kpi-card">
                             <span><HashIcon className="icon-inline icon-muted" /> Event Rank</span>
-                            <strong>{tbaRank !== null ? `#${tbaRank}` : 'N/A'}</strong>
+                            <strong>{tbaRank !== null ? `#${tbaRank}` : MISSING}</strong>
                           </article>
                           <article className="center-kpi-card">
                             <span><CheckCircleIcon className="icon-inline icon-muted" /> Event Record</span>
@@ -1767,7 +1763,7 @@ export function TeamCenterPage() {
                           </article>
                           <article className="center-kpi-card">
                             <span><AwardIcon className="icon-inline icon-muted" /> Event Awards</span>
-                            <strong>{tbaEventAwardsCount !== null ? tbaEventAwardsCount : 'N/A'}</strong>
+                            <strong>{tbaEventAwardsCount !== null ? tbaEventAwardsCount : MISSING}</strong>
                           </article>
                         </>
                       ) : null}
@@ -1776,7 +1772,7 @@ export function TeamCenterPage() {
                         <strong>{tbaSeasonAwardsCount}</strong>
                       </article>
                     </div>
-                    {tbaOverallStatus !== 'N/A' ? <p className="center-callout muted">{tbaOverallStatus}</p> : null}
+                    {tbaOverallStatus !== MISSING ? <p className="center-callout muted">{tbaOverallStatus}</p> : null}
                   </SurfaceCard>
                 </div>
 
@@ -1840,7 +1836,7 @@ export function TeamCenterPage() {
                 </SurfaceCard>
 
                 {/* ── Positional Heatmap ──────────────────────────── */}
-                <SurfaceCard title="Field Heatmap" collapsible compactable>
+                <SurfaceCard expandable title="Field Heatmap" collapsible compactable>
                   {heatmapLoading ? (
                     <div style={{ minHeight: 180 }}>
                       <SkeletonBlock rows={5} compact />
@@ -1861,6 +1857,7 @@ export function TeamCenterPage() {
 
                 {/* ── Attack vs Defense (shift analysis) ──────────── */}
                 <SurfaceCard
+                  expandable
                   title="Attack vs Defense"
                   subtitle={
                     teamShiftPlay?.available
@@ -1969,6 +1966,7 @@ export function TeamCenterPage() {
                   </SurfaceCard>
 
                   <SurfaceCard
+                    expandable
                     title="Event Schedule Difficulty"
                     subtitle="How strong each match's opponents are, by rating."
                     compactable

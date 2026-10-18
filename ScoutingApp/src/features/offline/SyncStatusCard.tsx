@@ -98,7 +98,7 @@ export function SyncStatusCard() {
   };
 
   return (
-    <SurfaceCard title="Saved on this phone" subtitle="Changes and recordings stay here until the server confirms them." expandable={false} mobileCollapsible={false}>
+    <SurfaceCard title="Saved on this phone" subtitle="Changes and recordings stay here until the server confirms them." mobileCollapsible={false}>
       <p>{queueSize} scouting change{queueSize === 1 ? '' : 's'} waiting · {recordings === null ? (readError ? 'Could not read recordings' : 'Checking recordings…') : `${recordings.length} recording${recordings.length === 1 ? '' : 's'} waiting`}</p>
       <p>{lastSync ? `Last confirmed sync: ${formatDayTime(lastSync)}` : 'No confirmed sync on this phone yet'}</p>
       {issue ? <p role="alert">Needs attention: {issue.count} change{issue.count === 1 ? '' : 's'} {issue.reason === 'conflict' ? 'conflicted with a teammate' : issue.reason === 'server-rejected' ? 'were rejected' : 'could not be saved'}. {issue.labels.slice(0, 3).map(recoveryLabel).join(', ')} <button type="button" className="center-btn ghost" onClick={clearSyncIssue}>Dismiss</button></p> : null}

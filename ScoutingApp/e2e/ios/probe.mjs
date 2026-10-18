@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const booted = JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', 'booted', '-j'], {encoding: 'utf8'}));
 const device = process.env.IOS_SIMULATOR_ID || Object.values(booted.devices).flat().find(device => device.name.startsWith('iPhone'))?.udid;
 assert.ok(device, 'Boot an iPhone simulator or set IOS_SIMULATOR_ID.');
-const appId = 'app.frcmob.scouting';
+const appId = 'com.frcmob.app';
 const run = (...args) => execFileSync('xcrun', ['simctl', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const container = run('get_app_container', device, appId, 'data');
 const output = `${container}/Documents/native-smoke.json`;

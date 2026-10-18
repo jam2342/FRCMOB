@@ -16,7 +16,6 @@ import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
   CardBody,
-  CardEmpty,
   CardGrid,
   Chip,
   FieldSelect,
@@ -54,6 +53,8 @@ import {
 } from '../layout/userSettings';
 import { readStoredCenterContext } from '../layout/centerContext';
 import { showToast } from '../components/ui/toast';
+import { MISSING } from '../utils/formatValue';
+import { EmptyState } from '../components/ui/EmptyState';
 
 type FavoritesTab = 'overview' | 'events' | 'teams';
 
@@ -326,7 +327,7 @@ export function FavoritesPage() {
         let confidence: number | null = null;
         let ratingPoints: number | null = null;
         let tbaRank: number | null = null;
-        let tbaRecord = 'N/A';
+        let tbaRecord = MISSING;
         let tbaEventAwardsCount: number | null = null;
         let tbaYearAwardsCount: number | null = null;
         let registeredEvents: TeamCompetitionsResponse['registered_events'] = [];
@@ -684,7 +685,7 @@ export function FavoritesPage() {
     <div className="favorites-card-grid">
       {favoriteEvents.filter(key => !eventCards[key]).map(key => <p key={key} role="status">Loading {eventDisplayName(key)}…</p>)}
       {favoriteEvents.length === 0 ? (
-        <CardEmpty title="No favorite events yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
+        <EmptyState compact title="No favorite events yet" description="Add one in Favorite Manager to start tracking it." />
       ) : null}
       {visibleEventCards.map((card) => {
         const nextMatch = card.upcoming_matches[0] || null;
@@ -762,7 +763,7 @@ export function FavoritesPage() {
     <div className="favorites-card-grid">
       {favoriteTeams.filter(key => !teamCards[key]).map(key => <p key={key} role="status">Loading team {key.replace(/^frc/, '')}…</p>)}
       {favoriteTeams.length === 0 ? (
-        <CardEmpty title="No favorite teams yet">Add one in Favorite Manager to start tracking it.</CardEmpty>
+        <EmptyState compact title="No favorite teams yet" description="Add one in Favorite Manager to start tracking it." />
       ) : null}
       {visibleTeamCards.map((card) => (
         <article key={`favorite-team-card-${card.team_key}`} className="favorites-item-card team">
@@ -779,11 +780,11 @@ export function FavoritesPage() {
             <CardGrid dense>
               <Stat label="Rating" value={metric(card.rating_0_100, 1)} size="sm" />
               <Stat label="Confidence" value={pct(card.confidence_0_1, 1)} size="sm" />
-              <Stat label="Fuel" value={metric(card.fuel_rate, 2)} size="sm" />
-              <Stat label="Auto" value={metric(card.auto_contribution, 2)} size="sm" />
+              <Stat label="Fuel" value={metric(card.fuel_rate, 1)} size="sm" />
+              <Stat label="Auto" value={metric(card.auto_contribution, 1)} size="sm" />
               <Stat label="Climb" value={pct(card.climb_success_prob, 1)} size="sm" />
               <Stat label="Pts / match" value={metric(card.rating_points_per_match, 0)} size="sm" />
-              <Stat label="TBA Rank" value={card.tba_rank !== null ? `#${card.tba_rank}` : 'N/A'} size="sm" />
+              <Stat label="TBA Rank" value={card.tba_rank !== null ? `#${card.tba_rank}` : MISSING} size="sm" />
             </CardGrid>
 
             <div className={styles.chipRow}>
@@ -955,8 +956,6 @@ export function FavoritesPage() {
         <SurfaceCard title="Favorites" className="favorites-header-card">
           <div className="center-tabs-header">
             <SegmentedTabs
-              className="center-tabs"
-              itemClassName="center-tab-btn"
               ariaLabel="Favorites tabs"
               value={activeTab}
               onChange={setActiveTab}

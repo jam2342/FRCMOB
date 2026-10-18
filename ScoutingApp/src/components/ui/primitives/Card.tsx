@@ -52,30 +52,3 @@ export function CardGrid({
 }) {
   return <div className={cx(styles.grid, dense && styles.gridDense, className)}>{children}</div>;
 }
-
-export function CardEmpty({
-  title,
-  children,
-  icon,
-  action,
-  className,
-}: {
-  title: string;
-  children?: ReactNode;
-  icon?: ReactNode;
-  action?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cx(styles.empty, className)}>
-      {icon ? (
-        <span className={styles.emptyIcon} aria-hidden="true">
-          {icon}
-        </span>
-      ) : null}
-      <span className={styles.emptyTitle}>{title}</span>
-      {children ? <span className={styles.emptyText}>{children}</span> : null}
-      {action}
-    </div>
-  );
-}

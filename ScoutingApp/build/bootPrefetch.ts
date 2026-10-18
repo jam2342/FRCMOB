@@ -20,7 +20,6 @@ export const ROUTE_PAGES: Record<string, string> = {
   '/my-team': 'MyTeamPage',
   '/scouting': 'ScoutingPage',
   '/scouting/assignments': 'ScoutingAssignPage',
-  '/scouting/auto-paths': 'AutoPathPage',
   '/scouting/pit': 'PitScoutingPage',
   '/scouting/coverage': 'ScoutingCoveragePage',
   '/scouting/calibrate': 'FieldCalibrationPage',

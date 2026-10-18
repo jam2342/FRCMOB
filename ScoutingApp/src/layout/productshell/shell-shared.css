@@ -47,7 +47,7 @@
 }
 
 .product-shell h2,
-.product-shell .home-fotmob-toolbar h2 {
+.product-shell .home-board-toolbar h2 {
   font-size: clamp(0.98rem, 0.7vw + 0.8rem, 1.16rem);
   text-wrap: balance;
 }
@@ -80,8 +80,7 @@
 
 .product-shell .page-view-bar,
 .product-shell .center-tabs,
-.product-shell .fm-tab-bar,
-.product-shell .home-fotmob-filters {
+.product-shell .fm-tab-bar {
   display: flex;
   /* Not `center`: centering + overflow-x makes the leftmost tab
      unreachable (scrollLeft cannot go negative). The auto margins on the
@@ -97,29 +96,25 @@
 
 .product-shell .page-view-bar > :first-child,
 .product-shell .center-tabs > :first-child,
-.product-shell .fm-tab-bar > :first-child,
-.product-shell .home-fotmob-filters > :first-child {
+.product-shell .fm-tab-bar > :first-child {
   margin-inline-start: auto;
 }
 
 .product-shell .page-view-bar > :last-child,
 .product-shell .center-tabs > :last-child,
-.product-shell .fm-tab-bar > :last-child,
-.product-shell .home-fotmob-filters > :last-child {
+.product-shell .fm-tab-bar > :last-child {
   margin-inline-end: auto;
 }
 
 .product-shell .page-view-bar::-webkit-scrollbar,
 .product-shell .center-tabs::-webkit-scrollbar,
-.product-shell .fm-tab-bar::-webkit-scrollbar,
-.product-shell .home-fotmob-filters::-webkit-scrollbar {
+.product-shell .fm-tab-bar::-webkit-scrollbar {
   display: none;
 }
 
 .product-shell .page-view-tab,
 .product-shell .center-tab-btn,
-.product-shell .fm-tab,
-.product-shell .home-filter-btn {
+.product-shell .fm-tab {
   flex: 0 0 auto;
   min-height: var(--touch-target-compact);
   white-space: nowrap;
@@ -128,7 +123,7 @@
 
 /* ── Cards: consistent structure + spacing */
 .product-shell .surface-card,
-.product-shell .home-fotmob-card,
+.product-shell .home-board-card,
 .product-shell .home-event-section,
 .product-shell .home-mini-panel {
   border: var(--ui-border-subtle);
@@ -142,7 +137,7 @@
 }
 
 .product-shell .surface-card:hover,
-.product-shell .home-fotmob-card:hover,
+.product-shell .home-board-card:hover,
 .product-shell .home-event-section:hover,
 .product-shell .home-mini-panel:hover {
   box-shadow: var(--ui-shadow-card-hover);
@@ -160,7 +155,7 @@
 
 .product-shell .surface-card-head-actions,
 .product-shell .home-card-head-actions,
-.product-shell .home-fotmob-toolbar-actions {
+.product-shell .home-board-toolbar-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -271,7 +266,7 @@
    EmptyState's own stylesheet gives it no border at all; the rule above adds
    one so a standalone empty state reads as a region. Inside a container that
    is already a region, take it back off. */
-.product-shell :where(.surface-card, .home-fotmob-card, .home-mini-panel, .center-kpi-card) .es {
+.product-shell :where(.surface-card, .home-board-card, .home-mini-panel, .center-kpi-card) .es {
   border: 0;
   border-radius: 0;
   background: none;
@@ -328,7 +323,7 @@
 /* ── Motion standards */
 .product-shell :where(
   .center-btn,
-  .home-fotmob-btn,
+  .home-board-btn,
   .home-mini-tab-btn,
   .event-picker-item,
   .center-tab-btn,
@@ -354,7 +349,7 @@
   }
 
   .product-shell h2,
-  .product-shell .home-fotmob-toolbar h2 {
+  .product-shell .home-board-toolbar h2 {
     font-size: clamp(0.9rem, 2vw, 1.04rem);
   }
 
@@ -367,7 +362,6 @@
   .product-shell .page-view-tab,
   .product-shell .center-tab-btn,
   .product-shell .fm-tab,
-  .product-shell .home-filter-btn,
   .product-shell .center-sort-chip,
   .product-shell .center-btn {
     min-height: var(--touch-target-min);
@@ -379,7 +373,7 @@
   }
 
 .product-shell .surface-card,
-  .product-shell .home-fotmob-card,
+  .product-shell .home-board-card,
   .product-shell .home-event-section,
   .product-shell .home-mini-panel {
     border-radius: var(--radius-lg);
@@ -412,7 +406,7 @@
 @media (prefers-reduced-motion: reduce) {
   .product-shell :where(
     .center-btn,
-    .home-fotmob-btn,
+    .home-board-btn,
     .home-mini-tab-btn,
     .event-picker-item,
     .center-tab-btn,
@@ -647,7 +641,7 @@
 
 .product-shell .ps-topbar-search-btn,
 .product-shell .center-btn,
-.product-shell .home-fotmob-btn {
+.product-shell .home-board-btn {
   border-radius: var(--ui-radius-control);
   border-color: var(--ui-accent);
   background: color-mix(in srgb, var(--ui-accent) 44%, var(--ui-surface-soft));
@@ -658,7 +652,7 @@
 
 .product-shell.theme-light .ps-topbar-search-btn,
 .product-shell.theme-light .center-btn,
-.product-shell.theme-light .home-fotmob-btn {
+.product-shell.theme-light .home-board-btn {
   background: color-mix(in srgb, var(--ui-accent) 30%, #f4fbf7);
   /* the pale light-theme fill needs dark text; without this the near-white
      from the base rule above carries over and the label disappears. */
@@ -666,8 +660,7 @@
 }
 
 .product-shell .center-btn.ghost,
-.product-shell .home-fotmob-btn.subtle,
-.product-shell .home-filter-btn,
+.product-shell .home-board-btn.subtle,
 .product-shell .home-mini-tab-btn,
 .product-shell .home-card-collapse-btn {
   border-color: var(--ui-border);
@@ -688,15 +681,15 @@
 }
 
 .product-shell .center-btn:hover,
-.product-shell .home-fotmob-btn:hover,
+.product-shell .home-board-btn:hover,
 .product-shell .ps-topbar-search-btn:hover {
   filter: brightness(1.06);
   transform: translateY(-1px);
 }
 
 .product-shell .surface-card,
-.product-shell .home-fotmob-card,
-.product-shell .home-fotmob-toolbar,
+.product-shell .home-board-card,
+.product-shell .home-board-toolbar,
 .product-shell .home-event-section,
 .product-shell .home-mini-panel,
 .product-shell .event-knockout-bracket-board,
@@ -750,7 +743,7 @@
 .product-shell .center-layout-team,
 .product-shell .compare-layout-grid,
 .product-shell .favorites-layout-grid,
-.product-shell .home-fotmob-layout {
+.product-shell .home-board-layout {
   gap: var(--card-stack-gap);
 }
 
@@ -854,7 +847,7 @@
    and with an estimated 420px they drew one frame at that size and then snapped to their real
    height, moving everything below (Match Center's snapshot: 454px, then 161px). */
 .product-shell .center-main > .surface-card:nth-child(n + 3),
-.product-shell .home-fotmob-feed > .home-event-section:nth-child(n + 3) {
+.product-shell .home-board-feed > .home-event-section:nth-child(n + 3) {
   content-visibility: auto;
   contain-intrinsic-size: auto 420px;
 }
@@ -863,7 +856,7 @@
    Phone pages are short enough to lay out normally and keep swipes stable. */
 @media (max-width: 1120px) {
   .product-shell .center-main > .surface-card,
-  .product-shell .home-fotmob-feed > .home-event-section {
+  .product-shell .home-board-feed > .home-event-section {
     content-visibility: visible;
     contain-intrinsic-size: none;
   }
@@ -945,7 +938,7 @@
 }
 
 .product-shell .center-list-scroll,
-.product-shell .home-fotmob-event-list {
+.product-shell .home-board-event-list {
   padding-right: 4px;
 }
 
@@ -1087,21 +1080,21 @@
   background: rgba(46, 154, 99, 0.1);
 }
 
-.product-shell .home-fotmob-layout {
+.product-shell .home-board-layout {
   grid-template-columns: minmax(240px, 290px) minmax(0, 1fr) minmax(250px, 300px);
   min-height: calc(100vh - 150px);
 }
 
-.product-shell .home-fotmob-toolbar {
+.product-shell .home-board-toolbar {
   gap: 12px;
   padding: 13px;
 }
 
-.product-shell .home-fotmob-toolbar-left h2 {
+.product-shell .home-board-toolbar-left h2 {
   font-size: var(--font-size-xl);
 }
 
-.product-shell .home-fotmob-meta-row {
+.product-shell .home-board-meta-row {
   border-color: var(--ui-border);
   background: var(--ui-surface-soft);
   color: var(--ui-text-muted);
@@ -1300,7 +1293,6 @@
 }
 
 .product-shell.theme-light .center-tab-btn.active,
-.product-shell.theme-light .home-filter-btn.active,
 .product-shell.theme-light .home-mini-tab-btn.active {
   border-color: #7eb39e;
   background: color-mix(in srgb, rgba(109, 170, 146, 0.24) 42%, var(--color-surface-muted));
@@ -1402,13 +1394,13 @@
 }
 
 .product-shell.theme-light .center-stream-embed-wrap,
-.product-shell.theme-light .home-fotmob-embed-wrap {
+.product-shell.theme-light .home-board-embed-wrap {
   border-color: var(--ui-border);
   background: var(--color-surface-muted);
 }
 
 .product-shell.theme-light .center-stream-embed-wrap iframe,
-.product-shell.theme-light .home-fotmob-embed-wrap iframe {
+.product-shell.theme-light .home-board-embed-wrap iframe {
   background: var(--color-surface-muted);
 }
 
@@ -1418,9 +1410,9 @@
 .product-shell .surface-card-body,
 .product-shell .center-main,
 .product-shell .center-sidebar,
-.product-shell .home-fotmob-left,
-.product-shell .home-fotmob-center,
-.product-shell .home-fotmob-right {
+.product-shell .home-board-left,
+.product-shell .home-board-center,
+.product-shell .home-board-right {
   min-width: 0;
 }
 
@@ -1456,25 +1448,25 @@
     grid-template-columns: 322px minmax(0, 1fr);
   }
 
-  .product-shell .home-fotmob-layout {
+  .product-shell .home-board-layout {
     grid-template-columns: 250px minmax(0, 1fr) 260px;
   }
 }
 
 @media (max-width: 1420px) {
-  .product-shell .home-fotmob-layout {
+  .product-shell .home-board-layout {
     grid-template-columns: 1fr;
   }
 
-  .product-shell .home-fotmob-center {
+  .product-shell .home-board-center {
     order: 1;
   }
 
-  .product-shell .home-fotmob-left {
+  .product-shell .home-board-left {
     order: 2;
   }
 
-  .product-shell .home-fotmob-right {
+  .product-shell .home-board-right {
     order: 3;
   }
 
@@ -1596,9 +1588,6 @@
     gap: 7px;
   }
 
-  .mobile-finder-layout .surface-card-head h3 {
-    font-size: var(--font-size-lg);
-  }
 
   .mobile-finder-layout .surface-card-head p {
     display: none;
@@ -1676,19 +1665,19 @@
     padding-right: 0;
   }
 
-  .product-shell .home-fotmob-layout {
+  .product-shell .home-board-layout {
     grid-template-columns: 1fr;
   }
 
-  .product-shell .home-fotmob-center {
+  .product-shell .home-board-center {
     order: 1;
   }
 
-  .product-shell .home-fotmob-left {
+  .product-shell .home-board-left {
     order: 2;
   }
 
-  .product-shell .home-fotmob-right {
+  .product-shell .home-board-right {
     order: 3;
   }
 
@@ -1770,10 +1759,9 @@
 
   .product-shell .center-btn,
   .product-shell .center-tab-btn,
-  .product-shell .home-filter-btn,
   .product-shell .home-mini-tab-btn,
   .product-shell .home-card-collapse-btn,
-  .product-shell .home-fotmob-btn{
+  .product-shell .home-board-btn {
     min-height: 36px;
   }
 
@@ -1787,8 +1775,8 @@
     height: 36px;
   }
 
-  .product-shell .home-fotmob-toolbar,
-  .product-shell .home-fotmob-card,
+  .product-shell .home-board-toolbar,
+  .product-shell .home-board-card,
   .product-shell .home-event-section,
   .product-shell .surface-card {
     padding: 11px;
@@ -1805,9 +1793,6 @@
     margin-bottom: 8px;
   }
 
-  .product-shell .surface-card-head h3 {
-    font-size: var(--font-size-md);
-  }
 
   .product-shell .surface-card-head p {
     font-size: var(--font-size-2xs);
@@ -2092,7 +2077,7 @@
 
 .product-shell :where(
   .center-btn,
-  .home-fotmob-btn,
+  .home-board-btn,
   .center-tab-btn,
   .page-view-tab,
   .fm-tab,
@@ -2103,7 +2088,6 @@
   .ps-sidebar-toggle,
   .ps-finder-toggle,
   .center-sort-chip,
-  .home-filter-btn,
   .ms__link,
   .btb__tab
 ) {
@@ -2124,7 +2108,6 @@
   .ps-sidebar-toggle,
   .ps-finder-toggle,
   .center-sort-chip,
-  .home-filter-btn,
   .ms__link
 ) {
   border: 1px solid var(--control-border);
@@ -2135,7 +2118,7 @@
 
 .product-shell :where(
   .center-btn:not(.ghost),
-  .home-fotmob-btn:not(.subtle),
+  .home-board-btn:not(.subtle),
   .ps-topbar-search-btn
 ) {
   border: 1px solid color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
@@ -2144,13 +2127,13 @@
   box-shadow: var(--control-shadow-soft);
 }
 
-.product-shell :where(.center-btn.ghost, .home-fotmob-btn.subtle) {
+.product-shell :where(.center-btn.ghost, .home-board-btn.subtle) {
   border: 1px solid var(--control-border);
   background: var(--control-bg);
   color: var(--control-text-muted);
 }
 
-.product-shell :where(.center-btn, .home-fotmob-btn, .ps-topbar-search-btn) {
+.product-shell :where(.center-btn, .home-board-btn, .ps-topbar-search-btn) {
   min-height: var(--control-min-height);
   padding: 0 var(--control-padding-inline);
   border-radius: var(--control-radius);
@@ -2164,9 +2147,7 @@
   .surface-card-collapse-btn,
   .ps-sidebar-toggle,
   .ps-finder-toggle,
-  .center-sort-chip,
-  .home-filter-btn
-) {
+  .center-sort-chip) {
   min-height: var(--control-min-height-dense);
   padding: 0 var(--control-padding-inline-dense);
   border-radius: var(--control-radius);
@@ -2215,7 +2196,6 @@
   .ps-sidebar-toggle,
   .ps-finder-toggle,
   .center-sort-chip,
-  .home-filter-btn,
   .ms__link
 ):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
   border-color: var(--control-border-strong);
@@ -2225,7 +2205,7 @@
 
 .product-shell :where(
   .center-btn:not(.ghost),
-  .home-fotmob-btn:not(.subtle),
+  .home-board-btn:not(.subtle),
   .ps-topbar-search-btn
 ):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
   filter: brightness(1.04);
@@ -2239,7 +2219,6 @@
   .ps-nav-link.active,
   .scout-sidebar-nav-pill.active,
   .center-sort-chip.active,
-  .home-filter-btn.active,
   .ms__link--active
 ) {
   border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
@@ -2250,7 +2229,7 @@
 
 .product-shell :where(
   .center-btn.ghost,
-  .home-fotmob-btn.subtle
+  .home-board-btn.subtle
 ):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
   transform: translateY(-1px);
 }
@@ -2308,7 +2287,7 @@
 
 .product-shell.theme-light :where(
   .center-btn:not(.ghost),
-  .home-fotmob-btn:not(.subtle),
+  .home-board-btn:not(.subtle),
   .ps-topbar-search-btn
 ) {
   border-color: color-mix(in srgb, var(--color-accent) 74%, var(--color-border));
@@ -2417,7 +2396,7 @@
 }
 
 .product-shell .surface-card,
-.product-shell .home-fotmob-card,
+.product-shell .home-board-card,
 .product-shell .home-event-section,
 .product-shell .center-match-row,
 .product-shell .center-team-card,
@@ -2449,7 +2428,7 @@
 .product-shell .center-tab-btn,
 .product-shell .center-sort-chip,
 .product-shell .home-card-collapse-btn,
-.product-shell .home-fotmob-btn,
+.product-shell .home-board-btn,
 .product-shell .surface-card-expand-btn,
 .product-shell .surface-card-collapse-btn,
 .product-shell .ps-mobile-burger-btn {
@@ -2478,7 +2457,7 @@
   pointer-events: none;
 }
 
-.product-shell .home-fotmob-event-list,
+.product-shell .home-board-event-list,
 .product-shell .center-list-scroll,
 .product-shell .home-ranking-list {
   scroll-behavior: smooth;
@@ -2498,7 +2477,7 @@
 .product-shell .ps-nav .ps-nav-link:nth-child(7) { animation-delay: 144ms; }
 .product-shell .ps-nav .ps-nav-link:nth-child(8) { animation-delay: 164ms; }
 
-.product-shell .home-fotmob-event-list > :nth-child(-n + 12),
+.product-shell .home-board-event-list > :nth-child(-n + 12),
 .product-shell .center-list-scroll > :nth-child(-n + 10),
 .product-shell .home-ranking-list > :nth-child(-n + 8),
 .product-shell .ms__grid > :nth-child(-n + 6) {
@@ -2508,22 +2487,21 @@
   will-change: transform, opacity;
 }
 
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(1) { --ui-item-delay: 18ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(2) { --ui-item-delay: 36ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(3) { --ui-item-delay: 54ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(4) { --ui-item-delay: 72ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(5) { --ui-item-delay: 90ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(6) { --ui-item-delay: 108ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(7) { --ui-item-delay: 126ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(8) { --ui-item-delay: 144ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(9) { --ui-item-delay: 162ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(10) { --ui-item-delay: 180ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(11) { --ui-item-delay: 198ms; }
-.product-shell :is(.home-fotmob-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(12) { --ui-item-delay: 216ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(1) { --ui-item-delay: 18ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(2) { --ui-item-delay: 36ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(3) { --ui-item-delay: 54ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(4) { --ui-item-delay: 72ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(5) { --ui-item-delay: 90ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(6) { --ui-item-delay: 108ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(7) { --ui-item-delay: 126ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(8) { --ui-item-delay: 144ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(9) { --ui-item-delay: 162ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(10) { --ui-item-delay: 180ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(11) { --ui-item-delay: 198ms; }
+.product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(12) { --ui-item-delay: 216ms; }
 
 .product-shell .center-tab-btn.active,
 .product-shell .center-sort-chip.active,
-.product-shell .home-filter-btn.active,
 .product-shell .home-mini-tab-btn.active,
 .product-shell .btb__tab--active .btb__icon,
 .product-shell .ms__link--active {
@@ -2548,7 +2526,7 @@
   .product-shell .center-tab-btn:hover,
   .product-shell .center-sort-chip:hover,
   .product-shell .home-card-collapse-btn:hover,
-  .product-shell .home-fotmob-btn:hover {
+  .product-shell .home-board-btn:hover {
     transform: translate3d(0, -2px, 0);
     box-shadow: 0 8px 16px color-mix(in srgb, var(--color-bg) 18%, transparent);
   }
@@ -2575,7 +2553,7 @@
 .product-shell .center-tab-btn:active,
 .product-shell .center-sort-chip:active,
 .product-shell .home-card-collapse-btn:active,
-.product-shell .home-fotmob-btn:active,
+.product-shell .home-board-btn:active,
 .product-shell .ps-mobile-burger-btn:active {
   transform: scale(0.98);
 }
@@ -2588,7 +2566,7 @@
 @media (prefers-reduced-motion: reduce) {
   .product-shell .ps-content > *,
   .product-shell .surface-card,
-  .product-shell .home-fotmob-card,
+  .product-shell .home-board-card,
   .product-shell .home-event-section,
   .product-shell .center-match-row,
   .product-shell .center-team-card,
@@ -2600,7 +2578,7 @@
   .surface-card--expanded,
   .product-shell .center-live-dot,
   .product-shell .ps-nav .ps-nav-link,
-  .product-shell .home-fotmob-event-list > :nth-child(-n + 12),
+  .product-shell .home-board-event-list > :nth-child(-n + 12),
   .product-shell .center-list-scroll > :nth-child(-n + 10),
   .product-shell .home-ranking-list > :nth-child(-n + 8),
   .product-shell .ms__grid > :nth-child(-n + 6),
@@ -2617,7 +2595,7 @@
     transition: none !important;
   }
 
-  .product-shell .home-fotmob-event-list,
+  .product-shell .home-board-event-list,
   .product-shell .center-list-scroll,
   .product-shell .home-ranking-list {
     scroll-behavior: auto !important;
@@ -2649,7 +2627,7 @@
   }
 
   /* Disable expensive stagger animations on list items — repaints every frame */
-  .product-shell .home-fotmob-event-list > :nth-child(-n + 12),
+  .product-shell .home-board-event-list > :nth-child(-n + 12),
   .product-shell .center-list-scroll > :nth-child(-n + 10),
   .product-shell .home-ranking-list > :nth-child(-n + 8),
   .product-shell .ms__grid > :nth-child(-n + 6) {
@@ -2671,7 +2649,7 @@
   }
 
   /* Instant scroll on slow devices */
-  .product-shell .home-fotmob-event-list,
+  .product-shell .home-board-event-list,
   .product-shell .center-list-scroll,
   .product-shell .home-ranking-list {
     scroll-behavior: auto !important;

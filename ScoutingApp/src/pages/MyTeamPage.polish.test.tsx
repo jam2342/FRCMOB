@@ -22,7 +22,7 @@ vi.mock('../api', () => ({
     setWorkspaceSession({
       token: 'tok',
       expiresAt: Math.floor(Date.now() / 1000) + 3600,
-      workspace: { id: 1, name: 'Robonauts', frc_team_number: 118 },
+      workspace: { id: 1, name: 'Eagle Robotics', frc_team_number: 5417 },
       me: { id: 1, display_name: 'Test Scout', role: 'leader' },
     });
     return {};
@@ -32,13 +32,13 @@ vi.mock('../api', () => ({
   }),
   getMyWorkspace: vi.fn(async () => ({
     ok: true,
-    workspace: { id: 1, name: 'Robonauts', frc_team_number: 118, join_code_rotated_at: null, created_at: null },
+    workspace: { id: 1, name: 'Eagle Robotics', frc_team_number: 5417, join_code_rotated_at: null, created_at: null },
     me: members[0],
     members,
   })),
   removeWorkspaceMember: vi.fn(async () => ({
     ok: true,
-    workspace: { id: 1, name: 'Robonauts', frc_team_number: 118, join_code_rotated_at: null, created_at: null },
+    workspace: { id: 1, name: 'Eagle Robotics', frc_team_number: 5417, join_code_rotated_at: null, created_at: null },
     me: members[0],
     members: [members[0]],
     join_code: 'NEWCO-DE123',

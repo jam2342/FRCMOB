@@ -4,7 +4,6 @@ import { SurfaceCard } from '../components/ui/SurfaceCard';
 import {
   Button,
   CardBody,
-  CardEmpty,
   CardGrid,
   CardRow,
   Chip,
@@ -22,6 +21,7 @@ import {
   type TableColumn,
 } from '../components/ui/primitives';
 import styles from './PrimitivesPage.module.css';
+import { EmptyState } from '../components/ui/EmptyState';
 
 // The primitives gallery. This is not decoration — it is how Phase 2's exit
 // criteria are actually checked. Guards 3 and 4 sweep routes, so every
@@ -104,7 +104,6 @@ export function PrimitivesPage() {
         <SurfaceCard
           title="Button"
           subtitle="Four variants, two sizes, every state. Replaces 52 button classes."
-          expandable={false}
         >
           <CardBody>
             <div className={styles.row}>
@@ -134,7 +133,6 @@ export function PrimitivesPage() {
         <SurfaceCard
           title="Chip"
           subtitle="Six tones. Red and blue are alliance-only; the dot is the second, non-colour channel."
-          expandable={false}
         >
           <CardBody>
             <div className={styles.row}>
@@ -157,7 +155,6 @@ export function PrimitivesPage() {
         <SurfaceCard
           title="Stat"
           subtitle="Always tabular figures. Confidence is a first-class slot, never hidden."
-          expandable={false}
         >
           <CardBody>
             <CardGrid>
@@ -174,7 +171,6 @@ export function PrimitivesPage() {
         <SurfaceCard
           title="Card insides"
           subtitle="Body, row, grid and empty — the 84 classes that were reimplementing SurfaceCard's contents."
-          expandable={false}
         >
           <CardBody>
             <div>
@@ -183,16 +179,13 @@ export function PrimitivesPage() {
               <CardRow label="Preferred start" value="Left" />
               <CardRow label="Open match log" value="12 matches" onClick={() => undefined} />
             </div>
-            <CardEmpty title="No pit data yet" icon={<ClockIcon />}>
-              This team has not been pit scouted at this event.
-            </CardEmpty>
+            <EmptyState compact icon={<ClockIcon />} title="No pit data yet" description="This team has not been pit scouted at this event." />
           </CardBody>
         </SurfaceCard>
 
         <SurfaceCard
           title="Field"
           subtitle="Seven variants over one wiring routine: label, hint, error and aria-describedby."
-          expandable={false}
         >
           <CardBody>
             <FieldText label="Scout name" placeholder="Who is scouting" hint="Shown on every entry you save." />
@@ -236,7 +229,6 @@ export function PrimitivesPage() {
         <SurfaceCard
           title="Modal"
           subtitle="Centred dialog above 560px, bottom sheet below. Focus trapped, focus restored, scroll locked."
-          expandable={false}
         >
           <CardBody>
             <div className={styles.row}>
@@ -247,9 +239,9 @@ export function PrimitivesPage() {
         </SurfaceCard>
 
         <SurfaceCard
+          expandable
           title="Table"
           subtitle="Numeric columns get tabular figures and right alignment. Below 560px each row becomes a card."
-          expandable={false}
         >
           <CardBody>
             <Table
@@ -279,7 +271,7 @@ export function PrimitivesPage() {
       >
         <CardBody>
           <p>Anyone with the link can view this event's scouting data. They cannot edit it.</p>
-          <FieldText label="Link" defaultValue="https://frcmob.app/#/events" readOnly />
+          <FieldText label="Link" defaultValue="https://scouting-app-iryg.vercel.app/#/events" readOnly />
         </CardBody>
       </Modal>
 

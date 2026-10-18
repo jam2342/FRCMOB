@@ -61,7 +61,6 @@ import { Stat, Table, type TableColumn } from '../components/ui/primitives';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
-import { smartSearchEvents } from '../utils/eventSearch';
 import { LiteStreamEmbed } from '../components/LiteStreamEmbed';
 import { navigateWithTransition } from '../utils/viewTransition';
 import { AwayBanner } from '../features/awaySummary/AwayBanner';
@@ -70,6 +69,9 @@ import awayStyles from '../features/awaySummary/Away.module.css';
 import { readMyTeamKey } from '../features/workspace/myTeam';
 import { type EventDateRange, normalizeDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken, compactAllianceLabel } from './eventCalendar';
 import { storageGet, storageSet } from '../platform/safeStorage';
+import { MISSING } from '../utils/formatValue';
+import { SegmentedTabs } from '../components/ui/SegmentedTabs';
+import { EventPicker } from '../components/EventPicker';
 
 const HOME_EVENT_VIEW_PREFS_STORAGE = 'scouting_home_event_view_prefs_v1';
 const HOME_MOBILE_AUTO_EVENT_GUARD_STORAGE = 'scouting_home_mobile_auto_event_guard_v1';
@@ -354,13 +356,8 @@ export function HomePage() {
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
   const [eventSearchOpen, setEventSearchOpen] = useState(false);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
-  const [eventSearchResults, setEventSearchResults] = useState<EventSearchItem[]>([]);
   // The query the shown results answer; Enter must not open a match for older text.
-  const [eventSearchResultsQuery, setEventSearchResultsQuery] = useState('');
-  const [eventSearchBusy, setEventSearchBusy] = useState(false);
-  const eventSearchInputRef = useRef<HTMLInputElement>(null);
   const eventSearchContainerRef = useRef<HTMLDivElement>(null);
-  const eventSearchRequestSeqRef = useRef(0);
   const dayPickerInputRef = useRef<HTMLInputElement>(null);
   const selectedContextEventRef = useRef('');
   const autoAdjustedCalendarMonthRef = useRef(false);
@@ -397,68 +394,25 @@ export function HomePage() {
     return () => window.clearTimeout(timer);
   }, [teamsQueryInput]);
 
-  /* ── Event search: auto-focus when opened ────────────────────────── */
+  /* ── Event search: a closed search starts empty next time ────────── */
   useEffect(() => {
-    if (eventSearchOpen) {
-      requestAnimationFrame(() => eventSearchInputRef.current?.focus());
-    } else {
-      eventSearchRequestSeqRef.current += 1;
-      setEventSearchQuery('');
-      setEventSearchResults([]);
-      setEventSearchBusy(false);
-    }
+    if (!eventSearchOpen) setEventSearchQuery('');
   }, [eventSearchOpen]);
 
   /* ── Event search: click-outside to close ────────────────────────── */
   useEffect(() => {
     if (!eventSearchOpen) return;
     function handleClickOutside(event: MouseEvent) {
-      if (eventSearchContainerRef.current && !eventSearchContainerRef.current.contains(event.target as Node)) {
+      const target = event.target as Element | null;
+      // The results list is portaled to <body>; scrolling it is not a click outside.
+      if (target?.closest?.('.event-picker-dropdown')) return;
+      if (eventSearchContainerRef.current && !eventSearchContainerRef.current.contains(target as Node)) {
         setEventSearchOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [eventSearchOpen]);
-
-  /* ── Event search: debounced query ───────────────────────────────── */
-  useEffect(() => {
-    const requestSeq = ++eventSearchRequestSeqRef.current;
-    const trimmed = eventSearchQuery.trim();
-    if (!trimmed) {
-      setEventSearchResults([]);
-      setEventSearchBusy(false);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setEventSearchBusy(true);
-      smartSearchEvents(trimmed, {
-        maxResults: 12,
-        seedEvents: suggestedEvents,
-        fastMode: true,
-        localOnly: false,
-        maxNetworkVariants: 4,
-        includeSuggestedFallback: true,
-      })
-        .then((result) => {
-          if (requestSeq === eventSearchRequestSeqRef.current) {
-            setEventSearchResults(result.events);
-            setEventSearchResultsQuery(trimmed);
-          }
-        })
-        .catch(() => {
-          if (requestSeq === eventSearchRequestSeqRef.current) {
-            setEventSearchResults([]);
-          }
-        })
-        .finally(() => {
-          if (requestSeq === eventSearchRequestSeqRef.current) {
-            setEventSearchBusy(false);
-          }
-        });
-    }, 280);
-    return () => window.clearTimeout(timer);
-  }, [eventSearchQuery, suggestedEvents]);
 
   useEffect(() => {
     setTeamsPage(1);
@@ -1345,7 +1299,7 @@ export function HomePage() {
           record:
             record && (record.wins !== undefined || record.losses !== undefined || record.ties !== undefined)
               ? `${parseNumber(record.wins) ?? 0}-${parseNumber(record.losses) ?? 0}-${parseNumber(record.ties) ?? 0}`
-              : 'N/A',
+              : MISSING,
         } satisfies RankingRow;
       })
       .filter((row): row is RankingRow => Boolean(row))
@@ -1677,13 +1631,13 @@ export function HomePage() {
   }
 
   return (
-    <div className="home-fotmob-layout">
+    <div className="home-board-layout">
       {/* Today's Events shows only while it has something to say. On a day
           with no events it repeated the feed's own empty state and held a
           300px column open. */}
       {!isMobileLayout && showTodayEventsCard && (
-      <aside className="home-fotmob-left">
-        <section className={`home-fotmob-card ${allEventsCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
+      <aside className="home-board-left">
+        <section className={`home-board-card ${allEventsCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <h3>Today&apos;s Events</h3>
             {renderMobileCollapseButton('all-events', 'Today Events')}
@@ -1694,7 +1648,7 @@ export function HomePage() {
             </p>
           ) : (
             <>
-              <p id={cardContentId('all-events')} className="home-fotmob-note helper-text">
+              <p id={cardContentId('all-events')} className="home-board-note helper-text">
                 Events scheduled to run today (using event start/end dates).
               </p>
               {loadingHome ? (
@@ -1710,7 +1664,7 @@ export function HomePage() {
                 )
               ) : null}
               {liveEvents.length > 0 ? (
-                <div className="home-fotmob-event-list">
+                <div className="home-board-event-list">
                   {liveEvents.map((item) => (
                     <button
                       key={`home-live-event-${item.event_key}`}
@@ -1739,9 +1693,9 @@ export function HomePage() {
       </aside>
       )}
 
-      <section className="home-fotmob-center" aria-label="Matches">
-        <section className="home-fotmob-toolbar">
-          <div className="home-fotmob-toolbar-left">
+      <section className="home-board-center" aria-label="Matches">
+        <section className="home-board-toolbar">
+          <div className="home-board-toolbar-left">
             <div className="home-day-switcher" role="group" aria-label="Change schedule day">
               <button
                 type="button"
@@ -1781,6 +1735,7 @@ export function HomePage() {
                   if (parsedDay !== null) setSelectedDayMs(parsedDay);
                 }}
                 className="home-day-picker-input"
+                data-control="bare"
                 aria-label="Select schedule day"
                 tabIndex={-1}
               />
@@ -1809,58 +1764,28 @@ export function HomePage() {
               </button>
             ) : (
               <div className="home-event-search-expanded">
-                <SearchIcon className="icon-inline home-event-search-icon" />
-                <input
-                  ref={eventSearchInputRef}
-                  type="text"
-                  className="home-event-search-input"
-                  placeholder="Event name, key, or city…"
-                  value={eventSearchQuery}
-                  onChange={(e) => setEventSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setEventSearchOpen(false);
-                    if (e.key === 'Enter' && eventSearchResults.length > 0 && eventSearchResultsQuery === eventSearchQuery.trim()) {
-                      selectHomeEventKey(eventSearchResults[0].event_key, { manual: true });
-                      setEventSearchOpen(false);
-                    }
+                <EventPicker
+                  label="Event"
+                  value={selectedEventKey}
+                  inputValue={eventSearchQuery}
+                  onInputChange={setEventSearchQuery}
+                  onSelect={(eventKey) => {
+                    selectHomeEventKey(eventKey, { manual: true });
+                    setEventSearchOpen(false);
                   }}
-                  aria-label="Search events"
+                  actionLabel="Open"
+                  clearOnSelect
+                  autoFocus
+                  placeholder="Event name, city or code"
                 />
                 <button
                   type="button"
-                  className="home-event-search-close"
+                  className="center-btn ghost"
                   onClick={() => setEventSearchOpen(false)}
                   aria-label="Close search"
                 >
-                  ✕
+                  Close
                 </button>
-                {eventSearchQuery.trim() && (
-                  <div className="home-event-search-dropdown">
-                    {eventSearchBusy ? (
-                      <div className="home-event-search-status">Searching…</div>
-                    ) : eventSearchResults.length === 0 ? (
-                      <div className="home-event-search-status">No events found</div>
-                    ) : (
-                      eventSearchResults.map((ev) => (
-                        <button
-                          key={`esearch-${ev.event_key}`}
-                          type="button"
-                          className={`home-event-search-result ${selectedEventKey === normalizeEventKey(ev.event_key) ? 'active' : ''}`.trim()}
-                          onClick={() => {
-                            selectHomeEventKey(ev.event_key, { manual: true });
-                            setEventSearchOpen(false);
-                          }}
-                        >
-                          <strong>{ev.name}</strong>
-                          <span className="home-event-search-result-meta">
-                            <small>{ev.event_key}</small>
-                            <small>{eventLocationLabel(ev)}</small>
-                          </span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1884,28 +1809,25 @@ export function HomePage() {
             </div>
           ) : null}
 
-          <div className="home-fotmob-filters" role="tablist" aria-label="Home feed filters">
-            {(
+          <SegmentedTabs<HomeFilter>
+            ariaLabel="Home feed filters"
+            value={activeFilter}
+            onChange={setActiveFilter}
+            items={(
               [
                 { key: 'all', label: 'All', icon: null },
                 { key: 'live', label: 'Live', icon: <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> },
                 { key: 'upcoming', label: 'Upcoming', icon: <ClockIcon className="icon-inline icon-status-upcoming" /> },
                 { key: 'completed', label: 'Final', icon: <CheckCircleIcon className="icon-inline icon-status-final" /> },
               ] as Array<{ key: HomeFilter; label: string; icon: React.ReactNode }>
-            ).map((item) => (
-              <button
-                key={`home-filter-${item.key}`}
-                className={`home-filter-btn ${activeFilter === item.key ? 'active' : ''}`.trim()}
-                type="button"
-                onClick={() => setActiveFilter(item.key)}
-                title={`Show ${item.label.toLowerCase()} matches`}
-              >
-                {item.icon} {item.label}
-                <small>{filterCounts[item.key]}</small>
-              </button>
-            ))}
-          </div>
-          <div className="home-fotmob-toolbar-actions">
+            ).map((item) => ({
+              value: item.key,
+              icon: item.icon ?? undefined,
+              label: <>{item.label} <small>{filterCounts[item.key]}</small></>,
+              title: `Show ${item.label.toLowerCase()} matches`,
+            }))}
+          />
+          <div className="home-board-toolbar-actions">
             <button
               type="button"
               className={`home-mini-tab-btn ${allHomeCardsCollapsed ? 'active' : ''}`.trim()}
@@ -1915,14 +1837,17 @@ export function HomePage() {
             >
               <ChevronDownIcon className={`icon-inline ${allHomeCardsCollapsed ? '' : 'icon-rotate-180'}`.trim()} /> {allHomeCardsCollapsed ? 'Expand All' : 'Minimize All'}
             </button>
-            {nextLiveHomeMatch ? (
+            {/* Not on phones: a "Live" button right under the "Live" filter tab was two controls
+                with one name doing different things, and the countdown above already says
+                what's next. */}
+            {nextLiveHomeMatch && !isMobileLayout ? (
               <button
                 type="button"
                 className="home-mini-tab-btn"
                 onClick={() => openMatch(nextLiveHomeMatch.eventKey, nextLiveHomeMatch.match.match_key)}
                 title={`Open ${nextLiveHomeMatch.match.display_name}`}
               >
-                <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> {isMobileLayout ? 'Live' : 'Open Next Live'}
+                <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> Open Next Live
               </button>
             ) : null}
             {!isMobileLayout ? (
@@ -1952,7 +1877,7 @@ export function HomePage() {
         </section>
 
         {!isMobileLayout ? (
-          <section className="home-fotmob-meta-row">
+          <section className="home-board-meta-row">
             <span title="Currently selected event">{selectedEventDisplay}</span>
             <span title="Active filter">{homeFilterLabel(activeFilter)} · {filterCounts[activeFilter]} match{filterCounts[activeFilter] === 1 ? '' : 'es'}</span>
             <span title="Last data refresh">{relativeFromTimestamp(lastUpdatedAt)}</span>
@@ -2121,7 +2046,7 @@ export function HomePage() {
         ) : null}
 
         {awaySummary ? <AwayBanner summary={awaySummary} onShow={showAwayResults} onDismiss={dismissAway} /> : null}
-        <div className="home-fotmob-feed">
+        <div className="home-board-feed">
           {feedSections.map((section) => {
             const feedCardKey = `feed-${section.event_key}`;
             const sectionCollapsed = isFeedSectionCollapsed(feedCardKey);
@@ -2141,7 +2066,7 @@ export function HomePage() {
                     {renderFeedSectionCollapseButton(feedCardKey, section.event_name)}
                     <button
                       type="button"
-                      className="home-fotmob-btn subtle"
+                      className="home-board-btn subtle"
                       onClick={() => openEventCenter(section.event_key)}
                       title="View full event details"
                     >
@@ -2323,8 +2248,8 @@ export function HomePage() {
 
       {/* Desktop right rail */}
       {!isMobileLayout && (
-      <aside className="home-fotmob-right">
-        <section className={`home-fotmob-card ${compareBuilderCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
+      <aside className="home-board-right">
+        <section className={`home-board-card ${compareBuilderCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <div>
               {/* Named for the page it opens. It used to say "Alliance
@@ -2342,11 +2267,11 @@ export function HomePage() {
             </p>
           ) : (
             <>
-              <p id={cardContentId('compare-builder')} className="home-fotmob-note">
+              <p id={cardContentId('compare-builder')} className="home-board-note">
                 Build and compare 3-team lineups with compatibility scoring.
               </p>
               <Link
-                className="home-fotmob-btn"
+                className="home-board-btn"
                 to={selectedEventKey
                   ? `/compare/alliance-advisor?event=${selectedEventKey}`
                   : '/compare/alliance-advisor'}
@@ -2357,7 +2282,7 @@ export function HomePage() {
           )}
         </section>
 
-        <section className={`home-fotmob-card ${liveStreamCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
+        <section className={`home-board-card ${liveStreamCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <div>
               <h3>{selectedEventFinished ? 'Stream' : 'Live Stream'}</h3>
@@ -2385,17 +2310,17 @@ export function HomePage() {
                 </p>
               ) : null}
               {selectedStreamWatchUrl ? (
-                <a className="home-fotmob-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open the stream in a new tab">
+                <a className="home-board-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open the stream in a new tab">
                   {streamWatchLabel}
                 </a>
               ) : null}
               {selectedEventStream?.game_day_url && !selectedEventFinished ? (
-                <a className="home-fotmob-btn subtle" href={selectedEventStream.game_day_url} target="_blank" rel="noreferrer">
+                <a className="home-board-btn subtle" href={selectedEventStream.game_day_url} target="_blank" rel="noreferrer">
                   Open TBA GameDay
                 </a>
               ) : null}
               {selectedStreamEmbedUrl ? (
-                <div className="home-fotmob-embed-wrap">
+                <div className="home-board-embed-wrap">
                   <LiteStreamEmbed key={selectedStreamEmbedUrl} title={`Live stream for ${selectedEventKey}`} src={selectedStreamEmbedUrl} />
                 </div>
               ) : null}
@@ -2403,7 +2328,7 @@ export function HomePage() {
           )}
         </section>
 
-        <section className={`home-fotmob-card ${leaderboardCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
+        <section className={`home-board-card ${leaderboardCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <div>
               <h3>Leaderboard</h3>
@@ -2515,7 +2440,7 @@ export function HomePage() {
                     <span>Date TBA</span>
                     <span className="home-calendar-tba-count">{dateTbaCalendarEvents.length}</span>
                   </div>
-                  <div className="home-fotmob-event-list home-calendar-event-list">
+                  <div className="home-board-event-list home-calendar-event-list">
                     {dateTbaCalendarEvents.map((event) => {
                       const key = normalizeEventKey(event.event_key);
                       return (
@@ -2590,14 +2515,14 @@ export function HomePage() {
             <section className="home-drawer-section">
               <h4><VideoIcon className="icon-inline" /> {selectedEventFinished ? 'Stream' : 'Live Stream'}</h4>
               {selectedStreamWatchUrl ? (
-                <a className="home-fotmob-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open the stream">
+                <a className="home-board-btn" href={selectedStreamWatchUrl} target="_blank" rel="noreferrer" title="Open the stream">
                   <VideoIcon className="icon-inline" /> {streamWatchLabel}
                 </a>
               ) : (
                 <p className="center-callout muted">{streamCardSummary}</p>
               )}
               {selectedEventStream?.game_day_url && !selectedEventFinished ? (
-                <a className="home-fotmob-btn subtle" href={selectedEventStream.game_day_url} target="_blank" rel="noreferrer">
+                <a className="home-board-btn subtle" href={selectedEventStream.game_day_url} target="_blank" rel="noreferrer">
                   TBA GameDay
                 </a>
               ) : null}
@@ -2607,13 +2532,13 @@ export function HomePage() {
             <section className="home-drawer-section">
               <h4><LinkIcon className="icon-inline" /> Quick Links</h4>
               <div className="home-drawer-links">
-                <Link className="home-fotmob-btn subtle" to={selectedEventKey ? `/compare?event=${selectedEventKey}` : '/compare'} onClick={() => setMobileDrawerOpen(false)} title="Build and compare 3-team lineups">
+                <Link className="home-board-btn subtle" to={selectedEventKey ? `/compare?event=${selectedEventKey}` : '/compare'} onClick={() => setMobileDrawerOpen(false)} title="Build and compare 3-team lineups">
                   <PuzzleIcon className="icon-inline" /> Alliance Builder
                 </Link>
-                <Link className="home-fotmob-btn subtle" to="/events" onClick={() => setMobileDrawerOpen(false)} title="Browse all FRC events">
+                <Link className="home-board-btn subtle" to="/events" onClick={() => setMobileDrawerOpen(false)} title="Browse all FRC events">
                   <CalendarIcon className="icon-inline" /> All Events
                 </Link>
-                <Link className="home-fotmob-btn subtle" to={`/team-center${selectedEventKey ? `?event=${selectedEventKey}` : ''}`} onClick={() => setMobileDrawerOpen(false)} title="Detailed team scouting data">
+                <Link className="home-board-btn subtle" to={`/team-center${selectedEventKey ? `?event=${selectedEventKey}` : ''}`} onClick={() => setMobileDrawerOpen(false)} title="Detailed team scouting data">
                   <UsersIcon className="icon-inline" /> Team Center
                 </Link>
               </div>

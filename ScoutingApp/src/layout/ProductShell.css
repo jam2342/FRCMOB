@@ -49,7 +49,7 @@
    Keep these key layout declarations in this root file so text-based mobile
    regression tests can assert expected behavior without chasing @import files.
 */
-.home-fotmob-layout {
+.home-board-layout {
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(250px, 320px);
 }
 
@@ -61,26 +61,26 @@
    match day, overlapped the next column. Keep DOM order while three
    columns are showing. */
 /* No Today's Events column (nothing to list): the feed takes its track. */
-.home-fotmob-layout:not(:has(> .home-fotmob-left)) {
+.home-board-layout:not(:has(> .home-board-left)) {
   grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
 }
 
 @media (max-width: 1120px) {
-  .home-fotmob-layout:not(:has(> .home-fotmob-left)) {
+  .home-board-layout:not(:has(> .home-board-left)) {
     grid-template-columns: 1fr;
   }
 }
 
 @media (min-width: 1121px) {
-  .product-shell .home-fotmob-left,
-  .product-shell .home-fotmob-center,
-  .product-shell .home-fotmob-right {
+  .product-shell .home-board-left,
+  .product-shell .home-board-center,
+  .product-shell .home-board-right {
     order: 0;
   }
 }
 
 @media (max-width: 1120px) {
-  .home-fotmob-layout {
+  .home-board-layout {
     grid-template-columns: 1fr;
   }
 
@@ -106,8 +106,8 @@
   .product-shell .center-main > *,
   .product-shell .surface-card,
   .product-shell .surface-card-head,
-  .product-shell .home-fotmob-layout > *,
-  .product-shell .home-fotmob-card,
+  .product-shell .home-board-layout > *,
+  .product-shell .home-board-card,
   .product-shell .home-card-head > div {
     min-width: 0;
   }
@@ -153,18 +153,18 @@
     flex-wrap: nowrap;
   }
 
-  .product-shell .home-fotmob-toolbar-actions {
+  .product-shell .home-board-toolbar-actions {
     min-width: 0;
     flex-wrap: nowrap;
   }
 
-  .product-shell .home-fotmob-toolbar-actions .home-mini-tab-btn {
+  .product-shell .home-board-toolbar-actions .home-mini-tab-btn {
     flex-shrink: 0;
     padding: 4px 8px;
     font-size: 0;
   }
 
-  .product-shell .home-fotmob-toolbar-actions .home-mini-tab-btn .icon-inline {
+  .product-shell .home-board-toolbar-actions .home-mini-tab-btn .icon-inline {
     font-size: initial;
     width: 16px;
     height: 16px;
@@ -187,19 +187,12 @@
     grid-column: 1 / -1;
   }
 
-  .product-shell .home-filter-btn {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
   .product-shell .ps-topbar,
   .product-shell .ps-topbar-search-form,
-  .product-shell .home-fotmob-layout,
-  .product-shell .home-fotmob-center,
-  .product-shell .home-fotmob-toolbar,
-  .product-shell .home-event-search-widget,
-  .product-shell .home-event-search-expanded,
-  .product-shell .home-event-search-dropdown {
+  .product-shell .home-board-layout,
+  .product-shell .home-board-center,
+  .product-shell .home-board-toolbar,
+  .product-shell .home-event-search-widget {
     min-width: 0;
     max-width: 100%;
   }
@@ -862,8 +855,8 @@ button.ps-context-chip:disabled {
   }
 }
 
-/* Home day navigator (FotMob-style date control) */
-.product-shell .home-fotmob-toolbar-left {
+/* Home day navigator (date control) */
+.product-shell .home-board-toolbar-left {
   min-width: 0;
 }
 
@@ -941,7 +934,7 @@ button.ps-context-chip:disabled {
   pointer-events: none;
 }
 
-.product-shell .home-fotmob-toolbar-left p {
+.product-shell .home-board-toolbar-left p {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
@@ -969,7 +962,7 @@ button.ps-context-chip:disabled {
     padding: 5px 10px;
   }
 
-  .product-shell .home-fotmob-toolbar-left p {
+  .product-shell .home-board-toolbar-left p {
     font-size: var(--font-size-2xs);
     margin-top: 1px;
   }
@@ -987,7 +980,7 @@ button.ps-context-chip:disabled {
 }
 
 @media (max-width: 1120px) {
-  .product-shell .home-fotmob-toolbar-actions {
+  .product-shell .home-board-toolbar-actions {
     gap: 5px;
     padding-top: 1px;
   }
@@ -1002,16 +995,6 @@ button.ps-context-chip:disabled {
   .product-shell .home-mini-tab-btn .icon-inline {
     width: 12px;
     height: 12px;
-  }
-
-  .product-shell .home-fotmob-filters .home-filter-btn {
-    padding: 7px 3px 6px;
-    font-size: var(--font-size-legacy-11);
-    gap: 3px;
-  }
-
-  .product-shell .home-fotmob-filters .home-filter-btn small {
-    display: none;
   }
 
   .product-shell .home-calendar-drawer .home-drawer-header {
@@ -1185,26 +1168,26 @@ button.ps-context-chip:disabled {
    Keep this block at the end of ProductShell.css so it wins over imported
    foundation/mobile layers without changing component structure. */
 
-.product-shell .home-fotmob-layout {
+.product-shell .home-board-layout {
   gap: clamp(12px, 1.4vw, 18px);
   align-items: start;
 }
 
-.product-shell .home-fotmob-left,
-.product-shell .home-fotmob-center,
-.product-shell .home-fotmob-right {
+.product-shell .home-board-left,
+.product-shell .home-board-center,
+.product-shell .home-board-right {
   gap: clamp(12px, 1vw, 16px);
   align-self: start;
 }
 
-.product-shell .home-fotmob-toolbar,
-.product-shell .home-fotmob-card,
+.product-shell .home-board-toolbar,
+.product-shell .home-board-card,
 .product-shell .home-event-section,
 .product-shell .home-mini-panel {
   position: relative;
 }
 
-.product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel)::before {
+.product-shell :is(.home-board-card, .home-event-section, .home-mini-panel)::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -1219,7 +1202,7 @@ button.ps-context-chip:disabled {
   );
 }
 
-.product-shell .home-fotmob-toolbar {
+.product-shell .home-board-toolbar {
   border-color: color-mix(in srgb, var(--ui-border) 88%, transparent);
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--ui-accent-soft) 72%, transparent) 0%, transparent 42%),
@@ -1231,7 +1214,7 @@ button.ps-context-chip:disabled {
   box-shadow: var(--home-polish-shadow);
 }
 
-.product-shell .home-fotmob-toolbar::after {
+.product-shell .home-board-toolbar::after {
   content: "";
   position: absolute;
   inset: auto 16px 0;
@@ -1245,7 +1228,7 @@ button.ps-context-chip:disabled {
   );
 }
 
-.product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel) {
+.product-shell :is(.home-board-card, .home-event-section, .home-mini-panel) {
   border-color: color-mix(in srgb, var(--ui-border) 84%, transparent);
   box-shadow: var(--home-polish-shadow);
 }
@@ -1260,11 +1243,11 @@ button.ps-context-chip:disabled {
 .product-shell .home-card-head small,
 .product-shell .home-event-section-head small,
 .product-shell .home-mini-panel-head small,
-.product-shell .home-fotmob-note {
+.product-shell .home-board-note {
   line-height: 1.45;
 }
 
-.product-shell .home-fotmob-meta-row {
+.product-shell .home-board-meta-row {
   align-items: center;
   padding: 10px 12px;
   border-color: color-mix(in srgb, var(--ui-border) 82%, transparent);
@@ -1276,76 +1259,16 @@ button.ps-context-chip:disabled {
   box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 7%, transparent);
 }
 
-.product-shell .home-fotmob-meta-row span {
+.product-shell .home-board-meta-row span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-.product-shell .home-fotmob-toolbar-left,
-.product-shell .home-event-search-widget,
-.product-shell .home-event-search-expanded {
+.product-shell .home-board-toolbar-left,
+.product-shell .home-event-search-widget {
   min-width: 0;
-}
-
-.product-shell .home-event-search-expanded {
-  border-color: color-mix(in srgb, var(--ui-accent) 44%, var(--ui-border));
-  background: color-mix(in srgb, var(--ui-surface) 98%, transparent);
-  box-shadow: var(--home-polish-shadow-strong);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.product-shell .home-event-search-input {
-  font-weight: 600;
-}
-
-.product-shell .home-event-search-icon {
-  color: var(--ui-text-muted);
-}
-
-.product-shell .home-event-search-close {
-  min-width: 32px;
-  min-height: 32px;
-  border: 1px solid color-mix(in srgb, var(--ui-border) 88%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--ui-surface-soft) 88%, transparent);
-  color: var(--ui-text-muted);
-  transition:
-    border-color var(--motion-fast) var(--motion-ease),
-    background-color var(--motion-fast) var(--motion-ease),
-    color var(--motion-fast) var(--motion-ease);
-}
-
-.product-shell .home-event-search-close:hover,
-.product-shell .home-event-search-close:focus-visible {
-  border-color: color-mix(in srgb, var(--ui-accent) 56%, var(--ui-border));
-  background: color-mix(in srgb, var(--ui-accent-soft) 60%, var(--ui-surface-soft));
-  color: var(--ui-text);
-}
-
-.product-shell .home-event-search-dropdown {
-  border: 1px solid color-mix(in srgb, var(--ui-border) 82%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--ui-surface) 98%, transparent);
-  box-shadow: var(--home-polish-shadow-strong);
-  padding: 6px;
-}
-
-.product-shell .home-event-search-result {
-  border: 1px solid transparent;
-  border-radius: 12px;
-}
-
-.product-shell .home-event-search-result:hover,
-.product-shell .home-event-search-result.active {
-  border-color: color-mix(in srgb, var(--ui-accent) 46%, transparent);
-  background: linear-gradient(
-    140deg,
-    color-mix(in srgb, var(--ui-accent-soft) 62%, transparent),
-    color-mix(in srgb, var(--ui-surface-soft) 90%, transparent)
-  );
 }
 
 .product-shell .home-event-item,
@@ -1469,7 +1392,7 @@ button.ps-context-chip:disabled {
   transform: translateY(-1px);
 }
 
-.product-shell .home-fotmob-embed-wrap {
+.product-shell .home-board-embed-wrap {
   box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 7%, transparent);
 }
 
@@ -1532,21 +1455,18 @@ button.ps-context-chip:disabled {
 .product-shell :is(
   .home-event-item,
   .home-ranking-row,
-  .home-match-link-btn,
-  .home-event-search-result,
-  .home-event-search-close
-):focus-visible {
+  .home-match-link-btn):focus-visible {
   outline: 2px solid color-mix(in srgb, var(--ui-accent) 72%, transparent);
   outline-offset: 2px;
 }
 
 @media (max-width: 1120px) {
-  .product-shell .home-fotmob-center {
+  .product-shell .home-board-center {
     gap: 10px;
     padding: 0;
   }
 
-  .product-shell .home-fotmob-toolbar {
+  .product-shell .home-board-toolbar {
     padding: 15px 12px 12px;
     gap: 10px;
     border-radius: 18px;
@@ -1571,26 +1491,22 @@ button.ps-context-chip:disabled {
   .product-shell .home-event-search-trigger,
   .product-shell .home-mini-tab-btn,
   .product-shell .home-card-collapse-btn,
-  .product-shell .home-fotmob-btn,
+  .product-shell .home-board-btn,
   .product-shell .home-match-link-btn {
     min-height: var(--touch-target-min);
   }
 
-  .product-shell .home-fotmob-toolbar-actions > * {
+  .product-shell .home-board-toolbar-actions > * {
     flex: 1 1 132px;
     justify-content: center;
   }
 
-  .product-shell .home-event-search-dropdown {
-    max-height: min(42vh, 320px);
-  }
-
-  .product-shell :is(.home-fotmob-card, .home-event-section, .home-mini-panel) {
+  .product-shell :is(.home-board-card, .home-event-section, .home-mini-panel) {
     padding: 12px 11px;
     border-radius: 18px;
   }
 
-  .product-shell .home-fotmob-feed {
+  .product-shell .home-board-feed {
     gap: 10px;
   }
 
@@ -1638,12 +1554,12 @@ button.ps-context-chip:disabled {
 @media (max-width: 700px) {
   /* One even row across the card. The icon-only, no-shrink, 50%-basis rules above
      stacked into a row wider than the phone, which zoomed the whole page out. */
-  .product-shell .home-fotmob-toolbar-actions {
+  .product-shell .home-board-toolbar-actions {
     width: 100%;
     margin-left: 0;
   }
 
-  .product-shell .home-fotmob-toolbar-actions .home-mini-tab-btn {
+  .product-shell .home-board-toolbar-actions .home-mini-tab-btn {
     flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
@@ -1651,7 +1567,7 @@ button.ps-context-chip:disabled {
     white-space: nowrap;
   }
 
-  .product-shell .home-fotmob-toolbar-actions .home-mini-tab-btn:first-child {
+  .product-shell .home-board-toolbar-actions .home-mini-tab-btn:first-child {
     flex-grow: 1.5;
   }
 
@@ -2112,8 +2028,29 @@ button.ps-context-chip:disabled {
 
 /* At ~250px the four Home filters ran out of room and read "Upcomin". The word matters more
    than the dot/clock/tick icon next to it. */
-@media (max-width: 359px) {
-  .product-shell .home-filter-btn .icon-inline {
-    display: none;
-  }
+
+
+/* Home's event search is the shared EventPicker (same box and results as every other event
+   search) with a Close button beside it. */
+.home-event-search-expanded {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: min(360px, 100%);
+}
+
+.home-event-search-expanded .event-picker-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Labelled like every event box, but the toolbar has no room for a caption: the label is for
+   screen readers. */
+.home-event-search-expanded .center-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

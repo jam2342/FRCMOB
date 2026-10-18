@@ -10,6 +10,8 @@ type SurfaceCardProps = {
   right?: ReactNode;
   children: ReactNode;
   className?: string;
+  // Fullscreen is for content that outgrows its card: a table, a chart, a heat map, a video.
+  // It used to be on by default, so a desktop screen carried five or six identical corner buttons.
   expandable?: boolean;
   mobileCollapsible?: boolean;
   collapsible?: boolean;
@@ -98,7 +100,7 @@ export function SurfaceCard({
   right,
   children,
   className = '',
-  expandable = true,
+  expandable = false,
   // Off by default: on a phone people scroll past a card rather than collapse it, and a
   // minimize button on every card was clutter (and an easy mis-tap that hid content).
   mobileCollapsible = false,
@@ -177,7 +179,8 @@ export function SurfaceCard({
             >
               <header className="surface-card-head">
                 <div>
-                  <h3>{title}</h3>
+                  {/* A collapsed title is cut with "…"; the full title is one hover or long-press away. */}
+            <h3 title={isCollapsed ? title : undefined}>{title}</h3>
                   {subtitle ? <p>{subtitle}</p> : null}
                 </div>
                 <div className="surface-card-head-actions">
@@ -205,7 +208,8 @@ export function SurfaceCard({
       <section className={normalCardClass} aria-hidden={expanded || undefined}>
         <header className="surface-card-head">
           <div>
-            <h3>{title}</h3>
+            {/* A collapsed title is cut with "…"; the full title is one hover or long-press away. */}
+            <h3 title={isCollapsed ? title : undefined}>{title}</h3>
             {subtitle && !isCollapsed ? <p>{subtitle}</p> : null}
           </div>
           {right || canExpand || canCollapse ? (

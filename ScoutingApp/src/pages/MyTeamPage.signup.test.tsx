@@ -25,7 +25,7 @@ const removeWidget = vi.fn();
 const createButton = () => screen.getByRole('button', { name: 'Create workspace' });
 function page() { return render(<MemoryRouter><MyTeamPage /></MemoryRouter>); }
 function fillCreate() {
-  fireEvent.change(screen.getByLabelText(/Workspace name/), { target: { value: 'Robonauts' } });
+  fireEvent.change(screen.getByLabelText(/Workspace name/), { target: { value: 'Eagle Robotics' } });
   fireEvent.change(screen.getAllByLabelText(/Your name/)[1], { target: { value: 'Ann' } });
 }
 
@@ -51,7 +51,7 @@ describe('workspace signup policy', () => {
     expect(createButton()).toBeEnabled();
     fireEvent.click(createButton());
     await screen.findByRole('alert');
-    expect(createWorkspace).toHaveBeenCalledWith({ name: 'Robonauts', display_name: 'Ann', frc_team_number: null, challenge_token: 'single-use' });
+    expect(createWorkspace).toHaveBeenCalledWith({ name: 'Eagle Robotics', display_name: 'Ann', frc_team_number: null, challenge_token: 'single-use' });
     expect(createButton()).toBeDisabled();
     await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(2));
     expect(removeWidget).toHaveBeenCalledWith('widget');
@@ -67,7 +67,7 @@ describe('workspace signup policy', () => {
     fillCreate();
     await waitFor(() => expect(createButton()).toBeEnabled());
     fireEvent.click(createButton());
-    await waitFor(() => expect(createWorkspace).toHaveBeenCalledWith({ name: 'Robonauts', display_name: 'Ann', frc_team_number: null, challenge_token: null }));
+    await waitFor(() => expect(createWorkspace).toHaveBeenCalledWith({ name: 'Eagle Robotics', display_name: 'Ann', frc_team_number: null, challenge_token: null }));
     expect(renderWidget).not.toHaveBeenCalled();
   });
 

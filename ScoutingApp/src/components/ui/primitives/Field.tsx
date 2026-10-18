@@ -9,6 +9,7 @@ import {
 } from 'react';
 import styles from './Field.module.css';
 import { cx } from './cx';
+import { signedChange } from '../../../utils/formatValue';
 
 type FieldShellProps = {
   label?: string;
@@ -251,7 +252,7 @@ export function FieldStepper({
     if (feedback) {
       const delta = Number((next - value).toFixed(decimals));
       burstIdRef.current += 1;
-      const burst = { id: burstIdRef.current, increase: delta > 0, text: `${delta > 0 ? '+' : '−'}${Math.abs(delta)}` };
+      const burst = { id: burstIdRef.current, increase: delta > 0, text: signedChange(delta, 0) };
       // Fast tapping keeps at most four in the air.
       setBursts((current) => [...current.slice(-3), burst]);
       setPulse((current) => ({ count: current.count + 1, up: delta > 0 }));

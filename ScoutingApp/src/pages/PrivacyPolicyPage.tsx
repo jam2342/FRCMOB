@@ -22,7 +22,6 @@ export function PrivacyPolicyPage() {
         <SurfaceCard
           title="Privacy Policy"
           subtitle="What FRCMOB collects, why, and what it never collects."
-          expandable={false}
           mobileCollapsible={false}
         >
           <div className="legal-meta">

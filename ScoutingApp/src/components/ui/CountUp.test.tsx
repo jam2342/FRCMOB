@@ -2,11 +2,11 @@ import { render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { CountUp } from './CountUp';
 
-it('names the final value for screen readers and says N/A when there is none', () => {
+it('names the final value for screen readers and says — when there is none', () => {
   const { rerender } = render(<CountUp value={88.44} digits={1} />);
   expect(screen.getByLabelText('88.4')).toBeInTheDocument();
   rerender(<CountUp value={null} />);
-  expect(screen.getByText('N/A')).toBeInTheDocument();
+  expect(screen.getByText('—')).toBeInTheDocument();
 });
 
 it('never flashes the final value before counting up when the number arrives late', () => {

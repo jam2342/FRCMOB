@@ -472,7 +472,6 @@ function DataVizPageContent() {
       <SurfaceCard
         title={viewTitle(EVENTS_VIEWS, '/events/dashboard')}
         subtitle="Charts of how the teams at this event rate, and one team up close."
-        expandable={false}
         mobileCollapsible={false}
       >
         <EventPicker
@@ -495,7 +494,6 @@ function DataVizPageContent() {
           style={{ maxWidth: 220 }}
         />
         <SegmentedTabs
-          className="center-tabs"
           ariaLabel="Dashboard view"
           value={activePanel}
           onChange={(next) => setActivePanel(next)}
@@ -515,6 +513,7 @@ function DataVizPageContent() {
           <>
             {/* Rating Distribution */}
             <SurfaceCard
+              expandable
               title="Team Rating Distribution"
               subtitle={`Top ${topTeams.length} of ${ratings.length} team${ratings.length === 1 ? '' : 's'}`}
             >
@@ -564,6 +563,7 @@ function DataVizPageContent() {
             {/* Full Rankings Table */}
             {ratings.length > 0 && (
               <SurfaceCard
+                expandable
                 title="Full Rankings"
                 subtitle={`All ${ratings.length} team${ratings.length === 1 ? '' : 's'}`}
                 collapsible
@@ -585,6 +585,7 @@ function DataVizPageContent() {
             {/* Radar Chart */}
             {teamRating && (
               <SurfaceCard
+                expandable
                 title={`Team ${teamRating.team_number ?? teamKey.replace(/^frc/, '')} - Subscore Profile`}
                 subtitle={`Overall: ${teamRating.rating_0_100.toFixed(1)} / 100`}
               >
@@ -606,6 +607,7 @@ function DataVizPageContent() {
             {/* Match-by-Match Trends */}
             {matchTrends.length > 0 && (
               <SurfaceCard
+                expandable
                 title="Match-by-Match Trends"
                 subtitle={`${breakdown?.recent_matches?.length ?? 0} match${breakdown?.recent_matches?.length === 1 ? '' : 'es'}`}
               >
@@ -643,6 +645,7 @@ function DataVizPageContent() {
             {/* Event Type Breakdown */}
             {eventTypeCounts.length > 0 && (
               <SurfaceCard
+                expandable
                 title="Event Type Breakdown"
                 collapsible
               >

@@ -371,7 +371,6 @@ export function AllianceAdvisorPage() {
         <SurfaceCard
           title={viewTitle(COMPARE_VIEWS, '/compare/alliance-advisor')}
           subtitle="Build an alliance and see who fits it best."
-          expandable={false}
           mobileCollapsible={false}
         >
           <EventPicker
@@ -459,6 +458,7 @@ export function AllianceAdvisorPage() {
         {/* ---- Top Teams by Desirability ---- */}
         {selectionModel && selectionModel.top_desirability.length > 0 ? (
           <SurfaceCard
+            expandable
             title="Team Desirability Rankings"
             subtitle={`${selectionModel.top_desirability.length} team${selectionModel.top_desirability.length === 1 ? '' : 's'} ranked by selection desirability. ${selectionModel.simulations.toLocaleString()} simulation${selectionModel.simulations === 1 ? '' : 's'}.`}
             right={
@@ -503,6 +503,7 @@ export function AllianceAdvisorPage() {
         {selectionModel?.first_round_seed_pick_probabilities &&
           Object.keys(selectionModel.first_round_seed_pick_probabilities).length > 0 ? (
           <SurfaceCard
+            expandable
             title="First-Round Pick Probabilities"
             collapsible
           >
@@ -549,7 +550,7 @@ export function AllianceAdvisorPage() {
 
         {/* ---- Alliance Builder (What-If) ---- */}
         {teamPool.length > 0 ? (
-          <SurfaceCard title="Alliance Builder">
+          <SurfaceCard expandable title="Alliance Builder">
             <CardBody>
               <div className={styles.paramGrid}>
                 {([0, 1, 2] as const).map((slot) => (
