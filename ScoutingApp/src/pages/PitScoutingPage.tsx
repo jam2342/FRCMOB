@@ -10,8 +10,8 @@ import {
 } from '../api';
 import type { PitScoutingEntry } from '../api';
 import { EventPicker } from '../components/EventPicker';
-import { PageViewBar } from '../components/PageViewBar';
-import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
+import { ScoutingViewBar } from '../components/ScoutingViewBar';
+import { scoutingViewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { PIT_FORM_SECTIONS } from '../config/gameFields';
 import type { PitFieldDef } from '../config/gameFields';
@@ -22,7 +22,7 @@ import { hapticSuccess, hapticTap } from '../utils/haptics';
 import { asRecord, parseNumber } from './centerUtils';
 import './PitScoutingPage.css';
 import { useWorkspace } from '../features/workspace/useWorkspace';
-import { readPitDraft, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../features/offline/pitDrafts';
+import { readPitDraft, readPitDraftSavedAt, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../features/offline/pitDrafts';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +115,7 @@ function PitScoutingWorkspacePage() {
     if (!eventKey) {setLoading(false); return;}
     setLoading(true); setServerNotesReady(false);
     void Promise.all([
-      getEventTeamsIntel(eventKey, {include_tba:true,include_statbotics:false,include_season_fallback:false,include_rating_details:false,include_rating_signals:false}),
+      getEventTeamsIntel(eventKey, {include_tba:true,include_season_fallback:false,include_rating_details:false,include_rating_signals:false}),
       listPitEntries(eventKey),
     ]).then(([payload, result]) => {
       if (cancelled) return;
@@ -144,7 +144,13 @@ function PitScoutingWorkspacePage() {
     const payload = draft ?? entriesByTeam.get(selectedTeam)?.payload ?? {};
     formRef.current = {...payload}; setForm(formRef.current);
     setFormDirty(Boolean(draft)); setDraftStored(pitDraftPersisted(workspaceId,eventKey,selectedTeam));
-    editVersionRef.current = 0; setStatusText('');
+    editVersionRef.current = 0;
+    // A teammate saved after this draft was written: say so before a save replaces theirs.
+    const serverUpdated = Date.parse(entriesByTeam.get(selectedTeam)?.updated_at ?? '');
+    const draftSavedAt = draft ? readPitDraftSavedAt(workspaceId,eventKey,selectedTeam) : null;
+    setStatusText(draftSavedAt !== null && Number.isFinite(serverUpdated) && serverUpdated > draftSavedAt
+      ? "A teammate saved newer notes for this team after your draft. You're seeing your draft; saving it replaces their notes."
+      : '');
     // Entries are loaded before team selection; updates must not overwrite edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTeam,eventKey,workspaceId]);
@@ -311,7 +317,13 @@ function PitScoutingWorkspacePage() {
       hapticSuccess();
       setStatusText(`Photo added for #${teamNumber(selectedTeam)}.`);
     } catch (err) {
-      setErrorText((err as Error).message || 'Failed to upload photo.');
+      // Photos aren't queued for later like notes are (they're megabytes each), so say
+      // plainly that this one didn't stick, instead of a browser "Failed to fetch".
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const network = err instanceof TypeError || /failed to fetch|load failed|network/i.test((err as Error).message || '');
+      setErrorText(offline || network
+        ? "No connection, so this photo wasn't saved. Photos need signal; take it again once you're back online. Your notes still save on this phone."
+        : (err as Error).message || 'Failed to upload photo.');
     } finally {
       setUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -444,11 +456,11 @@ function PitScoutingWorkspacePage() {
 
   return (
     <>
-      <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
+      <ScoutingViewBar />
       <div className="center-page-container">
 
           <SurfaceCard
-            title="Pit Scouting"
+            title={scoutingViewTitle('/scouting/pit')}
             subtitle="Robot specs, claimed capabilities, and photos — one entry per team."
             expandable={false}
             mobileCollapsible={false}
@@ -461,6 +473,7 @@ function PitScoutingWorkspacePage() {
             }
           >
             <EventPicker
+              label="Event"
               value={eventKey}
               onSelect={key => {if(formDirty && !draftStored && !window.confirm('This draft could not be saved on your device. Discard it and change events?')) {setEventInput(eventKey);return;} selectEvent(key);}}
               inputValue={eventInput}
@@ -611,7 +624,7 @@ function PitScoutingWorkspacePage() {
 // the device has joined one.
 export function PitScoutingPage() {
   return (
-    <WorkspaceGate feature="Pit notes" viewBar={<PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />}>
+    <WorkspaceGate feature="Pit notes" viewBar={<ScoutingViewBar />}>
       <PitScoutingWorkspacePage />
     </WorkspaceGate>
   );

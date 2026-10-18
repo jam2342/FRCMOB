@@ -5,6 +5,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 export type SingleFlightPollReason = 'initial' | 'poll' | 'manual' | 'resume' | 'update';
 
 const UPDATE_DEBOUNCE_MS = 250;
+const REFRESH_WAIT_LIMIT_MS = 15000;
+
+// Every poll running on screen, so pull-to-refresh can refresh what the page shows.
+const activeRefreshers = new Set<() => Promise<void>>();
+
+export function activePollCount(): number {
+  return activeRefreshers.size;
+}
+
+// Runs every visible poll now, as a manual refresh, and resolves when they have all answered.
+export async function refreshActivePolls(): Promise<number> {
+  const runs = Array.from(activeRefreshers, (refresh) => refresh().catch(() => undefined));
+  await Promise.all(runs);
+  return runs.length;
+}
 
 type UseSingleFlightPollingOptions = {
   enabled: boolean;
@@ -127,6 +142,18 @@ export function useSingleFlightPolling(options: UseSingleFlightPollingOptions): 
       void execute(reason);
     };
 
+    const refreshNow = async () => {
+      // A run already in flight answers first; then a fresh manual one.
+      const startedAt = Date.now();
+      while (requestInFlightFlag && !disposed && Date.now() - startedAt < REFRESH_WAIT_LIMIT_MS) {
+        await new Promise((resolve) => window.setTimeout(resolve, 80));
+      }
+      if (disposed) return;
+      clearTimer();
+      await execute('manual');
+    };
+    activeRefreshers.add(refreshNow);
+
     void execute('initial');
     let updateTimer: number | null = null;
     const onUpdated = () => {
@@ -139,6 +166,7 @@ export function useSingleFlightPolling(options: UseSingleFlightPollingOptions): 
     window.addEventListener('api:updated', onUpdated);
     return () => {
       disposed = true;
+      activeRefreshers.delete(refreshNow);
       triggerRef.current = () => undefined;
       clearTimer();
       window.removeEventListener('api:updated', onUpdated);

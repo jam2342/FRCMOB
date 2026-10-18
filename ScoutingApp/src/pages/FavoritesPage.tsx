@@ -39,12 +39,10 @@ import {
   fmtDateShort,
   liveTimerLabel, matchStartTime,
   metric,
-  metricUnit,
   normalizeTeamKeyInput,
   parseNumber,
   pct,
   relativeFromTimestamp,
-  summarizeFreshness,
   teamNumberFromTeamKey,
   titleizeKey,
 } from './centerUtils';
@@ -55,6 +53,7 @@ import {
   saveFavoriteTeams,
 } from '../layout/userSettings';
 import { readStoredCenterContext } from '../layout/centerContext';
+import { showToast } from '../components/ui/toast';
 
 type FavoritesTab = 'overview' | 'events' | 'teams';
 
@@ -77,23 +76,16 @@ type FavoriteTeamCard = {
   team_key: string;
   team_number: number | null;
   nickname: string;
-  matches_analyzed: number | null;
   fuel_rate: number | null;
-  cycle_time_sec: number | null;
   auto_contribution: number | null;
   climb_success_prob: number | null;
-  reliability_score: number | null;
   rating_0_100: number | null;
   confidence_0_1: number | null;
-  rating_robot_level_0_100: number | null;
-  rating_driver_skill_0_100: number | null;
+  rating_points_per_match: number | null;
   tba_rank: number | null;
   tba_record: string;
   tba_event_awards_count: number | null;
   tba_year_awards_count: number | null;
-  freshness_state: 'fresh' | 'stale' | 'unknown';
-  freshness_label: string;
-  freshness_detail: string | null;
   events_count: number | null;
   event_context_key: string;
   data_available: boolean;
@@ -225,7 +217,7 @@ export function FavoritesPage() {
 
       setLoadingEvents(activeTab !== 'teams');
       setLoadingTeams(activeTab !== 'events');
-      setStatusText('Refreshing...');
+      setStatusText('Refreshing…');
 
       const eventResults = await Promise.allSettled(
         eventsToRefresh.map(async (eventKey) => {
@@ -236,7 +228,6 @@ export function FavoritesPage() {
               eventKey,
               {
                 include_tba: true,
-                include_statbotics: false,
                 include_season_fallback: true,
                 include_rating_details: false,
                 include_rating_signals: false,
@@ -326,25 +317,18 @@ export function FavoritesPage() {
         let error = '';
         let teamNumber = teamNumberFromTeamKey(teamKey);
         let nickname = '';
-        let matchesAnalyzed: number | null = null;
         let fuelRate: number | null = null;
-        let cycleTimeSec: number | null = null;
         let autoContribution: number | null = null;
         let climbSuccessProb: number | null = null;
-        let reliabilityScore: number | null = null;
         let eventsCount: number | null = null;
         let nextEventKey: string | null = null;
         let rating: number | null = null;
         let confidence: number | null = null;
-        let ratingRobotLevel: number | null = null;
-        let ratingDriverSkill: number | null = null;
+        let ratingPoints: number | null = null;
         let tbaRank: number | null = null;
         let tbaRecord = 'N/A';
         let tbaEventAwardsCount: number | null = null;
         let tbaYearAwardsCount: number | null = null;
-        let freshnessState: FavoriteTeamCard['freshness_state'] = 'unknown';
-        let freshnessLabel = 'Freshness: N/A';
-        let freshnessDetail: string | null = null;
         let registeredEvents: TeamCompetitionsResponse['registered_events'] = [];
 
           try {
@@ -355,7 +339,6 @@ export function FavoritesPage() {
                 preferred_year: CURRENT_SEASON_YEAR,
                 fallback_year: CURRENT_SEASON_YEAR - 1,
                 include_tba: true,
-                include_statbotics: false,
                 allow_season_fallback: true,
                 auto_heal_ratings: true,
                 refresh: forceNetwork,
@@ -374,16 +357,9 @@ export function FavoritesPage() {
 
           teamNumber = parseNumber(intelTeam?.team_number) ?? teamNumber;
           nickname = typeof intelTeam?.nickname === 'string' ? intelTeam.nickname : nickname;
-          matchesAnalyzed = parseNumber(analysis?.matches_analyzed);
-          const freshness = summarizeFreshness(analysis?.data_freshness || null);
-          freshnessState = freshness.state;
-          freshnessLabel = freshness.label;
-          freshnessDetail = freshness.detail;
           fuelRate = parseNumber(averages?.fuel_scoring_rate);
-          cycleTimeSec = parseNumber(averages?.cycle_time_sec);
           autoContribution = parseNumber(averages?.auto_contribution);
           climbSuccessProb = parseNumber(averages?.climb_success_prob);
-          reliabilityScore = parseNumber(averages?.reliability_score);
 
           eventsCount = parseNumber(competitions?.registered_events_count);
           registeredEvents = Array.isArray(competitions?.registered_events)
@@ -398,8 +374,7 @@ export function FavoritesPage() {
 
           rating = parseNumber(ratingPayload?.rating_0_100);
           confidence = parseNumber(ratingPayload?.confidence_0_1);
-          ratingRobotLevel = parseNumber(ratingPayload?.robot_level_0_100);
-          ratingDriverSkill = parseNumber(ratingPayload?.driver_skill_0_100);
+          ratingPoints = parseNumber(asRecord(ratingPayload?.expected_points)?.total);
 
           tbaRank = parseNumber(tbaSummary?.rank);
           const tbaRecordPayload = asRecord(tbaSummary?.record);
@@ -427,23 +402,16 @@ export function FavoritesPage() {
             team_key: teamKey,
             team_number: teamNumber,
             nickname,
-            matches_analyzed: matchesAnalyzed,
             fuel_rate: fuelRate,
-            cycle_time_sec: cycleTimeSec,
             auto_contribution: autoContribution,
             climb_success_prob: climbSuccessProb,
-            reliability_score: reliabilityScore,
             rating_0_100: rating,
             confidence_0_1: confidence,
-            rating_robot_level_0_100: ratingRobotLevel,
-            rating_driver_skill_0_100: ratingDriverSkill,
+            rating_points_per_match: ratingPoints,
             tba_rank: tbaRank,
             tba_record: tbaRecord,
             tba_event_awards_count: tbaEventAwardsCount,
             tba_year_awards_count: tbaYearAwardsCount,
-            freshness_state: freshnessState,
-            freshness_label: freshnessLabel,
-            freshness_detail: freshnessDetail,
             events_count: eventsCount,
             event_context_key: eventContextKey,
             data_available: !error,
@@ -664,14 +632,36 @@ export function FavoritesPage() {
     setErrorText('');
   }
 
+  // Undo puts it back in the same place; read the stored list then, in case something else
+  // changed it while the toast was up.
   function removeFavoriteEvent(eventKey: string) {
+    const position = favoriteEvents.indexOf(eventKey);
     persistFavoriteEvents(favoriteEvents.filter((value) => value !== eventKey));
-    setStatusText('Event removed.');
+    setStatusText('');
+    showToast({
+      message: `Removed ${eventDisplayName(eventKey)} from favorites`,
+      actionLabel: 'Undo',
+      onAction: () => {
+        const current = readFavoriteEvents().filter((value) => value !== eventKey);
+        current.splice(Math.max(0, Math.min(position, current.length)), 0, eventKey);
+        persistFavoriteEvents(current);
+      },
+    });
   }
 
   function removeFavoriteTeam(teamKey: string) {
+    const position = favoriteTeams.indexOf(teamKey);
     persistFavoriteTeams(favoriteTeams.filter((value) => value !== teamKey));
-    setStatusText(`Removed Team ${teamNumberFromTeamKey(teamKey)}.`);
+    setStatusText('');
+    showToast({
+      message: `Removed Team ${teamNumberFromTeamKey(teamKey)} from favorites`,
+      actionLabel: 'Undo',
+      onAction: () => {
+        const current = readFavoriteTeams().filter((value) => value !== teamKey);
+        current.splice(Math.max(0, Math.min(position, current.length)), 0, teamKey);
+        persistFavoriteTeams(current);
+      },
+    });
   }
 
   function openEventCenter(eventKey: string) {
@@ -785,32 +775,19 @@ export function FavoritesPage() {
           {card.error ? (
             <p className={`${styles.note} ${styles.noteDanger}`} role="alert">{card.error}</p>
           ) : null}
-          <div className={styles.chipRow}>
-            <Chip tone={card.freshness_state === 'stale' ? 'warn' : 'accent'} dot>
-              Data: {card.freshness_label}
-            </Chip>
-          </div>
-          {card.freshness_detail ? (
-            <p className={`${styles.note} ${card.freshness_state === 'stale' ? styles.noteWarning : ''}`.trim()}>
-              {card.freshness_detail}
-            </p>
-          ) : null}
 
             <CardGrid dense>
               <Stat label="Rating" value={metric(card.rating_0_100, 1)} size="sm" />
               <Stat label="Confidence" value={pct(card.confidence_0_1, 1)} size="sm" />
               <Stat label="Fuel" value={metric(card.fuel_rate, 2)} size="sm" />
-              <Stat label="Cycle" value={metricUnit(card.cycle_time_sec, 2, 's')} size="sm" />
               <Stat label="Auto" value={metric(card.auto_contribution, 2)} size="sm" />
               <Stat label="Climb" value={pct(card.climb_success_prob, 1)} size="sm" />
-              <Stat label="Robot" value={metric(card.rating_robot_level_0_100, 1)} size="sm" />
+              <Stat label="Pts / match" value={metric(card.rating_points_per_match, 0)} size="sm" />
               <Stat label="TBA Rank" value={card.tba_rank !== null ? `#${card.tba_rank}` : 'N/A'} size="sm" />
             </CardGrid>
 
             <div className={styles.chipRow}>
-              <Chip>{card.matches_analyzed == null ? 'Scouting count unavailable' : `${card.matches_analyzed} scouted`}</Chip>
               <Chip>{card.events_count == null ? 'Events unavailable' : `${card.events_count} event${card.events_count === 1 ? '' : 's'}`}</Chip>
-              <Chip>Driver {metric(card.rating_driver_skill_0_100, 1)}</Chip>
               <Chip>{card.tba_record}</Chip>
               <Chip>{relativeFromTimestamp(card.last_updated_at)}</Chip>
             </div>
@@ -893,7 +870,7 @@ export function FavoritesPage() {
 
             <div className={styles.addRow}>
               <FieldSelect
-                label="Team Rating Context Event (optional)"
+                label="Event for team ratings"
                 value={eventContextInput}
                 onChange={(event) => setEventContextInput(normalizeEventKey(event.target.value))}
               >
@@ -918,7 +895,7 @@ export function FavoritesPage() {
                 onClick={() => void refreshFavorites({ forceNetwork: true })}
                 loading={loadingEvents || loadingTeams}
               >
-                {loadingEvents || loadingTeams ? 'Refreshing...' : 'Refresh Favorites'}
+                {loadingEvents || loadingTeams ? 'Refreshing…' : 'Refresh Favorites'}
               </Button>
               <Button as="a" variant="quiet" href="#/settings">
                 Settings
@@ -1001,7 +978,7 @@ export function FavoritesPage() {
             {activeTab !== 'teams' ? (
               <SurfaceCard
                 title="Favorite Events"
-                right={<Chip>{loadingEvents ? 'Loading...' : `${orderedEventCards.length} event${orderedEventCards.length === 1 ? '' : 's'}`}</Chip>}
+                right={<Chip>{loadingEvents ? 'Loading…' : `${orderedEventCards.length} event${orderedEventCards.length === 1 ? '' : 's'}`}</Chip>}
                 compactable
               >
                 {renderEventCards}
@@ -1010,7 +987,7 @@ export function FavoritesPage() {
             {activeTab !== 'events' ? (
               <SurfaceCard
                 title="Favorite Teams"
-                right={<Chip>{loadingTeams ? 'Loading...' : `${orderedTeamCards.length} team${orderedTeamCards.length === 1 ? '' : 's'}`}</Chip>}
+                right={<Chip>{loadingTeams ? 'Loading…' : `${orderedTeamCards.length} team${orderedTeamCards.length === 1 ? '' : 's'}`}</Chip>}
                 compactable
               >
                 {renderTeamCards}

@@ -112,9 +112,9 @@ describe('Scouting route safety', () => {
     expect(await screen.findByText('Scouting Mode', undefined, FIND_TIMEOUT)).toBeInTheDocument();
     expect(screen.getByText('Save + Data')).toBeInTheDocument();
     expect(screen.getByText('Match Timer')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Setup' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Robot' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Room' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Data' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Saved' })).toBeInTheDocument();
   }, HEAVY_RENDER_TIMEOUT_MS);
 
   it("uses the workspace name even if this device saved an older scout name", async () => {

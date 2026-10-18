@@ -1,18 +1,23 @@
+import { matchLabelFromKey } from '../utils/matchLabel';
+import { formatDayTime } from '../utils/formatTime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { shareableAppUrl } from '../platform/runtime';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEventLiveStream,
+  getEventRatings,
   getEventSchedule,
   getEventTeamLiveForm,
   getMatchPhases,
 } from '../api';
 import { SAVED_COPY_MAX_AGE_MS } from '../config/savedCopy';
+import { embeddableUrl } from '../config/embedHosts';
 import type {
   EventScheduleItem,
   EventTeamLiveFormResponse,
+  EventTeamRatingItem,
   MatchPhasesResponse,
-  ScheduleWithSynergyMatch,
+  PredictedScheduleMatch,
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
@@ -23,8 +28,7 @@ import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
-import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
-import { Table, type TableColumn } from '../components/ui/primitives';
+import { useMobileLayout } from '../hooks/useMobileLayout';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
@@ -32,21 +36,19 @@ import {
   EyeIcon, PieChartIcon, UsersIcon, ClockIcon,
   ChevronDownIcon, ChevronLeftIcon, VideoIcon, TrophyIcon,
   CalendarIcon, SignalIcon, ScoreboardIcon, RobotIcon, GamepadIcon,
-  FlagIcon, TargetIcon, StarIcon, HandshakeIcon, LinkIcon,
+  FlagIcon, TargetIcon, LinkIcon,
 } from '../components/ui/Icons';
 import {
   buildMatchCenterPath,
   copyTextToClipboard,
   eventKeyFromMatchKey,
   fmtDateShort,
-  fmtUnix,
   liveTimerLabel, matchStartTime,
   metric,
   normalizeEventKey,
   normalizeMatchKey,
   relativeFromTimestamp,
   titleizeKey,
-  teamNumberFromTeamKey,
 } from './centerUtils';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { SEASON } from '../config/season';
@@ -55,7 +57,14 @@ import { pickDefaultMatchKey } from './homeFeed';
 import { inferMatchCompleted, matchHasScores } from './matchStatus';
 import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
-import { loadMatchCenterSynergy } from '../features/prefetch/pageRequests';
+import { loadMatchCenterPredictions } from '../features/prefetch/pageRequests';
+import { MatchClock } from '../features/matchResult/MatchClock';
+import { MatchPredictionNote } from '../features/predictions/MatchPredictionNote';
+import { RollingScore } from '../features/matchResult/RollingScore';
+import resultStyles from '../features/matchResult/MatchResult.module.css';
+import { ShareMatchDialog } from '../features/shareCard/ShareMatchDialog';
+import { eventDisplayName } from '../utils/eventSearchIndex';
+import { storageGet, storageSet } from '../platform/safeStorage';
 
 const MATCH_CENTER_VIEW_PREFS_STORAGE = 'scouting_match_center_view_prefs_v1';
 const MATCH_CENTER_RECENT_STORAGE = 'scouting_match_center_recent_matches_v1';
@@ -87,7 +96,7 @@ type MatchCenterRecentMatchesMap = Record<string, string[]>;
 
 function readMatchCenterEventViewPrefs(): Record<string, MatchCenterEventViewPrefs> {
   try {
-    const raw = window.localStorage.getItem(MATCH_CENTER_VIEW_PREFS_STORAGE);
+    const raw = storageGet(MATCH_CENTER_VIEW_PREFS_STORAGE);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -98,12 +107,12 @@ function readMatchCenterEventViewPrefs(): Record<string, MatchCenterEventViewPre
 }
 
 function writeMatchCenterEventViewPrefs(next: Record<string, MatchCenterEventViewPrefs>) {
-  window.localStorage.setItem(MATCH_CENTER_VIEW_PREFS_STORAGE, JSON.stringify(next));
+  storageSet(MATCH_CENTER_VIEW_PREFS_STORAGE, JSON.stringify(next));
 }
 
 function readMatchCenterRecentMatches(): MatchCenterRecentMatchesMap {
   try {
-    const raw = window.localStorage.getItem(MATCH_CENTER_RECENT_STORAGE);
+    const raw = storageGet(MATCH_CENTER_RECENT_STORAGE);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -114,13 +123,15 @@ function readMatchCenterRecentMatches(): MatchCenterRecentMatchesMap {
 }
 
 function writeMatchCenterRecentMatches(next: MatchCenterRecentMatchesMap) {
-  window.localStorage.setItem(MATCH_CENTER_RECENT_STORAGE, JSON.stringify(next));
+  storageSet(MATCH_CENTER_RECENT_STORAGE, JSON.stringify(next));
 }
 
-// '#1912', the way the rest of the app writes a team, not the raw 'frc1912' key.
-function pairTeamLabel(teamKey: string): string {
-  const number = teamNumberFromTeamKey(teamKey);
-  return number !== null ? `#${number}` : teamKey;
+function ShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="icon-inline" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
+    </svg>
+  );
 }
 
 export function MatchCenterPage() {
@@ -157,11 +168,15 @@ export function MatchCenterPage() {
     available: boolean;
     detail: string | null;
   } | null>(null);
-  const [synergyMatches, setSynergyMatches] = useState<Record<string, ScheduleWithSynergyMatch>>({});
+  const [predictedMatches, setPredictedMatches] = useState<Record<string, PredictedScheduleMatch>>({});
   const [matchPhases, setMatchPhases] = useState<MatchPhasesResponse | null>(null);
 
 
   const [loadingEventData, setLoadingEventData] = useState(false);
+  // Placeholders only while an event loads for the first time. Every live poll also sets
+  // loadingEventData, and showing skeletons then flashed grey lines above the list every 5 s.
+  const [eventLoadedKey, setEventLoadedKey] = useState('');
+  const firstEventLoad = loadingEventData && eventLoadedKey !== selectedEventKey;
   const [loadingPhases, setLoadingPhases] = useState(false);
   const [statusText, setStatusText] = useState('Select an event and match.');
   const [eventError, setEventError] = useState('');
@@ -171,7 +186,6 @@ export function MatchCenterPage() {
   const [eventHasLiveMatch, setEventHasLiveMatch] = useState(false);
   const [visibleMatchCount, setVisibleMatchCount] = useState(70);
   const [mobileFinderOpen, setMobileFinderOpen] = useState(() => !defaultMatchKey);
-  const [pairSortMode, setPairSortMode] = useState<'points' | 'confidence'>('points');
   const [summarySortMode, setSummarySortMode] = useState<'time' | 'status'>('time');
   const [autoJumpLive, setAutoJumpLive] = useState(false);
   const [showFinderAdvanced, setShowFinderAdvanced] = useState(false);
@@ -231,7 +245,6 @@ export function MatchCenterPage() {
   }, [selectedEventKey]);
 
   useEffect(() => {
-    setPairSortMode('points');
   }, [selectedMatchKey]);
 
   useEffect(() => {
@@ -276,7 +289,7 @@ export function MatchCenterPage() {
     setEventName(null);
     setTeamLiveForm(null);
     setLiveStream(null);
-    setSynergyMatches({});
+    setPredictedMatches({});
     setEventHasLiveMatch(false);
     setEventError('');
   }, [selectedEventKey]);
@@ -290,7 +303,7 @@ export function MatchCenterPage() {
       setEventName(null);
       setTeamLiveForm(null);
       setLiveStream(null);
-      setSynergyMatches({});
+      setPredictedMatches({});
       setEventHasLiveMatch(false);
     }
     lastEventContextRef.current = selectedEventKey;
@@ -304,13 +317,13 @@ export function MatchCenterPage() {
     );
 
     try {
-      // A failed stream or synergy load retries on the next poll.
+      // A failed stream or prediction load retries on the next poll.
       const shouldRefreshStatic = contextChanged || reason !== 'poll' || staticFailedRef.current;
       const shouldBypassLiveCache = reason === 'poll' && eventHasLiveMatch;
       const liveRequestOptions = shouldBypassLiveCache
         ? { bypassCache: true, cacheTtlMs: 0, staleWhileRevalidateMs: 0 }
         : undefined;
-      const [scheduleResult, liveFormResult, streamResult, synergyResult] = await Promise.allSettled([
+      const [scheduleResult, liveFormResult, streamResult, predictionResult] = await Promise.allSettled([
         getEventSchedule(
           selectedEventKey,
           false,
@@ -320,7 +333,7 @@ export function MatchCenterPage() {
         getEventTeamLiveForm(selectedEventKey, { form_window: 5, live_window_sec: 180 }, liveRequestOptions),
         shouldRefreshStatic ? getEventLiveStream(selectedEventKey) : Promise.resolve(null),
         shouldRefreshStatic
-          ? loadMatchCenterSynergy(selectedEventKey)
+          ? loadMatchCenterPredictions(selectedEventKey)
           : Promise.resolve(null),
       ]);
       // Another event was picked while this was loading; its own load follows right away.
@@ -357,7 +370,7 @@ export function MatchCenterPage() {
         const fallbackWatch = streamResult.value.streams.find((item) => Boolean(item.watch_url));
         setLiveStream({
           watch_url: preferred?.watch_url || fallbackWatch?.watch_url || streamResult.value.game_day_url || null,
-          embed_url: preferred?.embed_url || null,
+          embed_url: embeddableUrl(preferred?.embed_url),
           game_day_url: streamResult.value.game_day_url,
           available: streamResult.value.available,
           detail: streamResult.value.detail,
@@ -367,19 +380,19 @@ export function MatchCenterPage() {
         errors.push(`Live stream: ${streamResult.reason instanceof Error ? streamResult.reason.message : 'failed'}`);
       }
 
-      if (shouldRefreshStatic && synergyResult.status === 'fulfilled' && synergyResult.value) {
-        const lookup: Record<string, ScheduleWithSynergyMatch> = {};
-        for (const row of synergyResult.value.matches || []) {
+      if (shouldRefreshStatic && predictionResult.status === 'fulfilled' && predictionResult.value) {
+        const lookup: Record<string, PredictedScheduleMatch> = {};
+        for (const row of predictionResult.value.matches || []) {
           lookup[row.match_key.toLowerCase()] = row;
         }
-        setSynergyMatches(lookup);
-      } else if (shouldRefreshStatic && synergyResult.status === 'rejected') {
-        if (contextChanged) setSynergyMatches({});
-        errors.push(`Synergy: ${synergyResult.reason instanceof Error ? synergyResult.reason.message : 'failed'}`);
+        setPredictedMatches(lookup);
+      } else if (shouldRefreshStatic && predictionResult.status === 'rejected') {
+        if (contextChanged) setPredictedMatches({});
+        errors.push(`Predictions: ${predictionResult.reason instanceof Error ? predictionResult.reason.message : 'failed'}`);
       }
 
       if (shouldRefreshStatic) {
-        staticFailedRef.current = streamResult.status === 'rejected' || synergyResult.status === 'rejected';
+        staticFailedRef.current = streamResult.status === 'rejected' || predictionResult.status === 'rejected';
       }
       setEventError(errors.join(' | '));
       setLastUpdatedAt(Date.now());
@@ -391,6 +404,7 @@ export function MatchCenterPage() {
       return errors.length === 0;
     } finally {
       setLoadingEventData(false);
+      if (currentEventKeyRef.current === selectedEventKey) setEventLoadedKey(selectedEventKey);
     }
   }, [eventHasLiveMatch, selectedEventKey]);
 
@@ -556,12 +570,13 @@ export function MatchCenterPage() {
     () => liveTimerLabel(selectedMatchStart, nowMs),
     [nowMs, selectedMatchStart],
   );
+  // From the same start the timer uses (actual, else TBA's prediction, else the schedule), so a
+  // field running late doesn't show a match half over before it starts.
   const selectedMatchProgress = useMemo(() => {
-    if (!selectedMatch?.scheduled_time) return null;
-    const startSec = selectedMatch.scheduled_time;
-    const elapsedSec = Math.max(0, Math.floor(nowMs / 1000) - startSec);
+    if (!selectedMatchStart) return null;
+    const elapsedSec = Math.max(0, Math.floor(nowMs / 1000) - selectedMatchStart);
     return Math.max(0, Math.min(100, (elapsedSec / SEASON.matchSec) * 100));
-  }, [nowMs, selectedMatch?.scheduled_time]);
+  }, [nowMs, selectedMatchStart]);
   const selectedWinner = selectedMatch?.winner_alliance || null;
   const selectedHasScores = matchHasScores(selectedMatch);
   const selectedCompleted = inferMatchCompleted(selectedMatch, nowMs);
@@ -576,45 +591,51 @@ export function MatchCenterPage() {
     return 'tie';
   }, [selectedWinner, selectedCompleted, selectedHasScores, selectedMatch?.red_score, selectedMatch?.blue_score]);
 
-  const selectedSynergy = useMemo(() => {
+  // The result arriving while you watch: scores appear on a match that had none a moment ago.
+  // That gets the moment (score rolls in, the winner lights up); opening a finished match doesn't.
+  const [revealMatchKey, setRevealMatchKey] = useState('');
+  const lastScoreSeenRef = useRef({ key: '', hadScores: false });
+  const selectedMatchKeyForReveal = selectedMatch?.match_key || '';
+  useEffect(() => {
+    const previous = lastScoreSeenRef.current;
+    lastScoreSeenRef.current = { key: selectedMatchKeyForReveal, hadScores: selectedHasScores };
+    if (!selectedMatchKeyForReveal || previous.key !== selectedMatchKeyForReveal || previous.hadScores || !selectedHasScores) return undefined;
+    setRevealMatchKey(selectedMatchKeyForReveal);
+    const timer = window.setTimeout(() => setRevealMatchKey(''), 4500);
+    return () => window.clearTimeout(timer);
+  }, [selectedMatchKeyForReveal, selectedHasScores]);
+  const revealing = Boolean(revealMatchKey) && revealMatchKey === selectedMatchKeyForReveal;
+  const revealClass = (side: 'red' | 'blue') => {
+    if (!revealing || !resolvedWinner || resolvedWinner === 'tie') return '';
+    if (resolvedWinner !== side) return resultStyles.lost;
+    return side === 'red' ? resultStyles.wonRed : resultStyles.wonBlue;
+  };
+
+  // A finished match can be shared as a picture.
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareable = Boolean(selectedMatch && selectedHasScores && selectedCompleted);
+
+  const selectedPrediction = useMemo(() => {
     if (!normalizedSelectedMatchKey) return null;
-    return synergyMatches[normalizedSelectedMatchKey] || null;
-  }, [normalizedSelectedMatchKey, synergyMatches]);
-  const selectedRedSynergy = selectedSynergy?.red?.synergy ?? null;
-  const selectedBlueSynergy = selectedSynergy?.blue?.synergy ?? null;
-  const selectedPairBreakdown = useMemo(() => {
-    const redPairs = (selectedRedSynergy?.pair_breakdown || []).map((pair) => ({ ...pair, alliance: 'Red' as const }));
-    const bluePairs = (selectedBlueSynergy?.pair_breakdown || []).map((pair) => ({ ...pair, alliance: 'Blue' as const }));
-    const rows = [...redPairs, ...bluePairs];
-    if (pairSortMode === 'confidence') {
-      rows.sort((a, b) => b.confidence - a.confidence);
-      return rows;
-    }
-    rows.sort((a, b) => b.synergy_points - a.synergy_points);
-    return rows;
-  }, [pairSortMode, selectedBlueSynergy?.pair_breakdown, selectedRedSynergy?.pair_breakdown]);
-
-  /* The pair board's alliance is a fact about the row, so it stays a real
-     alliance pill rather than the plain "Red"/"Blue" text the desktop table
-     used while the phone list showed the pill. */
-  const pairBreakdownColumns: TableColumn<(typeof selectedPairBreakdown)[number]>[] = [
-    {
-      key: 'pair',
-      label: 'Pair',
-      render: (pair) => `${pairTeamLabel(pair.team_key_a)} + ${pairTeamLabel(pair.team_key_b)}`,
-    },
-    {
-      key: 'alliance',
-      label: 'Alliance',
-      render: (pair) => (
-        <span className={`center-alliance-pill ${pair.alliance.toLowerCase()}`}>{pair.alliance}</span>
-      ),
-    },
-    { key: 'points', label: 'Points', numeric: true, render: (pair) => metric(pair.synergy_points, 2) },
-    { key: 'confidence', label: 'Confidence', numeric: true, render: (pair) => metric(pair.confidence, 2) },
-    { key: 'source', label: 'Source', render: (pair) => titleizeKey(pair.source) },
-  ];
-
+    return predictedMatches[normalizedSelectedMatchKey] || null;
+  }, [normalizedSelectedMatchKey, predictedMatches]);
+  // Each team's FRCMOB rating for the Teams tab (the cached summary other pages read).
+  const [teamRatings, setTeamRatings] = useState<{ eventKey: string; byTeam: Record<string, EventTeamRatingItem> } | null>(null);
+  useEffect(() => {
+    if (!selectedEventKey || activeTab !== 'teams' || teamRatings?.eventKey === selectedEventKey) return;
+    let live = true;
+    getEventRatings(selectedEventKey)
+      .then((response) => {
+        if (!live) return;
+        const byTeam: Record<string, EventTeamRatingItem> = {};
+        for (const row of response.ratings || []) byTeam[row.team_key.toLowerCase()] = row;
+        setTeamRatings({ eventKey: selectedEventKey, byTeam });
+      })
+      .catch(() => {
+        // The cards still show form and links; the rating line is left out.
+      });
+    return () => { live = false; };
+  }, [selectedEventKey, activeTab, teamRatings?.eventKey]);
   const nextLiveMatch = useMemo(() => {
     const rows = [...scheduleRows];
     rows.sort((a, b) => {
@@ -681,9 +702,6 @@ export function MatchCenterPage() {
     lastAutoJumpMatchKeyRef.current = nextLiveKey;
     setSelectedMatchKey(nextLiveKey);
   }, [autoJumpLive, nextLiveMatch, normalizedSelectedMatchKey, selectedEventKey]);
-
-  const synergyAvailable =
-    Boolean(selectedRedSynergy?.available) || Boolean(selectedBlueSynergy?.available) || selectedPairBreakdown.length > 0;
 
   const selectedTeams = useMemo(() => {
     if (!selectedMatch) return [];
@@ -761,7 +779,10 @@ export function MatchCenterPage() {
     );
   }
 
-  const eventTitle = eventName || selectedEventKey || 'Match Center';
+  const eventTitle = eventName || (selectedEventKey ? eventDisplayName(selectedEventKey) : 'Match Center');
+  // While the schedule loads, the match being opened is already known from the address: say so
+  // instead of "Select a match".
+  const pendingMatchLabel = !selectedMatch && normalizedSelectedMatchKey ? matchLabelFromKey(normalizedSelectedMatchKey) : null;
 
   return (
     <>
@@ -780,6 +801,7 @@ export function MatchCenterPage() {
         ) : null}
         <SurfaceCard title="Match Finder" compactable>
           <EventPicker
+            label="Event"
             value={selectedEventKey}
             onSelect={(key) => {
               const nextEventKey = normalizeEventKey(key);
@@ -896,13 +918,17 @@ export function MatchCenterPage() {
           ) : null}
 
           <div className="center-list-scroll">
-            {loadingEventData ? (
+            {firstEventLoad ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={4} compact />
               </div>
             ) : null}
-            {!loadingEventData && filteredMatches.length === 0 ? (
-              <EmptyState compact title="No matches found" description="No matches found for this filter." />
+            {!firstEventLoad && filteredMatches.length === 0 ? (
+              matchFilter.trim() ? (
+                <EmptyState compact title="Nothing fits this filter" description="Try another filter, or clear the search." />
+              ) : (
+                <EmptyState compact title="No match schedule yet" description="Matches show here once the event publishes its schedule." />
+              )
             ) : null}
             {visibleFilteredMatches.map((match) => {
               const timer = liveTimerLabel(matchStartTime(match), nowMs);
@@ -975,25 +1001,25 @@ export function MatchCenterPage() {
         {/* ── Mobile: FotMob-style score hero ── */}
         {isMobileLayout && selectedMatch ? (
           <>
-            <div className="fm-score-hero">
+            <div className={`fm-score-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
               <span className="fm-match-label">{selectedMatch.display_name}</span>
               <span className="fm-event-label">{eventTitle}</span>
               <div className="fm-score-row">
-                <div className="fm-alliance fm-red">
+                <div className={`fm-alliance fm-red ${revealClass('red')}`.trim()}>
                   <strong>RED</strong>
                   <span>{selectedRedLineupLabel}</span>
                 </div>
                 <div className="fm-score-center">
                   <strong className="fm-score-value">
                     {selectedHasScores
-                      ? `${metric(selectedMatch.red_score, 0)} - ${metric(selectedMatch.blue_score, 0)}`
+                      ? <RollingScore red={Number(selectedMatch.red_score ?? 0)} blue={Number(selectedMatch.blue_score ?? 0)} roll={revealing} />
                       : '-- : --'}
                   </strong>
                   <span className={`fm-status-badge ${selectedCompleted ? 'ended' : selectedMatchTimer.state}`}>
                     {selectedCompleted ? 'Final' : `${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
                   </span>
                 </div>
-                <div className="fm-alliance fm-blue">
+                <div className={`fm-alliance fm-blue ${revealClass('blue')}`.trim()}>
                   <strong>BLUE</strong>
                   <span>{selectedBlueLineupLabel}</span>
                 </div>
@@ -1003,27 +1029,33 @@ export function MatchCenterPage() {
                   {titleizeKey(selectedWinner)} alliance wins{selectedMatch.winning_score != null ? ` · ${selectedMatch.winning_score} pts` : ''}
                 </span>
               ) : null}
+              <MatchPredictionNote match={selectedPrediction} completed={selectedCompleted} winner={resolvedWinner} />
               {selectedMatchProgress !== null && !selectedCompleted ? (
-                <div className="fm-progress-bar">
-                  <div
-                    className={`fm-progress-fill ${selectedMatchTimer.state}`}
-                    style={{ width: `${selectedCompleted ? 100 : selectedMatchProgress}%` }}
-                  />
-                </div>
+                <MatchClock progress={selectedMatchProgress} className="fm-match-clock" />
               ) : null}
-              <button
-                type="button"
-                className="center-btn ghost mc-change-match"
-                onClick={() => {
-                  setMobileFinderOpen(true);
-                  window.scrollTo({ top: 0 });
-                }}
-              >
-                Change match
-              </button>
+              <div className={resultStyles.heroActions}>
+                <button
+                  type="button"
+                  className="center-btn ghost mc-change-match"
+                  onClick={() => {
+                    setMobileFinderOpen(true);
+                    window.scrollTo({ top: 0 });
+                  }}
+                >
+                  Change match
+                </button>
+                {shareable ? (
+                  <button type="button" className="center-btn ghost" onClick={() => setShareOpen(true)}>
+                    <ShareIcon /> Share
+                  </button>
+                ) : null}
+              </div>
             </div>
             <SegmentedTabs
               className="fm-tab-bar"
+              motion
+              swipe
+              ink
               itemClassName="fm-tab"
               ariaLabel="Match center tabs"
               value={activeTab}
@@ -1039,14 +1071,22 @@ export function MatchCenterPage() {
         {/* ── Desktop: standard SurfaceCard header ── */}
         {!isMobileLayout ? (
         <SurfaceCard
+          className="mc-hero-card"
           title={eventTitle}
-          subtitle={selectedMatch ? selectedMatch.display_name : 'Select a match'}
+          subtitle={selectedMatch ? selectedMatch.display_name : pendingMatchLabel ?? 'Select a match'}
           right={
             selectedMatch ? (
-              <span className={`center-chip timer ${selectedMatchTimer.state}`}>
-                {selectedCompleted
-                  ? `Final: ${selectedHasScores ? `${selectedMatch?.red_score}-${selectedMatch?.blue_score}` : selectedMatchTimer.value}`
-                  : `${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
+              <span className={resultStyles.heroActions}>
+                <span className={`center-chip timer ${selectedMatchTimer.state}`}>
+                  {selectedCompleted
+                    ? `Final: ${selectedHasScores ? `${selectedMatch?.red_score}-${selectedMatch?.blue_score}` : selectedMatchTimer.value}`
+                    : `${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
+                </span>
+                {shareable ? (
+                  <button type="button" className="center-btn ghost" onClick={() => setShareOpen(true)}>
+                    <ShareIcon /> Share
+                  </button>
+                ) : null}
               </span>
             ) : null
           }
@@ -1054,6 +1094,7 @@ export function MatchCenterPage() {
           <div className="center-tabs-header">
             <SegmentedTabs
               className="center-tabs"
+              motion
               itemClassName="center-tab-btn"
               ariaLabel="Match center tabs"
               value={activeTab}
@@ -1071,31 +1112,43 @@ export function MatchCenterPage() {
               <span className={`center-status-pill ${selectedMatchTimer.state}`}>
                 {selectedCompleted ? 'Final' : `${Math.round(selectedMatchProgress)}% elapsed`}
               </span>
-              <div className="center-timer-progress-track">
-                <div
-                  className={`center-timer-progress-fill ${selectedMatchTimer.state}`}
-                  style={{ width: `${selectedCompleted ? 100 : selectedMatchProgress}%` }}
-                />
-              </div>
+              <MatchClock progress={selectedMatchProgress} />
             </div>
           ) : null}
         </SurfaceCard>
         ) : null}
 
+        {/* Shaped like the Match Snapshot card that replaces it, so the page doesn't jump. */}
         {selectedEventKey && loadingEventData && scheduleRows.length === 0 ? (
-          <SurfaceCard title="Loading" compactable>
-            <SkeletonBlock rows={6} />
+          <SurfaceCard title={pendingMatchLabel ? 'Match Snapshot' : 'Loading'} compactable>
+            <SkeletonBlock rows={4} />
           </SurfaceCard>
         ) : null}
 
-        {!selectedMatch ? (
+        {/* Not while the schedule is still coming: "No match selected" flashed under the
+            loading card on every opened match. */}
+        {/* A match was asked for but the schedule didn't load: say that, not "pick a match". */}
+        {!selectedMatch && pendingMatchLabel && scheduleRows.length === 0 && eventError && !loadingEventData ? (
+          <SurfaceCard title={pendingMatchLabel}>
+            <EmptyState
+              compact
+              title="This match didn't load"
+              description="The schedule couldn't be reached. It retries on its own."
+            />
+          </SurfaceCard>
+        ) : null}
+        {!selectedMatch && !(selectedEventKey && loadingEventData && scheduleRows.length === 0)
+          && !(pendingMatchLabel && scheduleRows.length === 0 && eventError) ? (
           <SurfaceCard title="No Match Selected" subtitle="Choose a match from the Finder.">
             <EmptyState
               compact
+              mascot
               title="No match selected"
-              description="Pick a match to load live data, stream, synergy, and form."
+              description={isMobileLayout
+                ? 'Pick a match to see its score, stream, teams and forecast.'
+                : 'Pick a match in the Finder to see its score, stream, teams and forecast.'}
               action={isMobileLayout ? (
-                <button type="button" onClick={() => setMobileFinderOpen(true)}>Pick a match</button>
+                <button type="button" className="center-btn" onClick={() => setMobileFinderOpen(true)}>Pick a match</button>
               ) : undefined}
             />
           </SurfaceCard>
@@ -1109,15 +1162,15 @@ export function MatchCenterPage() {
               subtitle={selectedIsLive ? `Updates every ${effectiveRefreshSec}s.` : undefined}
               compactable
             >
-              <div className="match-live-hero">
-                <div className={`match-live-alliance red ${resolvedWinner === 'red' ? 'winner' : ''}`.trim()}>
+              <div className={`match-live-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
+                <div className={`match-live-alliance red ${resolvedWinner === 'red' ? 'winner' : ''} ${revealClass('red')}`.trim()}>
                   <span>Red Alliance</span>
                   <strong>{selectedRedLineupLabel}</strong>
                 </div>
                 <div className="match-live-center">
                   <strong className="match-live-score">
                     {selectedHasScores
-                      ? `${metric(selectedMatch.red_score, 0)} - ${metric(selectedMatch.blue_score, 0)}`
+                      ? <RollingScore red={Number(selectedMatch.red_score ?? 0)} blue={Number(selectedMatch.blue_score ?? 0)} roll={revealing} />
                       : '-- : --'}
                   </strong>
                   {selectedCompleted ? null : (
@@ -1125,8 +1178,9 @@ export function MatchCenterPage() {
                       {`${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
                     </span>
                   )}
+                  <MatchPredictionNote match={selectedPrediction} completed={selectedCompleted} winner={resolvedWinner} />
                 </div>
-                <div className={`match-live-alliance blue ${resolvedWinner === 'blue' ? 'winner' : ''}`.trim()}>
+                <div className={`match-live-alliance blue ${resolvedWinner === 'blue' ? 'winner' : ''} ${revealClass('blue')}`.trim()}>
                   <span>Blue Alliance</span>
                   <strong>{selectedBlueLineupLabel}</strong>
                 </div>
@@ -1178,7 +1232,7 @@ export function MatchCenterPage() {
                           key={`fm-red-${team.team_key}`}
                           type="button"
                           className="fm-team-row"
-                          onClick={() => openTeamCenter(team.team_key)}
+                          data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                           title={`View Team ${team.team_number}`}
                         >
                           <span className="fm-team-name">#{team.team_number} {team.nickname || team.team_key}</span>
@@ -1202,7 +1256,7 @@ export function MatchCenterPage() {
                           key={`fm-blue-${team.team_key}`}
                           type="button"
                           className="fm-team-row"
-                          onClick={() => openTeamCenter(team.team_key)}
+                          data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                           title={`View Team ${team.team_number}`}
                         >
                           <span className="fm-team-name">#{team.team_number} {team.nickname || team.team_key}</span>
@@ -1274,7 +1328,7 @@ export function MatchCenterPage() {
                             key={`selected-red-${team.team_key}`}
                             type="button"
                             className="center-team-chip"
-                            onClick={() => openTeamCenter(team.team_key)}
+                            data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                             title={`View Team ${team.team_number}`}
                           >
                             <span>
@@ -1300,7 +1354,7 @@ export function MatchCenterPage() {
                             key={`selected-blue-${team.team_key}`}
                             type="button"
                             className="center-team-chip"
-                            onClick={() => openTeamCenter(team.team_key)}
+                            data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                             title={`View Team ${team.team_number}`}
                           >
                             <span>
@@ -1410,68 +1464,16 @@ export function MatchCenterPage() {
               </article>
             </div>
 
-            {!synergyAvailable ? (
-              <p className="center-callout muted">
-                Synergy unavailable for this match.
-              </p>
-            ) : (
-              <>
-                <div className="center-kpi-grid">
-                  <article className="center-kpi-card tone-red">
-                    <span><HandshakeIcon className="icon-inline" /> Red Synergy</span>
-                    <strong>{metric(selectedRedSynergy?.alliance_synergy_score_0_100 ?? null, 1)} / 100</strong>
-                    <small>
-                      {metric(selectedRedSynergy?.alliance_synergy_points ?? null, 1)} pts ·{' '}
-                      {titleizeKey(selectedRedSynergy?.source_label || 'projection')}
-                    </small>
-                  </article>
-                  <article className="center-kpi-card tone-blue">
-                    <span><HandshakeIcon className="icon-inline" /> Blue Synergy</span>
-                    <strong>{metric(selectedBlueSynergy?.alliance_synergy_score_0_100 ?? null, 1)} / 100</strong>
-                    <small>
-                      {metric(selectedBlueSynergy?.alliance_synergy_points ?? null, 1)} pts ·{' '}
-                      {titleizeKey(selectedBlueSynergy?.source_label || 'projection')}
-                    </small>
-                  </article>
-                </div>
-
-                {/* One render at every width. The sort chips used to be inside
-                    the mobile branch, so a desktop visitor could not sort the
-                    pairs at all. */}
-                <div className="center-sort-chip-row" role="toolbar" aria-label="Pair breakdown sorting">
-                  <button
-                    type="button"
-                    className={`center-sort-chip ${pairSortMode === 'points' ? 'active' : ''}`.trim()}
-                    onClick={() => setPairSortMode('points')}
-                  >
-                    <ScoreboardIcon className="icon-inline" /> By Points
-                  </button>
-                  <button
-                    type="button"
-                    className={`center-sort-chip ${pairSortMode === 'confidence' ? 'active' : ''}`.trim()}
-                    onClick={() => setPairSortMode('confidence')}
-                  >
-                    <StarIcon className="icon-inline" /> By Confidence
-                  </button>
-                </div>
-                <Table
-                  columns={pairBreakdownColumns}
-                  rows={selectedPairBreakdown}
-                  rowKey={(pair, index) => `pair-${pair.alliance}-${index}`}
-                  cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
-                  empty="No pair synergy data."
-                />
-              </>
-            )}
             </SurfaceCard>
 
         ) : null}
 
         {selectedMatch && activeTab === 'teams' ? (
-            <SurfaceCard title="Team Context" subtitle="Live form for all six teams." compactable>
+            <SurfaceCard title="Team Context" subtitle="Rating and recent form for all six teams." compactable>
             <div className="center-team-card-grid">
               {selectedTeams.map((team) => {
                 const entry = liveStatusByTeam[team.team_key.toLowerCase()] || null;
+                const rating = teamRatings?.eventKey === selectedEventKey ? teamRatings.byTeam[team.team_key.toLowerCase()] || null : null;
                 return (
                   <article key={`match-team-${team.team_key}-${team.station || ''}`} className="center-team-card">
                     <header>
@@ -1487,21 +1489,44 @@ export function MatchCenterPage() {
                       #{team.team_number} {team.nickname || team.team_key}
                     </strong>
                     <small>{team.station ? `Station ${team.station}` : 'Station N/A'}</small>
+                    {rating ? (
+                      <small>
+                        Rating {metric(rating.rating_0_100, 1)}
+                        {rating.expected_points ? ` · ${metric(rating.expected_points.total, 0)} pts/match` : ''}
+                      </small>
+                    ) : null}
                     <div><TeamFormStrip entry={entry} /></div>
-                    <button type="button" className="center-btn ghost" onClick={() => openTeamCenter(team.team_key)} title={`View Team ${team.team_number}`}>
+                    <button type="button" className="center-btn ghost" data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)} title={`View Team ${team.team_number}`}>
                       <EyeIcon className="icon-inline" /> Team Details
                     </button>
                   </article>
                 );
               })}
             </div>
-            <p className="center-callout muted">Match scheduled: {fmtUnix(selectedMatch.scheduled_time)}</p>
+            <p className="center-callout muted">Match scheduled: {selectedMatch.scheduled_time ? formatDayTime(selectedMatch.scheduled_time * 1000) : 'Unknown'}</p>
             </SurfaceCard>
 
         ) : null}
       </section>
     </div>
     </div>
+    {shareable && selectedMatch ? (
+      <ShareMatchDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        route={buildMatchCenterPath(selectedEventKey, selectedMatch.match_key)}
+        filename={`${selectedMatch.match_key}.png`}
+        match={{
+          eventName: eventTitle,
+          matchLabel: selectedMatch.display_name,
+          redScore: Number(selectedMatch.red_score ?? 0),
+          blueScore: Number(selectedMatch.blue_score ?? 0),
+          red: selectedMatch.red.map((team) => team.team_number),
+          blue: selectedMatch.blue.map((team) => team.team_number),
+          winner: resolvedWinner,
+        }}
+      />
+    ) : null}
     </>
   );
 }

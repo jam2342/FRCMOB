@@ -96,7 +96,7 @@ it('preserves Auto-select and an active event outside the team registrations', a
   api.getTeamIntel.mockResolvedValue({team:{team_number:1},analysis:{}, competitions:{registered_events_count:1,registered_events:[{event_key:'2026other',name:'Other',start_date:'2026-01-01'}]}});
   render(<MemoryRouter initialEntries={['/favorites?tab=teams']}><FavoritesPage /></MemoryRouter>);
   await act(async () => {});
-  const context = screen.getByLabelText('Team Rating Context Event (optional)');
+  const context = screen.getByLabelText('Event for team ratings');
   fireEvent.change(context,{target:{value:''}});
   await act(async () => {});
   expect(context).toHaveValue('');
@@ -138,18 +138,14 @@ it('shows unavailable team counts on failure and preserves a successful snapshot
   api.getTeamIntel.mockRejectedValue(new Error('offline'));
   render(<MemoryRouter initialEntries={['/favorites?tab=teams']}><FavoritesPage /></MemoryRouter>);
   await act(async () => {});
-  expect(screen.getByText('Scouting count unavailable')).toBeInTheDocument();
   expect(screen.getByText('Events unavailable')).toBeInTheDocument();
-  expect(screen.queryByText('0 scouted')).not.toBeInTheDocument();
   expect(screen.queryByText('0 events')).not.toBeInTheDocument();
-  api.getTeamIntel.mockResolvedValue({ team: { team_number: 1 }, analysis: { matches_analyzed: 3 }, competitions: { registered_events_count: 1 } });
+  api.getTeamIntel.mockResolvedValue({ team: { team_number: 1 }, analysis: {}, competitions: { registered_events_count: 1 } });
   await act(async () => { vi.advanceTimersByTime(15_000); });
-  expect(screen.getByText('3 scouted')).toBeInTheDocument();
   expect(screen.getByText('1 event')).toBeInTheDocument();
   api.getTeamIntel.mockRejectedValue(new Error('offline'));
   await act(async () => { vi.advanceTimersByTime(10_000); });
   await act(async () => { vi.advanceTimersByTime(15_000); });
-  expect(screen.getByText('3 scouted')).toBeInTheDocument();
   expect(screen.getByText('1 event')).toBeInTheDocument();
   expect(screen.getByText('Team data unavailable. Try refreshing again. Showing saved data; it may be out of date.')).toHaveAttribute('role', 'alert');
 });

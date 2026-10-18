@@ -9,14 +9,14 @@ vi.mock('../components/EventPicker', () => ({ EventPicker: ({ onSelect, value }:
 </> }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 import { AllianceAdvisorPage } from './AllianceAdvisorPage';
-import { getEventTeamsIntel, getTheoreticalAlliance } from '../api';
-vi.mock('../api', () => ({ getEventTeamsIntel: vi.fn(), getTheoreticalAlliance: vi.fn() }));
+import { getAllianceOutlook, getEventTeamsIntel, getSelectionModel } from '../api';
+vi.mock('../api', () => ({ getEventTeamsIntel: vi.fn(), getSelectionModel: vi.fn(), getAllianceOutlook: vi.fn(), getPickValues: vi.fn(() => Promise.resolve({ ok: true, event_key: '', partners: [], assumed_third: null, reference: [], candidates: [] })) }));
 function teams(number: number) { return { teams: Array.from({ length: 6 }, (_, i) => ({ team_key: `frc${number+i}`, team_number: number+i })) }; }
 it('drops old team loads and selection results after model inputs change', async () => {
   let finishTeams!: (payload: never) => void;
   let finishModel!: (payload: never) => void;
   vi.mocked(getEventTeamsIntel).mockImplementation(key => key === '2026old' ? new Promise(resolve => { finishTeams = resolve; }) : Promise.resolve(teams(2000) as never));
-  vi.mocked(getTheoreticalAlliance).mockImplementation(() => new Promise(resolve => { finishModel = resolve; }));
+  vi.mocked(getSelectionModel).mockImplementation(() => new Promise(resolve => { finishModel = resolve; }));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><AllianceAdvisorPage /></MemoryRouter>);
   await waitFor(() => expect(finishTeams).toBeDefined());
   fireEvent.click(screen.getByText('New event'));
@@ -24,7 +24,7 @@ it('drops old team loads and selection results after model inputs change', async
   await act(async () => { finishTeams(teams(1000) as never); });
   fireEvent.click(screen.getByText('Run Selection Model'));
   await waitFor(() => expect(finishModel).toBeDefined());
-  expect(vi.mocked(getTheoreticalAlliance).mock.calls.at(-1)?.[1].team_keys).toEqual(['frc2000', 'frc2001', 'frc2002']);
+  expect(vi.mocked(getSelectionModel).mock.calls.at(-1)?.[0]).toBe('2026new');
   fireEvent.click(screen.getByRole('button', { name: /Increase simulations/i }));
   await act(async () => { finishModel({ selection_model: null } as never); });
   expect(screen.queryByText('The selection model was not returned. The event may not have enough data.')).not.toBeInTheDocument();
@@ -32,7 +32,7 @@ it('drops old team loads and selection results after model inputs change', async
 it('drops alliance analysis after a slot changes', async () => {
   let finish!: (payload: never) => void;
   vi.mocked(getEventTeamsIntel).mockResolvedValue(teams(2000) as never);
-  vi.mocked(getTheoreticalAlliance).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  vi.mocked(getAllianceOutlook).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   render(<MemoryRouter initialEntries={['/?event=2026new&teams=frc2000,frc2001,frc2002']}><AllianceAdvisorPage /></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Alliance' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Analyze Alliance' }));
@@ -41,21 +41,30 @@ it('drops alliance analysis after a slot changes', async () => {
   await act(async () => { finish({ alliance: { team_keys: [] } } as never); });
   expect(screen.queryByText('Alliance Analysis')).not.toBeInTheDocument();
 });
-it('uses readable sources and signals and omits unlabeled objects', async () => {
+it('shows the alliance outlook with plain strengths and risks', async () => {
   vi.mocked(getEventTeamsIntel).mockResolvedValue(teams(2000) as never);
-  vi.mocked(getTheoreticalAlliance).mockResolvedValue({
-    weighted_total_score_0_100: 80,
-    compatibility: { confidence_0_1: 0.8, compatibility_score_0_100: 80, alliance_synergy_points: 8,
-      pair_breakdown: ['projection', 'blended', 'measured'].map(source => ({ team_key_a: 'frc2000', team_key_b: 'frc2001', source })),
-    },
-    pros_cons: {},
-    teams: [{ team_key: 'frc2000', pros_top: [{ label: 'Throughput elite' }, { secret_field: 'hidden-value' }], cons_top: [{ label: 'Weak autonomous output' }, { label: '' }] }],
+  vi.mocked(getAllianceOutlook).mockResolvedValue({
+    ok: true,
+    event_key: '2026new',
+    alliance_points: 310,
+    alliance_points_range_80: [270, 350],
+    vs_strong: { teams: ['frc2003', 'frc2004', 'frc2005'], points: 330, win_prob: 0.41 },
+    vs_typical: { teams: ['frc2003', 'frc2004', 'frc2005'], points: 250, win_prob: 0.83 },
+    bonus_rp_chances: { energized: 0.9 },
+    team_count: 6,
+    teams: ['frc2000', 'frc2001', 'frc2002'].map((team_key, i) => ({
+      team_key, rating_0_100: 90 - i, points_per_match: 110 - i, climb_points: 5, dud_rate: 0.02, event_rank_by_points: i + 1,
+      strengths: i === 0 ? ['Throughput elite'] : [], risks: i === 0 ? ['Weak autonomous output'] : [],
+    })),
   } as never);
   render(<MemoryRouter initialEntries={['/?event=2026new&teams=frc2000,frc2001,frc2002']}><AllianceAdvisorPage /></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Alliance' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Analyze Alliance' }));
-  await screen.findByText('Elite scorer');
+  await screen.findByText('Beats a strong alliance');
+  expect(vi.mocked(getAllianceOutlook).mock.calls.at(-1)?.[1]).toEqual(['frc2000', 'frc2001', 'frc2002']);
+  expect(screen.getByText('41%')).toBeInTheDocument();
+  expect(screen.getByText('83%')).toBeInTheDocument();
+  expect(screen.getByText('Elite scorer')).toBeInTheDocument();
   expect(screen.getByText('Weak autonomous')).toBeInTheDocument();
-  for (const label of ['Estimated', 'Results + estimates', 'Scouted']) expect(screen.getByText(label)).toBeInTheDocument();
-  expect(screen.queryByText(/hidden-value|secret_field|projection|blended/)).not.toBeInTheDocument();
+  expect(screen.getByText('1 of 6')).toBeInTheDocument();
 });

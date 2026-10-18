@@ -12,6 +12,33 @@ EVENT = "2026txhou"
 
 
 class MatchTimesAndAlertsTests(DBTestCase):
+    def test_unknown_subscriber_events_never_trigger_upstream_requests(self):
+        for index in range(3):
+            self.db.add(models.PushSubscription(endpoint=f"https://fcm.googleapis.com/fake-{index}",
+                                               keys={}, event_key=f"2026invented{index}", enabled=True))
+        self.db.commit()
+        with patch.object(match_alerts, "push_configured", return_value=True), \
+                patch.object(match_alerts, "TBAClient") as upstream:
+            result = match_alerts.run_match_alert_tick(self.db)
+        upstream.assert_not_called()
+        self.assertEqual(result["sent"], 0)
+
+    def test_upstream_event_work_is_bounded_per_tick(self):
+        now = int(time.time())
+        for index in range(match_alerts.MAX_EVENTS_PER_TICK + 5):
+            key = f"2026event{index}"
+            self.db.add(models.Event(event_key=key, name="Disposable", year=2026))
+            self.db.add(models.Match(match_key=f"{key}_qm1", event_key=key, comp_level="qm",
+                                     set_number=1, match_number=1, time=now + 300))
+            self.db.add(models.PushSubscription(endpoint=f"https://fcm.googleapis.com/fake-{index}",
+                                               keys={}, event_key=key, enabled=True))
+        self.db.commit()
+        with patch.object(match_alerts, "push_configured", return_value=True), \
+                patch.object(match_alerts, "TBAClient") as upstream:
+            upstream.return_value.event_matches.return_value = []
+            match_alerts.run_match_alert_tick(self.db)
+        self.assertEqual(upstream.return_value.event_matches.call_count, match_alerts.MAX_EVENTS_PER_TICK)
+
     def _seed(self, *, scheduled: int, predicted: int | None = None, actual: int | None = None) -> None:
         self.db.add(models.Event(event_key=EVENT, name="Houston", year=2026))
         self.db.add(models.Team(team_key="frc118", team_number=118, nickname="Robonauts"))

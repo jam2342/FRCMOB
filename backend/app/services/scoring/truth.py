@@ -1,8 +1,7 @@
 # Score-breakdown truth extraction — pure functions, no HTTP / DB dependencies.
 #
-# Extracted from ``routes_events`` so that service-layer code
-# (``climb_official_backfill``, etc.) can use them without importing from the
-# API layer.
+# Extracted from ``routes_events`` so that service-layer code can use them
+# without importing from the API layer.
 
 from __future__ import annotations
 

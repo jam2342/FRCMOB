@@ -14,12 +14,11 @@ from app.services.season_config import regional_automation_season
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.auto_scout.backfill import backfill_missing_auto_scout_drafts
-from app.services.climb.official_backfill import run_official_climb_backfill
-from app.services.ratings.snapshots import prune_rating_snapshots
 from app.services.intel.snapshots import refresh_hot_intel_snapshots
 from app.services.push.match_alerts import run_match_alert_tick
 from app.services.push.sender import push_configured
 from app.services.scouting_rooms.maintenance import cleanup_inactive_scouting_rooms
+from app.services.workspace_limits import delete_abandoned_empty_workspaces
 
 logger = logging.getLogger(__name__)
 
@@ -361,26 +360,16 @@ def start_scheduler() -> None:
             misfire_grace_time=300,
         )
 
-    _register_job(
-        job_fn=_scheduled_prune_rating_snapshots,
-        trigger="interval",
-        job_id="prune_rating_snapshots",
-        job_name="Prune old rating snapshots",
-        success_log="Scheduled rating snapshot prune job added (interval: 24 h)",
-        hours=24,
-        misfire_grace_time=3600,
-    )
 
-    if settings.climb_official_backfill_enabled:
-        interval_minutes = max(30, int(settings.climb_official_backfill_interval_minutes))
+    if settings.workspace_empty_cleanup_enabled:
         _register_job(
-            job_fn=_scheduled_climb_official_backfill,
+            job_fn=_scheduled_cleanup_empty_workspaces,
             trigger="interval",
-            job_id="climb_official_backfill",
-            job_name="Backfill official climb/endgame fields",
-            success_log=f"Scheduled climb official backfill job added (interval: {interval_minutes} min)",
-            minutes=interval_minutes,
-            misfire_grace_time=max(120, interval_minutes * 60),
+            job_id="cleanup_empty_workspaces",
+            job_name="Remove abandoned empty workspaces",
+            success_log="Scheduled empty workspace cleanup job added (interval: 24 h)",
+            hours=24,
+            misfire_grace_time=3600,
         )
 
     if settings.automation_regional_enabled and settings.automation_regional_halfday_scheduler_enabled:
@@ -521,38 +510,17 @@ def _scheduled_refresh_intel_snapshots() -> None:
             error_count=len(result.get("errors") or []),
         )
 
-def _scheduled_prune_rating_snapshots() -> None:
-    with _scheduled_job("prune_rating_snapshots", lock_ttl_sec=3600, use_db=True) as details:
+def _scheduled_cleanup_empty_workspaces() -> None:
+    with _scheduled_job("cleanup_empty_workspaces", lock_ttl_sec=3600, use_db=True) as details:
         if details is None:
             return
-        deleted = prune_rating_snapshots(details["_db"])
-        logger.info("Rating snapshot prune deleted=%s", deleted)
-        details.update(deleted=deleted)
-
-
-def _scheduled_climb_official_backfill() -> None:
-    interval_minutes = max(30, int(settings.climb_official_backfill_interval_minutes))
-    with _scheduled_job("climb_official_backfill", lock_ttl_sec=max(300, interval_minutes * 120), use_db=True) as details:
-        if details is None:
-            return
-        db = details["_db"]
-        logger.info("Starting scheduled climb official backfill")
-        result = run_official_climb_backfill(
-            db, event_key=None, max_events=int(settings.climb_official_backfill_max_events_per_run),
-        )
-        totals = result.get("totals") if isinstance(result, dict) else {}
+        result = delete_abandoned_empty_workspaces(details["_db"])
         logger.info(
-            "Climb official backfill completed events=%s official_rows=%s updated=%s inserted=%s errors=%s",
-            result.get("event_count") if isinstance(result, dict) else None,
-            totals.get("official_rows") if isinstance(totals, dict) else None,
-            totals.get("updated_findings") if isinstance(totals, dict) else None,
-            totals.get("inserted_findings") if isinstance(totals, dict) else None,
-            totals.get("errored_events") if isinstance(totals, dict) else None,
+            "Empty workspace cleanup deleted_workspaces=%s deleted_members=%s cutoff=%s",
+            result.get("deleted_workspaces"), result.get("deleted_members"), result.get("cutoff"),
         )
-        details.update(
-            event_count=result.get("event_count") if isinstance(result, dict) else None,
-            totals=totals if isinstance(totals, dict) else {},
-        )
+        details.update(result)
+
 
 REGIONAL_DUE_CHECK_MINUTES = 30
 REGIONAL_FIRST_CHECK_DELAY_MINUTES = 2
@@ -565,7 +533,6 @@ def _scheduled_regional_post_event_breakdowns() -> None:
             return
         db = details["_db"]
         from app.services.events.regional_automation import run_regional_automation_tick
-        from app.services.ml.synergy import QUALITY_THRESHOLD_DEFAULT, SYNERGY_MODEL_VERSION
 
         season = regional_automation_season()
         result = run_regional_automation_tick(
@@ -576,8 +543,6 @@ def _scheduled_regional_post_event_breakdowns() -> None:
             max_events=int(settings.automation_regional_max_events),
             max_teams=int(settings.automation_regional_max_teams),
             run_post_compute=bool(settings.automation_regional_run_post_compute),
-            synergy_model_version=SYNERGY_MODEL_VERSION,
-            quality_threshold=QUALITY_THRESHOLD_DEFAULT,
         )
         inner = (result.get("result") or {}) if isinstance(result, dict) else {}
         status = result.get("status") if isinstance(result, dict) else None

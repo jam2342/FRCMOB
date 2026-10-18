@@ -6,8 +6,6 @@ import {
   liveTimerLabel,
   normalizeMatchKey,
   normalizeTeamKeyInput,
-  summarizeFreshness,
-  friendlyDataWarning,
 } from './centerUtils';
 
 describe('centerUtils', () => {
@@ -22,64 +20,6 @@ describe('centerUtils', () => {
     expect(liveTimerLabel(1_000_120, nowMs).state).toBe('upcoming');
     expect(liveTimerLabel(999_950, nowMs).state).toBe('live');
     expect(liveTimerLabel(999_800, nowMs).state).toBe('ended');
-  });
-
-  it('summarizes freshness payloads with stale warnings', () => {
-    const stale = summarizeFreshness({
-      is_outdated: true,
-      latest_match_age_days: 6.4,
-      warnings: ['Temporarily using fallback season context'],
-    });
-    expect(stale.state).toBe('stale');
-    expect(stale.label).toContain('Stale');
-    expect(stale.detail).toContain('fallback season');
-
-    const fresh = summarizeFreshness({
-      is_outdated: false,
-      latest_match_age_days: 0.6,
-      warnings: [],
-    });
-    expect(fresh.state).toBe('fresh');
-    expect(fresh.label).toContain('Fresh');
-  });
-
-  it('calls an unscouted team unscouted, not stale', () => {
-    const none = summarizeFreshness({
-      is_outdated: true,
-      latest_match_age_days: null,
-      accepted_matches: 0,
-      raw_matches: 0,
-      warnings: ['No analyzed matches available for 2026.'],
-    });
-    expect(none.state).toBe('unknown');
-    expect(none.label).toBe('Not scouted yet');
-    expect(none.detail).toBe('Nobody has scouted this team in 2026 yet.');
-  });
-
-  it('calls a team with only rejected scouting rows unscouted, not stale', () => {
-    const rejected = summarizeFreshness({
-      is_outdated: true,
-      unscouted: false,
-      latest_match_age_days: null,
-      accepted_matches: 0,
-      raw_matches: 2,
-      warnings: ['No scouted matches for 2026 yet.'],
-    });
-    expect(rejected.state).toBe('unknown');
-    expect(rejected.label).toBe('Not scouted yet');
-  });
-
-  it("trusts the backend's unscouted flag when it sends one", () => {
-    expect(summarizeFreshness({ is_outdated: false, unscouted: true, latest_match_age_days: null, warnings: [] }).label)
-      .toBe('Not scouted yet');
-    const stale = summarizeFreshness({ is_outdated: true, unscouted: false, latest_match_age_days: 60, warnings: [] });
-    expect(stale.state).toBe('stale');
-  });
-
-  it('rewrites known backend warnings and passes others through', () => {
-    expect(friendlyDataWarning('No event-specific rating found; using latest available team rating.'))
-      .toBe("No rating for this event yet, so this shows the team's latest rating.");
-    expect(friendlyDataWarning('Something new')).toBe('Something new');
   });
 
   it('classifies abort-like transient request errors', () => {
@@ -102,3 +42,13 @@ describe('centerUtils', () => {
     expect(buildMatchCenterPath('', '')).toBe('/match-center');
   });
 });
+
+describe('countdowns far from the start', () => {
+  it('reads hours and days instead of thousands of minutes', () => {
+    const now = 1_000_000_000;
+    expect(liveTimerLabel(1_000_000 + 600, now).value).toBe('10:00');
+    expect(liveTimerLabel(1_000_000 + 18 * 3600 + 54 * 60, now).value).toBe('18h 54m');
+    expect(liveTimerLabel(1_000_000 + 2 * 86400 + 3 * 3600, now).value).toBe('2d 3h');
+  });
+});
+

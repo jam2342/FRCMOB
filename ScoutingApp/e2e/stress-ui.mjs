@@ -62,7 +62,7 @@ async function routeRequests(route) {
   if (url.pathname.startsWith('/api/scouting/insights/coverage')) return route.fulfill({json:{ok:true,event_key:'2026arc',summary:{total_slots:600,covered_slots:300,coverage_pct:50,total_entries:600,scout_count:25,outlier_count:1},grid:Array.from({length:100},(_,i)=>({match_key:'2026arc_qm'+(i+1),label:'Qual '+(i+1),comp_level:'qm',time:null,slots:[254,1678,1690,2046,2910,868].map((n,j)=>({team_key:'frc'+n,alliance:j<3?'red':'blue',station:String(j%3+1),entry_count:j%2,scouts:[longName.slice(0,40)]}))})),leaderboard:Array.from({length:25},(_,i)=>({scout_profile:longName.slice(0,40)+i,entry_count:25,matches_covered:20,teams_covered:10,best_qual_streak:12,last_entry_at:null})),outliers:[{kind:'scout_disagreement',match_key:'2026arc_qm1',team_key:'frc254',detail:longName,scouts:[longName.slice(0,40)]}]}});
   if (url.pathname.startsWith('/api/scouting/insights')) return route.fulfill({status:404,json:{detail:'No fixture scouting data'}});
   // Deny unknown/private prefixes rather than forwarding a fake workspace token.
-  if (!/^\/api\/(health|events|teams|matches|ratings|synergy|predictions|scouting\/(team|event)|push\/public-key|season)/.test(url.pathname)) return route.fulfill({status:404,json:{detail:'No local fixture'}});
+  if (!/^\/api\/(health|events|teams|matches|ratings|predictions|scouting\/(team|event)|push\/public-key|season)/.test(url.pathname)) return route.fulfill({status:404,json:{detail:'No local fixture'}});
   return route.fulfill(await publicResponse(url));
 }
 async function measure(page) {

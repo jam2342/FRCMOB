@@ -3,9 +3,10 @@ import react from '@vitejs/plugin-react'
 import { validateOnDeviceModel } from './build/modelAssets'
 import { isolateRecorderPage } from './build/isolateRecorder'
 import { bootPrefetch } from './build/bootPrefetch'
+import { contentSecurityPolicy } from './build/contentSecurityPolicy'
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), validateOnDeviceModel(), isolateRecorderPage(), bootPrefetch(), {
+  plugins: [react(), validateOnDeviceModel(), isolateRecorderPage(), bootPrefetch(), contentSecurityPolicy(), {
     name: 'native-safe-area-viewport',
     transformIndexHtml: (html) => mode === 'native'
       ? html.replace('width=device-width, initial-scale=1.0', 'width=device-width, initial-scale=1.0, viewport-fit=cover')
@@ -18,6 +19,8 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: mode === 'native' ? 'dist-native' : 'dist',
     chunkSizeWarningLimit: 700,
+    // The licenses of every package in the bundle, linked from the site footer.
+    license: { fileName: 'third-party-licenses.txt' },
     // record.html is the same app served cross-origin isolated (see build/isolateRecorder.ts).
     rollupOptions: { input: { main: 'index.html', record: 'record.html' } },
   },

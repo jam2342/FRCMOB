@@ -89,34 +89,6 @@ def _seed_analysis_rows(
     )
     db.add(finding)
     db.flush()
-    db.add(
-        models.TeamMatchThroughput(
-            finding_id=finding.id,
-            analysis_run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            team_key=team_key,
-            balls_shot_total=12,
-            shooting_time_total_seconds=26.0,
-            bps_total=0.46,
-            balls_shot_active=10,
-            shooting_time_active_seconds=21.0,
-            active_bps=0.48,
-            metric_coverage={"coverage_score": 0.84, "has_cycle_time": True},
-            source=run_version,
-        )
-    )
-    db.add(
-        models.AnalysisQuality(
-            run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            tracking_quality_score=0.9,
-            identity_quality_score=0.88,
-            overall_quality_score=0.9,
-            details={"coverage_quality": {"avg_coverage_score_0_1": 0.84}},
-        )
-    )
     db.flush()
 
     track_rows = [
@@ -363,17 +335,6 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
             params_hash=f"params-{run.id}",
         )
     )
-    db.add(
-        models.AnalysisQuality(
-            run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            tracking_quality_score=0.9,
-            identity_quality_score=0.88,
-            overall_quality_score=0.9,
-            details={"coverage_quality": {"avg_coverage_score_0_1": 0.84}},
-        )
-    )
     db.flush()
 
     for team_key in resolved_teams:
@@ -395,23 +356,6 @@ def _seed_six_team_match(db) -> tuple[str, str, list[str]]:
         )
         db.add(finding)
         db.flush()
-        db.add(
-            models.TeamMatchThroughput(
-                finding_id=finding.id,
-                analysis_run_id=run.id,
-                match_key=match_key,
-                event_key=event_key,
-                team_key=team_key,
-                balls_shot_total=12,
-                shooting_time_total_seconds=26.0,
-                bps_total=0.46,
-                balls_shot_active=10,
-                shooting_time_active_seconds=21.0,
-                active_bps=0.48,
-                metric_coverage={"coverage_score": 0.84, "has_cycle_time": True},
-                source="on_device_pwa_v1",
-            )
-        )
         for index, (time_sec, zone_key, speed_mps) in enumerate(
             [
                 (0.0, "red_loading_depot_zone", 1.2),

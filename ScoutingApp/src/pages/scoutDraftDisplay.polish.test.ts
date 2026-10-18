@@ -12,8 +12,8 @@ afterEach(cleanup);
 
 it('uses readable team and match labels', () => {
   expect(scoutingTeamLabel('FRC254')).toBe('#254');
-  expect(scoutingMatchLabel('2026arc_qm12')).toBe('Qual 12');
-  expect(scoutingMatchLabel('2026arc_sf1m2')).toBe('Semifinal 1 · Match 2');
+  expect(scoutingMatchLabel('2026arc_qm12')).toBe('QM 12');
+  expect(scoutingMatchLabel('2026arc_sf1m2')).toBe('SF 1-2');
 });
 
 it('names events from the shared index and prefers a name the page already has', async () => {

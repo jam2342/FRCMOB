@@ -279,7 +279,7 @@ check(Array.isArray(boxes), 'invalid detector output');
 return {passed: true, provider: detector.executionProvider, model: detector.modelVersion, detections: boxes.length, loadAndRunMs: performance.now() - start, frameMs};`,
   recorder: `
 location.hash = '/scouting/record'; await pause(2000);
-await until(() => document.body.innerText.includes('On-Device Match Breakdown'), 'recorder screen missing');
+await until(() => document.body.innerText.includes('On-Device Breakdown'), 'recorder screen missing');
 check(location.protocol === 'capacitor:' && !location.pathname.endsWith('record.html'), 'recorder document redirect');
 check(document.documentElement.scrollWidth <= innerWidth + 2, 'recorder overflow');
 return {passed: true, recorderInApp: true, overflow: false, webGPU: Boolean(navigator.gpu), isolated: crossOriginIsolated};`,

@@ -1,12 +1,14 @@
+import { TEAM_NUMBER_PLACEHOLDER } from './centerUtils';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useEventNames } from '../hooks/useEventNames';
 import { scoutingMatchLabel } from './scoutDraftDisplay';
 import { useSearchParams } from 'react-router-dom';
 import { useCanvasTokens } from '../hooks/useCanvasTokens';
-import { getTeamBreakdown } from '../api';
+import { getEventSchedule, getTeamBreakdown, type EventScheduleItem } from '../api';
+import { MatchSelect } from '../components/MatchSelect';
 import { EventPicker } from '../components/EventPicker';
-import { PageViewBar } from '../components/PageViewBar';
-import { SCOUTING_VIEWS } from '../components/pageViewBarConfig';
+import { ScoutingViewBar } from '../components/ScoutingViewBar';
+import { scoutingViewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { normalizeTeamKeyInput, teamNumberFromTeamKey } from './centerUtils';
@@ -285,6 +287,17 @@ export function AutoPathPage() {
   const [loadedTrackRequestKey, setLoadedTrackRequestKey] = useState('');
 
   const teamKey = useMemo(() => normalizeTeamKeyInput(teamInput), [teamInput]);
+
+  // The match box picks from this event's schedule, like every other match box.
+  const [scheduleMatches, setScheduleMatches] = useState<EventScheduleItem[]>([]);
+  useEffect(() => {
+    if (!eventKey) { setScheduleMatches([]); return; }
+    let cancelled = false;
+    getEventSchedule(eventKey, false)
+      .then((payload) => { if (!cancelled) setScheduleMatches(payload.matches || []); })
+      .catch(() => { if (!cancelled) setScheduleMatches([]); });
+    return () => { cancelled = true; };
+  }, [eventKey]);
   const eventDisplayName = useEventNames();
   const activeTrackRequestKey = teamKey && eventKey ? `${eventKey}|${teamKey}` : '';
 
@@ -633,18 +646,18 @@ export function AutoPathPage() {
 
   /* ── render ─────────────────────────────────── */
   return (
+    <>
+    <ScoutingViewBar />
     <div className="center-page-container autopath-page">
-      <PageViewBar items={SCOUTING_VIEWS} className="scouting-page-view-bar" collapseToMenuOnMobile />
 
-      <div className="center-page-header">
-        <h1 className="center-page-title">Auto Path Drawer</h1>
-        <p className="center-page-subtitle">
-          Draw and compare auto paths
-        </p>
-      </div>
-
-      {/* controls */}
+      <SurfaceCard
+        title={scoutingViewTitle('/scouting/auto-paths')}
+        subtitle="Draw a team's autonomous route and compare it with the ones you've saved."
+        expandable={false}
+        mobileCollapsible={false}
+      >
       <EventPicker
+        label="Event"
         value={eventKey}
         onSelect={selectEvent}
         inputValue={eventInput}
@@ -652,31 +665,31 @@ export function AutoPathPage() {
         onSubmit={commitInput}
       />
 
-      <div className="center-input-row" style={{ marginTop: '0.5rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))' }}>
-        <label>Team
+      <div className="center-stack-form">
+        <div>
+          <label className="center-label" htmlFor="ap-team">Team</label>
           <input
             id="ap-team"
             className="center-input"
             type="text"
             inputMode="numeric"
-            placeholder="Team # — e.g. 254"
+            placeholder={TEAM_NUMBER_PLACEHOLDER}
             value={teamInput}
             onChange={(e) => setTeamInput(e.target.value)}
             style={{ minWidth: 0, maxWidth: '100%', minHeight: 44 }}
           />
-        </label>
-        <label>Match
-          <input
+        </div>
+        <div>
+          <MatchSelect
             id="ap-match"
-            className="center-input"
-            type="text"
-            placeholder="Match — e.g. qm1"
-            value={matchInput}
-            onChange={(e) => setMatchInput(e.target.value)}
-            style={{ minWidth: 0, maxWidth: '100%', minHeight: 44 }}
+            matches={scheduleMatches}
+            value={matchInput && eventKey ? `${eventKey}_${matchInput}` : ''}
+            onChange={(key) => setMatchInput(normalizedMatch(key))}
+            anyLabel="Any match"
           />
-        </label>
+        </div>
       </div>
+      </SurfaceCard>
 
 
         {/* Field Canvas — no fullscreen/minimize: those remount the <canvas>
@@ -709,7 +722,7 @@ export function AutoPathPage() {
               Show Tracks
             </label>
             {trackError ? <p role="alert">{trackError} <button type="button" onClick={() => setTrackRetry(value => value + 1)}>Retry tracks</button></p> : null}
-            {loadingTracks && <span className="autopath-loading">Loading tracks...</span>}
+            {loadingTracks && <span className="autopath-loading">Loading tracks…</span>}
           </div>
 
           {drawMode === 'draw' && (
@@ -809,5 +822,6 @@ export function AutoPathPage() {
         )}
 
     </div>
+    </>
   );
 }

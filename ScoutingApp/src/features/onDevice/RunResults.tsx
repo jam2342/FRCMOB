@@ -1,3 +1,4 @@
+import { formatDayTime } from '../../utils/formatTime';
 import { scoutingMatchLabel } from '../../pages/scoutDraftDisplay';
 import { useSyncExternalStore } from 'react';
 import { FieldHeatmap } from '../../components/cv/FieldHeatmap';
@@ -68,7 +69,7 @@ export function RunResults({ session, syncing = false }: { session: StoredSessio
   return (
     <section className="odr-section" aria-label="Run results">
       <h3 className="odr-results-title" tabIndex={-1}>Run results</h3>
-      <p className="odr-hint">{scoutingMatchLabel(session.matchKey || '')} · {new Date(session.createdAt).toLocaleString()}</p>
+      <p className="odr-hint">{scoutingMatchLabel(session.matchKey || '')} · {formatDayTime(session.createdAt)}</p>
       <p className="odr-summary"><strong>{teams.length}</strong> robot{teams.length === 1 ? '' : 's'} · <strong>{pointCount}</strong> saved positions · <strong>{session.payload.sampledFrameCount}</strong> analyzed frames</p>
       <p className="odr-hint" role="status">
         {syncing ? 'Saved on this device. Syncing to your team…' : session.synced ? 'Synced to your team.' : 'Saved on this device. Waiting to sync.'}

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-alpine3.24
 
 WORKDIR /app
 
@@ -7,16 +7,16 @@ ENV PIP_PREFER_BINARY=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
+# Apply stable-distribution security updates newer than the Python image.
+RUN apk upgrade --no-cache
+
 COPY backend/requirements.txt /tmp/requirements.txt
 
-# torch from the CPU-only index first: the default wheels carry the CUDA runtime,
-# gigabytes this host has no GPU to use. The requirements then resolve against it.
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-
 RUN python -m pip install --upgrade pip setuptools wheel \
-  && pip install --default-timeout=1200 --retries=10 --index-url "$TORCH_INDEX_URL" \
-       "$(grep -E '^torch==' /tmp/requirements.txt)" \
-  && pip install --default-timeout=1200 --retries=10 -r /tmp/requirements.txt
+  && python -m pip install --only-binary=:all: --no-binary=http-ece -r /tmp/requirements.txt \
+  && python -m pip check \
+  && python -m pip uninstall -y pip setuptools wheel \
+  && python -c 'import ensurepip,pathlib,shutil; shutil.rmtree(pathlib.Path(ensurepip.__file__).parent)'
 
 COPY backend/ /app/
 

@@ -99,6 +99,14 @@ class RatingRow(BaseModel):
     robot_level_0_100: float | None = None
     driver_skill_0_100: float | None = None
     subscores: RatingSubscores = Field(default_factory=RatingSubscores)
+    # Expected points per match behind the rating: total, teleop, auto, climb.
+    expected_points: dict[str, float] | None = None
+    basis: str | None = None  # "this_event" | "earlier_events" | "last_season" | "rookie" | "season_typical"
+    matches_here: int | None = None
+    matches_before: int | None = None
+    rating_range_80: list[float] | None = None
+    dud_rate: float | None = None
+    recent_changes: list[dict[str, Any]] = Field(default_factory=list)
     pros: list[Any] = Field(default_factory=list)
     cons: list[Any] = Field(default_factory=list)
     evidence: list[Any] = Field(default_factory=list)
@@ -170,45 +178,27 @@ class TeamLiveFormResponse(OkEnvelope):
     live_window_sec: int = 0
     team_statuses: dict[str, TeamLiveFormStatus] = Field(default_factory=dict)
 
-# ── GET /events/{event_key}/schedule-with-synergy ───────────────
+# ── GET /events/{event_key}/schedule-with-synergy (schedule + predictions) ──
 
 
-class AllianceSynergy(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    available: bool = False
-    alliance_synergy_score_0_100: float | None = None
-    alliance_synergy_points: float = 0.0
-    expected_throughput: float | None = None
-    projected_throughput: float | None = None
-    confidence_0_1: float = 0.0
-    source_label: str = ""
-    pair_breakdown: list[Any] = Field(default_factory=list)
-    computed_at: str | None = None
-
-class SynergyAlliance(BaseModel):
+class ScheduleAlliance(BaseModel):
     teams: list[StationTeamRef]
-    synergy: AllianceSynergy = Field(default_factory=AllianceSynergy)
 
 class MatchOutcomePrediction(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
 
     available: bool = False
     source_label: str = ""
-    model_key: str = ""
-    model_version: str | None = None
     red_win_prob: float | None = None
     blue_win_prob: float | None = None
     red_win_prob_deterministic: float | None = None
     # The rating formula's number, kept for comparison when the fuel formula decides.
     red_win_prob_rating: float | None = None
-    fuel_margin_per_min: float | None = None
-    red_win_prob_ml: float | None = None
-    prediction_blend: float | None = None
+    points_margin: float | None = None
     favored_alliance: str | None = None
     edge_confidence_0_1: float | None = None
 
-class SynergyMatch(BaseModel):
+class PredictedMatch(BaseModel):
     match_key: str
     comp_level: str
     set_number: int
@@ -216,24 +206,19 @@ class SynergyMatch(BaseModel):
     scheduled_time: int | None = None
     predicted_time: int | None = None
     actual_time: int | None = None
-    red: SynergyAlliance
-    blue: SynergyAlliance
+    red: ScheduleAlliance
+    blue: ScheduleAlliance
     prediction: MatchOutcomePrediction = Field(default_factory=MatchOutcomePrediction)
 
-class ScheduleWithSynergyResponse(OkEnvelope):
+class SchedulePredictionsResponse(OkEnvelope):
     event_key: str
     event_name: str
-    model_version: str
-    projection_count: int
-    ml_prediction_model_version: str | None = None
-    ml_prediction_count: int = 0
-    ml_blended_prediction_count: int = 0
+    # services/seasons.season_info: season, game, current, rated, frozen.
+    season: dict[str, Any] | None = None
     deterministic_prediction_count: int
-    fuel_prediction_count: int = 0
-    prediction_blend: float = 0.0
+    points_prediction_count: int = 0
     count: int
-    precompute: dict[str, Any] | None = None
-    matches: list[SynergyMatch]
+    matches: list[PredictedMatch]
 
 # ── GET /scouting/event/{event_key}/teams/history ───────────────
 
@@ -254,12 +239,7 @@ class TeamHistory(BaseModel):
     region: str | None = None
     state_prov: str | None = None
     country: str | None = None
-    analysis_coverage: dict[str, Any] = Field(default_factory=dict)
     history_count: int = 0
-    history_count_quality_gate_accepted: int = 0
-    history_count_before_quality_gate: int = 0
-    history_excluded_by_quality_gate: int = 0
-    data_freshness: dict[str, Any] = Field(default_factory=dict)
     averages: dict[str, Any] = Field(default_factory=dict)
     previous_games: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -269,6 +249,5 @@ class TeamsHistoryResponse(OkEnvelope):
     source: str
     refresh_error: str | None = None
     season_scope: SeasonScope
-    quality_gate: dict[str, Any] = Field(default_factory=dict)
     teams_count: int
     teams: list[TeamHistory]

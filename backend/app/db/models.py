@@ -47,6 +47,7 @@ class Team(Base):
     team_key: Mapped[str] = mapped_column(String, primary_key=True)
     team_number: Mapped[int] = mapped_column(Integer, index=True)
     nickname: Mapped[str | None] = mapped_column(String, nullable=True)
+    rookie_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     profile: Mapped["TeamProfile | None"] = relationship(back_populates="team", uselist=False, lazy="select")
 
@@ -94,13 +95,13 @@ class EventTeamRating(Base):
     rating_0_100: Mapped[float] = mapped_column(Float, default=50.0)
     confidence_0_1: Mapped[float] = mapped_column(Float, default=0.0)
     robot_level_0_100: Mapped[float] = mapped_column(Float, default=50.0)
-    driver_skill_0_100: Mapped[float] = mapped_column(Float, default=50.0)
-    results_anchor: Mapped[float] = mapped_column(Float, default=50.0)
+    driver_skill_0_100: Mapped[float | None] = mapped_column(Float, nullable=True)
+    results_anchor: Mapped[float | None] = mapped_column(Float, nullable=True)
     throughput: Mapped[float] = mapped_column(Float, default=50.0)
-    shift_productivity: Mapped[float] = mapped_column(Float, default=50.0)
-    capacity_utilization: Mapped[float] = mapped_column(Float, default=50.0)
+    shift_productivity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    capacity_utilization: Mapped[float | None] = mapped_column(Float, nullable=True)
     endgame: Mapped[float] = mapped_column(Float, default=50.0)
-    consistency: Mapped[float] = mapped_column(Float, default=50.0)
+    consistency: Mapped[float | None] = mapped_column(Float, nullable=True)
     pros_json: Mapped[list[dict]] = mapped_column(JSON, default=lambda: [])
     cons_json: Mapped[list[dict]] = mapped_column(JSON, default=lambda: [])
     evidence_json: Mapped[list[dict]] = mapped_column(JSON, default=lambda: [])
@@ -116,31 +117,6 @@ class EventTeamRating(Base):
         Index("ix_event_team_rating_event_team", "event_key", "team_key"),
         Index("ix_event_team_rating_team_key", "team_key"),
         Index("ix_event_team_rating_team_updated", "team_key", "updated_at"),
-    )
-
-class RatingSnapshot(Base):
-    # Append-only time series of EventTeamRating values, one row per team per
-    # recompute. Powers the live "momentum" UI (sparkline, trend arrow, deltas).
-    # Unlike EventTeamRating (one row per team, overwritten each recompute) this
-    # is never updated in place — rows accumulate so we can chart history.
-    __tablename__ = "rating_snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
-    team_key: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), index=True)
-    rating_0_100: Mapped[float] = mapped_column(Float)
-    confidence_0_1: Mapped[float] = mapped_column(Float, default=0.0)
-    findings_count: Mapped[int] = mapped_column(Integer, default=0)
-    model_version: Mapped[str] = mapped_column(String, default="rating_v1")
-    captured_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        index=True,
-    )
-
-    __table_args__ = (
-        Index("ix_rating_snapshot_event_team_captured", "event_key", "team_key", "captured_at"),
-        Index("ix_rating_snapshot_event_captured", "event_key", "captured_at"),
     )
 
 class Match(Base):
@@ -165,6 +141,71 @@ class Match(Base):
         Index("ix_matches_event_time", "event_key", "time"),
         Index("ix_matches_event_comp_order", "event_key", "comp_level", "set_number", "match_number"),
     )
+
+class TeamPriorStrength(Base):
+    # A team's end-of-season expected points per match (team model on alliance totals,
+    # any game) and z = ln(points / the season's median team): next season's prior.
+    __tablename__ = "team_prior_strengths"
+
+    season: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_key: Mapped[str] = mapped_column(String, primary_key=True)
+    points: Mapped[float] = mapped_column(Float)
+    z: Mapped[float] = mapped_column(Float)
+    matches: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
+
+class FrozenSeason(Base):
+    # A finished season, kept read-only (scripts/freeze_season.py): its ratings are never
+    # recomputed and its pages serve stored predictions instead of rebuilding the season.
+    __tablename__ = "frozen_seasons"
+
+    season: Mapped[int] = mapped_column(Integer, primary_key=True)
+    frozen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class ArchivedMatchPrediction(Base):
+    # A frozen season's match prediction as the schedule served it before the season
+    # was frozen (win chances, bonus RP chances), so "called it" history stays.
+    __tablename__ = "archived_match_predictions"
+
+    match_key: Mapped[str] = mapped_column(String, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String, index=True)
+    season: Mapped[int] = mapped_column(Integer, index=True)
+    prediction: Mapped[dict] = mapped_column(JSON)
+    archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class MatchAllianceResult(Base):
+    # One alliance's official result in one match, as TBA's score breakdown reports it.
+    # Per-robot findings split alliance fuel between robots; this keeps the totals the
+    # split came from, plus fouls, ranking points and surrogate/DQ flags.
+    __tablename__ = "match_alliance_results"
+
+    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), primary_key=True)
+    alliance: Mapped[str] = mapped_column(String, primary_key=True)
+    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
+    season_year: Mapped[int] = mapped_column(Integer)
+    team_keys: Mapped[list[str]] = mapped_column(JSON, default=lambda: [])
+    surrogate_team_keys: Mapped[list[str]] = mapped_column(JSON, default=lambda: [])
+    dq_team_keys: Mapped[list[str]] = mapped_column(JSON, default=lambda: [])
+    total_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The manual's 2nd ranking sort: match points without foul points received.
+    score_without_fouls: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result: Mapped[str | None] = mapped_column(String, nullable=True)  # win | loss | tie
+    # Fouls this alliance committed; foul points it received from the other alliance's.
+    minor_fouls_committed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    major_fouls_committed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    foul_points_received: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ranking_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Season components (REBUILT: hub fuel by period, tower, bonus RPs); null for a
+    # season without a parser.
+    components: Mapped[dict] = mapped_column(JSON, default=lambda: {})
+    raw_breakdown: Mapped[dict] = mapped_column(JSON, default=lambda: {})
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
 
 class MatchTeam(Base):
     __tablename__ = "match_teams"
@@ -196,7 +237,6 @@ class AnalysisRun(Base):
     match: Mapped["Match"] = relationship(back_populates="analysis_runs", lazy="select")
     context: Mapped["AnalysisRunContext | None"] = relationship(back_populates="run", uselist=False, lazy="select")
     findings: Mapped[list["TeamMatchFinding"]] = relationship(back_populates="analysis_run", lazy="select")
-    quality: Mapped["AnalysisQuality | None"] = relationship(back_populates="run", uselist=False, lazy="select")
     auto_scout_drafts: Mapped[list["AutoScoutDraft"]] = relationship(back_populates="analysis_run", lazy="select")
     on_device_session: Mapped["OnDeviceSession | None"] = relationship(
         back_populates="analysis_run", uselist=False, lazy="select"
@@ -306,7 +346,6 @@ class TeamMatchFinding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
 
     analysis_run: Mapped["AnalysisRun"] = relationship(back_populates="findings", lazy="select")
-    throughput: Mapped["TeamMatchThroughput | None"] = relationship(back_populates="finding", uselist=False, lazy="select")
 
     __table_args__ = (
         Index("ix_team_match_finding_event_team", "event_key", "team_key"),
@@ -314,31 +353,6 @@ class TeamMatchFinding(Base):
         Index("ix_team_match_finding_team_event_id", "team_key", "event_key", "id"),
         Index("ix_team_match_finding_team_run", "team_key", "analysis_run_id"),
     )
-
-class TeamMatchThroughput(Base):
-    __tablename__ = "team_match_throughputs"
-
-    finding_id: Mapped[int] = mapped_column(ForeignKey("team_match_findings.id"), primary_key=True)
-    analysis_run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), index=True)
-    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
-    team_key: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), index=True)
-    balls_shot_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    shooting_time_total_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    bps_total: Mapped[float | None] = mapped_column(Float, nullable=True)
-    balls_shot_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    shooting_time_active_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    active_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
-    metric_coverage: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    source: Mapped[str] = mapped_column(String, default="video_v3_tracks")
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-    finding: Mapped["TeamMatchFinding"] = relationship(back_populates="throughput", lazy="select")
 
 class RobotTrack(Base):
     __tablename__ = "robot_tracks"
@@ -395,26 +409,6 @@ class MatchEvent(Base):
         Index("ix_match_events_team_run_time", "team_key", "analysis_run_id", "time_sec", "id"),
     )
 
-class AnalysisQuality(Base):
-    __tablename__ = "analysis_qualities"
-
-    run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), primary_key=True)
-    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), index=True)
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), index=True)
-    tracking_quality_score: Mapped[float] = mapped_column(Float, default=0.0)
-    identity_quality_score: Mapped[float] = mapped_column(Float, default=0.0)
-    overall_quality_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
-    details: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-    run: Mapped["AnalysisRun"] = relationship(back_populates="quality", lazy="select")
-
-
 class MatchPhaseWindow(Base):
     __tablename__ = "match_phase_windows"
 
@@ -432,110 +426,6 @@ class MatchPhaseWindow(Base):
     params_hash: Mapped[str] = mapped_column(String, default="", index=True)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
 
-class TeamSeasonStrength(Base):
-    __tablename__ = "team_season_strengths"
-
-    season: Mapped[int] = mapped_column(Integer, primary_key=True)
-    team_key: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    model_version: Mapped[str] = mapped_column(String, primary_key=True, default="synergy_v1")
-    strength_active_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
-    confidence_0_1: Mapped[float] = mapped_column(Float, default=0.0)
-    matches_used: Mapped[int] = mapped_column(Integer, default=0)
-    avg_quality: Mapped[float] = mapped_column(Float, default=0.0)
-    coverage_factor: Mapped[float] = mapped_column(Float, default=0.0)
-    params_hash: Mapped[str] = mapped_column(String, default="", index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-class TeamPairSynergyPrior(Base):
-    __tablename__ = "team_pair_synergy_priors"
-
-    season: Mapped[int] = mapped_column(Integer, primary_key=True)
-    team_key_a: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    team_key_b: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    model_version: Mapped[str] = mapped_column(String, primary_key=True, default="synergy_v1")
-    synergy_points_prior: Mapped[float] = mapped_column(Float, default=0.0)
-    confidence_prior: Mapped[float] = mapped_column(Float, default=0.0)
-    n_matches_together: Mapped[int] = mapped_column(Integer, default=0)
-    avg_quality: Mapped[float] = mapped_column(Float, default=0.0)
-    residual_mean_raw: Mapped[float] = mapped_column(Float, default=0.0)
-    params_hash: Mapped[str] = mapped_column(String, default="", index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-class TeamEventThroughputStrength(Base):
-    __tablename__ = "team_event_throughput_strengths"
-
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), primary_key=True)
-    team_key: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    model_version: Mapped[str] = mapped_column(String, primary_key=True, default="synergy_v1")
-    season: Mapped[int] = mapped_column(Integer, index=True)
-    strength_active_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
-    confidence_0_1: Mapped[float] = mapped_column(Float, default=0.0)
-    matches_used: Mapped[int] = mapped_column(Integer, default=0)
-    avg_quality: Mapped[float] = mapped_column(Float, default=0.0)
-    coverage_factor: Mapped[float] = mapped_column(Float, default=0.0)
-    params_hash: Mapped[str] = mapped_column(String, default="", index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-class TeamPairSynergyEvent(Base):
-    __tablename__ = "team_pair_synergy_events"
-
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), primary_key=True)
-    team_key_a: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    team_key_b: Mapped[str] = mapped_column(ForeignKey("teams.team_key"), primary_key=True)
-    model_version: Mapped[str] = mapped_column(String, primary_key=True, default="synergy_v1")
-    season: Mapped[int] = mapped_column(Integer, index=True)
-    synergy_points_event: Mapped[float] = mapped_column(Float, default=0.0)
-    confidence_event: Mapped[float] = mapped_column(Float, default=0.0)
-    n_matches_together: Mapped[int] = mapped_column(Integer, default=0)
-    avg_quality: Mapped[float] = mapped_column(Float, default=0.0)
-    residual_mean_raw: Mapped[float] = mapped_column(Float, default=0.0)
-    params_hash: Mapped[str] = mapped_column(String, default="", index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-class MatchSynergyProjection(Base):
-    __tablename__ = "match_synergy_projections"
-
-    event_key: Mapped[str] = mapped_column(ForeignKey("events.event_key"), primary_key=True)
-    match_key: Mapped[str] = mapped_column(ForeignKey("matches.match_key"), primary_key=True)
-    alliance_color: Mapped[str] = mapped_column(String, primary_key=True)
-    model_version: Mapped[str] = mapped_column(String, primary_key=True, default="synergy_v1")
-    season: Mapped[int] = mapped_column(Integer, index=True)
-    scheduled_time: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    expected_throughput: Mapped[float | None] = mapped_column(Float, nullable=True)
-    alliance_synergy_points: Mapped[float] = mapped_column(Float, default=0.0)
-    projected_throughput: Mapped[float | None] = mapped_column(Float, nullable=True)
-    alliance_synergy_score_0_100: Mapped[float] = mapped_column(Float, default=50.0)
-    confidence_0_1: Mapped[float] = mapped_column(Float, default=0.0)
-    source_label: Mapped[str] = mapped_column(String, default="projection")
-    pair_breakdown: Mapped[list[dict]] = mapped_column(JSON, default=lambda: [])
-    params_hash: Mapped[str] = mapped_column(String, default="", index=True)
-    computed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
 class IntelSnapshot(Base):
     __tablename__ = "intel_snapshots"
 
@@ -550,78 +440,6 @@ class IntelSnapshot(Base):
 
     __table_args__ = (
         Index("ix_intel_snapshots_scope_event_team", "scope", "event_key", "team_key"),
-    )
-
-class MLFeatureSnapshot(Base):
-    __tablename__ = "ml_feature_snapshots"
-
-    snapshot_key: Mapped[str] = mapped_column(String, primary_key=True)
-    scope: Mapped[str] = mapped_column(String, index=True)
-    event_key: Mapped[str | None] = mapped_column(ForeignKey("events.event_key"), nullable=True, index=True)
-    match_key: Mapped[str | None] = mapped_column(ForeignKey("matches.match_key"), nullable=True, index=True)
-    team_key: Mapped[str | None] = mapped_column(ForeignKey("teams.team_key"), nullable=True, index=True)
-    alliance_color: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-    feature_vector: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    target: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    split_tag: Mapped[str] = mapped_column(String, default="train", index=True)
-    source_version: Mapped[str] = mapped_column(String, default="shadow_features_v1", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utc_now,
-        onupdate=_utc_now,
-        index=True,
-    )
-
-    __table_args__ = (
-        Index("ix_ml_feature_snapshots_scope_event_created", "scope", "event_key", "created_at"),
-        Index("ix_ml_feature_snapshots_scope_split_created", "scope", "split_tag", "created_at"),
-    )
-
-class MLModelRegistry(Base):
-    __tablename__ = "ml_model_registry"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    model_key: Mapped[str] = mapped_column(String, index=True)
-    model_version: Mapped[str] = mapped_column(String)
-    framework: Mapped[str] = mapped_column(String, default="torch")
-    artifact_path: Mapped[str] = mapped_column(String)
-    input_schema: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    metrics: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    params: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    trained_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
-    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
-
-    __table_args__ = (
-        UniqueConstraint("model_key", "model_version", name="uq_ml_model_registry_key_version"),
-        Index("ix_ml_model_registry_key_active", "model_key", "is_active"),
-    )
-
-class MLShadowPrediction(Base):
-    __tablename__ = "ml_shadow_predictions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    model_key: Mapped[str] = mapped_column(String, index=True)
-    model_version: Mapped[str] = mapped_column(String, index=True)
-    event_key: Mapped[str | None] = mapped_column(ForeignKey("events.event_key"), nullable=True, index=True)
-    match_key: Mapped[str | None] = mapped_column(ForeignKey("matches.match_key"), nullable=True, index=True)
-    team_key: Mapped[str | None] = mapped_column(ForeignKey("teams.team_key"), nullable=True, index=True)
-    target_key: Mapped[str] = mapped_column(String, index=True)
-    prediction_value: Mapped[float | None] = mapped_column(Float, nullable=True)
-    prediction_json: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    feature_snapshot_key: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
-
-    __table_args__ = (
-        Index(
-            "ix_ml_shadow_predictions_event_model_target",
-            "event_key",
-            "model_key",
-            "model_version",
-            "target_key",
-        ),
     )
 
 class TeamWorkspace(Base):
@@ -743,6 +561,11 @@ class ScoutingRoomEntry(Base):
         ForeignKey("teams.team_key"), nullable=True, index=True
     )
     scout_profile: Mapped[str] = mapped_column(String, index=True)
+    # Display names can change or be reused after removal. Only this immutable
+    # membership owns a report; NULL preserves ambiguous pre-migration authors.
+    author_member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("team_workspace_members.id", name="fk_scouting_room_entry_author"), nullable=True
+    )
     client_entry_id: Mapped[str | None] = mapped_column(String, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=lambda: {})
     total_points: Mapped[float | None] = mapped_column(Float, nullable=True)

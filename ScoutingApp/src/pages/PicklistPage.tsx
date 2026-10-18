@@ -1,4 +1,6 @@
+import { rankedTeamPool, type PoolTeam } from './eventTeamPool';
 import { exportPrintableReport } from '../platform/exportFile';
+import { EmptyState } from '../components/ui/EmptyState';
 import { isNativeApp } from '../platform/runtime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -13,7 +15,7 @@ import {
 import type { Picklist, PicklistSlot, PicklistSlotTier } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
-import { COMPARE_VIEWS } from '../components/pageViewBarConfig';
+import { COMPARE_VIEWS, viewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -21,7 +23,8 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
 import { hapticTap } from '../utils/haptics';
-import { asRecord, metric, parseNumber } from './centerUtils';
+import { closeToast, showToast } from '../components/ui/toast';
+import { metric } from './centerUtils';
 import { slotIndexForRank } from '../features/picklists/rankMove';
 import './PicklistPage.css';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
@@ -36,12 +39,7 @@ const STORAGE_KEY = 'scouting_center_event_key';
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
 const LIVE_POLL_MS = 4000;
 
-type TeamInfo = {
-  team_key: string;
-  team_number: number;
-  nickname: string | null;
-  rating_0_100: number | null;
-};
+type TeamInfo = PoolTeam;
 
 function readScoutProfile(): string {
   try {
@@ -99,6 +97,18 @@ function PicklistWorkspacePage() {
   const [moveTarget, setMoveTarget] = useState('');
 
   const loadSequence = useRef(0);
+  // Lists deleted with Undo still offered: hidden here, deleted on the server once the toast goes.
+  const pendingDeleteIds = useRef(new Set<number>());
+  const pendingDeleteToast = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Leaving the page ends the Undo window: the delete goes through.
+      if (pendingDeleteToast.current !== null) closeToast(pendingDeleteToast.current);
+    };
+  }, []);
   const teamInfoByKey = useMemo(() => {
     const map = new Map<string, TeamInfo>();
     for (const team of teamPool) map.set(team.team_key, team);
@@ -113,24 +123,11 @@ function PicklistWorkspacePage() {
     try {
       const payload = await getEventTeamsIntel(key, {
         include_tba: true,
-        include_statbotics: false,
         include_season_fallback: true,
         include_rating_details: false,
         include_rating_signals: false,
       });
-      const teams = (Array.isArray(payload.teams) ? payload.teams : [])
-        .map((entry) => {
-          const row = asRecord(entry);
-          const rating = asRecord(row?.rating);
-          return {
-            team_key: String(row?.team_key || '').toLowerCase(),
-            team_number: parseNumber(row?.team_number) ?? 0,
-            nickname: typeof row?.nickname === 'string' ? row.nickname : null,
-            rating_0_100: parseNumber(rating?.rating_0_100),
-          };
-        })
-        .filter((row) => row.team_key.length > 0)
-        .sort((a, b) => (b.rating_0_100 ?? 0) - (a.rating_0_100 ?? 0));
+      const teams = rankedTeamPool(payload.teams);
       if (loadSequence.current === sequence) setTeamPool(teams);
     } catch {
       if (loadSequence.current === sequence) { setTeamPool([]); setTeamsError('Could not load event teams.'); }
@@ -161,7 +158,7 @@ function PicklistWorkspacePage() {
     try {
       const result = await listPicklists(key);
       if (loadSequence.current !== sequence) return;
-      const lists = (result.picklists ?? []).filter((list) => list.event_key === key);
+      const lists = (result.picklists ?? []).filter((list) => list.event_key === key && !pendingDeleteIds.current.has(list.id));
       setPicklists(lists);
       if (lists.length > 0) {
         setActiveId((current) =>
@@ -263,23 +260,63 @@ function PicklistWorkspacePage() {
     }
   }
 
-  async function handleDelete() {
+  // No "are you sure": the list disappears at once and Undo brings it back. The server delete
+  // waits until the toast is gone, so Undo never has to recreate anything.
+  function handleDelete() {
     if (!doc || saving || deleting) return;
-    if (!window.confirm(`Delete "${doc.title}"? This cannot be undone.`)) return;
+    const target = doc;
     const sequence = loadSequence.current;
+    const position = picklists.findIndex((p) => p.id === target.id);
     editor.pause();
-    setDeleting(true);
-    try {
-      await deletePicklist(doc.id);
-      editor.remove(doc.id);
-      if (loadSequence.current !== sequence) return;
-      setPicklists((prev) => prev.filter((p) => p.id !== doc.id));
-      setActiveId(null);
-      selectDoc(null);
-      if (eventKey) void fetchPicklists(eventKey, sequence);
-    } catch (err) {
-      if (loadSequence.current === sequence) setErrorText((err as Error).message || 'Failed to delete picklist.');
-    } finally { setDeleting(false); }
+    pendingDeleteIds.current.add(target.id);
+    setPicklists((prev) => prev.filter((p) => p.id !== target.id));
+    setActiveId(null);
+    selectDoc(null);
+
+    const restore = () => {
+      pendingDeleteIds.current.delete(target.id);
+      if (!mountedRef.current || loadSequence.current !== sequence) return;
+      setPicklists((prev) => {
+        if (prev.some((p) => p.id === target.id)) return prev;
+        const next = [...prev];
+        next.splice(Math.max(0, Math.min(position, next.length)), 0, target);
+        return next;
+      });
+      setActiveId(target.id);
+      // Reads any unsaved local edits back in, so Undo loses nothing.
+      selectDoc(target);
+    };
+
+    const commit = async () => {
+      if (mountedRef.current) setDeleting(true);
+      try {
+        await deletePicklist(target.id);
+        editor.remove(target.id);
+        pendingDeleteIds.current.delete(target.id);
+        if (mountedRef.current && loadSequence.current === sequence && eventKey) void fetchPicklists(eventKey, sequence);
+      } catch (err) {
+        restore();
+        if (mountedRef.current && loadSequence.current === sequence) {
+          setErrorText(`Could not delete "${target.title}": ${(err as Error).message || 'the server did not answer'}. It is still here.`);
+        }
+      } finally {
+        if (mountedRef.current) setDeleting(false);
+      }
+    };
+
+    const toastId = showToast({
+      message: `Deleted "${target.title}"`,
+      actionLabel: 'Undo',
+      onAction: () => {
+        hapticTap();
+        restore();
+      },
+      onClose: (reason) => {
+        if (pendingDeleteToast.current === toastId) pendingDeleteToast.current = null;
+        if (reason !== 'action') void commit();
+      },
+    });
+    pendingDeleteToast.current = toastId;
   }
 
   function moveSlot(index: number, delta: number) {
@@ -380,6 +417,7 @@ function PicklistWorkspacePage() {
 
   const eventPicker = (
     <EventPicker
+      label="Event"
       value={eventKey}
       onSelect={selectEvent}
       inputValue={eventInput}
@@ -420,7 +458,7 @@ function PicklistWorkspacePage() {
             type="button"
             className="center-btn ghost danger"
             disabled={saving || deleting}
-            onClick={() => void handleDelete()}
+            onClick={handleDelete}
           >
             Delete
           </button>
@@ -437,7 +475,7 @@ function PicklistWorkspacePage() {
       <div className="center-page-container">
 
           <SurfaceCard
-            title={isMobile && doc ? doc.title : "Picklist Builder"}
+            title={isMobile && doc ? doc.title : viewTitle(COMPARE_VIEWS, '/compare/picklist')}
             subtitle={isMobile && doc ? "Shared with your team · Saves automatically." : "Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."}
             className="no-print"
             expandable={false}
@@ -735,11 +773,27 @@ function PicklistWorkspacePage() {
               expandable={false}
               mobileCollapsible={false}
             >
-              <p className="center-callout muted">
-                “New from ratings” seeds the list with every team at this event, ordered by their
-                FRCMOB rating — then put them in your order: tap a rank number to move a team,
-                use the arrows, or drag on a computer.
-              </p>
+              <EmptyState
+                compact
+                mascot
+                title="Start your list"
+                description="“From ratings” lists every team at this event by FRCMOB rating. Then put them in your order: tap a rank to move a team, use the arrows, or drag on a computer."
+                action={(
+                  <span className="picklist-empty-actions">
+                    <button
+                      type="button"
+                      className="center-btn"
+                      onClick={() => void handleCreate(true)}
+                      disabled={loading || deleting || teamsLoading || !!teamsError || teamPool.length === 0}
+                    >
+                      Start from ratings
+                    </button>
+                    <button type="button" className="center-btn ghost" onClick={() => void handleCreate(false)} disabled={loading || deleting}>
+                      Empty list
+                    </button>
+                  </span>
+                )}
+              />
             </SurfaceCard>
           ) : null}
 

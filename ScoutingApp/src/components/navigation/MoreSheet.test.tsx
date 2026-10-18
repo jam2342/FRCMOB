@@ -43,4 +43,22 @@ describe('MoreSheet', () => {
     expect(opener).toHaveFocus();
     expect(document.body.style.overflow).toBe('');
   });
+
+  it('a drag down inside a scrolled sheet scrolls it back up; only a drag from the top closes it', () => {
+    vi.useFakeTimers();
+    render(<MoreSheetHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open more' }));
+    const sheet = screen.getByRole('dialog', { name: 'Pages' });
+    const drag = () => {
+      fireEvent.touchStart(sheet, { touches: [{ clientY: 100 }] });
+      fireEvent.touchEnd(sheet, { changedTouches: [{ clientY: 220 }] });
+      act(() => vi.advanceTimersByTime(200));
+    };
+    sheet.scrollTop = 200;
+    drag();
+    expect(screen.getByRole('dialog', { name: 'Pages' })).toBeInTheDocument();
+    sheet.scrollTop = 0;
+    drag();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });

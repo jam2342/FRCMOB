@@ -1,0 +1,157 @@
+/* Page-to-page motion (utils/viewTransition.ts). Unlayered on purpose: these rules have to beat
+   the shell's layered page fade-in, which would otherwise play inside the transition too. */
+
+/* Only the page body moves; the top bar, sidebar and tab bar stay put. */
+.ps-content {
+  view-transition-name: page;
+}
+
+/* App chrome stays above the moving page and doesn't move with it. Named elements are drawn in
+   page order, so each gets a z-index above the page group. */
+.ps-topbar {
+  view-transition-name: top-bar;
+}
+
+.btb {
+  view-transition-name: bottom-bar;
+}
+
+.tour-prompt {
+  view-transition-name: tour-prompt;
+}
+
+::view-transition-group(top-bar),
+::view-transition-group(bottom-bar),
+::view-transition-group(tour-prompt) {
+  z-index: 2;
+}
+
+::view-transition-old(top-bar),
+::view-transition-old(bottom-bar),
+::view-transition-old(tour-prompt) {
+  animation: none;
+  opacity: 0;
+}
+
+::view-transition-new(top-bar),
+::view-transition-new(bottom-bar),
+::view-transition-new(tour-prompt) {
+  animation: none;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(page) {
+  animation: vtFadeOut 160ms ease both;
+}
+
+::view-transition-new(page) {
+  animation: vtFadeIn 240ms var(--motion-ease) both;
+}
+
+html[data-vt='forward']::view-transition-old(page) {
+  animation: vtOutToLeft 220ms var(--motion-ease) both;
+}
+
+html[data-vt='forward']::view-transition-new(page) {
+  animation: vtInFromRight 280ms var(--motion-ease) both;
+}
+
+html[data-vt='back']::view-transition-old(page) {
+  animation: vtOutToRight 220ms var(--motion-ease) both;
+}
+
+html[data-vt='back']::view-transition-new(page) {
+  animation: vtInFromLeft 280ms var(--motion-ease) both;
+}
+
+/* A match row growing into the Match Center header. */
+html[data-vt-morph='match-hero'] .fm-score-hero,
+html[data-vt-morph='match-hero'] .mc-hero-card {
+  view-transition-name: match-hero;
+}
+
+::view-transition-group(match-hero) {
+  animation-duration: 380ms;
+  animation-timing-function: var(--motion-ease);
+}
+
+::view-transition-old(match-hero) {
+  animation: vtFadeOut 140ms ease both;
+}
+
+::view-transition-new(match-hero) {
+  animation: vtFadeIn 260ms ease 100ms both;
+}
+
+/* While the morph runs, the page behind it just fades, so the eye follows the row. */
+html[data-vt-morph]::view-transition-old(page),
+html[data-vt-morph]::view-transition-new(page) {
+  animation-name: vtFadeOut;
+  animation-duration: 180ms;
+}
+
+html[data-vt-morph]::view-transition-new(page) {
+  animation-name: vtFadeIn;
+  animation-delay: 80ms;
+}
+
+/* A tab switch: SegmentedTabs names its own header for the moment (tab-pin-N), so the header and
+   tab bar hold still while the content under them slides. */
+html[data-vt-tabs]::view-transition-old(page) {
+  animation-duration: 180ms;
+}
+
+html[data-vt-tabs]::view-transition-new(page) {
+  animation-duration: 240ms;
+}
+
+/* A theme change is one whole-page picture revealed in a circle (revealThemeChange). */
+html[data-vt-theme] .ps-content,
+html[data-vt-theme] .ps-topbar,
+html[data-vt-theme] .btb,
+html[data-vt-theme] .tour-prompt {
+  view-transition-name: none;
+}
+
+/* The shell's own enter animation would replay inside the new snapshot, and again once the
+   transition ends unless the page that slid in is marked as arrived (viewTransition.ts). */
+html[data-vt] .product-shell .ps-content > *,
+.product-shell .ps-content > [data-arrived] {
+  animation: none;
+}
+
+@keyframes vtFadeIn {
+  from { opacity: 0; }
+}
+
+@keyframes vtFadeOut {
+  to { opacity: 0; }
+}
+
+@keyframes vtInFromRight {
+  from { opacity: 0; transform: translateX(28px); }
+}
+
+@keyframes vtOutToLeft {
+  to { opacity: 0; transform: translateX(-20px); }
+}
+
+@keyframes vtInFromLeft {
+  from { opacity: 0; transform: translateX(-28px); }
+}
+
+@keyframes vtOutToRight {
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

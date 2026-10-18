@@ -13,8 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import sanitize_external_error
-from app.services.events.pipeline import post_compute_event, refresh_event, train_shadow_models_after_refresh
-from app.services.ml.synergy import precompute_season_synergy
+from app.services.events.pipeline import post_compute_event, refresh_event
 from app.services.utils import (
     automation_redis_key as _automation_redis_key,
     decode_redis_float as _decode_redis_float,
@@ -147,13 +146,9 @@ def run_regional_post_event_breakdowns(
     max_teams: int = 1000,
     run_post_compute: bool = True,
     refresh_all: bool = False,
-    synergy_model_version: str = "",
-    quality_threshold: float = 0.35,
 ) -> dict[str, Any]:
     if season < 2015 or season > 2100:
         raise RegionalAutomationError(400, "season must be between 2015 and 2100")
-    if quality_threshold < 0.0 or quality_threshold > 1.0:
-        raise RegionalAutomationError(400, "quality_threshold must be between 0 and 1")
 
     tba = TBAClient()
     today_utc = datetime.now(timezone.utc).date()
@@ -280,9 +275,7 @@ def run_regional_post_event_breakdowns(
         (candidate_events, 0) if refresh_all else _events_due_for_refresh(candidate_events, today_utc)
     )
 
-    # Ingest every event first, then build the season-wide synergy once, then rebuild
-    # each event on top of it. Rebuilding per event recomputed the whole season's
-    # synergy once per event (299 times in a full re-ingest).
+    # Ingest every event first, then rebuild each one's ratings.
     event_results: list[dict] = []
     for event in selected_events:
         event_key = event.get("key")
@@ -292,47 +285,16 @@ def run_regional_post_event_breakdowns(
             db,
             event_key=event_key,
             run_post_compute=False,
-            train_ml=False,
-            synergy_model_version=synergy_model_version,
-            quality_threshold=quality_threshold,
         )
         event_result["in_region"] = _is_in_region_event_payload(event)
         event_results.append(event_result)
 
     processed = [row for row in event_results if row.get("status") == "processed"]
-    season_synergy: dict[int, dict] = {}
-    if run_post_compute:
-        for season_year in sorted({int(str(row["event_key"])[:4]) for row in processed}):
-            try:
-                season_synergy[season_year] = precompute_season_synergy(
-                    db,
-                    season_year,
-                    model_version=synergy_model_version,
-                    quality_threshold=quality_threshold,
-                )
-            except Exception as exc:
-                # Each event then rebuilds its own season data, as before.
-                season_synergy[season_year] = {"ok": False, "detail": sanitize_external_error(exc, default="Season synergy failed.")}
     for row in processed:
         event_key = str(row["event_key"])
         if run_post_compute:
-            row["post_compute"] = {"ran": True, **post_compute_event(
-                db,
-                event_key=event_key,
-                train_ml=False,
-                synergy_model_version=synergy_model_version,
-                quality_threshold=quality_threshold,
-                season_ready=bool(season_synergy.get(int(event_key[:4]), {}).get("ok")),
-            )}
+            row["post_compute"] = {"ran": True, **post_compute_event(db, event_key=event_key)}
         _mark_event_refreshed(event_key)
-
-    # One training pass per tick: the shadow models learn from the whole season, not one event.
-    ml_shadow = (
-        train_shadow_models_after_refresh(db, event_key=str(event_results[-1]["event_key"]))
-        if run_post_compute and event_results
-        else {"triggered": False, "detail": "no_events_refreshed"}
-    )
-    ml_shadow.pop("ratings_result", None)
 
     return {
         "ok": True,
@@ -341,8 +303,6 @@ def run_regional_post_event_breakdowns(
         "effective_season": effective_season,
         "season_fallback_used": season_fallback_used,
         "fallback_from_season": fallback_from_season,
-        "model_version": synergy_model_version,
-        "quality_threshold": quality_threshold,
         "include_all_events": bool(include_all_events),
         "in_region_team_pool_size": len(in_region_team_keys),
         "candidate_event_count": len(candidate_events),
@@ -350,7 +310,6 @@ def run_regional_post_event_breakdowns(
         "processed_event_count": len(event_results),
         "skipped_settled_event_count": skipped_settled,
         "failed_event_count": sum(1 for row in event_results if row.get("status") != "processed"),
-        "ml_shadow": ml_shadow,
         "events": event_results,
     }
 
@@ -368,8 +327,6 @@ def run_regional_automation_tick(
     max_teams: int | None = None,
     run_post_compute: bool | None = None,
     refresh_all: bool = False,
-    synergy_model_version: str = "",
-    quality_threshold: float = 0.35,
 ) -> dict[str, Any]:
     # Run a single regional automation tick.
     #
@@ -460,10 +417,17 @@ def run_regional_automation_tick(
                 else run_post_compute
             ),
             refresh_all=refresh_all,
-            synergy_model_version=synergy_model_version,
-            quality_threshold=quality_threshold,
             db=db,
         )
+
+        try:
+            pre_event = rate_events_before_play(db, season)
+        except Exception as exc:
+            db.rollback()
+            logger.exception("regional automation: pre-event ratings failed season=%s", season)
+            pre_event = {"ok": False, "detail": sanitize_external_error(exc, default="Pre-event ratings failed.")}
+        if isinstance(run_result, dict):
+            run_result["pre_event_ratings"] = pre_event
 
         finished_ts = datetime.now(timezone.utc).timestamp()
         redis_conn.set(last_run_key, str(finished_ts))
@@ -498,3 +462,38 @@ def run_regional_automation_tick(
         )
         if current_value == lock_token:
             redis_conn.delete(lock_key)
+
+
+def rate_events_before_play(db: Session, season: int) -> dict[str, Any]:
+    # Events whose teams are listed but which have no results yet: rate them from each
+    # team's earlier events, so event pages have ratings before the first match. The
+    # refresh above only takes completed events, and an event's own results rebuild
+    # its ratings once it starts.
+    from app.db import models
+    from app.services.intel.snapshots import invalidate_event_snapshots
+    from app.services.ratings.model import recompute_event_ratings
+
+    listed = {
+        key
+        for (key,) in db.query(models.EventTeam.event_key)
+        .join(models.Event, models.Event.event_key == models.EventTeam.event_key)
+        .filter(models.Event.year == season)
+        .distinct()
+    }
+    played = {
+        key
+        for (key,) in db.query(models.MatchAllianceResult.event_key)
+        .filter(models.MatchAllianceResult.season_year == season)
+        .distinct()
+    }
+    rated: list[str] = []
+    failed: list[dict[str, str]] = []
+    for event_key in sorted(listed - played):
+        try:
+            recompute_event_ratings(db, event_key)
+            invalidate_event_snapshots(db, event_key)
+            rated.append(event_key)
+        except Exception as exc:
+            db.rollback()
+            failed.append({"event_key": event_key, "detail": sanitize_external_error(exc, default="Rating failed.")})
+    return {"ok": not failed, "rated_event_count": len(rated), "failed": failed}

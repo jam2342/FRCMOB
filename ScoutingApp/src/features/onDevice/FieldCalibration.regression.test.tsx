@@ -32,7 +32,7 @@ it('confirms a saved standalone calibration and offers the recorder', async () =
   vi.mocked(saveCalibration).mockResolvedValue();
   await calibrate();
   await screen.findByText('Calibration saved on this device.');
-  expect(screen.getByRole('link',{name:'Continue to recorder'})).toHaveAttribute('href','/scouting/record');
+  expect(screen.getByRole('link',{name:'On-Device Breakdown'})).toHaveAttribute('href','/scouting/record');
 });
 it('shows a failed standalone save and keeps calibration available for retry', async () => {
   vi.mocked(saveCalibration).mockRejectedValue(new Error('full'));

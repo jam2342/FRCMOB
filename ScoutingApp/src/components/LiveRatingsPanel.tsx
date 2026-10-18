@@ -6,6 +6,9 @@ import { RatingTrendBadge } from './ui/RatingTrendBadge';
 import './LiveRatingsPanel.css';
 
 type LiveRatingsPanelProps = {
+  /** The live dot; defaults to `live`. Pages that don't know yet whether matches are left keep
+   *  polling (live) but hold the dot back, so it doesn't appear and vanish. */
+  showLive?: boolean;
   eventKey: string | null | undefined;
   enabled?: boolean;
   // False once the event has no matches left: no live dot, no fast polling.
@@ -33,6 +36,7 @@ export function LiveRatingsPanel({
   eventKey,
   enabled = true,
   live = true,
+  showLive,
   maxRows = 50,
   collapsedRows = 10,
   title = 'Live ratings',
@@ -74,7 +78,7 @@ export function LiveRatingsPanel({
     <section className="live-ratings-panel" aria-live="polite">
       <header className="live-ratings-panel__header">
         <div className="live-ratings-panel__title">
-          {live ? <span className="live-ratings-panel__dot" aria-hidden="true" /> : null}
+          {(showLive ?? live) ? <span className="live-ratings-panel__dot" aria-hidden="true" /> : null}
           <h3>{title}</h3>
         </div>
         <div className="live-ratings-panel__meta">

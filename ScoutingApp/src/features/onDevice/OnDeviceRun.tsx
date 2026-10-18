@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { eventDisplayName } from '../../utils/eventSearchIndex';
+import { EventPicker } from '../../components/EventPicker';
+import { MatchSelect } from '../../components/MatchSelect';
 
 import {
   getEventSchedule,
@@ -66,11 +67,6 @@ function teamsOf(match: EventScheduleItem): MatchTeam[] {
     ...match.red.map((t) => ({ teamKey: t.team_key, alliance: 'red' as const })),
     ...match.blue.map((t) => ({ teamKey: t.team_key, alliance: 'blue' as const })),
   ];
-}
-
-function matchOptionLabel(match: EventScheduleItem, played: boolean): string {
-  const name = match.display_name || match.match_key.split('_')[1]?.toUpperCase() || match.match_key;
-  return played ? `${name} (played)` : name;
 }
 
 // The on-device match-breakdown flow, end to end:
@@ -145,6 +141,7 @@ export function OnDeviceRun() {
   // Start from the match already picked elsewhere in the app; typing a raw
   // match key on a phone in the stands is the slowest part of setup.
   const [eventKey, setEventKey] = useState(() => initialContext().eventKey);
+  const [eventInput, setEventInput] = useState(() => initialContext().eventKey);
   const [matchKey, setMatchKey] = useState(() => initialContext().matchKey);
   const [teams, setTeams] = useState<MatchTeam[]>([]);
   const [shift1ActiveAlliance, setShift1ActiveAlliance] = useState<Alliance | ''>('');
@@ -273,7 +270,10 @@ export function OnDeviceRun() {
     setTeams([]);
     setShift1ActiveAlliance('');
     if (field === 'match') setMatchKey(value);
-    else setEventKey(value);
+    else {
+      setEventKey(value);
+      setEventInput(value);
+    }
   }
 
   const loadTeams = useCallback(async () => {
@@ -786,23 +786,34 @@ export function OnDeviceRun() {
             to tell attack from defense.
           </p>
           <RecorderOfflineStatus />
+          {typingMatchKey ? null : (
+            <div className="odr-form">
+              <EventPicker
+                label="Event"
+                value={eventKey.trim().toLowerCase()}
+                inputValue={eventInput}
+                onInputChange={setEventInput}
+                onSelect={(key) => {
+                  // A match from the old event can't be filmed at the new one.
+                  changeSetupInput('event', key);
+                  setMatchKey('');
+                }}
+                onSubmit={() => {
+                  changeSetupInput('event', eventInput.trim().toLowerCase());
+                  setMatchKey('');
+                }}
+              />
+            </div>
+          )}
           {showMatchPicker && pickerMatches ? (
           <div className="odr-form">
-            <label className="odr-field">
-              <span className="odr-label">Match at {eventDisplayName(scheduleEventKey)}</span>
-              <select
-                className="odr-select"
-                value={pickerMatches.some((m) => m.match_key === normalizedMatchKey) ? normalizedMatchKey : ''}
-                onChange={(e) => pickMatch(e.target.value)}
-              >
-                {pickerMatches.some((m) => m.match_key === normalizedMatchKey) ? null : <option value="">Pick a match</option>}
-                {pickerMatches.map((m) => (
-                  <option key={m.match_key} value={m.match_key}>
-                    {matchOptionLabel(m, inferMatchCompleted(m, Date.now()))}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="odr-field">
+              <MatchSelect
+                matches={pickerMatches}
+                value={normalizedMatchKey}
+                onChange={(key) => { if (key) pickMatch(key); }}
+              />
+            </div>
             <button type="button" className="center-btn ghost" onClick={() => setTypingMatchKey(true)}>
               Type a match key instead
             </button>
@@ -821,6 +832,7 @@ export function OnDeviceRun() {
                 onChange={(e) => changeSetupInput('match', e.target.value)}
               />
             </label>
+            {typingMatchKey ? (
             <label className="odr-field">
               <span className="odr-label">Event key (optional)</span>
               <input
@@ -832,6 +844,7 @@ export function OnDeviceRun() {
                 onChange={(e) => changeSetupInput('event', e.target.value)}
               />
             </label>
+            ) : null}
           </div>
           )}
           {showMatchPicker ? null : (
@@ -1066,7 +1079,7 @@ export function OnDeviceRun() {
           {resultSession ? (
             <RunResults session={resultSession} syncing={resultBusy} />
           ) : null}
-          <p className="odr-hint">Reopen this run below in Saved runs on this device.</p>
+          <p className="odr-hint">Reopen this run below under Saved Runs.</p>
           <div className="odr-actions">
             <button
               type="button"

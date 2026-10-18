@@ -21,7 +21,7 @@ function sortedIndexSnapshot(): EventSearchItem[] {
   });
 }
 
-export function eventNameFromIndex(eventKey: string | null | undefined): string | null {
+function eventNameFromIndex(eventKey: string | null | undefined): string | null {
   return eventSearchIndexByKey.get(normalizedEventKey(eventKey))?.name || null;
 }
 

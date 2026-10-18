@@ -15,6 +15,7 @@ const members = [
 ];
 
 vi.mock('../api', () => ({
+  getWorkspaceSignupPolicy: vi.fn(async () => ({ required: false, site_key: null })),
   createWorkspace: vi.fn(async () => {
     // Mirrors the real client: the session is set before the call returns.
     rememberIssuedJoinCode(1, 'ABCDE-12345');

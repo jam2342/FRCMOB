@@ -13,7 +13,7 @@ import type {
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
-import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
+import { EVENTS_VIEWS, viewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -41,8 +41,7 @@ const RATINGS_PREVIEW_COLUMNS: TableColumn<EventTeamRatingItem>[] = [
     render: (row) => <span className={styles.teamCell}>{metric(row.rating_0_100, 1)}</span>,
   },
   { key: 'confidence', label: 'Confidence', numeric: true, render: (row) => pct(row.confidence_0_1, 0) },
-  { key: 'robot', label: 'Robot', numeric: true, render: (row) => metric(row.robot_level_0_100, 0) },
-  { key: 'driver', label: 'Driver', numeric: true, render: (row) => metric(row.driver_skill_0_100, 0) },
+  { key: 'points', label: 'Pts / match', numeric: true, render: (row) => metric(row.expected_points?.total, 0) },
   {
     key: 'strength',
     label: 'Top Strength',
@@ -164,10 +163,10 @@ function ExportPageContent() {
       if (!ratings?.length || loadedEventKey !== eventKey) return;
       const headers = [
         'Team', 'Number', 'Nickname', 'Rating', 'Confidence',
-        'Robot Level', 'Driver Skill',
-        'Results Anchor', 'Throughput', 'Shift Productivity',
-        'Capacity Utilization', 'Endgame', 'Auto Contribution',
-        'Manual Points', 'RP Contribution', 'Defense', 'Consistency', 'Penalty Discipline',
+        'Rating Low (80%)', 'Rating High (80%)',
+        'Points per Match', 'Teleop Points', 'Auto Points', 'Climb Points', 'Rated From',
+        'Matches Here', 'Earlier Matches',
+        'Scoring Rating', 'Teleop Rating', 'Auto Rating', 'Climb Rating', 'Consistency',
         'Pros', 'Cons', 'Model Version', 'Updated At',
       ];
       const rows = ratings.map((r) => [
@@ -176,19 +175,20 @@ function ExportPageContent() {
         r.nickname || '',
         r.rating_0_100,
         r.confidence_0_1,
+        r.rating_range_80?.[0],
+        r.rating_range_80?.[1],
+        r.expected_points?.total,
+        r.expected_points?.teleop,
+        r.expected_points?.auto,
+        r.expected_points?.climb,
+        r.basis || '',
+        r.matches_here,
+        r.matches_before,
         r.robot_level_0_100,
-        r.driver_skill_0_100,
-        r.subscores?.results_anchor,
         r.subscores?.throughput,
-        r.subscores?.shift_productivity,
-        r.subscores?.capacity_utilization,
-        r.subscores?.endgame,
         r.subscores?.auto_contribution,
-        r.subscores?.manual_points_impact,
-        r.subscores?.rp_contribution,
-        r.subscores?.defense_presence,
+        r.subscores?.endgame,
         r.subscores?.consistency,
-        r.subscores?.penalty_discipline,
         (r.pros || []).map((p) => p.label || '').filter(Boolean).join('; '),
         (r.cons || []).map((c) => c.label || '').filter(Boolean).join('; '),
         r.model_version,
@@ -384,13 +384,17 @@ function ExportPageContent() {
   return (
     <>
     <PageViewBar items={EVENTS_VIEWS} />
-    <div className="center-page-container narrow">
+    <div className="center-page-container">
 
         {/* ---- Event Selection ---- */}
         <SurfaceCard
-          title="Data Export"
+          title={viewTitle(EVENTS_VIEWS, '/events/export')}
+          subtitle="Download this event's data as spreadsheets (CSV)."
+          expandable={false}
+          mobileCollapsible={false}
         >
           <EventPicker
+            label="Event"
             value={eventKey}
             onSelect={selectEvent}
             inputValue={eventInput}

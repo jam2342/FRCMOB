@@ -1,7 +1,9 @@
 # API routes for Web Push notification subscriptions.
 
+import hashlib
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,7 +14,19 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import models
 from app.db.session import get_db
-from app.services.push.sender import push_configured, push_unavailable_reason, send_web_push
+from app.services.cache import get_cache
+from app.services.push.sender import (
+    push_configured,
+    push_endpoint_allowed,
+    push_unavailable_reason,
+    send_web_push,
+)
+from app.services.push.subscriptions import (
+    admit_new_subscription,
+    lock_subscription_admission,
+    purge_expired_subscriptions,
+    valid_subscription_keys,
+)
 from app.services.workspaces import resolve_workspace_actor
 
 logger = logging.getLogger(__name__)
@@ -22,6 +36,8 @@ router = APIRouter(prefix="/push", tags=["push"])
 _EVENT_KEY_RE = re.compile(r"^\d{4}[a-z0-9]+$")
 _TEAM_KEY_RE = re.compile(r"^frc\d{1,5}$")
 MAX_TEAMS_PER_SUBSCRIPTION = 30
+TEST_SENDS_PER_WINDOW = 3
+TEST_SEND_WINDOW_SEC = 600
 
 def _normalize_team_keys(raw: Any) -> list[str]:
     if not isinstance(raw, list):
@@ -66,10 +82,10 @@ def _load_by_endpoint(db: Session, endpoint: str) -> models.PushSubscription | N
 
 class PushSubscribeRequest(BaseModel):
     endpoint: str = Field(max_length=1024)
-    keys: dict[str, Any] = Field(default_factory=dict)
+    keys: dict[str, str] = Field(default_factory=dict, max_length=2)
     event_key: str | None = Field(default=None, max_length=48)
-    team_keys: list[str] = Field(default_factory=list)
-    prefs: dict[str, Any] = Field(default_factory=dict)
+    team_keys: list[str] = Field(default_factory=list, max_length=MAX_TEAMS_PER_SUBSCRIPTION)
+    prefs: dict[str, Any] = Field(default_factory=dict, max_length=8)
 
 class PushEndpointRequest(BaseModel):
     endpoint: str = Field(max_length=1024)
@@ -103,21 +119,25 @@ def _bind_shift_alerts(prefs: dict[str, Any], request: Request, db: Session) -> 
 @router.post("/subscribe")
 def subscribe(payload: PushSubscribeRequest, request: Request, db: Session = Depends(get_db)):
     endpoint = str(payload.endpoint or "").strip()
-    if not endpoint.startswith("https://"):
+    if not push_endpoint_allowed(endpoint):
         raise HTTPException(status_code=400, detail="Invalid push endpoint")
     keys = payload.keys if isinstance(payload.keys, dict) else {}
-    p256dh = str(keys.get("p256dh") or "").strip()
-    auth = str(keys.get("auth") or "").strip()
-    if not p256dh or not auth:
-        raise HTTPException(status_code=400, detail="Missing subscription encryption keys")
+    if not valid_subscription_keys(keys):
+        raise HTTPException(status_code=400, detail="Invalid subscription encryption keys")
+    p256dh, auth = keys["p256dh"], keys["auth"]
 
     event_key = str(payload.event_key or "").strip().lower() or None
-    if event_key and not _EVENT_KEY_RE.match(event_key):
+    if event_key and not _EVENT_KEY_RE.fullmatch(event_key):
         raise HTTPException(status_code=400, detail="Invalid event key")
+    if event_key and db.get(models.Event, event_key) is None:
+        raise HTTPException(status_code=503, detail="This event's notification data is not available yet.")
 
     prefs = _bind_shift_alerts(_normalize_prefs(payload.prefs), request, db)
+    lock_subscription_admission(db)
+    purge_expired_subscriptions(db)
     row = _load_by_endpoint(db, endpoint)
     if row is None:
+        admit_new_subscription(db)
         row = models.PushSubscription(
             endpoint=endpoint,
             keys={"p256dh": p256dh, "auth": auth},
@@ -135,6 +155,7 @@ def subscribe(payload: PushSubscribeRequest, request: Request, db: Session = Dep
         row.prefs = prefs
         row.enabled = True
         row.failure_count = 0
+        row.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(row)
     return {"ok": True, "subscription": _serialize_subscription(row)}
@@ -148,6 +169,21 @@ def unsubscribe(payload: PushEndpointRequest, db: Session = Depends(get_db)):
         db.commit()
     return {"ok": True}
 
+def _test_send_allowed(endpoint: str) -> bool:
+    # A test ping is a button press, not a loop: a few per subscription per window.
+    client = get_cache().redis_client
+    if client is None:
+        return True
+    key = "push:test:" + hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:32]
+    try:
+        count = client.incr(key)
+        if count == 1:
+            client.expire(key, TEST_SEND_WINDOW_SEC)
+        return int(count) <= TEST_SENDS_PER_WINDOW
+    except Exception:
+        logger.warning("push test rate limit unavailable", exc_info=True)
+        return True
+
 @router.post("/test")
 def send_test(payload: PushEndpointRequest, db: Session = Depends(get_db)):
     if not push_configured():
@@ -156,6 +192,8 @@ def send_test(payload: PushEndpointRequest, db: Session = Depends(get_db)):
     row = _load_by_endpoint(db, endpoint)
     if row is None:
         raise HTTPException(status_code=404, detail="Subscription not found")
+    if not _test_send_allowed(endpoint):
+        raise HTTPException(status_code=429, detail="Test sent a moment ago. Try again in a few minutes.")
     ok = send_web_push(
         db,
         row,

@@ -2,7 +2,7 @@
 
 Fuel-rate calibration: keeps per-phase scoring-rate estimates grounded in the data we actually have.
 
-Field calibration (image → field homography) no longer lives on the server. The on-device recorder calibrates with four taps in the browser (`ScoutingApp/src/features/onDevice/`), and `services/auto_scout/on_device.py` is the tested Python mirror of that math.
+Field calibration (image → field homography) no longer lives on the server. The on-device recorder calibrates with four taps in the browser (`ScoutingApp/src/features/onDevice/`), with its tests there (the old Python mirror was removed on 2026-10-17).
 
 ## Files
 

@@ -10,13 +10,6 @@ from app.db import models
 from app.services.workspaces import WorkspaceActor, active_members
 
 
-def _aware(value: datetime | None) -> datetime | None:
-    # SQLite hands back naive datetimes; everything here is stored in UTC.
-    if value is None:
-        return None
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
-
 def load_team_room(db: Session, workspace_id: int, event_key: str) -> models.ScoutingRoom:
     room = db.execute(select(models.ScoutingRoom).where(
         models.ScoutingRoom.workspace_id == workspace_id,
@@ -44,18 +37,17 @@ def team_snapshot(db: Session, actor: WorkspaceActor, room: models.ScoutingRoom)
     entries = db.execute(select(
         models.ScoutingRoomEntry.match_key, models.ScoutingRoomEntry.team_key,
         models.ScoutingRoomEntry.scout_profile, models.ScoutingRoomEntry.created_at,
+        models.ScoutingRoomEntry.author_member_id,
     ).join(models.ScoutingRoom, models.ScoutingRoom.room_key == models.ScoutingRoomEntry.room_key).where(
         models.ScoutingRoom.workspace_id == actor.workspace_id,
         models.ScoutingRoomEntry.match_key.in_({row.match_key for row in rows}),
     )).all() if rows else []
-    covered = {(match, team) for match, team, _, _ in entries}
-    # Entries carry a name, not a member. A removed member can't write any more,
-    # so anything under my name from before I joined belongs to whoever used the
-    # name before me.
-    joined = _aware(actor.member.joined_at)
+    covered = {(match, team) for match, team, _, _, _ in entries}
+    # NULL legacy authors remain useful coverage but cannot be assigned to a
+    # current membership by a display name that may have been recycled.
     mine = {
-        (match, team) for match, team, name, created in entries
-        if name == actor.member.display_name and (joined is None or (_aware(created) or joined) >= joined)
+        (match, team) for match, team, _, _, author in entries
+        if author == actor.member.id
     }
     assignments = []
     for row in rows:

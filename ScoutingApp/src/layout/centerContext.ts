@@ -57,11 +57,18 @@ function normalizeCenterTeamKey(value: string | null | undefined): string {
   return raw;
 }
 
+// What a stored key must look like to be used: a corrupted or old value ("[]") was
+// shown as-is in the match box.
+const STORED_EVENT_KEY = /^\d{4}[a-z0-9]+$/;
+const STORED_MATCH_KEY = /^\d{4}[a-z0-9]+_[a-z0-9]+$/;
+const STORED_TEAM_KEY = /^frc\d{1,5}[a-z]?$/;
+const valid = (value: string, shape: RegExp) => (shape.test(value) ? value : '');
+
 export function readStoredCenterContext(): CenterContextState {
   return {
-    eventKey: normalizeCenterEventKey(safeGet(CENTER_EVENT_KEY_STORAGE)),
-    matchKey: normalizeCenterMatchKey(safeGet(CENTER_MATCH_KEY_STORAGE)),
-    teamKey: normalizeCenterTeamKey(safeGet(CENTER_TEAM_KEY_STORAGE)),
+    eventKey: valid(normalizeCenterEventKey(safeGet(CENTER_EVENT_KEY_STORAGE)), STORED_EVENT_KEY),
+    matchKey: valid(normalizeCenterMatchKey(safeGet(CENTER_MATCH_KEY_STORAGE)), STORED_MATCH_KEY),
+    teamKey: valid(normalizeCenterTeamKey(safeGet(CENTER_TEAM_KEY_STORAGE)), STORED_TEAM_KEY),
     sourcePath: '',
     updatedAt: 0,
   };

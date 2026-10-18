@@ -64,34 +64,6 @@ def _seed_minimal_intel_rows(db: Session) -> None:
     db.add(finding)
     db.flush()
     db.add(
-        models.TeamMatchThroughput(
-            finding_id=finding.id,
-            analysis_run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            team_key=team_key,
-            balls_shot_total=10,
-            shooting_time_total_seconds=18.0,
-            bps_total=0.55,
-            balls_shot_active=8,
-            shooting_time_active_seconds=14.0,
-            active_bps=0.57,
-            metric_coverage={"coverage_score": 0.82, "observed_matches": 1},
-            source="video_v3_tracks",
-        )
-    )
-    db.add(
-        models.AnalysisQuality(
-            run_id=run.id,
-            match_key=match_key,
-            event_key=event_key,
-            tracking_quality_score=0.78,
-            identity_quality_score=0.76,
-            overall_quality_score=0.78,
-            details={},
-        )
-    )
-    db.add(
         models.EventTeamRating(
             event_key=event_key,
             team_key=team_key,
@@ -182,7 +154,6 @@ class TeamIntelEndpointIntegrationTests(unittest.TestCase):
                     db=db,
                     event_key="2026txhou",
                     include_tba=True,
-                    include_statbotics=False,
                     auto_heal_ratings=False,
                     include_season_fallback=True,
                     include_rating_details=False,
@@ -198,87 +169,19 @@ class TeamIntelEndpointIntegrationTests(unittest.TestCase):
             ticks = asyncio.run(_run())
         self.assertGreater(ticks, 10)
 
-    def test_get_team_intel_includes_data_coverage_payload(self):
+    def test_team_intel_analysis_holds_only_official_data(self):
+        # Scouting and video no longer feed a team's public page, so nothing may claim a
+        # scouted-match count or freshness that can never change.
         response = self.client.get(
             "/teams/frc118/intel",
-            params={
-                "event_key": "2026txhou",
-                "include_tba": "false",
-                "include_statbotics": "false",
-                "auto_heal_ratings": "false",
-            },
+            params={"event_key": "2026txhou", "include_tba": "false", "auto_heal_ratings": "false"},
         )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        coverage = payload.get("data_coverage") or {}
-        self.assertIn("score_0_1", coverage)
-        self.assertIn("missing_reasons", coverage)
-        self.assertIn("analysis", payload)
-        self.assertIn("data_coverage", payload["analysis"])
-
-    def test_get_event_teams_intel_includes_team_coverage_and_aggregate(self):
-        response = self.client.get(
-            "/teams/event/2026txhou/intel",
-            params={
-                "include_tba": "false",
-                "include_statbotics": "false",
-                "auto_heal_ratings": "false",
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertIn("average_data_coverage_score_0_1", payload)
-        teams = payload.get("teams") or []
-        self.assertTrue(teams)
-        self.assertIn("data_coverage", teams[0])
-
-    def _event_intel_with_statbotics(self, total_points):
-        # Every other test in this file passes include_statbotics=false, which is
-        # exactly why the scalar-EPA crash reached production unnoticed.
-        row = {
-            "team": 118,
-            "epa": {
-                "total_points": total_points,
-                "unitless": 2149.0,
-                "norm": 1885.0,
-                "breakdown": {"auto_points": 73.13, "teleop_points": 140.52},
-            },
-        }
-
-        async def _fake_get_team_events(**_kwargs):
-            return [row]
-
-        with patch.object(
-            routes_teams.statbotics_client, "get_team_events", _fake_get_team_events
-        ):
-            return self.client.get(
-                "/teams/event/2026txhou/intel",
-                params={
-                    "include_tba": "false",
-                    "include_statbotics": "true",
-                    "auto_heal_ratings": "false",
-                },
-            )
-
-    def test_event_intel_survives_scalar_statbotics_total_points(self):
-        # Statbotics returns epa.total_points as a bare number for 2026 events.
-        # Calling .get("mean") on it raised AttributeError and 500'd the payload for
-        # every team at the event, not just the one with the odd shape.
-        response = self._event_intel_with_statbotics(287.57)
-        self.assertEqual(response.status_code, 200)
-        teams = response.json().get("teams") or []
-        self.assertTrue(teams)
-        statbotics = teams[0].get("statbotics") or {}
-        self.assertAlmostEqual(statbotics.get("event_epa_points"), 287.57, places=2)
-
-    def test_event_intel_still_reads_mean_from_object_statbotics_total_points(self):
-        # The older {"mean": ...} shape must keep working.
-        response = self._event_intel_with_statbotics({"mean": 301.4})
-        self.assertEqual(response.status_code, 200)
-        teams = response.json().get("teams") or []
-        self.assertTrue(teams)
-        statbotics = teams[0].get("statbotics") or {}
-        self.assertAlmostEqual(statbotics.get("event_epa_points"), 301.4, places=2)
+        self.assertNotIn("data_coverage", payload)
+        for key in ("matches_analyzed", "data_freshness", "analysis_coverage", "data_coverage"):
+            self.assertNotIn(key, payload["analysis"])
+        self.assertIn("averages", payload["analysis"])
 
     def test_event_intel_compact_rating_mode_omits_details_and_signals(self):
         response = self.client.get(

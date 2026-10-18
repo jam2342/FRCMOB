@@ -1,0 +1,119 @@
+/* Zero height and sticky: it costs no space in the page, and its top is the line the bar hangs
+   from (under the top bar and any offline banner). */
+.anchor {
+  position: sticky;
+  overflow: visible;
+  max-width: 100%;
+  top: var(--ps-sticky-top, 0px);
+  z-index: var(--z-sticky);
+  height: 0;
+}
+
+.bar {
+  position: absolute;
+  top: calc(-1 * var(--ps-sticky-gap, 0px));
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 240ms var(--motion-ease);
+}
+
+.shown {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.phone {
+  margin: 0 -2px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.identity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.identity:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.number {
+  flex: none;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.detail {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.rating {
+  flex: none;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar :global(.center-tabs) {
+  padding-bottom: 8px;
+}
+
+/* The bar is as wide as the page, never wider: its tab row scrolls sideways on a narrow phone
+   (four tabs at their minimum width are 320px), like the header's own. It would otherwise make
+   the whole page scroll sideways, even while hidden. */
+.bar > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bar :global(.segmented-tabs) {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transition: none;
+  }
+}

@@ -1,0 +1,13 @@
+.result {
+  margin: 0 0 12px;
+  line-height: 1.6;
+  color: var(--color-text);
+}
+
+.result strong {
+  margin-right: 6px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs, 12px);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

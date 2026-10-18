@@ -1,14 +1,8 @@
 import unittest
 
-try:
-    from app.api.routes_matches import _normalized_alliance_row
-
-    _IMPORT_ERROR: Exception | None = None
-except Exception as exc:  # pragma: no cover - dependency-gated import
-    _IMPORT_ERROR = exc
+from app.api.routes_matches import _normalized_alliance_row
 
 
-@unittest.skipIf(_IMPORT_ERROR is not None, f"optional api deps unavailable: {_IMPORT_ERROR}")
 class AllianceNormalizationTests(unittest.TestCase):
     def test_normalizes_tba_picks_and_backup(self):
         row = {

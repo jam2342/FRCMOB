@@ -18,6 +18,9 @@ export type StatProps = {
   /** `display` is the one-per-screen hero. See src/styles/README.md. */
   size?: 'sm' | 'md' | 'lg' | 'display';
   className?: string;
+  /** Keep the sub line and confidence bar's space while they are still loading, so the stat
+   *  doesn't grow (and push the page down) when they arrive. */
+  reserveDetail?: boolean;
 };
 
 const TONE_CLASS: Record<StatTone, string | undefined> = {
@@ -54,6 +57,7 @@ export function Stat({
   confidence,
   size = 'md',
   className,
+  reserveDetail = false,
 }: StatProps) {
   const direction = trend === undefined ? null : trend > 0 ? 'up' : trend < 0 ? 'down' : 'flat';
 
@@ -90,7 +94,7 @@ export function Stat({
           </span>
         ) : null}
       </span>
-      {sub ? <span className={styles.sub}>{sub}</span> : null}
+      {sub ? <span className={styles.sub}>{sub}</span> : reserveDetail ? <span className={styles.sub} aria-hidden="true" style={{ visibility: 'hidden' }}>{'\u00a0'}</span> : null}
       {pct !== null ? (
         <span className={cx(styles.confidence, pct < 50 && styles.confidenceLow)}>
           <span
@@ -101,6 +105,11 @@ export function Stat({
             <span className={styles.confidenceFill} style={{ width: `${pct}%` }} />
           </span>
           <span className={styles.confidenceText} aria-hidden="true">{pct}%</span>
+        </span>
+      ) : reserveDetail ? (
+        <span className={styles.confidence} aria-hidden="true" style={{ visibility: 'hidden' }}>
+          <span className={styles.confidenceTrack} />
+          <span className={styles.confidenceText}>0%</span>
         </span>
       ) : null}
     </div>

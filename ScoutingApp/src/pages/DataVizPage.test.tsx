@@ -32,17 +32,18 @@ it('clears old team charts, rejects late breakdowns, and uses percentage axes an
   vi.mocked(getEventRatings).mockResolvedValue(ratings(2222) as never);
   vi.mocked(getTeamBreakdown).mockImplementation(team => team === 'frc1111' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(breakdown(0.6) as never));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
-  const team = screen.getByPlaceholderText('Team number — e.g. 254');
+  const team = screen.getByPlaceholderText('Team number, e.g. 254');
   fireEvent.change(team, { target: { value: '1111' } });
-  fireEvent.click(screen.getByText('Team Deep Dive'));
+  fireEvent.click(screen.getByRole('tab', { name: 'Team Deep Dive' }));
   await waitFor(() => expect(finish).toBeDefined());
   fireEvent.change(team, { target: { value: '2222' } });
   await screen.findByText('70.0%');
   await act(async () => { finish(breakdown(0.1) as never); });
   expect(screen.queryByText('20.0%')).not.toBeInTheDocument();
   expect(screen.getByText('Fuel Rate (fuel/active min)')).toBeInTheDocument();
-  expect(screen.getByText('Cycle Time (s)')).toBeInTheDocument();
-  expect(screen.getByText('Defense Time (s)')).toBeInTheDocument();
+  // Only what the official per-match record holds; cycle and defense came from video.
+  expect(screen.queryByText('Cycle Time (s)')).not.toBeInTheDocument();
+  expect(screen.queryByText('Defense Time (s)')).not.toBeInTheDocument();
   vi.mocked(getTeamBreakdown).mockRejectedValue(new Error('offline'));
   fireEvent.change(team, { target: { value: '3333' } });
   await screen.findByText('Could not load team data. Try loading the event again.');
@@ -59,14 +60,15 @@ it('uses field-position labels and leaves unavailable radar dimensions empty', a
   await screen.findByText('#254');
   const autoCell = container.querySelector('tbody tr')?.children[6];
   expect(autoCell?.textContent).toBe('—');
-  fireEvent.change(screen.getByPlaceholderText('Team number — e.g. 254'), { target: { value: '254' } });
-  fireEvent.click(screen.getByText('Team Deep Dive'));
+  fireEvent.change(screen.getByPlaceholderText('Team number, e.g. 254'), { target: { value: '254' } });
+  fireEvent.click(screen.getByRole('tab', { name: 'Team Deep Dive' }));
   expect(screen.getByText('Top 1%')).toBeInTheDocument();
   expect(screen.getByText('Bottom 5%')).toBeInTheDocument();
   expect(container.querySelector('.dviz-radar-shape')).toBeNull();
   expect(container.querySelectorAll('.dviz-radar-dot')).toHaveLength(3);
-  expect(container.querySelectorAll('.dviz-radar-legend-val')).toHaveLength(10);
-  expect(Array.from(container.querySelectorAll('.dviz-radar-legend-val')).filter(node => node.textContent === '—')).toHaveLength(7);
+  // The radar shows what official results measure: teleop, auto, climb, consistency.
+  expect(container.querySelectorAll('.dviz-radar-legend-val')).toHaveLength(4);
+  expect(Array.from(container.querySelectorAll('.dviz-radar-legend-val')).filter(node => node.textContent === '—')).toHaveLength(1);
   expect(screen.getByText('Missing scores are shown as gaps.')).toBeInTheDocument();
 });
 it.each(['ratings', 'breakdown'])('keeps the loading banner until %s also finishes', async pending => {
@@ -76,10 +78,10 @@ it.each(['ratings', 'breakdown'])('keeps the loading banner until %s also finish
   vi.mocked(getTeamBreakdown).mockImplementation(() => pending === 'breakdown'
     ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ ok: true } as never));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><DataVizPage /></MemoryRouter>);
-  fireEvent.change(screen.getByPlaceholderText('Team number — e.g. 254'), { target: { value: '254' } });
+  fireEvent.change(screen.getByPlaceholderText('Team number, e.g. 254'), { target: { value: '254' } });
   await waitFor(() => expect(getTeamBreakdown).toHaveBeenCalled());
   await act(async () => {});
-  expect(screen.getByText('Loading data...')).toBeInTheDocument();
+  expect(screen.getByText('Loading data…')).toBeInTheDocument();
   await act(async () => { finish((pending === 'ratings' ? ratings(254) : { ok: true }) as never); });
-  await waitFor(() => expect(screen.queryByText('Loading data...')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText('Loading data…')).not.toBeInTheDocument());
 });

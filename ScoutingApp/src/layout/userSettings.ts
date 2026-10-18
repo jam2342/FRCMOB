@@ -1,4 +1,5 @@
 export type ThemeMode = 'dark' | 'light';
+import { storageGet, storageSet } from '../platform/safeStorage';
 export type DensityMode = 'comfortable' | 'compact';
 export type UIMode = 'simple' | 'full';
 export type QuickJumpRegion = 'all' | 'usa' | 'canada' | 'international' | 'tx' | 'ca' | 'mi' | 'ny';
@@ -105,12 +106,12 @@ export type ScoutingSettings = {
 
 export function getStoredSettings(): ScoutingSettings {
   return {
-    theme: normalizeThemeMode(window.localStorage.getItem(SETTINGS_KEYS.theme)),
-    density: normalizeDensityMode(window.localStorage.getItem(SETTINGS_KEYS.density)),
-    uiMode: normalizeUiMode(window.localStorage.getItem(SETTINGS_KEYS.uiMode)),
-    quickJumpRegion: normalizeQuickJumpRegion(window.localStorage.getItem(SETTINGS_KEYS.quickJumpRegion)),
-    liveRefreshSec: normalizeLiveRefreshSec(window.localStorage.getItem(SETTINGS_KEYS.liveRefreshSec)),
-    tutorialAutoplay: normalizeTutorialAutoplay(window.localStorage.getItem(SETTINGS_KEYS.tutorialAutoplay)),
+    theme: normalizeThemeMode(storageGet(SETTINGS_KEYS.theme)),
+    density: normalizeDensityMode(storageGet(SETTINGS_KEYS.density)),
+    uiMode: normalizeUiMode(storageGet(SETTINGS_KEYS.uiMode)),
+    quickJumpRegion: normalizeQuickJumpRegion(storageGet(SETTINGS_KEYS.quickJumpRegion)),
+    liveRefreshSec: normalizeLiveRefreshSec(storageGet(SETTINGS_KEYS.liveRefreshSec)),
+    tutorialAutoplay: normalizeTutorialAutoplay(storageGet(SETTINGS_KEYS.tutorialAutoplay)),
   };
 }
 
@@ -125,12 +126,12 @@ export function saveStoredSettings(partial: Partial<ScoutingSettings>): Scouting
     tutorialAutoplay: partial.tutorialAutoplay ?? current.tutorialAutoplay ?? DEFAULTS.tutorialAutoplay,
   };
 
-  window.localStorage.setItem(SETTINGS_KEYS.theme, next.theme);
-  window.localStorage.setItem(SETTINGS_KEYS.density, next.density);
-  window.localStorage.setItem(SETTINGS_KEYS.uiMode, next.uiMode);
-  window.localStorage.setItem(SETTINGS_KEYS.quickJumpRegion, next.quickJumpRegion);
-  window.localStorage.setItem(SETTINGS_KEYS.liveRefreshSec, String(next.liveRefreshSec));
-  window.localStorage.setItem(SETTINGS_KEYS.tutorialAutoplay, next.tutorialAutoplay ? 'true' : 'false');
+  storageSet(SETTINGS_KEYS.theme, next.theme);
+  storageSet(SETTINGS_KEYS.density, next.density);
+  storageSet(SETTINGS_KEYS.uiMode, next.uiMode);
+  storageSet(SETTINGS_KEYS.quickJumpRegion, next.quickJumpRegion);
+  storageSet(SETTINGS_KEYS.liveRefreshSec, String(next.liveRefreshSec));
+  storageSet(SETTINGS_KEYS.tutorialAutoplay, next.tutorialAutoplay ? 'true' : 'false');
 
   return next;
 }
@@ -156,7 +157,7 @@ export function emitSettingsUpdated(settings?: ScoutingSettings): void {
 }
 
 export function readFavoriteTeams(): string[] {
-  const raw = window.localStorage.getItem(FAVORITES_KEYS.teams);
+  const raw = storageGet(FAVORITES_KEYS.teams);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -170,7 +171,7 @@ export function readFavoriteTeams(): string[] {
 }
 
 export function readFavoriteEvents(): string[] {
-  const raw = window.localStorage.getItem(FAVORITES_KEYS.events);
+  const raw = storageGet(FAVORITES_KEYS.events);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -187,7 +188,7 @@ export function saveFavoriteTeams(teamKeys: string[]): string[] {
   const normalized = teamKeys
     .map((value) => String(value || '').trim().toLowerCase())
     .filter((value, idx, array) => /^frc\d+$/.test(value) && array.indexOf(value) === idx);
-  window.localStorage.setItem(FAVORITES_KEYS.teams, JSON.stringify(normalized));
+  storageSet(FAVORITES_KEYS.teams, JSON.stringify(normalized));
   return normalized;
 }
 
@@ -195,6 +196,6 @@ export function saveFavoriteEvents(eventKeys: string[]): string[] {
   const normalized = eventKeys
     .map((value) => String(value || '').trim().toLowerCase())
     .filter((value, idx, array) => /^\d{4}[a-z0-9]+$/.test(value) && array.indexOf(value) === idx);
-  window.localStorage.setItem(FAVORITES_KEYS.events, JSON.stringify(normalized));
+  storageSet(FAVORITES_KEYS.events, JSON.stringify(normalized));
   return normalized;
 }

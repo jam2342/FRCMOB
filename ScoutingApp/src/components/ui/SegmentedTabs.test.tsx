@@ -68,3 +68,48 @@ describe('SegmentedTabs with no matching value', () => {
     expect(screen.getByRole('tab', { name: 'Endgame' })).toHaveAttribute('tabindex', '-1');
   });
 });
+
+describe('SegmentedTabs swipe', () => {
+  function SwipeHarness() {
+    const [value, setValue] = useState<'a' | 'b' | 'c'>('a');
+    return (
+      <main className="ps-content">
+        <SegmentedTabs
+          swipe
+          ink
+          ariaLabel="Swipe tabs"
+          value={value}
+          onChange={setValue}
+          items={[
+            { value: 'a', label: 'A' },
+            { value: 'b', label: 'B', disabled: true },
+            { value: 'c', label: 'C' },
+          ]}
+        />
+        <p>Panel {value}</p>
+        <input aria-label="Field" />
+      </main>
+    );
+  }
+
+  function swipe(target: Element, fromX: number, toX: number) {
+    fireEvent.touchStart(target, { touches: [{ clientX: fromX, clientY: 300 }] });
+    fireEvent.touchEnd(target, { changedTouches: [{ clientX: toX, clientY: 305 }] });
+  }
+
+  it('moves to the next usable tab on a left swipe and back on a right swipe, on touch screens', () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ matches: query.includes('coarse'), addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    render(<SwipeHarness />);
+    const panel = screen.getByText('Panel a');
+    swipe(panel, 300, 120);
+    expect(screen.getByRole('tab', { name: 'C' })).toHaveAttribute('aria-selected', 'true');
+    swipe(screen.getByText('Panel c'), 100, 300);
+    expect(screen.getByRole('tab', { name: 'A' })).toHaveAttribute('aria-selected', 'true');
+    // Short drags, and drags that start in a field, are not tab swipes.
+    swipe(screen.getByText('Panel a'), 300, 260);
+    swipe(screen.getByLabelText('Field'), 300, 100);
+    expect(screen.getByRole('tab', { name: 'A' })).toHaveAttribute('aria-selected', 'true');
+    window.matchMedia = original;
+  });
+});

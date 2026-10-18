@@ -888,7 +888,7 @@
     ],
     "headings": [
       "Details",
-      "Scouting Coverage"
+      "Coverage"
     ],
     "links": [
       "#/compare",
@@ -960,7 +960,7 @@
       "Pin"
     ],
     "headings": [
-      "Auto Path Drawer",
+      "Auto Paths",
       "Field View",
       "Saved Paths"
     ],
@@ -1100,7 +1100,7 @@
       "Pin"
     ],
     "headings": [
-      "On-Device Match Breakdown"
+      "On-Device Breakdown"
     ],
     "links": [
       "#/compare",
@@ -1817,7 +1817,7 @@
       "input:Add event",
       "input:Add team",
       "input:Global quick jump",
-      "select:Team Rating Context Event (optional)"
+      "select:Event for team ratings"
     ]
   },
   "/settings": {

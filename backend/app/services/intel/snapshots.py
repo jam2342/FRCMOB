@@ -15,6 +15,16 @@ from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 
+# An event is "in play" from a few hours before its next match to a few hours after its last:
+# that is when ratings, ranks and results move, so its snapshots are rebuilt every run. Outside
+# that window nothing changes until the 12 h refresh recomputes the event (which drops its
+# snapshots, see invalidate_event_snapshots), so a snapshot is kept for a whole refresh cycle.
+# Rebuilding the five most recent finished events every two minutes kept a worker ~50% busy
+# writing identical rows.
+IN_PLAY_BEFORE_SEC = 60 * 60
+IN_PLAY_AFTER_SEC = 6 * 60 * 60
+IDLE_SNAPSHOT_TTL_SEC = 13 * 60 * 60
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -58,6 +68,42 @@ def _merge_missing_fields_only(
             merged[key] = existing_value
             filled += 1
     return merged, filled
+
+
+def events_in_play(db: Session, event_keys: list[str], now_sec: int) -> set[str]:
+    if not event_keys:
+        return set()
+    start = func.coalesce(models.Match.actual_time, models.Match.predicted_time, models.Match.time)
+    rows = (
+        db.query(models.Match.event_key)
+        .filter(models.Match.event_key.in_(event_keys))
+        .filter(start >= now_sec - IN_PLAY_AFTER_SEC, start <= now_sec + IN_PLAY_BEFORE_SEC)
+        .distinct()
+        .all()
+    )
+    return {str(row[0]).lower() for row in rows}
+
+
+def idle_snapshot_is_current(existing: models.IntelSnapshot | None, now: datetime, margin_sec: int) -> bool:
+    # True when an idle event's snapshot will still be there for the next run, so this one can skip it.
+    expires_at = _normalize_dt(existing.expires_at) if existing is not None else None
+    return expires_at is not None and expires_at > now + timedelta(seconds=margin_sec)
+
+
+def invalidate_event_snapshots(db: Session, event_key: str) -> int:
+    # The event's data was just recomputed; the next request (or refresh run) builds fresh pages.
+    try:
+        deleted = (
+            db.query(models.IntelSnapshot)
+            .filter(models.IntelSnapshot.event_key == event_key.strip().lower())
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        return int(deleted or 0)
+    except Exception as exc:
+        db.rollback()
+        logger.warning("intel snapshot invalidation failed event=%s error=%s", event_key, exc)
+        return 0
 
 
 def read_snapshot(
@@ -225,6 +271,14 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
             .all()
         )
 
+        now = _utc_now()
+        in_play = events_in_play(
+            db,
+            [str(row[0]).strip().lower() for row in event_rows],
+            int(now.timestamp()),
+        )
+        events_skipped_idle = 0
+
         for event_key, event_year, _, team_count in event_rows:
             elapsed_before_event = time.perf_counter() - started_perf
             if elapsed_before_event >= runtime_budget_sec and processed_events >= min_event_limit:
@@ -235,34 +289,38 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
             event_started_perf = time.perf_counter()
             if int(team_count or 0) <= 0:
                 continue
-            processed_events += 1
             normalized_event_key = str(event_key).strip().lower()
+            live = normalized_event_key in in_play
+            event_ttl_sec = int(EVENT_INTEL_CACHE_TTL_SEC) if live else IDLE_SNAPSHOT_TTL_SEC
+            team_ttl_sec = int(TEAM_INTEL_CACHE_TTL_SEC) if live else IDLE_SNAPSHOT_TTL_SEC
             preferred_year = int(event_year) if isinstance(event_year, int) else CURRENT_SEASON_YEAR
             fallback_year = max(2015, preferred_year - 1)
 
             try:
                 # Built with the parameters the app's pages request, or no one reads
-                # them: heal is admin-only and the pages ask for include_statbotics=false.
-                event_payload = build_event_teams_intel_payload(
-                    db=db,
-                    event_key=normalized_event_key,
-                    include_tba=True,
-                    include_statbotics=False,
-                    auto_heal_ratings=False,
-                    include_season_fallback=True,
-                    include_rating_details=False,
-                    include_rating_signals=False,
-                )
+                # them: heal is admin-only.
                 event_token = _event_intel_cache_token(
                     event_key=normalized_event_key,
                     include_tba=True,
-                    include_statbotics=False,
                     auto_heal_ratings=False,
                     include_season_fallback=True,
                     include_rating_details=False,
                     include_rating_signals=False,
                 )
                 event_cache_key = _cache_key("event", event_token)
+                if not live and idle_snapshot_is_current(db.get(models.IntelSnapshot, event_cache_key), now, interval_sec * 2):
+                    events_skipped_idle += 1
+                    continue
+                processed_events += 1
+                event_payload = build_event_teams_intel_payload(
+                    db=db,
+                    event_key=normalized_event_key,
+                    include_tba=True,
+                    auto_heal_ratings=False,
+                    include_season_fallback=True,
+                    include_rating_details=False,
+                    include_rating_signals=False,
+                )
                 event_payload_to_store = event_payload
                 if bool(settings.intel_snapshot_backfill_missing_fields_only):
                     existing_event_snapshot = db.get(models.IntelSnapshot, event_cache_key)
@@ -277,7 +335,7 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                     snapshot_key=event_cache_key,
                     scope="event",
                     payload=event_payload_to_store,
-                    ttl_sec=int(EVENT_INTEL_CACHE_TTL_SEC),
+                    ttl_sec=event_ttl_sec,
                     event_key=normalized_event_key,
                     team_key=None,
                 )
@@ -300,7 +358,6 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                         preferred_year=preferred_year,
                         fallback_year=fallback_year,
                         include_tba=True,
-                        include_statbotics=False,
                         allow_season_fallback=True,
                         auto_heal_ratings=False,
                     )
@@ -310,7 +367,6 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                         preferred_year=preferred_year,
                         fallback_year=fallback_year,
                         include_tba=True,
-                        include_statbotics=False,
                         allow_season_fallback=True,
                         auto_heal_ratings=False,
                     )
@@ -329,7 +385,7 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
                         snapshot_key=team_cache_key,
                         scope="team",
                         payload=team_payload_to_store,
-                        ttl_sec=int(TEAM_INTEL_CACHE_TTL_SEC),
+                        ttl_sec=team_ttl_sec,
                         event_key=normalized_event_key,
                         team_key=team_key,
                     )
@@ -370,6 +426,7 @@ def refresh_hot_intel_snapshots() -> dict[str, Any]:
             "recommended_event_limit_next_run": int(recommended_event_limit),
             "timed_out": bool(timed_out),
             "events_skipped_due_budget": int(events_skipped_due_budget),
+            "events_skipped_idle": int(events_skipped_idle),
             "event_snapshots_written": int(event_snapshots),
             "team_snapshots_written": int(team_snapshots),
             "missing_fields_backfilled": int(missing_fields_backfilled),

@@ -1,0 +1,31 @@
+/* The sliding underline for phone tab bars. Unlayered, so hiding the static underline below wins
+   over the shell's layered .fm-tab.active rule. */
+.segmented-tabs--ink {
+  position: relative;
+}
+
+.segmented-tabs--ink .segmented-tabs__item.active {
+  border-bottom-color: transparent;
+}
+
+.segmented-tabs__ink {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-info-text);
+  pointer-events: none;
+}
+
+.segmented-tabs__ink--ready {
+  transition:
+    transform var(--motion-base) var(--motion-ease),
+    width var(--motion-base) var(--motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-tabs__ink--ready {
+    transition: none;
+  }
+}

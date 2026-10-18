@@ -21,7 +21,7 @@ Two main entry points:
 Utility functions used during aggregation — things like normalizing team keys, handling missing data, merging partial results, and formatting alliance groupings.
 
 **`snapshots.py`**
-Handles historical intel snapshots — saved point-in-time views of team intel that can be compared across events or referenced later without recomputing.
+Prebuilt team and event intel pages (`intel_snapshots`), so the most visited pages answer without rebuilding. A scheduled job (every 2 min) refreshes the five most recent events: an event with matches from an hour ahead to six hours back is rebuilt every run with short TTLs; any other event keeps its snapshot for 13 h and is skipped while it is current. Recomputing an event (`events/pipeline.post_compute_event`) drops its snapshots so new numbers show at once.
 
 ## How It Runs
 

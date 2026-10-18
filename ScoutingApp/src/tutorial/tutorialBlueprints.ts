@@ -379,7 +379,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
           'Switch tabs only after top context is valid.',
         ],
         tooltips: [
-          'Wrong lineup assumptions invalidate synergy conclusions.',
+          'Wrong lineup assumptions make every other number misleading.',
           'Hero panel is your sanity check for live state.',
         ],
         selector: '.fm-score-hero, .center-main .surface-card',
@@ -388,21 +388,19 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
       },
       {
         id: 'match-breakdown',
-        system: 'Synergy',
-        title: 'Use breakdown tab for decision-grade metrics',
+        system: 'Match Breakdown',
+        title: 'Check the result on the breakdown tab',
         description:
-          'Breakdown tab converts match context into pair synergy, confidence, and tactical signals.',
+          'The breakdown tab sums up the match: its status, the score, the winner and when it was scheduled.',
         actions: [
           'Review status, winner, and score cards first.',
-          'Inspect pair breakdown by points/confidence.',
-          'Flag confidence dips for follow-up.',
+          'Compare the winner with the prediction in the header.',
         ],
         tooltips: [
-          'Synergy without confidence context is incomplete.',
-          'Large confidence swings often indicate unstable pair behavior.',
+          'Scores come from the official results once the match is posted.',
         ],
-        selector: '.center-kpi-grid, .center-table-wrap',
-        mobileSelector: '.center-mobile-card-list, .center-kpi-grid',
+        selector: '.center-kpi-grid',
+        mobileSelector: '.center-kpi-grid',
         placement: 'top',
       },
       {

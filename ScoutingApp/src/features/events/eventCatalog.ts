@@ -21,6 +21,10 @@ export async function loadSeasonSearchFallback(options?: EventCatalogOptions): P
     searchEvents(String(preferredYear)),
     searchEvents(String(fallbackYear)),
   ]);
+  // Nothing answered: an error, not "there are no events".
+  if (primarySearch.status === 'rejected' && fallbackSearch.status === 'rejected') {
+    throw primarySearch.reason instanceof Error ? primarySearch.reason : new Error("Couldn't load events. Check your connection.");
+  }
 
   return mergeEventLists(
     primarySearch.status === 'fulfilled' ? primarySearch.value.events || [] : [],

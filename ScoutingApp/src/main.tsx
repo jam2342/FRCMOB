@@ -1,5 +1,8 @@
+// First: some modules read storage as they load (see platform/safeStorage.ts).
+import './platform/storageGuard';
 import { bootstrapNativeEphemeralAccess } from './api';
-import { bootstrapWorkspaceSession } from './features/workspace/workspaceSession';
+import { bootstrapWorkspaceSession, getWorkspaceSession } from './features/workspace/workspaceSession';
+import { startPitDraftCleanup } from './features/offline/pitDrafts';
 import { bootstrapNativeQueue } from './utils/offlineQueue';
 import { isNativeApp } from './platform/runtime';
 import { startNativeLifecycle } from './platform/nativeLifecycle';
@@ -12,7 +15,8 @@ import { startAutoFlush } from './utils/offlineQueue';
 import { startOnDeviceSyncAutoFlush } from './features/onDevice/sync';
 import { preloadEventSearchIndex } from './utils/eventSearchIndex';
 import { scheduleIdleWork } from './utils/idle';
-import { startRum } from './perf/rum';
+import { startRum, trackingAllowed } from './perf/rum';
+import { startCspReports } from './perf/cspReports';
 import { startIntentPrefetch } from './features/prefetch/intentPrefetch';
 import { startMatchPreload } from './features/prefetch/matchPreload';
 import { resolveApiBaseUrl } from './platform/runtime';
@@ -25,6 +29,17 @@ if (!isNativeApp() && 'serviceWorker' in navigator) {
       navigator.serviceWorker
         .register('/sw.js')
         .catch((err) => console.warn('[SW] registration failed:', err));
+      // Chunks this page loaded before the worker took over never went through it; hand
+      // it the list so an offline reload still has them. Again later for lazy routes.
+      const reportLoadedAssets = () => {
+        const urls = performance.getEntriesByType('resource').map((entry) => entry.name).filter((name) => name.includes('/assets/'));
+        navigator.serviceWorker.controller?.postMessage({ type: 'cache-loaded-assets', urls });
+      };
+      void navigator.serviceWorker.ready.then(() => {
+        if (navigator.serviceWorker.controller) reportLoadedAssets();
+        else navigator.serviceWorker.addEventListener('controllerchange', reportLoadedAssets, { once: true });
+        setTimeout(reportLoadedAssets, 15_000);
+      });
       return;
     }
 
@@ -46,6 +61,7 @@ async function bootstrap() {
   await bootstrapNativeQueue();
   // Auto-replay queued mutations when the device comes back online.
   startAutoFlush();
+  startPitDraftCleanup(() => getWorkspaceSession()?.workspace.id ?? null);
   // Flush finished on-device match breakdowns to the server on reconnect.
   startOnDeviceSyncAutoFlush();
   // Warm the shared event-search index once the browser is idle.
@@ -53,10 +69,13 @@ async function bootstrap() {
     void preloadEventSearchIndex();
   }, { fallbackDelayMs: 1500, timeoutMs: 2500 });
 
+  // Before the first render, so anything blocked while the page paints is counted.
+  startCspReports(resolveApiBaseUrl());
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <RootApp />
-      {!isNativeApp() ? <Analytics /> : null}
+      {/* Same opt-out as our own timings (DNT/GPC), so the Privacy Policy holds for both. */}
+      {!isNativeApp() ? <Analytics beforeSend={(event) => (trackingAllowed() ? event : null)} /> : null}
     </StrictMode>,
   );
 

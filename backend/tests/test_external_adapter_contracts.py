@@ -5,11 +5,9 @@
 # avoid network calls while asserting the structural contract.
 from __future__ import annotations
 
-import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
-from app.services.clients import statbotics as statbotics_client
 from app.tba.client import TBAClient
 
 # ---------------------------------------------------------------------------
@@ -51,13 +49,6 @@ TBA_MATCH_FIXTURE: dict = {
         "blue": {"totalPoints": 60},
     },
     "videos": [{"type": "youtube", "key": "abc123"}],
-}
-
-STATBOTICS_TEAM_EVENT_FIXTURE: dict = {
-    "team": 118,
-    "event": "2026txhou",
-    "epa": {"total_points": {"mean": 42.5}},
-    "record": {"wins": 7, "losses": 3, "ties": 0},
 }
 
 # ---------------------------------------------------------------------------
@@ -123,65 +114,6 @@ class TBAContractTests(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # Statbotics Client contract tests
-# ---------------------------------------------------------------------------
-
-class _FakeStatboticsResponse:
-    def __init__(self, data):
-        self.status_code = 200
-        self._data = data
-
-    def json(self):
-        return self._data
-
-class _FakeStatboticsHTTPClient:
-    def __init__(self, data):
-        self._response = _FakeStatboticsResponse(data)
-
-    async def get(self, _url, headers=None):
-        return self._response
-
-class StatboticsContractTests(unittest.TestCase):
-    # Verify Statbotics adapter parses responses correctly.
-
-    def setUp(self):
-        statbotics_client._CACHE.clear()
-        statbotics_client._CIRCUIT.clear()
-
-    def test_get_team_event_returns_epa_structure(self):
-        fake_client = _FakeStatboticsHTTPClient(STATBOTICS_TEAM_EVENT_FIXTURE)
-        with patch(
-            "app.services.clients.statbotics._get_client",
-            new=AsyncMock(return_value=fake_client),
-        ):
-            result = asyncio.run(statbotics_client.get_team_event(118, "2026txhou"))
-        self.assertIsInstance(result, dict)
-        self.assertIn("epa", result)
-        epa = result["epa"]
-        self.assertIn("total_points", epa)
-        self.assertIn("mean", epa["total_points"])
-
-    def test_get_team_returns_dict(self):
-        fixture = {"team": 118, "name": "Robonauts", "epa": {"total_points": {"mean": 42.0}}}
-        fake_client = _FakeStatboticsHTTPClient(fixture)
-        with patch(
-            "app.services.clients.statbotics._get_client",
-            new=AsyncMock(return_value=fake_client),
-        ):
-            result = asyncio.run(statbotics_client.get_team(118))
-        self.assertIsInstance(result, dict)
-
-    def test_get_event_returns_dict(self):
-        fixture = {"key": "2026txhou", "name": "Houston Regional"}
-        fake_client = _FakeStatboticsHTTPClient(fixture)
-        with patch(
-            "app.services.clients.statbotics._get_client",
-            new=AsyncMock(return_value=fake_client),
-        ):
-            result = asyncio.run(statbotics_client.get_event("2026txhou"))
-        self.assertIsInstance(result, dict)
-
-# ---------------------------------------------------------------------------
-# FIRST Events Client contract tests
 # ---------------------------------------------------------------------------
 
 class FIRSTEventsContractTests(unittest.TestCase):

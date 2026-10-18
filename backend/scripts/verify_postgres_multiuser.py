@@ -20,9 +20,8 @@ DEFAULT_TESTS = [
     "tests/test_on_device_sync_postgres_e2e.py",
     "tests/test_team_workspaces.py",
     "tests/test_routes_tracks_on_device_sync.py",
-    "tests/test_ml_model_selection.py",
-    "tests/test_ml_shadow_rollout.py",
-    "tests/test_routes_events_schedule_ml.py",
+    "tests/test_routes_events_schedule.py",
+    "tests/test_schedule_refresh_postgres_e2e.py",
 ]
 
 

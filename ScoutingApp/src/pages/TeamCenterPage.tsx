@@ -1,4 +1,9 @@
-import { breakdownFromIntel, ratingFromIntel, type TeamIntelBreakdown } from './teamIntel';
+import { TEAM_NUMBER_PLACEHOLDER } from './centerUtils';
+import { breakdownFromIntel, previousSeasonFromIntel, previousSeasonText, ratingFromIntel, type PreviousSeasonRating, type TeamIntelBreakdown } from './teamIntel';
+import { RatingHistoryCard } from '../features/seasons/RatingHistoryCard';
+import { EmptyState } from '../components/ui/EmptyState';
+import { CountUp } from '../components/ui/CountUp';
+import { TeamStickyBar } from '../features/teamHeader/TeamStickyBar';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -36,7 +41,7 @@ import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
 import { Chip, Stat, Table, type TableColumn } from '../components/ui/primitives';
 import { SEASON_BENCHMARKS } from '../config/season';
-import { isRobotSignal, officialMetricsNote, plainSignalLabel, scoreAgainst, signalRankLabel } from './teamCenterOfficial';
+import { isRobotSignal, officialMetricsNote, plainSignalLabel, ratingRangeLabel, scoreAgainst, signalRankLabel, signedChange } from './teamCenterOfficial';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
 import {
@@ -47,31 +52,30 @@ import {
   matchStartTime,
   meanNumber,
   metric,
-  metricUnit,
   normalizeMatchKey,
   normalizeTeamKeyInput,
   isTransientAbortLikeError,
   parseNumber,
   pct,
   relativeFromTimestamp,
-  summarizeFreshness,
   teamNumberFromTeamKey,
   titleizeKey,
 } from './centerUtils';
 import {
   GridIcon, BarChartIcon, CalendarIcon, ImageIcon, CodeIcon,
-  FlameIcon, StopwatchIcon, RobotIcon, MountainIcon, ShieldIcon,
-  ShieldCheckIcon, GaugeIcon, SteeringWheelIcon,
+  FlameIcon, StopwatchIcon, RobotIcon, MountainIcon, GaugeIcon,
   TrophyIcon, HashIcon,
   ClockIcon, CheckCircleIcon, ExternalLinkIcon, ChevronDownIcon,
   SearchIcon, ScoreboardIcon, EyeIcon, AwardIcon,
 } from '../components/ui/Icons';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { ordinal } from '../utils/ordinal';
+import { matchLabelFromKey } from '../utils/matchLabel';
 import { cancelIdleWork, scheduleIdleWork } from '../utils/idle';
 import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
 import { loadTeamCenterIntel, loadTeamCenterLogo } from '../features/prefetch/pageRequests';
+import { useWorkspace } from '../features/workspace/useWorkspace';
 
 const BASE_TEAM_TABS = ['overview', 'performance', 'events', 'media'] as const;
 /* titleizeKey turns 'events' into "Events", which is also the name of a
@@ -359,6 +363,18 @@ function PositionalLoadError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+// Recordings your team made that nobody has reviewed yet: counted here for you,
+// hidden from everyone else until an operator accepts them.
+function OwnRecordingsNote({ matches }: { matches?: number }) {
+  if (!matches) return null;
+  return (
+    <p className="muted">
+      Includes {matches} match{matches === 1 ? '' : 'es'} from your team's own recordings. Only your team sees
+      these until they're reviewed.
+    </p>
+  );
+}
+
 export function TeamCenterPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -380,10 +396,14 @@ export function TeamCenterPage() {
   const [selectedEventKey, setSelectedEventKey] = useState(defaultEventKey);
   const [selectedTeamKey, setSelectedTeamKey] = useState(defaultTeamKey);
   const [activeTab, setActiveTab] = useState<TeamTab>(defaultTab);
+  // The header's tab bar; once it scrolls away the slim team bar takes over.
+  const heroTabsRef = useRef<HTMLDivElement | null>(null);
 
   const [teamBreakdown, setTeamBreakdown] = useState<TeamIntelBreakdown | null>(null);
   const [autoScoutProfile, setAutoScoutProfile] = useState<AutoScoutProfile | null>(null);
   const [teamRating, setTeamRating] = useState<EventTeamRatingItem | null>(null);
+  // No rating this season: last season's, shown apart (services/seasons.py).
+  const [previousSeason, setPreviousSeason] = useState<PreviousSeasonRating | null>(null);
   const [teamCompetitions, setTeamCompetitions] = useState<TeamCompetitionsResponse | null>(null);
   const [teamRobotImage, setTeamRobotImage] = useState<TeamRobotImageResponse | null>(null);
   const [teamLogo, setTeamLogo] = useState<TeamLogoResponse | null>(null);
@@ -409,6 +429,9 @@ export function TeamCenterPage() {
      delimiter showing, in the middle of the page. They are separate
      messages, so they are separate list items. */
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
+  // The team whose numbers didn't arrive (failed or timed out), so the page can say so
+  // where a phone shows it, instead of N/A and 0 that read like real data.
+  const [intelFailedFor, setIntelFailedFor] = useState('');
 
   // Append without duplicating; several requests can report the same failure.
   const addErrorMessage = useCallback((message: string) => {
@@ -495,6 +518,7 @@ export function TeamCenterPage() {
     setTeamBreakdown(null);
     setAutoScoutProfile(null);
     setTeamRating(null);
+    setPreviousSeason(null);
     setTeamCompetitions(null);
     setTeamRobotImage(null);
     setTeamRobotImageLoading(false);
@@ -517,17 +541,27 @@ export function TeamCenterPage() {
     const selectedEvent = selectedEventKey || undefined;
     const contextKey = `${selectedTeamKey}|${selectedEvent || ''}`;
     const contextChanged = lastContextRef.current !== contextKey;
+    // A new team starts from blank; the same team under another event (or the whole season, when
+    // it turns out it never attended the event in context) keeps its numbers on screen until the
+    // new ones land. Blanking there made the page show the team, reset to N/A, then show it again.
+    const teamChanged = lastContextRef.current.split('|')[0] !== selectedTeamKey;
     const shouldLoadEventSpecific = Boolean(selectedEvent);
     const shouldLoadEventDetails = shouldLoadEventSpecific && activeTab === 'events';
-    if (contextChanged) {
+    if (contextChanged && teamChanged) {
       setTeamBreakdown(null);
       setAutoScoutProfile(null);
       setTeamRating(null);
+    setPreviousSeason(null);
       setTeamCompetitions(null);
       setTeamRobotImage(null);
       setTeamLogo(null);
       setTeamTbaEventStatus(null);
       setTeamTbaAwards([]);
+      setEventLiveForm(null);
+      setEventScheduleRows([]);
+      setEventTeams(null);
+    } else if (contextChanged) {
+      // Only the event changed: what belongs to the old event goes.
       setEventLiveForm(null);
       setEventScheduleRows([]);
       setEventTeams(null);
@@ -573,7 +607,6 @@ export function TeamCenterPage() {
       const eventTeamsRequest = shouldRefreshStatic && shouldLoadEventDetails
         ? getEventTeamsIntel(selectedEventKey, {
             include_tba: false,
-            include_statbotics: false,
             include_season_fallback: true,
             include_rating_details: false,
             include_rating_signals: false,
@@ -602,6 +635,7 @@ export function TeamCenterPage() {
       const errors: string[] = [];
 
       if (shouldRefreshStatic && intelResult.status === 'fulfilled' && intelResult.value) {
+        setIntelFailedFor('');
         const intel = intelResult.value as unknown as Record<string, unknown>;
         const team = asRecord(intel.team);
         const teamNumber = parseNumber(team?.team_number) ?? teamNumberFromTeamKey(selectedTeamKey) ?? 0;
@@ -616,6 +650,7 @@ export function TeamCenterPage() {
         setAutoScoutProfile((intel.auto_scout_profile as AutoScoutProfile | undefined) ?? null);
         setTeamCompetitions(competitions);
         setTeamRating(rating);
+        setPreviousSeason(rating ? null : previousSeasonFromIntel(intel));
         setTeamTbaEventStatus(asRecord(tba?.event_status));
         setTeamTbaAwards(
           tbaAwardsRaw.filter((value): value is Record<string, unknown> => Boolean(asRecord(value))),
@@ -624,6 +659,7 @@ export function TeamCenterPage() {
         // intel.warnings are notes about the data ("No scouted matches yet"), not failed
         // loads; the freshness callout below already shows the one that matters.
       } else if (shouldRefreshStatic && intelResult.status === 'rejected') {
+        setIntelFailedFor(selectedTeamKey);
         if (!isTransientAbortLikeError(intelResult.reason)) {
           errors.push(`Team intel: ${intelResult.reason instanceof Error ? intelResult.reason.message : 'failed'}`);
         }
@@ -694,7 +730,8 @@ export function TeamCenterPage() {
       }
 
       if (shouldRefreshStatic) {
-        staticFailedRef.current = (intelResult.status === 'rejected' && !isTransientAbortLikeError(intelResult.reason))
+        // A timed-out intel load is retried too; only the logo may give up quietly.
+        staticFailedRef.current = intelResult.status === 'rejected'
           || (logoResult.status === 'rejected' && !isTransientAbortLikeError(logoResult.reason));
       }
       setErrorMessages(errors);
@@ -747,6 +784,11 @@ export function TeamCenterPage() {
   }, [activeTab, selectedEventKey, selectedTeamKey, triggerTeamReload]);
 
   /* ── heatmap: lazy-load when performance tab is active ────────── */
+  // Your team's own phone recordings count here before anyone reviews them;
+  // the server shows them to your workspace only.
+  const workspace = useWorkspace();
+  const inWorkspace = Boolean(workspace);
+  const workspaceId = workspace?.workspace.id ?? null;
   // Positional data belongs to one team at one event: drop it as soon as either
   // changes, so "Overall" never shows the previous event's heat map.
   useEffect(() => {
@@ -761,12 +803,12 @@ export function TeamCenterPage() {
     let cancelled = false;
     setHeatmapLoading(true);
     setHeatmapFailed(false);
-    getTeamHeatmap(selectedTeamKey, selectedEventKey)
+    getTeamHeatmap(selectedTeamKey, selectedEventKey, { include_workspace: inWorkspace })
       .then((res) => { if (!cancelled) setTeamHeatmap(res); })
       .catch(() => { if (!cancelled) { setTeamHeatmap(null); setHeatmapFailed(true); } })
       .finally(() => { if (!cancelled) setHeatmapLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry]);
+  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry, inWorkspace, workspaceId]);
 
   /* ── shift-play (offense/defense + attack/defense heat maps) ────── */
   useEffect(() => {
@@ -774,12 +816,12 @@ export function TeamCenterPage() {
     let cancelled = false;
     setShiftPlayLoading(true);
     setShiftPlayFailed(false);
-    getTeamShiftPlay(selectedTeamKey, selectedEventKey)
+    getTeamShiftPlay(selectedTeamKey, selectedEventKey, { include_workspace: inWorkspace })
       .then((res) => { if (!cancelled) setTeamShiftPlay(res); })
       .catch(() => { if (!cancelled) { setTeamShiftPlay(null); setShiftPlayFailed(true); } })
       .finally(() => { if (!cancelled) setShiftPlayLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry]);
+  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry, inWorkspace, workspaceId]);
 
   useEffect(() => {
     if (activeTab !== 'media' || !selectedTeamKey) return;
@@ -829,7 +871,7 @@ export function TeamCenterPage() {
   }, [selectedTeamKey, teamCompetitions]);
 
   const eventNameFor = (eventKey: string) =>
-    registeredEventOptions.find((event) => event.event_key === eventKey)?.name || eventKey;
+    registeredEventOptions.find((event) => event.event_key === eventKey)?.name || eventDisplayName(eventKey);
   const selectedEventInOptions = useMemo(
     () => !selectedEventKey || registeredEventOptions.some((event) => event.event_key === selectedEventKey),
     [registeredEventOptions, selectedEventKey],
@@ -1055,11 +1097,6 @@ export function TeamCenterPage() {
     return () => cancelIdleWork(handle);
   }, [scheduleVisibleCount, sortedScheduleRowsWithDifficulty.length]);
 
-  const freshnessSummary = useMemo(
-    () => summarizeFreshness(teamBreakdown?.data_freshness || null),
-    [teamBreakdown?.data_freshness],
-  );
-
   // With no scouting or video for a team, the backend fills fuel and auto from
   // TBA's per-team estimates and climb from the official record, and flags each;
   // showing those as measured stats misled people.
@@ -1070,8 +1107,7 @@ export function TeamCenterPage() {
       <Chip size="sm" tone="warn" title={coverageFor(key)?.missing_reason ?? undefined}>Estimate</Chip>
     ) : null;
   const climbRecord = coverageFor('climb_success_prob')?.official_record ? coverageFor('climb_success_prob') : null;
-  const unscouted = (teamBreakdown?.matches_analyzed ?? 0) === 0;
-  const metricsAreEstimates = unscouted && Boolean(teamBreakdown);
+  const metricsAreEstimates = Boolean(teamBreakdown);
   const officialStats = teamBreakdown?.official_stats ?? null;
 
   const climbCapability = useMemo(
@@ -1116,15 +1152,6 @@ export function TeamCenterPage() {
         score: scoreAgainst(teamBreakdown?.averages?.fuel_scoring_rate, SEASON_BENCHMARKS.eliteFuelPerActiveMin),
       },
       {
-        label: 'Cycle Speed',
-        value: teamBreakdown?.averages?.cycle_time_sec ?? null,
-        display: metric(teamBreakdown?.averages?.cycle_time_sec ?? null, 1),
-        score:
-          typeof teamBreakdown?.averages?.cycle_time_sec === 'number'
-            ? clampNumber(100 - teamBreakdown.averages.cycle_time_sec * 4, 0, 100)
-            : null,
-      },
-      {
         label: 'Auto Contribution',
         value: teamBreakdown?.averages?.auto_contribution ?? null,
         display: metric(teamBreakdown?.averages?.auto_contribution ?? null, 2),
@@ -1146,43 +1173,41 @@ export function TeamCenterPage() {
         score: climbCapability.best_level_score_0_100,
       },
       {
-        label: 'Defense Presence',
-        value: teamRating?.subscores.defense_presence ?? null,
-        display: metric(teamRating?.subscores.defense_presence ?? null, 1),
-        score: teamRating?.subscores.defense_presence ?? null,
-      },
-      {
-        label: 'Penalty Discipline',
-        value: teamRating?.subscores.penalty_discipline ?? null,
-        display: metric(teamRating?.subscores.penalty_discipline ?? null, 1),
-        score: teamRating?.subscores.penalty_discipline ?? null,
-      },
-      {
-        label: 'Robot Level',
+        label: 'Scoring Rating',
         value: teamRating?.robot_level_0_100 ?? null,
         display: metric(teamRating?.robot_level_0_100 ?? null, 1),
         score: teamRating?.robot_level_0_100 ?? null,
       },
       {
-        label: 'Driver Skill',
-        value: teamRating?.driver_skill_0_100 ?? null,
-        display: metric(teamRating?.driver_skill_0_100 ?? null, 1),
-        score: teamRating?.driver_skill_0_100 ?? null,
+        label: 'Consistency',
+        value: teamRating?.subscores.consistency ?? null,
+        display: metric(teamRating?.subscores.consistency ?? null, 0),
+        score: teamRating?.subscores.consistency ?? null,
       },
     ];
   }, [climbCapability, teamBreakdown, teamRating]);
 
+  const ratingBasisLabel = useMemo(() => {
+    if (teamRating?.basis === 'earlier_events') return 'From earlier events (not played here yet)';
+    if (teamRating?.basis === 'last_season') return 'No matches this season yet: starts from last season';
+    if (teamRating?.basis === 'rookie') return 'Rookie team: starts a little below a typical robot';
+    if (teamRating?.basis === 'season_typical') return 'No official matches yet: a typical robot';
+    return null;
+  }, [teamRating?.basis]);
+
   // "87.7" on its own says nothing. Rank and field size travel together, and
   // the event is named whenever the rating did not come from the selected one —
   // the same disclaim-don't-hide rule the ratings fallback already follows.
+  const ratingRange = ratingRangeLabel(teamRating?.rating_range_80);
   const ratingRankLabel = useMemo(() => {
     const rank = teamRating?.rank ?? null;
     const fieldSize = teamRating?.field_size ?? null;
-    if (rank === null || fieldSize === null || fieldSize <= 0) return null;
+    const likely = ratingRange ? `likely ${ratingRange}` : null;
+    if (rank === null || fieldSize === null || fieldSize <= 0) return likely;
     const rankedAt = teamRating?.rank_event_key ?? null;
-    const where = rankedAt && rankedAt !== selectedEventKey ? ` at ${rankedAt.toUpperCase()}` : '';
-    return `${ordinal(rank)} of ${fieldSize} by model rating${where}`;
-  }, [teamRating, selectedEventKey]);
+    const where = rankedAt && rankedAt !== selectedEventKey ? ` at ${eventDisplayName(rankedAt)}` : '';
+    return `${ordinal(rank)} of ${fieldSize} by model rating${where}${likely ? ` · ${likely}` : ''}`;
+  }, [teamRating, selectedEventKey, ratingRange]);
 
   const tbaRank = useMemo(() => {
     const status = asRecord(teamTbaEventStatus);
@@ -1247,6 +1272,15 @@ export function TeamCenterPage() {
     if (isMobileLayout) setMobileFinderOpen(false);
   }
 
+  // A past event from the rating history: this team at that event, here.
+  function openTeamAtEvent(eventKey: string) {
+    const normalized = eventKey.toLowerCase();
+    setSelectedEventKey(normalized);
+    setEventInput(normalized);
+    setActiveTab('overview');
+    window.scrollTo({ top: 0 });
+  }
+
   function openEventCenter(eventKey: string) {
     navigate(`/events?event=${eventKey.toLowerCase()}&tab=teams`);
   }
@@ -1293,11 +1327,11 @@ export function TeamCenterPage() {
               id="team-center-team-input"
               value={teamInput}
               onChange={(event) => setTeamInput(event.target.value)}
-              placeholder="Team number, e.g. 118"
+              placeholder={TEAM_NUMBER_PLACEHOLDER}
               className="center-input"
             />
             <label className="center-label" htmlFor="team-center-event-input">
-              Event (optional)
+              Event
             </label>
             <select
               id="team-center-event-input"
@@ -1316,7 +1350,7 @@ export function TeamCenterPage() {
               ))}
             </select>
             <button type="submit" className="center-btn" disabled={loadingTeamData}>
-              {loadingTeamData ? 'Loading...' : <><SearchIcon className="icon-inline" /> Load Team</>}
+              {loadingTeamData ? 'Loading…' : <><SearchIcon className="icon-inline" /> Load Team</>}
             </button>
           </form>
 
@@ -1355,12 +1389,43 @@ export function TeamCenterPage() {
       <section className="center-main">
         {!selectedTeamKey ? (
           <SurfaceCard title="No Team Selected" subtitle="Enter a team in the Finder.">
-            <p className="center-callout muted">
-              Select a team to view scouting intel.
-            </p>
+            <EmptyState
+              compact
+              mascot
+              title="Which team?"
+              description="Type a number or a name to see its rating, fuel rate, matches and scouting."
+              action={(
+                <button
+                  type="button"
+                  className="center-btn"
+                  onClick={() => {
+                    if (isMobileLayout) setMobileFinderOpen(true);
+                    window.setTimeout(() => document.getElementById('team-center-team-input')?.focus(), 0);
+                  }}
+                >
+                  Find a team
+                </button>
+              )}
+            />
           </SurfaceCard>
         ) : (
           <>
+            {intelFailedFor === selectedTeamKey && !teamRating && !teamBreakdown ? (
+              <p className="center-callout warning" role="status">
+                This team's numbers didn't load, so the empty values below aren't real. It retries on its own.
+              </p>
+            ) : null}
+            <TeamStickyBar
+              watchRef={heroTabsRef}
+              phone={isMobileLayout}
+              teamNumber={teamNumber}
+              nickname={teamNickname}
+              rating={<CountUp key={selectedTeamKey} value={teamRating?.rating_0_100 ?? null} digits={1} />}
+              detail={tbaRank !== null ? `#${tbaRank}` : undefined}
+              tab={activeTab}
+              onTab={setActiveTab}
+              tabs={teamTabs.map((tab) => ({ value: tab, label: teamTabLabel(tab) }))}
+            />
             {isMobileLayout ? (
               <>
                 <div className="fm-team-hero">
@@ -1397,11 +1462,11 @@ export function TeamCenterPage() {
                   </div>
                   <div className="fm-team-hero-stats">
                     <div className="fm-team-hero-stat highlight">
-                      <strong>{metric(teamRating?.rating_0_100 ?? null, 1)}</strong>
+                      <strong><CountUp key={selectedTeamKey} value={teamRating?.rating_0_100 ?? null} digits={1} /></strong>
                       <span>Rating</span>
                     </div>
                     <div className="fm-team-hero-stat" title="TBA's per-team estimate from official results">
-                      <strong>{typeof officialStats?.fuel_per_match === 'number' ? Math.round(officialStats.fuel_per_match) : 'N/A'}</strong>
+                      <strong><CountUp key={selectedTeamKey} value={typeof officialStats?.fuel_per_match === 'number' ? officialStats.fuel_per_match : null} /></strong>
                       <span>Fuel / match</span>
                     </div>
                     {selectedEventKey ? (
@@ -1416,14 +1481,25 @@ export function TeamCenterPage() {
                         <span>Events</span>
                       </div>
                     )}
-                    <div className={`fm-team-hero-stat ${freshnessSummary.state === 'stale' ? 'warning' : ''}`}>
-                      <strong>{teamBreakdown?.matches_analyzed ?? 0}</strong>
-                      <span>Scouted</span>
+                    <div className="fm-team-hero-stat" title="Official matches this rating has seen at this event">
+                      <strong>{teamRating?.matches_here ?? '—'}</strong>
+                      <span>Matches</span>
                     </div>
                   </div>
+                  {!teamRating && previousSeason ? (
+                    <p className="fm-team-hero-event" data-testid="previous-season-rating">
+                      Not rated yet this season. {previousSeasonText(previousSeason)}
+                    </p>
+                  ) : null}
                   <div className="fm-team-hero-form"><TeamFormStrip entry={selectedTeamLiveForm} /></div>
+                  {/* min-width 0: in the header's flex column this wrapper would otherwise be as wide as
+                      all the tabs and push the page sideways on a narrow phone. */}
+                  <div ref={heroTabsRef} style={{ minWidth: 0, maxWidth: '100%' }}>
                   <SegmentedTabs
                     className="fm-tab-bar"
+                    motion
+                    swipe
+                    ink
                     itemClassName="fm-tab"
                     ariaLabel="Team center tabs"
                     value={activeTab}
@@ -1433,12 +1509,13 @@ export function TeamCenterPage() {
                       label: teamTabLabel(tab),
                     }))}
                   />
+                  </div>
                 </div>
               </>
             ) : (
             <SurfaceCard
               title={`Team ${teamNumber}`}
-              subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Didn't compete at ${eventDisplayName(skippedEventKey)}; showing the whole season` : ''}`}
+              subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Whole season (not at ${eventDisplayName(skippedEventKey)})` : ''}`}
             >
               <div className="center-team-hero">
                 <div className="center-team-identity">
@@ -1472,38 +1549,29 @@ export function TeamCenterPage() {
                   <Stat
                     size="display"
                     label="FRCMOB rating"
-                    value={metric(teamRating?.rating_0_100 ?? null, 1)}
-                    sub={ratingRankLabel}
+                    value={<CountUp key={selectedTeamKey} value={teamRating?.rating_0_100 ?? null} digits={1} />}
+                    sub={!teamRating && previousSeason ? 'Not rated yet this season' : ratingRankLabel}
                     confidence={teamRating?.confidence_0_1 ?? undefined}
+                    reserveDetail
                   />
+                  {!teamRating && previousSeason ? (
+                    <p className="center-callout muted" data-testid="previous-season-rating">{previousSeasonText(previousSeason)}</p>
+                  ) : null}
                   <div className="center-status-row compact">
-                    <span className="center-chip">{teamBreakdown?.matches_analyzed ?? 0} scouted</span>
                     {typeof officialStats?.fuel_per_match === 'number' ? (
                       <span className="center-chip" title="TBA's per-team estimate from official results">
                         {Math.round(officialStats.fuel_per_match)} fuel/match
                       </span>
                     ) : null}
                     <span className="center-chip">Qual rank: {tbaRank !== null ? `#${tbaRank}` : 'N/A'}</span>
-                    {/* "0 scouted" already says it; "Not scouted yet" next to it was the same chip twice. */}
-                    {freshnessSummary.state !== 'unknown' ? (
-                      <span className={`center-chip freshness ${freshnessSummary.state}`}>{freshnessSummary.label}</span>
-                    ) : null}
                   </div>
                 </div>
-                {/* The freshness detail is often word-for-word one of the load
-                    warnings above, and the same sentence twice on one screen
-                    reads as a bug. Show it only when it is saying something
-                    new. */}
-                {freshnessSummary.state !== 'unknown' && freshnessSummary.detail && !errorMessages.includes(freshnessSummary.detail) ? (
-                  <p className={`center-callout ${freshnessSummary.state === 'stale' ? 'warning' : 'muted'}`}>
-                    {freshnessSummary.detail}
-                  </p>
-                ) : null}
               </div>
 
-              <div className="center-tabs-header">
+              <div className="center-tabs-header" ref={heroTabsRef}>
                 <SegmentedTabs
                   className="center-tabs"
+                  motion
                   itemClassName="center-tab-btn"
                   ariaLabel="Team center tabs"
                   value={activeTab}
@@ -1549,11 +1617,6 @@ export function TeamCenterPage() {
                         ) : null}
                       </article>
                       <article className="center-kpi-card">
-                        <span><StopwatchIcon className="icon-inline icon-muted" /> Cycle Time</span>
-                        <strong>{metricUnit(teamBreakdown?.averages?.cycle_time_sec ?? null, 1, 's')}</strong>
-                        {unscouted && teamBreakdown?.averages?.cycle_time_sec == null ? <small>Needs scouting</small> : null}
-                      </article>
-                      <article className="center-kpi-card">
                         <span><RobotIcon className="icon-inline icon-muted" /> Auto Contribution</span>
                         <strong>{metric(teamBreakdown?.averages?.auto_contribution ?? null, 1)}</strong>
                         {estimateChip('auto_contribution')}
@@ -1582,35 +1645,50 @@ export function TeamCenterPage() {
                           </small>
                         ) : null}
                       </article>
-                      <article className="center-kpi-card">
-                        <span><ShieldIcon className="icon-inline icon-muted" /> Defense Time</span>
-                        <strong>{metricUnit(teamBreakdown?.averages?.defensive_engagement_sec ?? null, 1, 's')}</strong>
-                        {unscouted && teamBreakdown?.averages?.defensive_engagement_sec == null ? <small>Needs scouting</small> : null}
-                      </article>
-                      <article className="center-kpi-card">
-                        <span><ShieldCheckIcon className="icon-inline icon-muted" /> Reliability</span>
-                        <strong>{pct(teamBreakdown?.averages?.reliability_score ?? null, 1)}</strong>
-                        {unscouted && teamBreakdown?.averages?.reliability_score == null ? <small>Needs scouting</small> : null}
-                      </article>
                     </div>
                   </SurfaceCard>
 
                   <SurfaceCard title="Rating Breakdown" compactable>
-                    {/* Overall Rating and Model Confidence used to sit here as
-                        well as in the page hero — the same two numbers twice on
-                        one screen, in two treatments. This card now carries only
-                        what the hero does not: the three components the rating
-                        is built from. */}
+                    {/* The rating is these points per match on one season-wide
+                        scale: the typical 2026 robot is 50. */}
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Robot Level</span>
-                        <strong>{metric(teamRating?.robot_level_0_100 ?? null, 1)}</strong>
+                        <span><GaugeIcon className="icon-inline icon-muted" /> Points / match</span>
+                        <strong>{metric(teamRating?.expected_points?.total ?? null, 0)}</strong>
+                        {ratingBasisLabel ? <small>{ratingBasisLabel}</small> : null}
                       </article>
                       <article className="center-kpi-card">
-                        <span><SteeringWheelIcon className="icon-inline icon-muted" /> Driver Skill</span>
-                        <strong>{metric(teamRating?.driver_skill_0_100 ?? null, 1)}</strong>
+                        <span><GaugeIcon className="icon-inline icon-muted" /> Likely rating</span>
+                        <strong>{ratingRange ?? 'N/A'}</strong>
+                        <small>80% range: narrows as matches come in</small>
+                      </article>
+                      <article className="center-kpi-card">
+                        <span><FlameIcon className="icon-inline icon-muted" /> Teleop</span>
+                        <strong>{metric(teamRating?.expected_points?.teleop ?? null, 0)}</strong>
+                      </article>
+                      <article className="center-kpi-card">
+                        <span><StopwatchIcon className="icon-inline icon-muted" /> Auto</span>
+                        <strong>{metric(teamRating?.expected_points?.auto ?? null, 0)}</strong>
+                      </article>
+                      <article className="center-kpi-card">
+                        <span><MountainIcon className="icon-inline icon-muted" /> Climb</span>
+                        <strong>{metric(teamRating?.expected_points?.climb ?? null, 0)}</strong>
                       </article>
                     </div>
+                    {teamRating?.recent_changes?.length ? (
+                      <ul className="center-simple-list" aria-label="Recent rating changes">
+                        {teamRating.recent_changes.map((change) => (
+                          <li key={change.match_key}>
+                            <span>{matchLabelFromKey(change.match_key) ?? change.match_key}</span>
+                            <span className="muted">
+                              {signedChange(change.rating_change, 1)} rating
+                              {' · '}
+                              {signedChange(change.points_change, 0)} pts/match
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </SurfaceCard>
 
                   <SurfaceCard title="Strengths" compactable>
@@ -1619,9 +1697,7 @@ export function TeamCenterPage() {
                         {teamRating.pros.filter((signal) => isRobotSignal(signal.label)).slice(0, isMobileLayout ? 3 : 6).map((signal) => (
                           <li key={`pro-${signal.label}`}>
                             <span>{plainSignalLabel(signal.label)}</span>
-                            <span title={`${metric(signal.metric_value, 2)} · ${metric(signal.percentile, 1)} percentile`}>
-                              {signalRankLabel(signal.percentile, 'strength')}
-                            </span>
+                            <span className="muted">{signal.rationale || signalRankLabel(signal.percentile, 'strength')}</span>
                           </li>
                         ))}
                       </ul>
@@ -1636,9 +1712,7 @@ export function TeamCenterPage() {
                         {teamRating.cons.filter((signal) => isRobotSignal(signal.label)).slice(0, isMobileLayout ? 3 : 6).map((signal) => (
                           <li key={`con-${signal.label}`}>
                             <span>{plainSignalLabel(signal.label)}</span>
-                            <span title={`${metric(signal.metric_value, 2)} · ${metric(signal.percentile, 1)} percentile`}>
-                              {signalRankLabel(signal.percentile, 'risk')}
-                            </span>
+                            <span className="muted">{signal.rationale || signalRankLabel(signal.percentile, 'risk')}</span>
                           </li>
                         ))}
                       </ul>
@@ -1650,14 +1724,18 @@ export function TeamCenterPage() {
                   {/* Model internals; on a phone the page is long enough without them. */}
                   {!isMobileLayout ? (
                   <SurfaceCard title="What the Rating Uses" compactable>
+                    <p className="center-callout muted">
+                      Official match results only: the points this team adds to its alliance, recent matches counting
+                      most. Until it has played a few matches here, earlier events this season count too.
+                    </p>
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Official results</span>
-                        <strong>{metric(teamRating?.subscores.results_anchor ?? null, 1)}</strong>
+                        <span><GaugeIcon className="icon-inline icon-muted" /> Matches here</span>
+                        <strong>{metric(teamRating?.matches_here ?? null, 0)}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Scoring output</span>
-                        <strong>{metric(teamRating?.subscores.throughput ?? null, 1)}</strong>
+                        <span><GaugeIcon className="icon-inline icon-muted" /> Earlier matches</span>
+                        <strong>{metric(teamRating?.matches_before ?? null, 0)}</strong>
                       </article>
                       <article className="center-kpi-card">
                         <span><ClockIcon className="icon-inline icon-muted" /> Updated</span>
@@ -1772,7 +1850,10 @@ export function TeamCenterPage() {
                   ) : heatmapFailed ? (
                     <PositionalLoadError onRetry={() => setPositionalRetry((n) => n + 1)} />
                   ) : teamHeatmap ? (
-                    <FieldHeatmap data={teamHeatmap} />
+                    <>
+                      <FieldHeatmap data={teamHeatmap} />
+                      <OwnRecordingsNote matches={teamHeatmap.own_unreviewed_matches} />
+                    </>
                   ) : (
                     <p className="center-callout muted">No tracking data available for this team at this event.</p>
                   )}
@@ -1821,6 +1902,7 @@ export function TeamCenterPage() {
                           </small>
                         </article>
                       </div>
+                      <OwnRecordingsNote matches={teamShiftPlay.own_unreviewed_matches} />
                       <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
                         <div>
                           <p className="center-eyebrow">Attack pattern (own shifts)</p>
@@ -1854,6 +1936,7 @@ export function TeamCenterPage() {
 
             {activeTab === 'events' ? (
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
+                  <RatingHistoryCard teamKey={selectedTeamKey} onOpenEvent={openTeamAtEvent} />
                   <SurfaceCard title="Competitions" compactable>
                     {!teamCompetitions || teamCompetitions.registered_events.length === 0 ? (
                       <p className="center-callout muted">No competitions found.</p>
@@ -2008,16 +2091,6 @@ export function TeamCenterPage() {
                     {teamRating ? (
                       <pre className="center-code-block">{JSON.stringify(teamRating, null, 2)}</pre>
                     ) : null}
-                  </SurfaceCard>
-
-                  <SurfaceCard title="Latest Summary">
-                    {!teamBreakdown?.recent_matches?.length ? (
-                      <p className="center-callout muted">No recent scouted matches available.</p>
-                    ) : (
-                      <pre className="center-code-block">
-                        {JSON.stringify(teamBreakdown.recent_matches[0]?.summary || {}, null, 2)}
-                      </pre>
-                    )}
                   </SurfaceCard>
 
                   <SurfaceCard title="TBA Raw Payloads">

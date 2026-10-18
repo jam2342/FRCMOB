@@ -30,7 +30,6 @@ def _team_intel_cache_token(
     preferred_year: int,
     fallback_year: int,
     include_tba: bool,
-    include_statbotics: bool,
     allow_season_fallback: bool,
     auto_heal_ratings: bool,
 ) -> str:
@@ -42,7 +41,7 @@ def _team_intel_cache_token(
     )
     return (
         f"{normalized_team_key}|{normalized_event_key}|{preferred_year}|{fallback_year}|"
-        f"tba={int(include_tba)}|sb={int(include_statbotics)}|"
+        f"tba={int(include_tba)}|sb=0|"
         f"fallback={int(allow_season_fallback)}|heal={int(auto_heal_ratings)}"
     )
 
@@ -50,7 +49,6 @@ def _event_intel_cache_token(
     *,
     event_key: str,
     include_tba: bool,
-    include_statbotics: bool,
     auto_heal_ratings: bool,
     include_season_fallback: bool,
     include_rating_details: bool,
@@ -58,7 +56,7 @@ def _event_intel_cache_token(
 ) -> str:
     normalized_event_key = event_key.strip().lower()
     return (
-        f"{normalized_event_key}|tba={int(include_tba)}|sb={int(include_statbotics)}|"
+        f"{normalized_event_key}|tba={int(include_tba)}|sb=0|"
         f"heal={int(auto_heal_ratings)}|fallback={int(include_season_fallback)}|"
         f"rd={int(include_rating_details)}|rs={int(include_rating_signals)}"
     )

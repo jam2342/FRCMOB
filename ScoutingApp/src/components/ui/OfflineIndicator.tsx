@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import styles from './OfflineIndicator.module.css';
 import { Link } from 'react-router-dom';
 import { clearSyncIssue, lastSyncIssue } from '../../features/offline/syncReceipt';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
@@ -89,8 +90,48 @@ function downloadLocalEntriesCsv() {
  * Small banner shown at the top of the app when the device is offline,
  * and/or when there are queued mutations waiting to sync.
  */
+// After a spell offline: what was waiting visibly goes out ("sharing 2 of 3"), then one clear
+// "all synced" that folds away, instead of the offline banner just vanishing.
+type Reconnect = { total: number; phase: 'syncing' | 'done' | 'leaving' };
+const DONE_MS = 3000;
+const BACK_ONLINE_MS = 1800;
+const LEAVE_MS = 260;
+
+function useReconnectMoment(online: boolean, queueSize: number): Reconnect | null {
+  const [moment, setMoment] = useState<Reconnect | null>(null);
+  const wasOnline = useRef(online);
+
+  useEffect(() => {
+    const before = wasOnline.current;
+    wasOnline.current = online;
+    if (!online) {
+      setMoment(null);
+      return;
+    }
+    if (!before) setMoment(queueSize > 0 ? { total: queueSize, phase: 'syncing' } : { total: 0, phase: 'done' });
+  }, [online, queueSize]);
+
+  useEffect(() => {
+    if (!moment || moment.phase !== 'syncing') return;
+    if (queueSize === 0) setMoment({ ...moment, phase: 'done' });
+    else if (queueSize > moment.total) setMoment({ ...moment, total: queueSize });
+  }, [moment, queueSize]);
+
+  useEffect(() => {
+    if (!moment || moment.phase === 'syncing') return undefined;
+    const timer = window.setTimeout(
+      () => setMoment(moment.phase === 'done' ? { ...moment, phase: 'leaving' } : null),
+      moment.phase === 'done' ? (moment.total > 0 ? DONE_MS : BACK_ONLINE_MS) : LEAVE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [moment]);
+
+  return moment;
+}
+
 export function OfflineIndicator() {
-  const { online, queueSize } = useOnlineStatus();
+  const { online, queueSize, serverTrouble } = useOnlineStatus();
+  const reconnect = useReconnectMoment(online, queueSize);
   const [dropped, setDropped] = useState<DroppedMutationInfo | null>(() => {
     const issue = lastSyncIssue();
     return issue ? { reason: issue.reason as DroppedMutationInfo['reason'], count: issue.count, labels: issue.labels } : null;
@@ -130,6 +171,41 @@ export function OfflineIndicator() {
     );
   }
 
+  if (online && reconnect) {
+    const synced = Math.max(0, reconnect.total - queueSize);
+    const syncing = reconnect.phase === 'syncing';
+    const message = syncing
+      ? `Back online · sharing ${Math.min(synced + 1, reconnect.total)} of ${reconnect.total} change${reconnect.total === 1 ? '' : 's'}`
+      : reconnect.total > 0
+        ? `All ${reconnect.total} change${reconnect.total === 1 ? '' : 's'} synced`
+        : 'Back online';
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className={`offline-banner ${syncing ? 'offline-banner-info' : styles.success} ${reconnect.phase === 'leaving' ? styles.leaving : ''}`}
+      >
+        <span className="offline-banner-status">
+          {syncing ? (
+            <svg className={styles.spin} viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <svg className={styles.check} viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {message}
+        </span>
+        {syncing && reconnect.total > 0 ? (
+          <span className={styles.progress} aria-hidden="true">
+            <span style={{ transform: `scaleX(${synced / reconnect.total})` }} />
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
   if (online && queueSize === 0) return null;
 
   const handleFlush = () => {
@@ -154,7 +230,7 @@ export function OfflineIndicator() {
     >
       <span className="offline-banner-status">
         <span className={`offline-banner-dot ${online ? 'offline-dot-warning' : 'offline-dot-info'}`} />
-        {!online && 'You are offline'}
+        {!online && (serverTrouble ? "Can't reach FRCMOB's server right now" : 'You are offline')}
         {online && queueSize > 0 && `${queueSize} pending change${queueSize > 1 ? 's' : ''} to sync`}
       </span>
       {online && queueSize > 0 && (

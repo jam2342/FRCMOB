@@ -34,6 +34,17 @@
  *   duplicates  Visible controls sharing an accessible name on one route.
  *               "Collapse" three times is the reported bug; a baseline rather
  *               than a ban, because a table of identical row actions is fine.
+ *   shape       Siblings must look like siblings, on a phone as well as a
+ *               desktop. Live Scouting showed its menu as a sideways chip row
+ *               while the six other scouting pages showed one dropdown, two
+ *               pages titled themselves differently from their menu entry, two
+ *               were a narrow column and the rest full width, and the event
+ *               box was labelled on one page and bare on five. The guard only
+ *               ran at 1440px, where all seven menus happen to match, so none
+ *               of it was seen. This check runs at both widths and compares
+ *               the menu's form and place, the page column's width, and
+ *               whether siblings agree on titling themselves after the menu
+ *               entry and on labelling the event box.
  */
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -98,6 +109,9 @@ async function measure(page) {
     for (const el of document.querySelectorAll('.ps-content button, .ps-content a, .ps-sidebar a, header button')) {
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) continue;
+      // A copy kept out of reach until it's needed (Team Center's sticky tab bar before you
+      // scroll) is not a second control anyone can hear or press.
+      if (el.closest('[aria-hidden="true"], [inert]')) continue;
       const name = nameOf(el);
       if (!name || name.length > 48) continue;
       counts.set(name, (counts.get(name) || 0) + 1);
@@ -142,11 +156,36 @@ async function measure(page) {
     }
     for (const k of Object.keys(destinations)) destinations[k] = [...new Set(destinations[k])].sort();
 
-    return { startOffset, contentTop: Math.round(contentTop), scrollers, duplicates, destinations, cardGaps: [...cardGaps].sort() };
+    /* The page's shape, compared across siblings. */
+    const nav = content.querySelector('nav.page-view-bar');
+    const menu = content.querySelector('.page-view-menu');
+    const barEl = nav || menu;
+    const barBox = barEl ? barEl.getBoundingClientRect() : null;
+    const activeLabel = barEl
+      ? (barEl.querySelector('.page-view-tab.active, .page-view-menu-current')?.textContent || '').trim()
+      : null;
+    const gated = Boolean(content.querySelector('.workspace-gate'));
+    const firstCardTitle = content.querySelector('.surface-card h3')?.textContent?.trim() ?? null;
+    const column = content.querySelector('.center-page-container');
+    const eventInputs = [...content.querySelectorAll('.event-picker-wrapper input')];
+    const unlabelledEventBoxes = eventInputs.filter((input) => !(input.labels && input.labels.length)).length;
+    const shape = {
+      bar: barEl ? (nav ? 'tabs' : 'dropdown') : null,
+      barLeft: barBox ? Math.round(barBox.left) : null,
+      barWidth: barBox ? Math.round(barBox.width) : null,
+      activeLabel,
+      title: gated ? null : firstCardTitle,
+      columnWidth: column ? Math.round(column.getBoundingClientRect().width) : null,
+      eventBoxes: eventInputs.length,
+      unlabelledEventBoxes,
+    };
+
+    return { startOffset, contentTop: Math.round(contentTop), scrollers, duplicates, destinations, cardGaps: [...cardGaps].sort(), shape };
   });
 }
 
-const browser = await chromium.launch();
+// GUARD_BROWSER_CHANNEL=chrome runs it on installed Chrome when Playwright's own browser isn't downloaded.
+const browser = await chromium.launch(process.env.GUARD_BROWSER_CHANNEL ? { channel: process.env.GUARD_BROWSER_CHANNEL } : {});
 const context = await newThemedContext(browser, { theme: 'dark', width: 1440, height: 900 });
 const page = await context.newPage();
 
@@ -163,6 +202,18 @@ for (const route of ROUTES) {
   await settleContent(page);
   const m = await measure(page);
   if (m) current[route] = m;
+}
+
+// The same routes on a phone, for the shape check only. Pages change form below 1120px
+// (menus fold into a dropdown, columns stack), which is where siblings drifted apart unseen.
+const phoneContext = await newThemedContext(browser, { theme: 'dark', width: 390, height: 844 });
+const phonePage = await phoneContext.newPage();
+const phoneShapes = {};
+for (const route of ROUTES) {
+  if (!await gotoRoute(phonePage, route)) continue;
+  await settleContent(phonePage);
+  const m = await measure(phonePage);
+  if (m) phoneShapes[route] = m.shape;
 }
 await browser.close();
 
@@ -248,6 +299,56 @@ for (const [route, m] of Object.entries(current)) {
   const gained = m.duplicates.filter((d) => !was.has(d));
   if (gained.length) {
     problems.push({ kind: 'duplicate', detail: `${route} has controls sharing a name: ${gained.slice(0, 4).join(' · ')}` });
+  }
+}
+
+/* 6. Siblings look like siblings, at both widths. */
+// A section's landing page opens on its tool or finder (the scouting board, the event and match
+// finders, the compare controls), not a title card, so only the pages under it are held to it.
+const isLanding = (route) => route.split('?')[0] === familyOf(route);
+const shapeSets = [['desktop', Object.fromEntries(Object.entries(current).map(([r, m]) => [r, m.shape]))], ['phone', phoneShapes]];
+for (const [width, shapes] of shapeSets) {
+  const byFamily = new Map();
+  for (const [route, shape] of Object.entries(shapes)) {
+    if (!shape?.bar) continue;
+    const f = familyOf(route);
+    if (!byFamily.has(f)) byFamily.set(f, []);
+    byFamily.get(f).push({ route, ...shape });
+  }
+  for (const [family, members] of byFamily) {
+    if (members.length < 2) continue;
+    const kinds = new Set(members.map((m) => m.bar));
+    if (kinds.size > 1) {
+      problems.push({ kind: 'shape', detail: `${width}: ${family} menus take different forms: ${members.map((m) => `${m.route}=${m.bar}`).join(', ')}` });
+    }
+    for (const key of ['barLeft', 'barWidth']) {
+      const values = members.map((m) => m[key]);
+      if (Math.max(...values) - Math.min(...values) > OFFSET_TOLERANCE_PX) {
+        problems.push({ kind: 'shape', detail: `${width}: ${family} menus sit in different places (${key}): ${members.map((m) => `${m.route}=${m[key]}`).join(', ')}` });
+      }
+    }
+    const columns = members.filter((m) => m.columnWidth !== null);
+    if (columns.length > 1) {
+      const widths = columns.map((m) => m.columnWidth);
+      if (Math.max(...widths) - Math.min(...widths) > OFFSET_TOLERANCE_PX) {
+        problems.push({ kind: 'shape', detail: `${width}: ${family} pages use different column widths: ${columns.map((m) => `${m.route}=${m.columnWidth}px`).join(', ')}` });
+      }
+    }
+    // Agreement, not a house rule: a family whose pages open with a finder card is fine, as
+    // long as its siblings do too. Mixed is the bug — some pages named for their menu entry,
+    // some not.
+    const titled = members.filter((m) => !isLanding(m.route) && m.title && m.activeLabel);
+    const matching = titled.filter((m) => m.title === m.activeLabel);
+    if (matching.length && matching.length < titled.length) {
+      for (const m of titled.filter((x) => x.title !== x.activeLabel)) {
+        problems.push({ kind: 'shape', detail: `${width}: ${m.route} is "${m.activeLabel}" in its menu but titles itself "${m.title}", unlike its siblings` });
+      }
+    }
+    const withBoxes = members.filter((m) => m.eventBoxes > 0);
+    const bare = withBoxes.filter((m) => m.unlabelledEventBoxes > 0);
+    if (bare.length && bare.length < withBoxes.length) {
+      problems.push({ kind: 'shape', detail: `${width}: ${family} labels its event box on some pages but not ${bare.map((m) => m.route).join(', ')} (give EventPicker label="Event")` });
+    }
   }
 }
 

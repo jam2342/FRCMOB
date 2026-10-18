@@ -165,6 +165,33 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+// ── Chunks loaded before this worker took over ─────────────────
+
+// On a first visit the page loads its route chunks before the worker controls it, so
+// they never pass through the fetch handler and were never cached: going offline and
+// reloading then left a blank page. The page sends what it loaded; cache what's missing.
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type !== "cache-loaded-assets" || !Array.isArray(data.urls)) return;
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    for (const raw of data.urls.slice(0, 400)) {
+      let url;
+      try { url = new URL(String(raw), self.location.origin); } catch { continue; }
+      if (url.origin !== self.location.origin || !url.pathname.startsWith("/assets/")) continue;
+      // The detector runtime (.wasm) has its own cache and is prepared on purpose.
+      if (!STATIC_EXTENSIONS.test(url.pathname) || url.pathname.endsWith(".wasm")) continue;
+      if (await cache.match(url.pathname)) continue;
+      try {
+        const response = await fetch(url.pathname);
+        if (response.ok) await cache.put(url.pathname, response);
+      } catch {
+        // Offline already; the next visit tries again.
+      }
+    }
+  })());
+});
+
 // ── Web Push notifications ──────────────────────────────────────
 
 // A match alert links to its event's Match Center. Fetch what that page asks for
@@ -173,7 +200,7 @@ self.addEventListener("fetch", (event) => {
 // schedule (and the CDN is warm). The URLs must stay exactly what the app requests;
 // src/features/prefetch/swPrefetch.test.ts checks them against api.ts.
 const ALERT_PREFETCH_PATHS = [
-  "/api/events/{event}/schedule-with-synergy?include_pair_breakdown=true&refresh=false",
+  "/api/events/{event}/schedule-with-synergy",
   "/api/matches/event/{event}/schedule?refresh=false",
 ];
 

@@ -1,5 +1,6 @@
 import { cx } from '../ui/primitives/cx';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { isPlainClick, navigateWithTransition, sectionDirection } from '../../utils/viewTransition';
 import { useHideOnScroll } from '../../hooks/useHideOnScroll';
 import './BottomTabBar.css';
 
@@ -139,6 +140,8 @@ const TAB_ITEMS: BottomTabItem[] = [
   { to: '/match-center', label: 'Matches' },
 ];
 
+const TAB_ORDER = TAB_ITEMS.map((tab) => tab.to);
+
 const ICON_MAP: Record<string, React.FC<{ active: boolean }>> = {
   '/home': HomeIcon,
   '/events': EventsIcon,
@@ -158,6 +161,8 @@ function triggerHaptic() {
 
 export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
   const barVisible = useHideOnScroll();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   return (
     <nav
@@ -169,7 +174,14 @@ export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
           key={`btab-${tab.to}`}
           to={tab.to}
           className={({ isActive }) => cx('btb__tab', isActive && 'btb__tab--active')}
-          onClick={triggerHaptic}
+          onClick={(event) => {
+            triggerHaptic();
+            if (!isPlainClick(event) || location.pathname === tab.to) return;
+            event.preventDefault();
+            navigateWithTransition(navigate, tab.to, {
+              direction: sectionDirection(TAB_ORDER, location.pathname, tab.to),
+            });
+          }}
         >
           {({ isActive }) => {
             const IconComponent = ICON_MAP[tab.to];

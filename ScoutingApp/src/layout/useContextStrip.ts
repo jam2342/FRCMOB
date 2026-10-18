@@ -5,6 +5,7 @@ import {
   readCenterContextFromSearch,
   type CenterContextState,
 } from './centerContext';
+import { storageGet, storageSet } from '../platform/safeStorage';
 
 const CONTEXT_PINS_STORAGE = 'scouting_context_pins_v1';
 const CONTEXT_RECENTS_STORAGE = 'scouting_context_recents_v1';
@@ -71,7 +72,7 @@ function normalizeQuickPickList(
 
 function readContextQuickPickState(storageKey: string, limit: number): ContextQuickPickState {
   try {
-    const raw = window.localStorage.getItem(storageKey);
+    const raw = storageGet(storageKey);
     if (!raw) return { event: [], team: [] };
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
@@ -85,7 +86,7 @@ function readContextQuickPickState(storageKey: string, limit: number): ContextQu
 
 function writeContextQuickPickState(storageKey: string, value: ContextQuickPickState): void {
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify(value));
+    storageSet(storageKey, JSON.stringify(value));
   } catch {
     // ignore localStorage failures
   }
@@ -148,14 +149,14 @@ export function useContextStrip(locationSearch: string) {
     return recents;
   });
   const [contextStripCollapsed, setContextStripCollapsed] = useState<boolean>(() => {
-    const stored = window.localStorage.getItem(CONTEXT_STRIP_COLLAPSED_STORAGE);
+    const stored = storageGet(CONTEXT_STRIP_COLLAPSED_STORAGE);
     if (stored === '1') return true;
     if (stored === '0') return false;
     return window.innerWidth <= DESKTOP_SIDEBAR_BREAKPOINT_PX;
   });
 
   useEffect(() => {
-    window.localStorage.setItem(CONTEXT_STRIP_COLLAPSED_STORAGE, contextStripCollapsed ? '1' : '0');
+    storageSet(CONTEXT_STRIP_COLLAPSED_STORAGE, contextStripCollapsed ? '1' : '0');
   }, [contextStripCollapsed]);
 
   useEffect(() => {

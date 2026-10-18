@@ -1,0 +1,158 @@
+/* A CSS module, not a shell sheet: the toast is portalled to <body>, outside .product-shell,
+   so only tokens on :root reach it (tokens.css puts the light theme there too). */
+.region {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(24px + var(--safe-area-bottom));
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: center;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+/* Above the bottom tab bar on phones, which is about 56px plus the home-indicator area. */
+@media (max-width: 1120px) {
+  .region {
+    /* Above the next-match pill too, when it shows. */
+    bottom: calc(68px + var(--next-match-pill-space, 0px) + var(--safe-area-bottom));
+  }
+}
+
+.toast {
+  pointer-events: auto;
+  width: min(100%, 480px);
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  box-shadow: var(--shadow-xl);
+  animation: toastIn 260ms var(--motion-ease) both;
+}
+
+.leaving {
+  animation: toastOut 200ms ease both;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 4px 6px 4px 14px;
+}
+
+.message {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.35;
+}
+
+.action {
+  flex: none;
+  min-height: 44px;
+  min-width: 64px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-accent-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--color-accent-soft);
+}
+
+.action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+/* How long Undo stays offered. Pauses while the pointer or focus is on the toast. */
+.timer {
+  display: block;
+  height: 3px;
+  background: var(--color-accent);
+  transform-origin: left center;
+  animation-name: toastDrain;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+.iconSuccess {
+  flex: none;
+  color: var(--color-success-text);
+}
+
+.iconInfo {
+  flex: none;
+  color: var(--color-info-text);
+}
+
+.iconWarning {
+  flex: none;
+  color: var(--color-warning-text);
+}
+
+.tick {
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  animation: tickDraw 360ms ease 120ms forwards;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toastOut {
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes toastDrain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes tickDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .leaving {
+    animation: none;
+  }
+
+  .leaving {
+    opacity: 0;
+  }
+
+  .tick {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type EventSearchItem } from '../api';
 import { loadSeasonEventCatalog } from '../features/events/eventCatalog';
@@ -8,6 +8,8 @@ import { CURRENT_SEASON_YEAR, FALLBACK_SEASON_YEAR } from '../pages/centerUtils'
 
 const EVENT_PICKER_SUGGEST_LIMIT = 60;
 const EVENT_PICKER_REMOTE_TEAM_COUNT_FETCH_LIMIT = 0;
+// The last suggestion list any picker loaded, so the next one doesn't open on "Searching…".
+let lastSuggestions: EventSearchItem[] = [];
 
 /* ------------------------------------------------------------------ */
 /*  Helpers (mirrored from EventsPage so styles match)                 */
@@ -52,6 +54,9 @@ export interface EventPickerProps {
   clearOnSelect?: boolean;
   /** Lets a visible <label> point at the input. */
   inputId?: string;
+  // A visible label above the box. Pages that pick "the event this page is about" all say
+  // "Event", so the same control reads the same everywhere.
+  label?: string;
   inlineResults?: boolean;
 }
 
@@ -71,11 +76,14 @@ export function EventPicker({
   disabled,
   actionLabel = 'Load event',
   clearOnSelect = false,
-  inputId,
+  inputId: inputIdProp,
+  label,
   inlineResults = false,
 }: EventPickerProps) {
+  const generatedId = useId();
+  const inputId = inputIdProp ?? (label ? generatedId : undefined);
   /* ---- Internal state ---- */
-  const [suggestions, setSuggestions] = useState<EventSearchItem[]>([]);
+  const [suggestions, setSuggestions] = useState<EventSearchItem[]>(() => lastSuggestions);
   const [searchResults, setSearchResults] = useState<EventSearchItem[]>([]);
   // The query the current results answer; Enter must not pick a result for older text.
   const [resultsQuery, setResultsQuery] = useState('');
@@ -112,7 +120,8 @@ export function EventPicker({
   useEffect(() => {
     let cancelled = false;
     async function run() {
-      setLoadingSuggestions(true);
+      // A picker opened again starts with the list it showed last time and refreshes quietly.
+      if (lastSuggestions.length === 0) setLoadingSuggestions(true);
       try {
         const events = await loadSeasonEventCatalog({
           preferredYear: CURRENT_SEASON_YEAR,
@@ -123,6 +132,7 @@ export function EventPicker({
           remoteTeamCountFetchLimit: EVENT_PICKER_REMOTE_TEAM_COUNT_FETCH_LIMIT,
         });
         if (cancelled) return;
+        lastSuggestions = events;
         setSuggestions(events);
       } catch {
         // silent — suggestions aren't critical
@@ -292,7 +302,7 @@ export function EventPicker({
           }}
         >
           {isSearching && displayList.length === 0 ? (
-            <p className="event-picker-dropdown-hint">Searching…</p>
+            <p className="event-picker-dropdown-hint" data-vt-pending="">Searching…</p>
           ) : null}
           {!isSearching && hasQuery && displayList.length === 0 && inputValue.trim().length < 2 ? (
             <p className="event-picker-dropdown-hint">Keep typing to search.</p>
@@ -350,6 +360,7 @@ export function EventPicker({
       ref={wrapperRef}
       className={`event-picker-wrapper ${className || ''}`.trim()}
     >
+      {label ? <label className="center-label" htmlFor={inputId}>{label}</label> : null}
       <div className="center-input-row event-picker-input-row">
         <input
           ref={inputRef}

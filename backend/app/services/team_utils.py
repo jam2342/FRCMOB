@@ -13,20 +13,6 @@ def _region_label(state_prov: str | None, country: str | None) -> str:
         return normalized_country
     return "Unknown"
 
-def _model_uses_calibrated_public_scale(model_version: object) -> bool:
-    if not isinstance(model_version, str):
-        return False
-    normalized = model_version.strip().lower()
-    calibrated_prefixes = (
-        "rating_v11",
-        "primary_video_model_v",
-        "fallback_external_intel_v",
-        "rating_sparse_external_fallback_v",
-    )
-    return "calibrated_scale" in normalized or any(
-        normalized.startswith(prefix) for prefix in calibrated_prefixes
-    )
-
 def _team_number_from_team_key(team_key: str) -> int:
     # Parse the numeric team number from a key like 'frc254'.
     #
@@ -42,4 +28,3 @@ def _team_number_from_team_key(team_key: str) -> int:
 # Public aliases — these functions are used across module boundaries.
 region_label = _region_label
 team_number_from_team_key = _team_number_from_team_key
-model_uses_calibrated_public_scale = _model_uses_calibrated_public_scale

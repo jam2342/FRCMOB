@@ -1,3 +1,4 @@
+import { formatDayTime } from '../../utils/formatTime';
 import { useEffect, useRef, useState } from 'react';
 import { useEventNames } from '../../hooks/useEventNames';
 import { scoutingMatchLabel } from '../../pages/scoutDraftDisplay';
@@ -28,14 +29,14 @@ export function SavedRuns() {
     }
   }, [availableId]);
   return (
-    <SurfaceCard title="Saved runs on this device" subtitle="Reopen a run to see its robot heatmaps and any analysis saved at sync. Runs belong to the workspace that recorded them." expandable={false} mobileCollapsible={false}>
+    <SurfaceCard title="Saved Runs" subtitle="Reopen a run to see its robot heatmaps and any analysis saved at sync. Runs belong to the workspace that recorded them." expandable={false} mobileCollapsible={false}>
       {error ? <p role="alert">{error}</p> : null}
       {loading ? <p>Loading saved runs…</p> : sessions.length === 0 && !error ? <p>No saved runs for your current workspace on this device.</p> : null}
       <ul className="odr-saved-runs" aria-label="Saved runs">
         {sessions.map((session) => (
           <li key={session.id}>
-            <div><strong>{scoutingMatchLabel(session.matchKey || '')}{session.eventKey ? ` · ${eventDisplayName(session.eventKey)}` : ''}</strong><p className="odr-hint">{new Date(session.createdAt).toLocaleString()} · {session.synced ? 'Synced' : 'Saved locally'}</p></div>
-            <button type="button" className="center-btn" aria-label={`View results for ${scoutingMatchLabel(session.matchKey || '')} from ${new Date(session.createdAt).toLocaleString()}`} aria-expanded={selectedId === session.id} aria-controls="saved-run-results" onClick={() => setSelectedId(session.id)}>View results</button>
+            <div><strong>{scoutingMatchLabel(session.matchKey || '')}{session.eventKey ? ` · ${eventDisplayName(session.eventKey)}` : ''}</strong><p className="odr-hint">{formatDayTime(session.createdAt)} · {session.synced ? 'Synced' : 'Saved locally'}</p></div>
+            <button type="button" className="center-btn" aria-label={`View results for ${scoutingMatchLabel(session.matchKey || '')} from ${formatDayTime(session.createdAt)}`} aria-expanded={selectedId === session.id} aria-controls="saved-run-results" onClick={() => setSelectedId(session.id)}>View results</button>
           </li>
         ))}
       </ul>

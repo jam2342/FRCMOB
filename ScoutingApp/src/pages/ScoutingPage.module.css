@@ -183,14 +183,6 @@
   .endFull { display: none; }
   .endShort { display: inline; }
 }
-.matchChoices {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.matchChoices button { min-height: 44px; min-width: 0; white-space: normal; }
 .roomStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--font-size-sm); }
 .roomKey { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
 .roomKey strong { overflow-wrap: anywhere; min-width: 0; }

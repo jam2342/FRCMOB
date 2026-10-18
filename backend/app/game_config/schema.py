@@ -81,12 +81,6 @@ class Point(BaseModel):
     y: float
 
 
-class Point3D(BaseModel):
-    x: float
-    y: float
-    z: float
-
-
 class Zone(BaseModel):
     key: str
     label: str
@@ -103,52 +97,6 @@ class ScoringAction(BaseModel):
     description: str | None = None
 
 
-class RankingPointCondition(BaseModel):
-    key: str
-    label: str
-    description: str
-
-
-class FieldLayoutAnchor(BaseModel):
-    id: int = Field(ge=1)
-    element: Literal["trench", "hub", "outpost", "tower"]
-    alliance: Literal["red", "blue"]
-    position: Point3D
-    z_rotation_deg: float
-    source: str | None = None
-
-
-class FieldLayoutVariant(BaseModel):
-    perimeter_type: Literal["welded", "andymark"]
-    anchor_points: list[FieldLayoutAnchor] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_anchor_ids(self):
-        anchor_ids = [anchor.id for anchor in self.anchor_points]
-        if len(anchor_ids) != len(set(anchor_ids)):
-            raise ValueError("Duplicate anchor IDs in field_layout variant")
-        return self
-
-
-class FieldLayout(BaseModel):
-    units: Literal["meters"]
-    source_document: str
-    coordinate_origin: str
-    x_axis: str
-    y_axis: str
-    z_axis: str
-    z_rotation: str
-    notes: str | None = None
-    variants: list[FieldLayoutVariant] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_variants(self):
-        variant_keys = [variant.perimeter_type for variant in self.variants]
-        if len(variant_keys) != len(set(variant_keys)):
-            raise ValueError("Duplicate perimeter_type entries in field_layout variants")
-        return self
-
-
 class GameConfig(BaseModel):
     season_year: int
     season_key: str
@@ -159,8 +107,6 @@ class GameConfig(BaseModel):
     shift_schedule: ShiftSchedule | None = None
     zones: list[Zone]
     scoring_actions: list[ScoringAction]
-    ranking_point_conditions: list[RankingPointCondition]
-    field_layout: FieldLayout | None = None
 
     @model_validator(mode="after")
     def validate_keys(self):
@@ -170,7 +116,6 @@ class GameConfig(BaseModel):
 
         unique([zone.key for zone in self.zones], "zones")
         unique([score.key for score in self.scoring_actions], "scoring_actions")
-        unique([rp.key for rp in self.ranking_point_conditions], "ranking_point_conditions")
 
         if self.shift_schedule is not None:
             zone_keys = {zone.key for zone in self.zones}

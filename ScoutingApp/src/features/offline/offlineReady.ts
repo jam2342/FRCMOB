@@ -20,7 +20,7 @@ import {
   searchEvents,
   getEventRatings,
   getEventSchedule,
-  getEventScheduleWithSynergy,
+  getEventPredictionSchedule,
   getEventTeamsIntel,
   listPicklists,
   listPitEntries,
@@ -168,10 +168,10 @@ export async function prepareEventOffline(eventKey: string, onProgress: (p: Prog
     ['schedule', true, () => getEventSchedule(key, false)],
     ['schedule and teams', true, () => getEventSchedule(key, false, { includeTeams: true })],
     ['schedule without live results', false, () => getEventSchedule(key, false, { includeLiveResults: false })],
-    ['match predictions', false, () => getEventScheduleWithSynergy(key, { refresh: false, include_pair_breakdown: true })],
-    ['team details', true, () => getEventTeamsIntel(key, { include_tba: true, include_statbotics: false, include_season_fallback: true })],
-    ['pit teams', false, () => getEventTeamsIntel(key, { include_tba: true, include_statbotics: false, include_season_fallback: false })],
-    ['team list', true, () => getEventTeamsIntel(key, { include_tba: false, include_statbotics: false, include_season_fallback: true })],
+    ['match predictions', false, () => getEventPredictionSchedule(key)],
+    ['team details', true, () => getEventTeamsIntel(key, { include_tba: true, include_season_fallback: true })],
+    ['pit teams', false, () => getEventTeamsIntel(key, { include_tba: true, include_season_fallback: false })],
+    ['team list', true, () => getEventTeamsIntel(key, { include_tba: false, include_season_fallback: true })],
     ['ratings', false, () => getEventRatings(key)],
     ['live ratings', false, () => getEventRatingsLive(key)],
     ['rankings', false, () => getEventRankings(key)],
@@ -179,7 +179,7 @@ export async function prepareEventOffline(eventKey: string, onProgress: (p: Prog
     ['team history', false, () => getEventTeamsHistory(key, 6, false)],
     ['awards', false, () => getEventAwards(key)],
     ['predictions', false, () => getEventPredictions(key)],
-    ['prediction schedule', false, () => getEventScheduleWithSynergy(key, { include_pair_breakdown: false })],
+    ['prediction schedule', false, () => getEventPredictionSchedule(key)],
     ['strategy form', false, () => getEventTeamLiveForm(key)],
     ['event list', false, () => searchEvents(key.slice(0, 4))],
   ];
@@ -189,7 +189,7 @@ export async function prepareEventOffline(eventKey: string, onProgress: (p: Prog
   steps.push([
     'team pages', true,
     async () => {
-      const intel = (await getEventTeamsIntel(key, { include_tba: true, include_statbotics: false, include_season_fallback: true })) as unknown as { teams?: { team_key?: string }[] };
+      const intel = (await getEventTeamsIntel(key, { include_tba: true, include_season_fallback: true })) as unknown as { teams?: { team_key?: string }[] };
       const teamKeys = (intel.teams ?? []).map((t) => String(t.team_key || '').toLowerCase()).filter(Boolean);
       if (!teamKeys.length) throw new Error('No teams were returned for the event');
       for (let i = 0; i < teamKeys.length; i += 4) {
@@ -199,7 +199,6 @@ export async function prepareEventOffline(eventKey: string, onProgress: (p: Prog
             preferred_year: CURRENT_SEASON_YEAR,
             fallback_year: FALLBACK_SEASON_YEAR,
             include_tba: true,
-            include_statbotics: false,
             allow_season_fallback: true,
             auto_heal_ratings: true,
           }, { timeoutMs: 25000 }),

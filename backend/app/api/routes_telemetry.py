@@ -28,6 +28,9 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 MAX_BODY_BYTES = 16_000
 MAX_SAMPLES_PER_BEACON = 50
 MAX_BEACONS_PER_MINUTE = 30
+# Distinct (route, metric, device, ...) cells a day may hold. Real traffic fills a few
+# hundred; the cap keeps made-up routes from growing Redis (noeviction) without end.
+MAX_FIELDS_PER_DAY = 5000
 RETENTION_DAYS = 35
 KEY_PREFIX = "vitals:"
 
@@ -114,14 +117,21 @@ async def record_vitals(request: Request) -> Response:
         if count > MAX_BEACONS_PER_MINUTE:
             return Response(status_code=204)
         day_key = f"{KEY_PREFIX}{datetime.now(timezone.utc):%Y%m%d}"
-        pipe = client.pipeline()
-        accepted = 0
+        fields = []
         for raw in samples[:MAX_SAMPLES_PER_BEACON]:
             cleaned = _clean_sample(raw)
-            if cleaned is None:
-                continue
-            field, bucket = cleaned
-            pipe.hincrby(day_key, f"{field}|{bucket}", 1)
+            if cleaned is not None:
+                fields.append(f"{cleaned[0]}|{cleaned[1]}")
+        if fields and int(client.hlen(day_key) or 0) >= MAX_FIELDS_PER_DAY:
+            # Full for today: keep counting cells that exist, add no new ones.
+            check = client.pipeline()
+            for field in fields:
+                check.hexists(day_key, field)
+            fields = [field for field, exists in zip(fields, check.execute()) if exists]
+        pipe = client.pipeline()
+        accepted = 0
+        for field in fields:
+            pipe.hincrby(day_key, field, 1)
             accepted += 1
         if accepted:
             pipe.expire(day_key, RETENTION_DAYS * 86400)
@@ -195,3 +205,107 @@ def vitals_summary(request: Request, days: int = 7) -> dict[str, Any]:
             if row[name] == math.inf:
                 row[name] = "over 60000"
     return {"ok": True, "days": span, "rows": rows}
+
+
+# ── Content-Security-Policy violations ───────────────────────────
+#
+# The CSP is a <meta> tag (see ScoutingApp/build/contentSecurityPolicy.ts), and a
+# meta policy can't send reports itself, so the page reports what the browser
+# blocked here. Kept as counts per (page, directive, blocked origin) and day; no
+# paths, query strings or anything about the visitor. A non-zero count after a
+# deploy usually means a new outside service that the policy doesn't list yet.
+
+CSP_KEY_PREFIX = "csp:"
+CSP_RETENTION_DAYS = 14
+MAX_CSP_REPORTS_PER_BEACON = 10
+MAX_CSP_BEACONS_PER_MINUTE = 10
+MAX_CSP_FIELDS_PER_DAY = 2000
+CSP_DIRECTIVES = {
+    "default-src", "script-src", "script-src-elem", "script-src-attr", "style-src", "style-src-elem",
+    "style-src-attr", "img-src", "font-src", "connect-src", "media-src", "frame-src", "child-src",
+    "worker-src", "manifest-src", "object-src", "base-uri", "form-action",
+}
+_CSP_KEYWORDS = {"inline", "eval", "wasm-eval", "data", "blob", "self"}
+_CSP_ORIGIN_RE = re.compile(r"^(?:https?|wss?)://[a-z0-9.-]{1,80}(?::\d{1,5})?$")
+
+
+def _clean_csp_report(raw: Any) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    directive = str(raw.get("directive") or "").strip().lower()
+    blocked = str(raw.get("blocked") or "").strip().lower()
+    page = str(raw.get("page") or "")
+    if directive not in CSP_DIRECTIVES:
+        return None
+    if blocked not in _CSP_KEYWORDS and not _CSP_ORIGIN_RE.match(blocked):
+        blocked = "other"
+    if not _ROUTE_RE.match(page):
+        page = "other"
+    return "|".join((page, directive, blocked))
+
+
+@router.post("/csp", status_code=204)
+async def record_csp_violations(request: Request) -> Response:
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Too much data.")
+    try:
+        payload = json.loads(body or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Send JSON.")
+    reports = payload.get("violations") if isinstance(payload, dict) else None
+    if not isinstance(reports, list) or not reports:
+        raise HTTPException(status_code=400, detail="No violations.")
+    client = get_cache().redis_client
+    if client is None:
+        return Response(status_code=204)
+    try:
+        limit_key = f"{CSP_KEY_PREFIX}rl:{_client_fingerprint(request)}"
+        count = client.incr(limit_key)
+        if count == 1:
+            client.expire(limit_key, 60)
+        if count > MAX_CSP_BEACONS_PER_MINUTE:
+            return Response(status_code=204)
+        fields = [f for f in (_clean_csp_report(raw) for raw in reports[:MAX_CSP_REPORTS_PER_BEACON]) if f]
+        day_key = f"{CSP_KEY_PREFIX}{datetime.now(timezone.utc):%Y%m%d}"
+        if fields and int(client.hlen(day_key) or 0) >= MAX_CSP_FIELDS_PER_DAY:
+            check = client.pipeline()
+            for field in fields:
+                check.hexists(day_key, field)
+            fields = [field for field, known in zip(fields, check.execute()) if known]
+        if fields:
+            pipe = client.pipeline()
+            for field in fields:
+                pipe.hincrby(day_key, field, 1)
+            pipe.expire(day_key, CSP_RETENTION_DAYS * 86400)
+            pipe.execute()
+    except Exception as exc:
+        logger.warning("telemetry.csp write failed: %s", exc)
+    return Response(status_code=204)
+
+
+def csp_violation_rows(days: int = 1) -> list[dict[str, Any]]:
+    client = get_cache().redis_client
+    if client is None:
+        return []
+    span = max(1, min(int(days), CSP_RETENTION_DAYS))
+    today = datetime.now(timezone.utc).date()
+    merged: dict[str, int] = {}
+    for offset in range(span):
+        day = client.hgetall(f"{CSP_KEY_PREFIX}{today - timedelta(days=offset):%Y%m%d}") or {}
+        for field, count in day.items():
+            key = field.decode() if isinstance(field, bytes) else str(field)
+            merged[key] = merged.get(key, 0) + int(count)
+    rows = []
+    for field, count in merged.items():
+        parts = field.split("|")
+        if len(parts) == 3:
+            rows.append({"page": parts[0], "directive": parts[1], "blocked": parts[2], "count": count})
+    return sorted(rows, key=lambda row: (-row["count"], row["directive"], row["blocked"]))
+
+
+@router.get("/csp/summary")
+def csp_summary(request: Request, days: int = 7) -> dict[str, Any]:
+    require_admin_access(request, "CSP violation reports")
+    span = max(1, min(int(days), CSP_RETENTION_DAYS))
+    return {"ok": True, "days": span, "rows": csp_violation_rows(span)}

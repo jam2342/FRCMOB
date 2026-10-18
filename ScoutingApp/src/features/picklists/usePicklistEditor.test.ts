@@ -19,6 +19,28 @@ beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); signInTestWorkspace
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('picklist draft recovery and shared saves', () => {
+  it('sends a change when the page closes inside the save delay', async () => {
+    const server = list();
+    vi.mocked(updatePicklist).mockImplementation(async (_, body) => ({ ok: true, picklist: { ...server, ...body, version: 2 } }));
+    const page = renderHook(() => usePicklistEditor(1));
+    act(() => { page.result.current.select(server); page.result.current.edit(note('moved')); });
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    page.unmount();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(updatePicklist).toHaveBeenCalledWith(server.id, expect.objectContaining({ slots: [expect.objectContaining({ notes: 'moved' })] }));
+    expect(localStorage.getItem(`frcmob_picklist_draft_v1:1:${server.id}`)).toBeNull();
+  });
+
+  it('shares a change kept on this device as soon as its list is opened again', async () => {
+    const server = list();
+    localStorage.setItem(`frcmob_picklist_draft_v1:1:${server.id}`, JSON.stringify({ doc: note('kept')(server) }));
+    vi.mocked(updatePicklist).mockImplementation(async (_, body) => ({ ok: true, picklist: { ...server, ...body, version: 2 } }));
+    const { result } = renderHook(() => usePicklistEditor(1));
+    await act(async () => { result.current.select(server); });
+    expect(updatePicklist).toHaveBeenCalledTimes(1);
+    expect(result.current.pending).toBe(false);
+  });
+
   it('serializes slow saves and submits edits made during an earlier save on the acknowledged version', async () => {
     const server = list();
     vi.mocked(updatePicklist).mockImplementationOnce(wait).mockImplementation(async (_, body) => ({ ok: true, picklist: { ...server, ...body, version: 3 } }));
