@@ -881,7 +881,7 @@ export function ComparePage() {
           {!selectedEventKey ? (
             <p className="center-callout muted">No event selected yet.</p>
           ) : (
-            <div className="center-list-scroll" role="list" aria-label="Event team pool">
+            <div className="center-list-scroll" role="group" aria-label="Event team pool">
               {eventTeamPool.length === 0 && !loadingEventTeams ? (
                 <p className="center-callout muted">No teams loaded for this event yet.</p>
               ) : null}

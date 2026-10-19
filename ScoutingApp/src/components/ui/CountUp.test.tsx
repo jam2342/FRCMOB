@@ -3,8 +3,11 @@ import { expect, it, vi } from 'vitest';
 import { CountUp } from './CountUp';
 
 it('names the final value for screen readers and says — when there is none', () => {
-  const { rerender } = render(<CountUp value={88.44} digits={1} />);
-  expect(screen.getByLabelText('88.4')).toBeInTheDocument();
+  const { rerender, container } = render(<CountUp value={88.44} digits={1} />);
+  // Read once as text (a plain span's aria-label isn't reliably read); the counting digits are hidden.
+  const spoken = [...container.querySelectorAll('span')].filter((el) => el.textContent === '88.4' && !el.closest('[aria-hidden="true"]'));
+  expect(spoken).toHaveLength(1);
+  expect(container.querySelector('[aria-label]')).toBeNull();
   rerender(<CountUp value={null} />);
   expect(screen.getByText('—')).toBeInTheDocument();
 });

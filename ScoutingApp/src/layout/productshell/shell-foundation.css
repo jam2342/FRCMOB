@@ -1127,7 +1127,6 @@ select.center-input option,
 
 /* Typography helpers */
 .text-sm { font-size: var(--font-size-sm); }
-.text-muted { opacity: 0.7; }
 .text-red { color: var(--color-alliance-red-text); }
 .text-blue { color: var(--color-alliance-blue-text); }
 
@@ -1213,7 +1212,8 @@ select.center-input option,
 }
 
 .export-card.unavailable {
-  opacity: 0.45;
+  /* Faded, but its text still has to be readable (axe: 0.45 gave 2.6:1, 0.7 gave 4.3:1). */
+  opacity: 0.8;
   pointer-events: none;
 }
 

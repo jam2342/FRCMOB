@@ -10,13 +10,15 @@ export function launch() {
 }
 
 // A phone-sized context that never sends real telemetry (GPC) and skips the tour.
-export async function phone(browser, { width = 390, height = 844, serviceWorkers = 'block', storage = {}, mobile = true } = {}) {
+export async function phone(browser, { width = 390, height = 844, serviceWorkers = 'block', storage = {}, mobile = true, now = null } = {}) {
   const ctx = await browser.newContext({
     viewport: { width, height },
     isMobile: mobile,
     hasTouch: mobile,
     serviceWorkers,
   });
+  // A check that needs a particular "today" starts the page's clock there (it keeps ticking).
+  if (now) await ctx.clock.install({ time: new Date(now) });
   await ctx.addInitScript((extra) => {
     Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get: () => true });
     try {

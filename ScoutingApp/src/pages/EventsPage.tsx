@@ -1898,7 +1898,7 @@ export function EventsPage() {
 
 
           {eventQuery.trim().length > 0 ? (
-            <div className="center-list-scroll events-finder-list" role="list" aria-label="Search results">
+            <div className="center-list-scroll events-finder-list" role="group" aria-label="Search results">
               {!loadingSearch && visibleSearchResults.length === 0 && eventQuery.trim().length > 0 ? (
                 searchError ? (
                   <EmptyState compact type="offline" title="Search unavailable" description={searchError} />
@@ -1927,7 +1927,7 @@ export function EventsPage() {
               ))}
             </div>
           ) : (
-            <div className="center-list-scroll events-finder-list" role="list" aria-label="Suggested events">
+            <div className="center-list-scroll events-finder-list" role="group" aria-label="Suggested events">
               {loadingSuggested ? (
                 <div className="center-loading-state">
                   <SkeletonBlock rows={4} compact />

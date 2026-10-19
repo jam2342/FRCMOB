@@ -4,6 +4,7 @@ import {
   pickDefaultMatchKey,
   nearestEventDayToken,
   nearestLoadedMatchDayMs,
+  closerDay,
   buildHomeFilterCounts,
   filterHomeWindowMatches,
   homeStartEvent,
@@ -281,5 +282,23 @@ describe('homeStartEvent', () => {
     expect(homeStartEvent(' 2026CASS ', ['2026mexas'])).toBe('2026cass');
     expect(homeStartEvent('', ['2026mexas', '2026txman1'])).toBe('2026mexas');
     expect(homeStartEvent('not a key', [])).toBe('');
+  });
+});
+
+describe('closerDay', () => {
+  const day = 86_400_000;
+  const oct19 = Date.UTC(2026, 9, 19);
+  it('points at yesterday\'s events, not a September schedule still in memory', () => {
+    // 2026-10-19: Home on an empty Monday offered "Sun, Sep 20" with Oct 18's events on the calendar.
+    expect(closerDay(Date.UTC(2026, 8, 20), oct19 - day, oct19)).toEqual({ ms: oct19 - day, hasMatches: false });
+  });
+  it('prefers loaded matches on a tie or when they are closer', () => {
+    expect(closerDay(oct19 + day, oct19 - day, oct19)).toEqual({ ms: oct19 + day, hasMatches: true });
+    expect(closerDay(oct19 - day, oct19 - 5 * day, oct19)).toEqual({ ms: oct19 - day, hasMatches: true });
+  });
+  it('uses whichever exists', () => {
+    expect(closerDay(null, oct19 + 2 * day, oct19)).toEqual({ ms: oct19 + 2 * day, hasMatches: false });
+    expect(closerDay(oct19 - day, null, oct19)).toEqual({ ms: oct19 - day, hasMatches: true });
+    expect(closerDay(null, null, oct19)).toBeNull();
   });
 });
