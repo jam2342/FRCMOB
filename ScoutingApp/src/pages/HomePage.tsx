@@ -34,6 +34,7 @@ import {
   filterHomeWindowMatches,
   hasResolvedMatchScores,
   homeStartEvent,
+  closerDay,
   nearestEventDayToken,
   nearestLoadedMatchDayMs,
   pickMobileHomeAutoEventKey,
@@ -1118,6 +1119,23 @@ export function HomePage() {
     });
   }
 
+  // The day's schedules failed while the rest of Home loaded (browsing another day during
+  // an outage): retry them by itself too, like the whole page above, instead of waiting
+  // for a tap on Try again.
+  const retryFailedSchedulesRef = useRef(retryFailedSchedules);
+  retryFailedSchedulesRef.current = retryFailedSchedules;
+  const failedDayKey = selectedDayFailedKeys.join(',');
+  useEffect(() => {
+    if (!failedDayKey) return;
+    const retry = () => retryFailedSchedulesRef.current();
+    const timer = window.setTimeout(retry, 20_000);
+    window.addEventListener('online', retry);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('online', retry);
+    };
+  }, [failedDayKey]);
+
   const selectedDaySchedulesPending = useMemo(() => {
     if (loadingHome) return true;
     const dayToken = localDateTokenFromMs(selectedDayMs);
@@ -1143,14 +1161,12 @@ export function HomePage() {
       Object.values(scheduleByEvent).flatMap((schedule) => schedule?.matches || []),
       selectedDayMs,
     );
-    if (loadedMatchDay !== null) return { ms: loadedMatchDay, hasMatches: true };
     const token = nearestEventDayToken(
       mergeEventLists(calendarSeasonEvents, suggestedEvents),
       localDateTokenFromMs(selectedDayMs),
       emptyEventKeys,
     );
-    const tokenMs = token ? fromDateTokenToLocalDayMs(token) : null;
-    return tokenMs !== null ? { ms: tokenMs, hasMatches: false } : null;
+    return closerDay(loadedMatchDay, token ? fromDateTokenToLocalDayMs(token) : null, selectedDayMs);
   }, [calendarSeasonEvents, scheduleByEvent, selectedDayMs, suggestedEvents]);
 
   const selectedDayDateLabel = useMemo(
