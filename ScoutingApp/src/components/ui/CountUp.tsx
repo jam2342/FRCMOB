@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MISSING } from '../../utils/formatValue';
+import styles from './CountUp.module.css';
 
 // A number that counts up the first time it appears (a team's rating when you open them), then
 // eases to new values instead of jumping. Missing values read "—" like metric(). Screen readers
@@ -52,7 +53,9 @@ export function CountUp({ value, digits = 0, prefix = '' }: { value: number | nu
   // not the final value: showing it there made the rating flash in full, drop to 0, and count up.
   const display = shown ?? (reducedMotion() ? target : 0);
   return (
-    <span style={{ fontVariantNumeric: 'tabular-nums' }} aria-label={format(target, digits, prefix)}>
+    <span className={styles.number}>
+      {/* Screen readers get the final value once, not every animation frame. */}
+      <span className={styles.spoken}>{format(target, digits, prefix)}</span>
       <span aria-hidden="true">{format(display, digits, prefix)}</span>
     </span>
   );

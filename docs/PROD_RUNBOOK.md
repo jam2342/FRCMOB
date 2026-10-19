@@ -20,6 +20,29 @@ The uptime workflow (`.github/workflows/uptime.yml`) runs the same check every t
 
 Then open the live site: Home should show today's events and Team Center a rating.
 
+Deploy at quiet times: after a restart each worker rebuilds the season's rating model,
+and prediction and forecast pages can take ~30 s for the first minute (measured
+2026-10-18; warm they answer in under a second).
+
+## Event days
+
+- **Live ingest** (scheduler, every 3 min): events running today with a match between
+  2 h ago and 1 h ahead are re-ingested, and those that gained results get their
+  ratings rebuilt. Log line `Live event ingest events=… changed=… rebuilt=… errors=…`.
+  `LIVE_EVENT_INGEST_ENABLED=false` turns it off (then only the 12 h tick ingests,
+  after events end).
+- **Live results from FRC Events**: while TBA hasn't posted a result FRC Events has
+  (TBA lags 1–3 min), the schedule shows FRC Events' score. `FIRST_LIVE_RESULTS_ENABLED`.
+- **Consistency check** (cron on the VM, every 2 min, user `ubuntu`): compares what we
+  serve with TBA and FRC Events while events are in play. The day's report:
+
+  ```bash
+  python3 ~/frcmob/backend/scripts/live_consistency_check.py --dir ~/frcmob-checks --summary
+  ```
+
+  Problems print as `PROBLEM …` in `~/frcmob-checks/cron.log`. Its first run found
+  4-robot alliances (#223).
+
 ## Official data freshness
 
 The regional automation tick (every 12 h) re-ingests each completed event of the

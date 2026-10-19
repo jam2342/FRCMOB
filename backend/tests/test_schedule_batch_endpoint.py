@@ -15,9 +15,15 @@ class ScheduleBatchEndpointTests(ScheduleTimesEndpointTests):
             db.add(models.Event(event_key="2026bc", name="BattleCry", year=2026))
             db.add(models.Match(match_key="2026bc_qm1", event_key="2026bc", comp_level="qm", set_number=1, match_number=1, time=5))
             db.commit()
-        patcher = mock.patch("app.db.session.SessionLocal", self.SessionLocal)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # The test database is in-memory SQLite on one shared connection (StaticPool), which
+        # the batch's parallel threads can't share: under load 11 of 25 runs failed with
+        # one event's schedule erroring. Production uses a Postgres pool; here, one at a time.
+        for patcher in (
+            mock.patch("app.db.session.SessionLocal", self.SessionLocal),
+            mock.patch.object(routes_matches, "SCHEDULE_BATCH_WORKERS", 1),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_batch_returns_exactly_what_each_single_request_returns(self):
         resp = self.client.get("/matches/schedules", params={"event_keys": f"{EVENT}, 2026BC,{EVENT}"})
