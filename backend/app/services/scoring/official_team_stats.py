@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -82,6 +83,10 @@ def _official_rows(db: Session, team_key: str, season_year: int) -> list[models.
 
 def _official_events(tba: Any, team_key: str, season_year: int) -> dict[str, dict[str, Any]] | None:
     if tba is None:
+        return None
+    # TBA has team pages only for plain numbers: an off-season B team (frc973b) 404s, and
+    # once live ingest registered them that was ~275 failed calls an hour (2026-10-19).
+    if not re.fullmatch(r"frc\d+", str(team_key).strip().lower()):
         return None
     try:
         payload = tba.team_events(team_key, season_year)

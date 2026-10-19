@@ -14,7 +14,15 @@ def write_match_lineups(db: Session, event_key: str, links: Iterable[tuple[str, 
     # alone left the replaced robot on the alliance (58 alliances at 5 events had 4-6
     # robots on 2026-10-18). A lineup missing an alliance (unplayed playoffs) only adds.
     by_match: dict[str, list[tuple[str, str, str, str]]] = defaultdict(list)
+    seen: set[tuple[str, str]] = set()
     for link in links:
+        # One row per robot per match (that's the key). TBA fills a 2-robot alliance with
+        # the placeholder frc9999, on both sides at once (2026aroz QF on 2026-10-18); a
+        # second insert of the same row failed the whole refresh, so those matches never
+        # saved. The first one listed wins.
+        if (link[0], link[1]) in seen:
+            continue
+        seen.add((link[0], link[1]))
         by_match[link[0]].append(link)
     for match_key, rows in by_match.items():
         if {alliance for _, _, alliance, _ in rows} >= {"red", "blue"}:
