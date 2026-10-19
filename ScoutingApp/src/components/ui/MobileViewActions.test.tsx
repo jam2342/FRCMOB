@@ -22,4 +22,13 @@ describe('MobileViewActions', () => {
     const { container } = render(<MobileViewActions label="x" actions={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('inline: a short label still names what it changes', () => {
+    const change = vi.fn();
+    render(<MobileViewActions inline label="Event views" actions={[{ label: 'Change', ariaLabel: 'Change event', onClick: change }]} />);
+    const button = screen.getByRole('button', { name: 'Change event' });
+    expect(button).toHaveTextContent('Change');
+    fireEvent.click(button);
+    expect(change).toHaveBeenCalledOnce();
+  });
 });

@@ -2656,3 +2656,76 @@
   }
 }
 
+
+/* Team Center: an event the team played, as one tappable card. */
+.product-shell .tc-competition-card {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.product-shell .tc-competition-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.product-shell .tc-competition-head strong {
+  min-width: 0;
+  color: var(--color-text);
+}
+
+.product-shell .tc-competition-head .icon-inline {
+  flex: none;
+  color: var(--color-text-dim);
+}
+
+/* Team Center schedule difficulty on a phone: two lines per match. */
+.product-shell .tc-difficulty-list {
+  display: grid;
+}
+
+.product-shell .tc-difficulty-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: var(--space-2) 0;
+  border: 0;
+  border-bottom: var(--border-width-1) solid var(--color-border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.product-shell .tc-difficulty-row:last-child {
+  border-bottom: 0;
+}
+
+.product-shell .tc-difficulty-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.product-shell .tc-difficulty-top strong {
+  color: var(--color-text);
+}
+
+.product-shell .tc-difficulty-top .center-difficulty-pill {
+  margin-left: auto;
+}
+
+.product-shell .tc-difficulty-row small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  overflow-wrap: anywhere;
+}

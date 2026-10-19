@@ -24,24 +24,9 @@
   outline-offset: 2px;
 }
 
-/* The phone copy sits in the title row; the desktop copy in the tools row. */
-.phoneOnly {
-  display: none;
-}
-
+/* Phones set the theme in Settings; the bar's toggle is desktop only. */
 @media (max-width: 1120px) {
-  .phoneOnly {
-    display: inline-flex;
-  }
-
   .desktopOnly {
     display: none;
-  }
-}
-
-@media (pointer: coarse) {
-  .toggle {
-    width: 44px;
-    height: 44px;
   }
 }

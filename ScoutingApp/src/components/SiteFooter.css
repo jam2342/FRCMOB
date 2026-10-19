@@ -40,8 +40,31 @@
   color: var(--color-text);
 }
 
-@media (max-width: 768px) and (pointer: coarse) {
+/* Phones: every notice stays, packed tighter. It used to be a full screen at the bottom of
+   every page, mostly 44px link rows and the gap above it. Footer links are inline text links
+   (exempt from the 44px rule) and still keep a 28px target. */
+@media (max-width: 768px) {
+  .site-footer {
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    line-height: 1.4;
+  }
+
+  .site-footer p {
+    margin-bottom: var(--space-1);
+  }
+
+  .site-footer__credits,
+  .site-footer__links {
+    gap: 0 var(--space-3);
+  }
+
+  .site-footer__links {
+    margin-bottom: var(--space-1);
+  }
+
   .site-footer a {
-    padding-block: 13px;
+    min-height: 28px;
+    padding-block: 6px;
   }
 }

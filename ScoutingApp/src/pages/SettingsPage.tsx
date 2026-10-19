@@ -51,6 +51,7 @@ import { relativeFromTimestamp } from './centerUtils';
 import { AUTHOR_NAME, AUTHOR_SITE_URL } from './legalContent';
 import { storageGet, storageRemove } from '../platform/safeStorage';
 import { MISSING } from '../utils/formatValue';
+import { ChevronDownIcon } from '../components/ui/Icons';
 
 const COMPARE_KEYS = {
   event: 'scouting_compare_event_key',
@@ -436,77 +437,17 @@ export function SettingsPage() {
 
   return (
     <div className={styles.layout}>
+      {/* Theme is the one display setting people change; the rest is under Advanced. */}
       <SurfaceCard title="Appearance" className="settings-appearance-card">
         <CardBody>
-          <div className={styles.optionGrid}>
-            <FieldSelect
-              label="Theme"
-              value={themeMode}
-              onChange={(event) => updateTheme(event.target.value as ThemeMode, event.currentTarget)}
-            >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </FieldSelect>
-
-            <FieldSelect
-              label="Density"
-              value={densityMode}
-              onChange={(event) => updateDensity(event.target.value as DensityMode)}
-            >
-              <option value="comfortable">Comfortable</option>
-              <option value="compact">Compact</option>
-            </FieldSelect>
-          </div>
-          <p className={styles.note}>Applied immediately.</p>
-        </CardBody>
-      </SurfaceCard>
-
-      <SurfaceCard title="Workflow Defaults" className="settings-workflow-card">
-        <CardBody>
-          <div className={styles.optionGrid}>
-            {/* "UI Mode" (Full Diagnostics / Simple) was removed: it was saved
-                but nothing in the app ever read it. */}
-            <FieldSelect
-              label="Region Filter Default"
-              value={quickJumpRegion}
-              onChange={(event) => updateQuickJumpRegion(event.target.value as QuickJumpRegion)}
-            >
-              {REGION_FILTER_OPTIONS.map((option) => (
-                <option key={`settings-region-${option.value}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </FieldSelect>
-
-            <FieldSelect
-              label="Tutorial Auto-Play"
-              value={tutorialAutoplay ? 'enabled' : 'disabled'}
-              onChange={(event) => updateTutorialAutoplay(event.target.value === 'enabled')}
-            >
-              <option value="enabled">Enabled (show once per tab)</option>
-              <option value="disabled">Disabled</option>
-            </FieldSelect>
-          </div>
-
-          <FieldStepper
-            label="Live Refresh Interval"
-            name="live refresh interval"
-            hint="How often live data refreshes, in seconds. Slower refreshes cope better with venue wifi."
-            value={liveRefreshSec}
-            onValueChange={updateLiveRefreshSec}
-            min={5}
-            max={120}
-            step={5}
-          />
-
-          <p className={styles.note}>
-            Tutorials completed: {tutorialSeenCount}/{TUTORIAL_SCOPES.length}.
-          </p>
-          <div className={styles.actions}>
-            <Button variant="quiet" onClick={resetTutorialProgress}>
-              Reset Tutorial Progress
-            </Button>
-          </div>
+          <FieldSelect
+            label="Theme"
+            value={themeMode}
+            onChange={(event) => updateTheme(event.target.value as ThemeMode, event.currentTarget)}
+          >
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </FieldSelect>
         </CardBody>
       </SurfaceCard>
 
@@ -677,27 +618,69 @@ export function SettingsPage() {
       </>
       ) : null}
 
-      {/* Admin tools toggle */}
-      <div className={styles.adminToggle}>
-        <Button
-          variant="quiet"
-          pressed={adminModeEnabled}
-          onClick={() => {
-            const next = !adminModeEnabled;
-            setClientAdminModeEnabled(next);
-            setAdminModeEnabled(next);
-            refreshAdminSessionState();
-          }}
-        >
-          {/* Closing the tools also ends the admin session (setClientAdminModeEnabled clears the
-              token), so the label says so instead of "Hide". Only the site operator needs this. */}
-          {!adminModeEnabled ? 'Operator sign-in' : clientAdminKeyAvailable() ? 'Sign out of admin' : 'Close operator sign-in'}
-        </Button>
-      </div>
-
-      <SurfaceCard title="Maintenance" className="settings-maintenance-card">
+      {/* Folded: settings most people never change. A plain disclosure row says "tap to open"
+          better than a card with an icon-only restore button. */}
+      <details className={`${styles.advanced} settings-workflow-card`} open={adminModeEnabled || undefined}>
+        <summary className={styles.advancedSummary}>
+          <span>
+            <strong>Advanced</strong>
+            <small>Density, refresh speed, tutorials, resets</small>
+          </span>
+          <ChevronDownIcon className={styles.advancedChevron} />
+        </summary>
         <CardBody>
+          <div className={styles.optionGrid}>
+            <FieldSelect
+              label="Density"
+              value={densityMode}
+              onChange={(event) => updateDensity(event.target.value as DensityMode)}
+            >
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </FieldSelect>
+
+            {/* "UI Mode" (Full Diagnostics / Simple) was removed: it was saved
+                but nothing in the app ever read it. */}
+            <FieldSelect
+              label="Region Filter Default"
+              value={quickJumpRegion}
+              onChange={(event) => updateQuickJumpRegion(event.target.value as QuickJumpRegion)}
+            >
+              {REGION_FILTER_OPTIONS.map((option) => (
+                <option key={`settings-region-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </FieldSelect>
+
+            <FieldSelect
+              label="Tutorial Auto-Play"
+              value={tutorialAutoplay ? 'enabled' : 'disabled'}
+              onChange={(event) => updateTutorialAutoplay(event.target.value === 'enabled')}
+            >
+              <option value="enabled">Enabled (show once per tab)</option>
+              <option value="disabled">Disabled</option>
+            </FieldSelect>
+          </div>
+
+          <FieldStepper
+            label="Live Refresh Interval"
+            name="live refresh interval"
+            hint="How often live data refreshes, in seconds. Slower refreshes cope better with venue wifi."
+            value={liveRefreshSec}
+            onValueChange={updateLiveRefreshSec}
+            min={5}
+            max={120}
+            step={5}
+          />
+
+          <p className={styles.note}>
+            Tutorials completed: {tutorialSeenCount}/{TUTORIAL_SCOPES.length}.
+          </p>
           <div className={styles.actions}>
+            <Button variant="quiet" onClick={resetTutorialProgress}>
+              Reset Tutorial Progress
+            </Button>
             <Button variant="quiet" onClick={clearFavorites}>
               Clear Favorites
             </Button>
@@ -709,22 +692,29 @@ export function SettingsPage() {
             </Button>
           </div>
           <p className={styles.note} role="status">{maintenanceNote || 'These only affect this device.'}</p>
-        </CardBody>
-      </SurfaceCard>
 
-      <SurfaceCard
-        title="About & Legal"
-        subtitle="How FRCMOB handles your data, and the terms of use."
-      >
-        <CardBody>
-          <div className={styles.actions}>
-            <Button as="a" variant="quiet" href="#/privacy" title="Read the Privacy Policy">
-              Privacy Policy
-            </Button>
-            <Button as="a" variant="quiet" href="#/terms" title="Read the Terms of Service">
-              Terms of Service
+          {/* Only the site operator needs this. Closing the tools also ends the admin session
+              (setClientAdminModeEnabled clears the token), so the label says so. */}
+          <div className={styles.adminToggle}>
+            <Button
+              variant="quiet"
+              pressed={adminModeEnabled}
+              onClick={() => {
+                const next = !adminModeEnabled;
+                setClientAdminModeEnabled(next);
+                setAdminModeEnabled(next);
+                refreshAdminSessionState();
+              }}
+            >
+              {!adminModeEnabled ? 'Operator sign-in' : clientAdminKeyAvailable() ? 'Sign out of admin' : 'Close operator sign-in'}
             </Button>
           </div>
+        </CardBody>
+      </details>
+
+      {/* Privacy and Terms are in the footer right below, as on every page. */}
+      <SurfaceCard title="About">
+        <CardBody>
           <p className={styles.note}>
             Recorded video is processed on your device and never uploaded.
           </p>

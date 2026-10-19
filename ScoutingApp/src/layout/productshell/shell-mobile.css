@@ -144,6 +144,26 @@
     flex: none;
   }
 
+  /* Same for a card whose only control is its page's "Change"/"Edit" action (MobileViewActions
+     inline): one short button beside the title, not a row under it. */
+  .product-shell .surface-card-head:has(.surface-card-right > .mobile-view-actions:only-child) {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .product-shell .surface-card-head:has(.surface-card-right > .mobile-view-actions:only-child) > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .product-shell .surface-card-head:has(.surface-card-right > .mobile-view-actions:only-child) .surface-card-head-actions,
+  .product-shell .surface-card-head:has(.surface-card-right > .mobile-view-actions:only-child) .surface-card-right {
+    width: auto;
+    flex: none;
+  }
+
   .product-shell .surface-card-collapse-btn span {
     position: absolute;
     width: 1px;
@@ -886,6 +906,23 @@
     text-align: center;
   }
 
+  .fm-score-hero-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-top: -8px;
+  }
+
+  .fm-score-hero-corner {
+    display: flex;
+    min-width: 0;
+  }
+
+  .fm-score-hero-corner--end {
+    justify-content: flex-end;
+  }
+
   .fm-match-label {
     font-size: var(--font-size-legacy-11);
     text-transform: uppercase;
@@ -1202,64 +1239,6 @@
     border-top: 1px solid rgba(40, 56, 70, 0.35);
   }
 
-  /* ── Phase Card ─────────────────────────────────────────
-     Compact KPI row for match phases.
-     ──────────────────────────────────────────────────────────────────────── */
-
-  .fm-phase-card {
-    background: var(--color-bg-elevated);
-    border: 1px solid rgba(40, 56, 70, 0.5);
-    border-radius: 14px;
-    padding: 14px;
-    display: grid;
-    gap: 10px;
-  }
-
-  .fm-phase-card-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(40, 56, 70, 0.35);
-  }
-
-  .fm-phase-card-header h4 {
-    font-size: var(--font-size-2xs);
-    font-weight: 700;
-    color: var(--color-text);
-    margin: 0;
-  }
-
-  .fm-phase-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .fm-phase-item {
-    display: grid;
-    gap: 2px;
-    padding: 8px 10px;
-    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-    border-radius: 8px;
-  }
-
-  .fm-phase-item span {
-    font-size: var(--font-size-legacy-10);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .fm-phase-item strong {
-    font-size: var(--font-size-sm);
-    color: var(--color-text);
-    font-weight: 700;
-  }
 
   /* ── Events: Compact Mobile Header ─────────────────────────────────────
      League-view header for the Events page.
@@ -1435,6 +1414,55 @@
     .fm-standings-row > :nth-child(3),
     .fm-standings-row > :nth-child(6) {
       display: none;
+    }
+  }
+
+  /* Rankings: rank, team, record (never wrapped: "10-0-0" broke over two lines), two sort values. */
+  .fm-standings-card--rankings .fm-standings-header,
+  .fm-standings-card--rankings .fm-standings-row {
+    grid-template-columns: 28px minmax(0, 1fr) 52px 40px 48px;
+  }
+
+  .fm-standings-card--rankings .fm-standings-stat {
+    white-space: nowrap;
+  }
+
+  @media (max-width: 359px) {
+    .fm-standings-card--rankings .fm-standings-header,
+    .fm-standings-card--rankings .fm-standings-row {
+      grid-template-columns: 24px minmax(0, 1fr) 52px 40px;
+    }
+
+    .fm-standings-card--rankings .fm-standings-header span:nth-child(3),
+    .fm-standings-card--rankings .fm-standings-row > :nth-child(3) {
+      display: block;
+    }
+
+    .fm-standings-card--rankings .fm-standings-header span:nth-child(5),
+    .fm-standings-card--rankings .fm-standings-row > :nth-child(5) {
+      display: none;
+    }
+  }
+
+  /* Event teams: team, rating, points per match, fuel rate. */
+  .fm-standings-card--teams .fm-standings-header,
+  .fm-standings-card--teams .fm-standings-row {
+    grid-template-columns: minmax(0, 1fr) 48px 40px 44px;
+  }
+
+  .fm-standings-card--teams .fm-standings-header span:nth-child(n+2) {
+    text-align: center;
+  }
+
+  @media (max-width: 359px) {
+    .fm-standings-card--teams .fm-standings-header,
+    .fm-standings-card--teams .fm-standings-row {
+      grid-template-columns: minmax(0, 1fr) 44px 36px 40px;
+    }
+
+    .fm-standings-card--teams .fm-standings-header span:nth-child(3),
+    .fm-standings-card--teams .fm-standings-row > :nth-child(3) {
+      display: block;
     }
   }
 
@@ -1665,6 +1693,11 @@
     display: flex;
     align-items: center;
     gap: 14px;
+  }
+
+  .fm-team-hero-top > .mobile-view-actions {
+    margin-left: auto;
+    align-self: flex-start;
   }
 
   .fm-team-hero-logo {
@@ -2141,6 +2174,28 @@
     margin: 0;
   }
 
+  /* The narrowest phones: Event info keeps its icon, its name stays for screen readers. */
+  @media (max-width: 359px) {
+    .home-day-meta-row .home-mini-tab-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+  }
+
+  .home-day-meta-row {
+    display: flex;
+    width: 100%;
+    align-self: stretch;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
   /* ── Mobile Event Picker ────────────────────────────────────────────── */
 
   .home-mobile-event-picker {
@@ -2384,6 +2439,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* A schedule row is one link to its match; underlining every number in it read as six
+     separate links. */
+  .event-schedule-mobile-main,
+  .event-schedule-mobile-main * {
+    text-decoration: none;
+  }
+
+  /* Under 360px three robots don't fit on one line beside the score; they wrap
+     rather than end in "…", which hid who was playing. */
+  @media (max-width: 359px) {
+    .home-match-compact-side {
+      white-space: normal;
+      text-overflow: clip;
+    }
   }
 
   /* Alliance text tokens, not the dark-theme pastels this had: in light

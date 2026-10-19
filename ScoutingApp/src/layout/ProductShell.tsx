@@ -748,7 +748,8 @@ export function ProductShell() {
               {isOnline ? 'Online' : 'Offline'}
               {queueSize > 0 ? <span className="ps-network-queue-badge">{queueSize}</span> : null}
             </span>
-            <ThemeToggle theme={themeMode} className={themeToggleStyles.phoneOnly} />
+            {/* No theme button on phones: it's set once, in Settings, and it was the loudest
+                thing in a 64px bar that should hold the page's way out (search). */}
             <button
               type="button"
               className="ps-mobile-search-trigger"

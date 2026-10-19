@@ -211,6 +211,9 @@ export type FieldStepperProps = FieldShellProps & {
   /** Shows each press: "+3" rises off the button and the value pops. For counters a scout
    *  taps without looking, on phones that can't vibrate (iPhone). */
   feedback?: boolean;
+  /** Label beside the buttons instead of above them, once the row is wide enough for both.
+   *  A scouting phase has up to nine counters; stacked they filled more than a phone screen. */
+  inline?: boolean;
 };
 
 type StepperBurst = { id: number; increase: boolean; text: string };
@@ -230,6 +233,7 @@ export function FieldStepper({
   disabled = false,
   name,
   feedback = false,
+  inline = false,
 }: FieldStepperProps) {
   const { id, hintId, errorId, describedBy, invalid } = useFieldWiring({ hint, error });
   const subject = name ?? label ?? 'value';
@@ -265,7 +269,7 @@ export function FieldStepper({
       ? (pulse.count % 2 ? styles.popUpA : styles.popUpB)
       : (pulse.count % 2 ? styles.popDownA : styles.popDownB);
 
-  return (
+  const frame = (
     <FieldFrame
       label={label}
       htmlFor={id}
@@ -275,7 +279,7 @@ export function FieldStepper({
       errorId={errorId}
       required={required}
       badge={badge}
-      className={className}
+      className={cx(inline && styles.inlineStepperField, inline ? undefined : className)}
     >
       <div className={styles.stepper}>
         <button
@@ -332,6 +336,8 @@ export function FieldStepper({
       </div>
     </FieldFrame>
   );
+  // The host is the size container: a field can't query its own width.
+  return inline ? <div className={cx(styles.inlineStepperHost, className)}>{frame}</div> : frame;
 }
 
 /* ── Toggle ─────────────────────────────────────────────────────────── */

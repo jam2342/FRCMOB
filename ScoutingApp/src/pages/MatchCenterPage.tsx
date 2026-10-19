@@ -8,7 +8,6 @@ import {
   getEventRatings,
   getEventSchedule,
   getEventTeamLiveForm,
-  getMatchPhases,
 } from '../api';
 import { SAVED_COPY_MAX_AGE_MS } from '../config/savedCopy';
 import { embeddableUrl } from '../config/embedHosts';
@@ -16,7 +15,6 @@ import type {
   EventScheduleItem,
   EventTeamLiveFormResponse,
   EventTeamRatingItem,
-  MatchPhasesResponse,
   PredictedScheduleMatch,
 } from '../api';
 import { EventPicker } from '../components/EventPicker';
@@ -26,6 +24,7 @@ import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { Button } from '../components/ui/primitives';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
@@ -35,8 +34,8 @@ import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/us
 import {
   EyeIcon, PieChartIcon, UsersIcon, ClockIcon,
   ChevronDownIcon, VideoIcon, TrophyIcon,
-  CalendarIcon, SignalIcon, ScoreboardIcon, RobotIcon, GamepadIcon,
-  FlagIcon, TargetIcon, LinkIcon,
+  CalendarIcon, SignalIcon, ScoreboardIcon,
+  LinkIcon,
 } from '../components/ui/Icons';
 import {
   buildMatchCenterPath,
@@ -48,6 +47,7 @@ import {
   normalizeEventKey,
   normalizeMatchKey,
   relativeFromTimestamp,
+  teamDisplayNumber,
   titleizeKey,
 } from './centerUtils';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
@@ -171,7 +171,6 @@ export function MatchCenterPage() {
     detail: string | null;
   } | null>(null);
   const [predictedMatches, setPredictedMatches] = useState<Record<string, PredictedScheduleMatch>>({});
-  const [matchPhases, setMatchPhases] = useState<MatchPhasesResponse | null>(null);
 
 
   const [loadingEventData, setLoadingEventData] = useState(false);
@@ -179,10 +178,8 @@ export function MatchCenterPage() {
   // loadingEventData, and showing skeletons then flashed grey lines above the list every 5 s.
   const [eventLoadedKey, setEventLoadedKey] = useState('');
   const firstEventLoad = loadingEventData && eventLoadedKey !== selectedEventKey;
-  const [loadingPhases, setLoadingPhases] = useState(false);
   const [statusText, setStatusText] = useState('Select an event and match.');
   const [eventError, setEventError] = useState('');
-  const [phaseError, setPhaseError] = useState('');
   const [matchFilter, setMatchFilter] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [eventHasLiveMatch, setEventHasLiveMatch] = useState(false);
@@ -455,36 +452,6 @@ export function MatchCenterPage() {
     }
   }, [scheduleRows, selectedEventKey, selectedMatchKey]);
 
-  useEffect(() => {
-    if (!selectedMatchKey) {
-      setMatchPhases(null);
-      setPhaseError('');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function run() {
-      setLoadingPhases(true);
-      setPhaseError('');
-      try {
-        const payload = await getMatchPhases(selectedMatchKey);
-        if (cancelled) return;
-        setMatchPhases(payload);
-      } catch (error) {
-        if (cancelled) return;
-        setMatchPhases(null);
-        setPhaseError((error as Error).message || 'Unable to load phase windows.');
-      } finally {
-        if (!cancelled) setLoadingPhases(false);
-      }
-    }
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedMatchKey]);
 
   const filteredMatches = useMemo(() => {
     const query = matchFilter.trim().toLowerCase();
@@ -719,11 +686,11 @@ export function MatchCenterPage() {
   }, [selectedMatch]);
 
   const selectedRedLineupLabel = useMemo(
-    () => (selectedMatch ? selectedMatch.red.map((team) => `#${team.team_number}`).join(' · ') || 'TBD' : 'TBD'),
+    () => (selectedMatch ? selectedMatch.red.map((team) => `#${teamDisplayNumber(team)}`).join(' · ') || 'TBD' : 'TBD'),
     [selectedMatch],
   );
   const selectedBlueLineupLabel = useMemo(
-    () => (selectedMatch ? selectedMatch.blue.map((team) => `#${team.team_number}`).join(' · ') || 'TBD' : 'TBD'),
+    () => (selectedMatch ? selectedMatch.blue.map((team) => `#${teamDisplayNumber(team)}`).join(' · ') || 'TBD' : 'TBD'),
     [selectedMatch],
   );
   const effectiveRefreshSec = eventHasLiveMatch ? 5 : Math.max(10, liveRefreshSec);
@@ -795,7 +762,7 @@ export function MatchCenterPage() {
           second of four stacked tab rows before any content. "Change match" and
           "Back to QM 1" now sit where every other page puts its change/back
           actions; picking a match also closes the finder. */}
-      {isMobileLayout ? (
+      {isMobileLayout && (mobileFinderOpen || !selectedMatch) ? (
         <MobileViewActions
           label="Match views"
           actions={
@@ -1009,7 +976,20 @@ export function MatchCenterPage() {
         {isMobileLayout && selectedMatch ? (
           <>
             <div className={`fm-score-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
-              <span className="fm-match-label">{selectedMatch.display_name}</span>
+              {/* Share and Change ride in the card's top corners; each used to take a row. */}
+              <div className="fm-score-hero-bar">
+                <span className="fm-score-hero-corner">
+                  {shareable ? (
+                    <Button size="sm" variant="quiet" iconOnly icon={<ShareIcon />} aria-label="Share result" onClick={() => setShareOpen(true)} />
+                  ) : null}
+                </span>
+                <span className="fm-match-label">{selectedMatch.display_name}</span>
+                <span className="fm-score-hero-corner fm-score-hero-corner--end">
+                  {!mobileFinderOpen ? (
+                    <MobileViewActions inline label="Match views" actions={[{ label: 'Change', ariaLabel: 'Change match', onClick: () => { setMobileFinderOpen(true); window.scrollTo({ top: 0 }); } }]} />
+                  ) : null}
+                </span>
+              </div>
               <Link className="fm-event-label entity-link" to={`/events?event=${encodeURIComponent(selectedEventKey)}&tab=schedule`}>{eventTitle}</Link>
               <div className="fm-score-row">
                 <div className={`fm-alliance fm-red ${revealClass('red')}`.trim()}>
@@ -1039,13 +1019,6 @@ export function MatchCenterPage() {
               <MatchPredictionNote match={selectedPrediction} completed={selectedCompleted} winner={resolvedWinner} />
               {selectedMatchProgress !== null && !selectedCompleted ? (
                 <MatchClock progress={selectedMatchProgress} className="fm-match-clock" />
-              ) : null}
-              {shareable ? (
-                <div className={resultStyles.heroActions}>
-                  <button type="button" className="center-btn ghost" onClick={() => setShareOpen(true)}>
-                    <ShareIcon /> Share
-                  </button>
-                </div>
               ) : null}
             </div>
             <SegmentedTabs
@@ -1225,9 +1198,9 @@ export function MatchCenterPage() {
                           type="button"
                           className="fm-team-row"
                           data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
-                          title={`View Team ${team.team_number}`}
+                          title={`View Team ${teamDisplayNumber(team)}`}
                         >
-                          <span className="fm-team-name">#{team.team_number} {team.nickname || team.team_key}</span>
+                          <span className="fm-team-name">#{teamDisplayNumber(team)} {team.nickname || team.team_key}</span>
                           <span className="fm-team-form">
                             {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
                             <TeamFormStrip entry={entry} />
@@ -1249,9 +1222,9 @@ export function MatchCenterPage() {
                           type="button"
                           className="fm-team-row"
                           data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
-                          title={`View Team ${team.team_number}`}
+                          title={`View Team ${teamDisplayNumber(team)}`}
                         >
-                          <span className="fm-team-name">#{team.team_number} {team.nickname || team.team_key}</span>
+                          <span className="fm-team-name">#{teamDisplayNumber(team)} {team.nickname || team.team_key}</span>
                           <span className="fm-team-form">
                             {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
                             <TeamFormStrip entry={entry} />
@@ -1262,41 +1235,6 @@ export function MatchCenterPage() {
                   </div>
                 </div>
 
-                {/* Phase Windows card */}
-                <div className="fm-phase-card">
-                  <div className="fm-phase-card-header">
-                    <h4>Match Phases</h4>
-                  </div>
-                  {loadingPhases ? (
-                    <div className="center-loading-state">
-                      <SkeletonBlock rows={3} compact />
-                    </div>
-                  ) : null}
-                  {phaseError ? <p className="center-callout warning">{phaseError}</p> : null}
-                  {!loadingPhases && !phaseError && !matchPhases ? (
-                    <EmptyState compact title="Phase data unavailable" description="Phase data is unavailable for this match." />
-                  ) : null}
-                  {matchPhases ? (
-                    <div className="fm-phase-grid">
-                      <div className="fm-phase-item">
-                        <span><RobotIcon className="icon-inline" /> Auto</span>
-                        <strong>{metric(matchPhases.windows.auto.duration_sec, 0)}s</strong>
-                      </div>
-                      <div className="fm-phase-item">
-                        <span><GamepadIcon className="icon-inline" /> Teleop</span>
-                        <strong>{metric(matchPhases.windows.teleop.duration_sec, 0)}s</strong>
-                      </div>
-                      <div className="fm-phase-item">
-                        <span><TargetIcon className="icon-inline" /> Scoring</span>
-                        <strong>{metric(matchPhases.windows.teleop_scoring.duration_sec, 0)}s</strong>
-                      </div>
-                      <div className="fm-phase-item">
-                        <span><FlagIcon className="icon-inline" /> Endgame</span>
-                        <strong>{metric(matchPhases.windows.endgame.duration_sec, 0)}s</strong>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
               </div>
             ) : null}
 
@@ -1321,10 +1259,10 @@ export function MatchCenterPage() {
                             type="button"
                             className="center-team-chip"
                             data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
-                            title={`View Team ${team.team_number}`}
+                            title={`View Team ${teamDisplayNumber(team)}`}
                           >
                             <span>
-                              #{team.team_number} {team.nickname || team.team_key}
+                              #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
@@ -1347,10 +1285,10 @@ export function MatchCenterPage() {
                             type="button"
                             className="center-team-chip"
                             data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
-                            title={`View Team ${team.team_number}`}
+                            title={`View Team ${teamDisplayNumber(team)}`}
                           >
                             <span>
-                              #{team.team_number} {team.nickname || team.team_key}
+                              #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
@@ -1386,39 +1324,6 @@ export function MatchCenterPage() {
                 renderLiveStreamCard()
               )}
 
-              <SurfaceCard title="Match Phase Windows" compactable>
-                {loadingPhases ? (
-                  <div className="center-loading-state">
-                    <SkeletonBlock rows={3} compact />
-                  </div>
-                ) : null}
-                {phaseError ? <p className="center-callout warning">{phaseError}</p> : null}
-                {!loadingPhases && !phaseError && !matchPhases ? (
-                  <EmptyState compact title="Phase data unavailable" description="Phase data is unavailable for this match." />
-                ) : null}
-                {matchPhases ? (
-                  <div className="center-phase-grid">
-                    <article className="center-kpi-card">
-                      <span><RobotIcon className="icon-inline" /> Auto</span>
-                      <strong>
-                        {metric(matchPhases.windows.auto.duration_sec, 0)}s
-                      </strong>
-                    </article>
-                    <article className="center-kpi-card">
-                      <span><GamepadIcon className="icon-inline" /> Teleop</span>
-                      <strong>{metric(matchPhases.windows.teleop.duration_sec, 0)}s</strong>
-                    </article>
-                    <article className="center-kpi-card">
-                      <span><TargetIcon className="icon-inline" /> Teleop Scoring</span>
-                      <strong>{metric(matchPhases.windows.teleop_scoring.duration_sec, 0)}s</strong>
-                    </article>
-                    <article className="center-kpi-card">
-                      <span><FlagIcon className="icon-inline" /> Endgame</span>
-                      <strong>{metric(matchPhases.windows.endgame.duration_sec, 0)}s</strong>
-                    </article>
-                  </div>
-                ) : null}
-              </SurfaceCard>
 
             </div>
             ) : null}
@@ -1461,14 +1366,23 @@ export function MatchCenterPage() {
         ) : null}
 
         {selectedMatch && activeTab === 'teams' ? (
-            <SurfaceCard title="Team Context" subtitle="Rating and recent form for all six teams." compactable>
+            <SurfaceCard title="Team Context" hideTitleOnPhone subtitle="Rating and recent form for all six teams." compactable>
             <div className="center-team-card-grid">
               {selectedTeams.map((team) => {
                 const entry = liveStatusByTeam[team.team_key.toLowerCase()] || null;
                 const rating = teamRatings?.eventKey === selectedEventKey ? teamRatings.byTeam[team.team_key.toLowerCase()] || null : null;
                 return (
-                  <article key={`match-team-${team.team_key}-${team.station || ''}`} className="center-team-card">
-                    <header>
+                  // The card opens the team: each used to end in a full-width "Team Details" button.
+                  <button
+                    key={`match-team-${team.team_key}-${team.station || ''}`}
+                    type="button"
+                    className="center-team-card center-team-card--button"
+                    data-team-peek={team.team_key.toLowerCase()}
+                    data-team-peek-event={selectedEventKey}
+                    onClick={() => openTeamCenter(team.team_key)}
+                    title={`View Team ${teamDisplayNumber(team)}`}
+                  >
+                    <span className="center-team-card-head">
                       <span className={`center-alliance-pill ${team.alliance}`}>{team.alliance.toUpperCase()}</span>
                       {entry?.is_live ? (
                         <span className="center-live-chip">
@@ -1476,22 +1390,18 @@ export function MatchCenterPage() {
                           Live
                         </span>
                       ) : null}
-                    </header>
+                    </span>
                     <strong>
-                      #{team.team_number} {team.nickname || team.team_key}
+                      #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                     </strong>
-                    {team.station ? <small>Station {team.station}</small> : null}
                     {rating ? (
                       <small>
                         Rating {metric(rating.rating_0_100, 1)}
                         {rating.expected_points ? ` · ${metric(rating.expected_points.total, 0)} pts/match` : ''}
                       </small>
                     ) : null}
-                    <div><TeamFormStrip entry={entry} /></div>
-                    <button type="button" className="center-btn ghost" data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)} title={`View Team ${team.team_number}`}>
-                      <EyeIcon className="icon-inline" /> Team Details
-                    </button>
-                  </article>
+                    <span><TeamFormStrip entry={entry} /></span>
+                  </button>
                 );
               })}
             </div>
