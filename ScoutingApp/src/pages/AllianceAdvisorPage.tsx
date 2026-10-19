@@ -29,10 +29,11 @@ import {
   type TableColumn,
 } from '../components/ui/primitives';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
+import { useMobileLayout } from '../hooks/useMobileLayout';
 import styles from './AllianceAdvisorPage.module.css';
 import { plainSignalLabel } from './teamCenterOfficial';
 import { teamsFromParam } from './allianceBuilder';
-import { metric, pct, teamNumberFromTeamKey } from './centerUtils';
+import { metric, pct, teamNumberFromTeamKey, teamDisplayNumber } from './centerUtils';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -56,7 +57,7 @@ function teamLabel(teamKey: string, teams: EventTeam[]): string {
     const num = teamNumberFromTeamKey(teamKey);
     return num ? `#${num}` : teamKey;
   }
-  return team.nickname ? `#${team.team_number} ${team.nickname}` : `#${team.team_number}`;
+  return team.nickname ? `#${teamDisplayNumber(team)} ${team.nickname}` : `#${teamDisplayNumber(team)}`;
 }
 
 function teamNumLabel(teamKey: string): string {
@@ -85,6 +86,7 @@ function barWidth(value: number, max: number): string {
 
 export function AllianceAdvisorPage() {
   const navigate = useNavigate();
+  const isMobileLayout = useMobileLayout();
 
   /* --- Event selection (shared hook) --- */
   const { eventKey, eventInput, setEventInput, selectEvent, fetchTrigger } = useEventKeyParam(STORAGE_KEY);
@@ -225,6 +227,15 @@ export function AllianceAdvisorPage() {
       if (generation === builderGeneration.current) setLoadingBuilder(false);
     }
   }, [eventKey, builderSlots, teamKeySet]);
+
+  const builderKeys = builderSlots.map((slot) => slot.trim().toLowerCase()).filter(Boolean);
+  const builderSlotsDuplicate = builderKeys.length === 3 && new Set(builderKeys).size !== 3;
+  const builderReady = builderKeys.length === 3 && !builderSlotsDuplicate && builderKeys.every((key) => teamKeySet.has(key));
+  // No "Analyze Alliance" button: the answer is what you came for, so it comes as soon as the
+  // lineup is complete (and again on every change).
+  useEffect(() => {
+    if (builderReady) void runBuilder();
+  }, [builderReady, runBuilder]);
 
   // Memoised because the table columns depend on it; a fresh function each
   // render would rebuild every column definition on every keystroke.
@@ -383,7 +394,8 @@ export function AllianceAdvisorPage() {
             loading={loadingTeams}
           />
 
-          {eventTeams ? (
+          {/* The picker shows the event's name; this line only repeated it. */}
+          {eventTeams && !isMobileLayout ? (
             <p className={styles.eventSummary}>
               <strong>{eventTeams.event_name || 'Selected event'}</strong> — {teamPool.length} team{teamPool.length === 1 ? '' : 's'} loaded
               {eventTeams.teams_with_event_rating > 0
@@ -400,10 +412,24 @@ export function AllianceAdvisorPage() {
         {/* ---- Selection Model Controls ---- */}
         {teamPool.length > 0 ? (
           <SurfaceCard
-            title="Selection Model Settings"
-            collapsible
+            title="Selection Model"
+            subtitle="Simulates alliance selection to predict who gets picked."
           >
             <CardBody>
+              <div className={styles.actions}>
+                <Button
+                  variant="primary"
+                  onClick={() => void runSelectionModel()}
+                  loading={loadingModel}
+                  disabled={teamPool.length < 6}
+                >
+                  {loadingModel ? 'Simulating…' : 'Run Selection Model'}
+                </Button>
+              </div>
+              {/* Tuning knobs for people who know the model; they used to be the first thing
+                  on the page, three steppers above the button that does the work. */}
+              <details className={styles.modelSettings}>
+                <summary>Model settings</summary>
               <div className={styles.paramGrid}>
                 <FieldStepper
                   label="Simulations"
@@ -433,16 +459,7 @@ export function AllianceAdvisorPage() {
                   step={1}
                 />
               </div>
-              <div className={styles.actions}>
-                <Button
-                  variant="primary"
-                  onClick={() => void runSelectionModel()}
-                  loading={loadingModel}
-                  disabled={teamPool.length < 6}
-                >
-                  {loadingModel ? 'Simulating…' : 'Run Selection Model'}
-                </Button>
-              </div>
+              </details>
 
               {selectionModel?.notes?.length ? (
                 <ul className={styles.notes}>
@@ -577,11 +594,9 @@ export function AllianceAdvisorPage() {
                 ))}
               </div>
 
-              <div className={styles.actions}>
-                <Button variant="primary" onClick={() => void runBuilder()} loading={loadingBuilder}>
-                  {loadingBuilder ? 'Analyzing…' : 'Analyze Alliance'}
-                </Button>
-              </div>
+              {/* Runs by itself once three different teams are picked. */}
+              {loadingBuilder ? <p className={styles.note} role="status">Analyzing…</p> : null}
+              {builderSlotsDuplicate ? <p className={styles.note}>Pick three different teams.</p> : null}
 
               {builderError ? (
                 <p className={`${styles.note} ${styles.noteWarning}`} role="alert">{builderError}</p>

@@ -91,26 +91,6 @@ const SHEET_ITEMS: MoreSheetItem[] = [
     ),
   },
   {
-    to: '/match-center/predictions',
-    label: 'Predictions',
-    category: 'tools',
-    icon: (
-      <svg viewBox="0 0 24 24">
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/match-center/strategy',
-    label: 'Strategy',
-    category: 'tools',
-    icon: (
-      <svg viewBox="0 0 24 24">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
     to: '/settings',
     label: 'Settings',
     category: 'settings',
@@ -286,15 +266,6 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
           </div>
         </div>
 
-        <div className="ms__legal">
-          <NavLink to="/privacy" className="ms__legal-link" onClick={startClose}>
-            Privacy Policy
-          </NavLink>
-          <span className="ms__legal-sep" aria-hidden="true">·</span>
-          <NavLink to="/terms" className="ms__legal-link" onClick={startClose}>
-            Terms of Service
-          </NavLink>
-        </div>
       </section>
     </>
   );

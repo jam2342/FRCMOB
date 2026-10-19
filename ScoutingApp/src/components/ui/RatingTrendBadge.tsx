@@ -14,10 +14,12 @@ export function RatingTrendBadge({ trend, className }: RatingTrendBadgeProps) {
     return <span className={`rating-trend-badge is-new ${className ?? ''}`}>—</span>;
   }
 
-  // A move that rounds to 0.0 is flat: the badge showed "▼ -0.0" for a 0.04 drop.
+  // The arrow follows the number shown, not the server's own direction (which has a dead zone):
+  // they disagreed into "▬ −0.1". A move that rounds to 0.0 is flat. The arrow carries the sign.
   const change = signedChange(trend.delta ?? 0, 1);
-  const direction = change === '0.0' ? 'flat' : trend.direction;
+  const direction = change === '0.0' ? 'flat' : change.startsWith('+') ? 'up' : 'down';
   const arrow = direction === 'up' ? '▲' : direction === 'down' ? '▼' : '▬';
+  const magnitude = change.replace(/^[+−]/, '');
 
   return (
     <span
@@ -28,7 +30,7 @@ export function RatingTrendBadge({ trend, className }: RatingTrendBadgeProps) {
         {arrow}
       </span>
       <span className="rating-trend-badge__delta">
-        {change}
+        {magnitude}
       </span>
     </span>
   );

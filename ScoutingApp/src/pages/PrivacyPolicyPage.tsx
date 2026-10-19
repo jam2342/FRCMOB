@@ -77,7 +77,7 @@ export function PrivacyPolicyPage() {
               </li>
             </ul>
             <p>
-              <Link to="/settings">Settings → Maintenance</Link> lets you clear favorites and saved
+              <Link to="/settings">Settings → Advanced</Link> lets you clear favorites and saved
               comparisons, or reset settings to their defaults. To erase all local data, use your
               browser's site-data controls. This also removes offline scouting drafts. Nothing on
               the server depends on it.

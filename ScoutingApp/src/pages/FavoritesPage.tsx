@@ -133,6 +133,7 @@ export function FavoritesPage() {
   const [activeTab, setActiveTab] = useState<FavoritesTab>(defaultTab);
   const [favoriteEvents, setFavoriteEvents] = useState<string[]>(() => readFavoriteEvents());
   const [favoriteTeams, setFavoriteTeams] = useState<string[]>(() => readFavoriteTeams());
+  const nothingPinned = favoriteEvents.length === 0 && favoriteTeams.length === 0;
 
   const [eventInput, setEventInput] = useState('');
   const [teamInput, setTeamInput] = useState('');
@@ -681,7 +682,7 @@ export function FavoritesPage() {
     <div className="favorites-card-grid">
       {favoriteEvents.filter(key => !eventCards[key]).map(key => <p key={key} role="status">Loading {eventDisplayName(key)}…</p>)}
       {favoriteEvents.length === 0 ? (
-        <EmptyState compact title="No favorite events yet" description="Add one in Favorite Manager to start tracking it." />
+        <EmptyState compact title="No favorite events yet" description={isMobileLayout ? 'Tap "Add or edit" to pin one.' : 'Add one in Favorite Manager to start tracking it.'} />
       ) : null}
       {visibleEventCards.map((card) => {
         const nextMatch = card.upcoming_matches[0] || null;
@@ -757,7 +758,7 @@ export function FavoritesPage() {
     <div className="favorites-card-grid">
       {favoriteTeams.filter(key => !teamCards[key]).map(key => <p key={key} role="status">Loading team {key.replace(/^frc/, '')}…</p>)}
       {favoriteTeams.length === 0 ? (
-        <EmptyState compact title="No favorite teams yet" description="Add one in Favorite Manager to start tracking it." />
+        <EmptyState compact title="No favorite teams yet" description={isMobileLayout ? 'Tap "Add or edit" to pin one.' : 'Add one in Favorite Manager to start tracking it.'} />
       ) : null}
       {visibleTeamCards.map((card) => (
         <article key={`favorite-team-card-${card.team_key}`} className="favorites-item-card team">
@@ -819,7 +820,7 @@ export function FavoritesPage() {
 
   return (
     <div className={`favorites-layout-grid mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
-      {isMobileLayout ? (
+      {isMobileLayout && mobileFinderOpen ? (
         <MobileViewActions
           label="Favorites views"
           actions={
@@ -946,7 +947,14 @@ export function FavoritesPage() {
       </aside>
 
       <section className="center-main">
-        <SurfaceCard title="Favorites" className="favorites-header-card">
+        <SurfaceCard
+          title="Favorites"
+          className="favorites-header-card"
+          right={isMobileLayout && !mobileFinderOpen ? (
+            <MobileViewActions inline label="Favorites views" actions={[{ label: 'Add or edit', onClick: () => setMobileFinderOpen(true) }]} />
+          ) : undefined}
+        >
+          {nothingPinned && isMobileLayout ? null : (
           <div className="center-tabs-header">
             <SegmentedTabs
               ariaLabel="Favorites tabs"
@@ -958,6 +966,7 @@ export function FavoritesPage() {
               }))}
             />
           </div>
+          )}
         </SurfaceCard>
 
         {/* One definition per list, shown in whichever tabs include it. The page
@@ -966,6 +975,14 @@ export function FavoritesPage() {
             up describing one list. There is no watchlist in this app: no
             storage key, no endpoint, no type. Only Favorites. */}
 
+          {nothingPinned && isMobileLayout ? (
+            // Three tabs over two empty cards said "nothing here" three times.
+            <EmptyState
+              title="Nothing pinned yet"
+              description="Pin events and teams to follow their matches and ratings here."
+              action={<Button onClick={() => setMobileFinderOpen(true)}>Add favorites</Button>}
+            />
+          ) : (
           <div className={activeTab === 'overview' ? styles.overviewGrid : undefined}>
             {activeTab !== 'teams' ? (
               <SurfaceCard
@@ -986,6 +1003,7 @@ export function FavoritesPage() {
               </SurfaceCard>
             ) : null}
           </div>
+          )}
 
       </section>
     </div>

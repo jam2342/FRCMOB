@@ -53,6 +53,7 @@ import {
   relativeFromTimestamp,
   teamNumberFromTeamKey,
   titleizeKey,
+  teamDisplayNumber,
 } from './centerUtils';
 import {
   parseAllianceSlotTeam,
@@ -396,7 +397,7 @@ function formatAwardRecipient(
 }
 
 function lineupLabel(teams: EventScheduleItem['red']): string {
-  return teams.map((team) => `#${team.team_number}`).join(', ') || 'TBD';
+  return teams.map((team) => `#${teamDisplayNumber(team)}`).join(', ') || 'TBD';
 }
 
 function buildFallbackTeamsFromSchedule(matches: EventScheduleItem[]): EventTeamsHistoryResponse['teams'] {
@@ -1857,7 +1858,7 @@ export function EventsPage() {
     <div
       className={`center-layout mobile-finder-layout events-center-layout scouting-layout-grid ${mobileSidebarOpen ? 'mobile-finder-open' : ''} ${isMobileLayout && mobilePanel === 'calendar' ? 'mobile-calendar-open' : ''}`.trim()}
     >
-      {isMobileLayout ? (
+      {isMobileLayout && (mobilePanel !== 'center' || !selectedEventKey) ? (
         <MobileViewActions
           label="Event views"
           actions={[
@@ -2042,6 +2043,8 @@ export function EventsPage() {
                   <h2>{eventHeaderName}</h2>
                 </div>
                 <div className="fm-event-header-actions">
+                  {/* Calendar is one more tap away, from the event search. */}
+                  <MobileViewActions inline label="Event views" actions={[{ label: 'Change', ariaLabel: 'Change event', onClick: () => setMobilePanel('finder') }]} />
                   {/* Sync re-ingests from TBA and needs admin rights; for
                       everyone else it was a button that was always disabled. */}
                   {canSyncEvent ? (
@@ -2176,12 +2179,7 @@ export function EventsPage() {
                     <p>Current leaderboard</p>
                   </div>
                   {rankingRows.length === 0 && firstEventLoad && !eventRankings ? (
-                    <>
-                      <TopListPlaceholder rows={6} label="Loading rankings" />
-                      <div className="center-actions-row compact" style={{ padding: '8px 12px 10px' }} aria-hidden="true">
-                        <button type="button" className="center-btn ghost" disabled tabIndex={-1}>Open Rankings</button>
-                      </div>
-                    </>
+                    <TopListPlaceholder rows={6} label="Loading rankings" />
                   ) : rankingRows.length === 0 ? (
                     <RankingsEmpty failed={rankingsFailed} loading={false} />
                   ) : (
@@ -2197,13 +2195,7 @@ export function EventsPage() {
                       ))}
                     </ul>
                   )}
-                  {rankingRows.length > 0 ? (
-                    <div className="center-actions-row compact" style={{ padding: '8px 12px 10px' }}>
-                      <button type="button" className="center-btn ghost" onClick={() => setActiveTab('rankings')}>
-                        Open Rankings
-                      </button>
-                    </div>
-                  ) : null}
+                  {/* No "Open Rankings" button: the Rankings tab is right above. */}
                 </div>
 
                 <div className="fm-top-card">
@@ -2221,7 +2213,7 @@ export function EventsPage() {
                         <li key={`fm-fuel-${team.team_key}`}>
                           <span className="fm-top-rank">{idx + 1}</span>
                           <button type="button" className="fm-top-team-btn" data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}>
-                            #{team.team_number} {team.nickname || team.team_key}
+                            #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                           </button>
                           <span className="fm-top-value">{metric(team.averages?.fuel_scoring_rate ?? null, 1)}/active min</span>
                         </li>
@@ -2269,7 +2261,7 @@ export function EventsPage() {
                   {topFuelTeams.map((team) => (
                     <li key={`fuel-${team.team_key}`}>
                       <button type="button" className="center-inline-link" data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}>
-                        #{team.team_number} {team.nickname || team.team_key}
+                        #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                       </button>
                       <span>{metric(team.averages?.fuel_scoring_rate ?? null, 1)} fuel/active min</span>
                     </li>
@@ -2283,7 +2275,7 @@ export function EventsPage() {
         ) : null}
 
         {selectedEventKey && activeTab === 'schedule' ? (
-            <SurfaceCard title="Schedule" compactable>
+            <SurfaceCard title="Schedule" hideTitleOnPhone compactable>
             {/* Only until rows exist: shown alongside them, it pushed the list down
                 and then vanished while the rest of the event was still loading. */}
             {firstEventLoad && eventSchedule.length === 0 ? (
@@ -2338,10 +2330,10 @@ export function EventsPage() {
                             key={`${match.match_key}-red-${team.team_key}`}
                             className="center-team-chip"
                             data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
-                            title={`View Team ${team.team_number}`}
+                            title={`View Team ${teamDisplayNumber(team)}`}
                           >
                             <span>
-                              #{team.team_number} {team.nickname || team.team_key}
+                              #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
@@ -2365,10 +2357,10 @@ export function EventsPage() {
                             key={`${match.match_key}-blue-${team.team_key}`}
                             className="center-team-chip"
                             data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
-                            title={`View Team ${team.team_number}`}
+                            title={`View Team ${teamDisplayNumber(team)}`}
                           >
                             <span>
-                              #{team.team_number} {team.nickname || team.team_key}
+                              #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                             </span>
                             <span className="center-chip-inline">
                               {entry?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
@@ -2401,9 +2393,9 @@ export function EventsPage() {
                             <span className={`home-match-compact-state ${effectiveState}`}>{compactStateLabel(effectiveState)}</span>
                           </div>
                           <div className="home-match-compact-line">
-                            <span className="home-match-compact-side red" title={match.red.map(team => `#${team.team_number}`).join(' · ')}>{compactRed}</span>
+                            <span className="home-match-compact-side red" title={match.red.map(team => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactRed}</span>
                             <span className="home-match-compact-score">{scoreboard}</span>
-                            <span className="home-match-compact-side blue" title={match.blue.map(team => `#${team.team_number}`).join(' · ')}>{compactBlue}</span>
+                            <span className="home-match-compact-side blue" title={match.blue.map(team => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactBlue}</span>
                           </div>
                         </div>
                       </Link>
@@ -2800,7 +2792,7 @@ export function EventsPage() {
         ) : null}
 
         {selectedEventKey && activeTab === 'rankings' ? (
-            <SurfaceCard expandable title="Rankings" compactable>
+            <SurfaceCard expandable hideTitleOnPhone title="Rankings" compactable>
             {firstEventLoad && rankingRows.length === 0 ? (
               <div className="center-loading-state">
                 <SkeletonBlock rows={5} compact />
@@ -2853,11 +2845,11 @@ export function EventsPage() {
                   stickyHeader
                   empty="No rankings published yet."
                   renderCards={(narrowRows) => (
-                    <div className="fm-standings-card">
+                    // No "played" column: every team shows the same number once quals end.
+                    <div className="fm-standings-card fm-standings-card--rankings">
                       <div className="fm-standings-header">
                         <span>#</span>
                         <span>Team</span>
-                        <span>PL</span>
                         <span>Rec</span>
                         <span title={rankingSortLabels[0] || undefined}>{shortSortLabel(rankingSortLabels[0], 'S1')}</span>
                         <span title={rankingSortLabels[1] || undefined}>{shortSortLabel(rankingSortLabels[1], 'S2')}</span>
@@ -2875,7 +2867,6 @@ export function EventsPage() {
                             <strong>#{row.team_number}</strong>
                             <small title={row.nickname}>{row.nickname}</small>
                           </div>
-                          <span className="fm-standings-stat">{row.matches_played ?? '-'}</span>
                           <span className="fm-standings-stat">{row.record}</span>
                           <span className="fm-standings-pts">{row.sort_orders[0] != null ? metric(row.sort_orders[0], 1) : '-'}</span>
                           <span className="fm-standings-stat">{row.sort_orders[1] != null ? metric(row.sort_orders[1], 1) : '-'}</span>
@@ -2908,8 +2899,11 @@ export function EventsPage() {
         {selectedEventKey && activeTab === 'teams' ? (
             <SurfaceCard
               expandable
+              hideTitleOnPhone
               title="Teams"
-              subtitle="Fuel, auto and climb from this event's matches; rating and points per match from the whole season so far."
+              subtitle={isMobileLayout
+                ? "Fuel from this event's matches; rating and points from the whole season."
+                : "Fuel, auto and climb from this event's matches; rating and points per match from the whole season so far."}
               compactable
             >
             {firstEventLoad && eventTeamRows.length === 0 ? (
@@ -2934,7 +2928,7 @@ export function EventsPage() {
                           className="center-inline-link"
                           data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
                         >
-                          #{team.team_number} {team.nickname || team.team_key}
+                          #{teamDisplayNumber(team)} {team.nickname || team.team_key}
                         </button>
                       ),
                     },
@@ -3010,6 +3004,35 @@ export function EventsPage() {
                   rowKey={(team) => team.team_key}
                   stickyHeader
                   empty="No team rows available."
+                  // A phone gets one line per team: as cards, nine labelled lines each made
+                  // 75 teams 23 screens long. The full set is a tap away in Team Center.
+                  renderCards={(narrowRows) => (
+                    <div className="fm-standings-card fm-standings-card--teams">
+                      <div className="fm-standings-header">
+                        <span>Team</span>
+                        <span>Rating</span>
+                        <span title="Points per match">Pts</span>
+                        <span title="Fuel per active-hub minute">Fuel</span>
+                      </div>
+                      {narrowRows.map((team) => (
+                        <button
+                          key={`team-fm-${team.team_key}`}
+                          type="button"
+                          className="fm-standings-row"
+                          data-team-peek={team.team_key.toLowerCase()} data-team-peek-event={selectedEventKey} onClick={() => openTeamCenter(team.team_key)}
+                          title={`View Team ${teamDisplayNumber(team)}`}
+                        >
+                          <div className="fm-standings-team">
+                            <strong>#{teamDisplayNumber(team)}</strong>
+                            <small title={team.nickname || undefined}>{team.nickname || team.team_key}</small>
+                          </div>
+                          <span className="fm-standings-pts">{metric(ratingFor(team.team_key)?.rating_0_100 ?? null, 1)}</span>
+                          <span className="fm-standings-stat">{metric(ratingFor(team.team_key)?.expected_points?.total ?? null, 0)}</span>
+                          <span className="fm-standings-stat">{metric(team.averages?.fuel_scoring_rate ?? null, 1)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 />
               </>
             ) : null}

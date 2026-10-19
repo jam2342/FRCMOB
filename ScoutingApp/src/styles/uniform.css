@@ -80,6 +80,21 @@ input[type='search']::-webkit-search-decoration {
   }
 }
 
+/* Read out, not drawn: .sr-only, and a card title that only repeated the tab name
+   (SurfaceCard hideTitleOnPhone). */
+.sr-only,
+.surface-card-head.surface-card-head--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ================================================================== */
 /*  One page header title on phones                                    */
 /* ================================================================== */

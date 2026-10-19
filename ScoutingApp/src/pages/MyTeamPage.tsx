@@ -25,6 +25,7 @@ import { issuedJoinCodeFor, workspaceEndReason } from '../features/workspace/wor
 import { TurnstileChallenge } from '../features/workspace/TurnstileChallenge';
 import { isNativeApp, shareableAppUrl } from '../platform/runtime';
 import { hapticSuccess } from '../utils/haptics';
+import { useMobileLayout } from '../hooks/useMobileLayout';
 import './MyTeamPage.css';
 
 function errorMessage(error: unknown): string {
@@ -50,6 +51,8 @@ function lastSeen(iso: string | null): string {
 
 function SetUpTeam() {
   const revoked = workspaceEndReason() === 'revoked';
+  const isMobileLayout = useMobileLayout();
+  const [showCreate, setShowCreate] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinName, setJoinName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
@@ -166,6 +169,14 @@ function SetUpTeam() {
           </form>
         </SurfaceCard>
 
+        {/* Most people join a team someone else made. On a phone the second form, three more
+            boxes and a security check, waits behind one tap. */}
+        {isMobileLayout && !showCreate && error?.form !== 'create' ? (
+          <p className="my-team__create-link">
+            Starting fresh for your team?{' '}
+            <Button variant="quiet" size="sm" onClick={() => setShowCreate(true)}>Create a workspace</Button>
+          </p>
+        ) : (
         <SurfaceCard title="Create a workspace" subtitle="Starting fresh for your team?" mobileCollapsible={false}>
           <form className="my-team__form" onSubmit={submitCreate}>
             <FieldText
@@ -205,6 +216,7 @@ function SetUpTeam() {
             </Button>
           </form>
         </SurfaceCard>
+        )}
       </div>
     </>
   );

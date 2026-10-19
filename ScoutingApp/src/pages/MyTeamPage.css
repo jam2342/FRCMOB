@@ -119,3 +119,14 @@
   overflow-wrap: anywhere;
   flex: 1 1 auto;
 }
+
+.my-team__create-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}

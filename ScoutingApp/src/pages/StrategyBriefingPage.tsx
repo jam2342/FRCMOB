@@ -830,15 +830,14 @@ export function StrategyBriefingPage() {
         {/* ---- Live ratings board ---- */}
         {eventKey ? (
           <SurfaceCard
-            title="Live Ratings"
-            subtitle="Updates on its own as match results come in."
+            title={schedule != null && eventHasMatchesLeft ? 'Live Ratings' : 'Event Ratings'}
             className="no-print"
           >
             <LiveRatingsPanel
               eventKey={eventKey}
               live={eventHasMatchesLeft}
               showLive={schedule != null && eventHasMatchesLeft}
-              title={schedule != null && eventHasMatchesLeft ? 'Event ratings — live' : 'Event ratings'}
+              flat
             />
           </SurfaceCard>
         ) : null}

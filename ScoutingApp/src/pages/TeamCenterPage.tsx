@@ -65,7 +65,7 @@ import {
   GridIcon, BarChartIcon, CalendarIcon, ImageIcon, CodeIcon,
   FlameIcon, StopwatchIcon, RobotIcon, MountainIcon, GaugeIcon,
   TrophyIcon, HashIcon,
-  ClockIcon, CheckCircleIcon, ExternalLinkIcon, ChevronDownIcon,
+  ClockIcon, CheckCircleIcon, ExternalLinkIcon, ChevronDownIcon, ChevronRightIcon,
   SearchIcon, ScoreboardIcon, EyeIcon, AwardIcon,
 } from '../components/ui/Icons';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
@@ -1084,7 +1084,7 @@ export function TeamCenterPage() {
   const isEstimatedMetric = (key: string): boolean => Boolean(coverageFor(key)?.estimated_from_model);
   const estimateChip = (key: string) =>
     isEstimatedMetric(key) ? (
-      <Chip size="sm" tone="warn" title={coverageFor(key)?.missing_reason ?? undefined}>Estimate</Chip>
+      <Chip size="sm" tone="warn" className="kpi-tag" title={coverageFor(key)?.missing_reason ?? undefined}>Estimate</Chip>
     ) : null;
   const climbRecord = coverageFor('climb_success_prob')?.official_record ? coverageFor('climb_success_prob') : null;
   const metricsAreEstimates = Boolean(teamBreakdown);
@@ -1285,7 +1285,7 @@ export function TeamCenterPage() {
 
   return (
     <div className={`center-layout center-layout-team mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
-      {isMobileLayout ? (
+      {isMobileLayout && (mobileFinderOpen || !selectedTeamKey) ? (
         <MobileViewActions
           label="Team views"
           actions={
@@ -1439,6 +1439,9 @@ export function TeamCenterPage() {
                         <span className="fm-team-hero-event">Didn't compete at {eventDisplayName(skippedEventKey)}; showing the whole season</span>
                       ) : null}
                     </div>
+                    {!mobileFinderOpen ? (
+                      <MobileViewActions inline label="Team views" actions={[{ label: 'Change', ariaLabel: 'Change team', onClick: () => setMobileFinderOpen(true) }]} />
+                    ) : null}
                   </div>
                   <div className="fm-team-hero-stats">
                     <div className="fm-team-hero-stat highlight">
@@ -1602,7 +1605,7 @@ export function TeamCenterPage() {
                         <strong>{pct(teamBreakdown?.averages?.climb_success_prob ?? null, 1)}</strong>
                         {climbRecord ? (
                           <>
-                            <Chip size="sm" tone="neutral" title="Official tower result for this robot in each match">Official</Chip>
+                            <Chip size="sm" tone="neutral" className="kpi-tag" title="Official tower result for this robot in each match">Official</Chip>
                             <small>
                               {climbRecord.official_climbs ?? 0} of {climbRecord.official_matches ?? 0} matches
                             </small>
@@ -1681,6 +1684,8 @@ export function TeamCenterPage() {
                     )}
                   </SurfaceCard>
 
+                  {/* An empty "No risks flagged." card on a phone was a screen of nothing. */}
+                  {isMobileLayout && !teamRating?.cons?.some((signal) => isRobotSignal(signal.label)) ? null : (
                   <SurfaceCard title="Risks" compactable>
                     {teamRating?.cons?.some((signal) => isRobotSignal(signal.label)) ? (
                       <ul className="center-simple-list">
@@ -1695,6 +1700,7 @@ export function TeamCenterPage() {
                       <p className="center-callout muted">No risks flagged.</p>
                     )}
                   </SurfaceCard>
+                  )}
 
                   {/* Model internals; on a phone the page is long enough without them. */}
                   {!isMobileLayout ? (
@@ -1732,10 +1738,13 @@ export function TeamCenterPage() {
                           view they were three N/A boxes. */}
                       {selectedEventKey ? (
                         <>
+                          {/* The phone header already shows the rank. */}
+                          {!isMobileLayout ? (
                           <article className="center-kpi-card">
                             <span><HashIcon className="icon-inline icon-muted" /> Event Rank</span>
                             <strong>{tbaRank !== null ? `#${tbaRank}` : MISSING}</strong>
                           </article>
+                          ) : null}
                           <article className="center-kpi-card">
                             <span><CheckCircleIcon className="icon-inline icon-muted" /> Event Record</span>
                             <strong>{tbaRecord}</strong>
@@ -1887,27 +1896,27 @@ export function TeamCenterPage() {
                       <p className="center-callout muted">No competitions found.</p>
                     ) : (
                       <div className="center-list-stack">
+                        {/* The card is the button: each one used to end in its own full-width
+                            "Open event" button. */}
                         {teamCompetitions.registered_events.map((event) => (
-                          <article key={`competition-${event.event_key}`} className="center-list-item-card">
-                            <header>
+                          <button
+                            key={`competition-${event.event_key}`}
+                            type="button"
+                            className="center-list-item-card tc-competition-card"
+                            title={`Open ${event.name}`}
+                            onClick={() => openEventCenter(event.event_key)}
+                          >
+                            <span className="tc-competition-head">
                               <strong>{event.name}</strong>
-                              <small>
-                                {event.year}
-                              </small>
-                            </header>
+                              <ChevronRightIcon className="icon-inline" />
+                            </span>
                             <small>
-                              {[event.start_date, event.end_date].filter(Boolean).join(' to ') || 'Dates not published'}
+                              {[
+                                [event.start_date, event.end_date].filter(Boolean).join(' to ') || 'Dates not published',
+                                [event.city, event.state_prov, event.country].filter(Boolean).join(', '),
+                              ].filter(Boolean).join(' · ')}
                             </small>
-                            <small>
-                              {[event.city, event.state_prov, event.country].filter(Boolean).join(', ') ||
-                                'Location unavailable'}
-                            </small>
-                            <div className="center-actions-row">
-                              <button type="button" className="center-btn" title={`Open ${event.name}`} onClick={() => openEventCenter(event.event_key)}>
-                                <CalendarIcon className="icon-inline" /> Open event
-                              </button>
-                            </div>
-                          </article>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1953,6 +1962,34 @@ export function TeamCenterPage() {
                           rows={visibleScheduleRowsWithDifficulty}
                           rowKey={(row) => `team-schedule-${row.match_key}`}
                           cardBreakpoint={MOBILE_LAYOUT_BREAKPOINT}
+                          // Two lines per match on a phone. As labelled cards each match was
+                          // ~290px, so a 12-match schedule ran over five screens.
+                          renderCards={(narrowRows) => (
+                            <div className="tc-difficulty-list">
+                              {narrowRows.map((row) => (
+                                <button
+                                  key={`team-schedule-card-${row.match_key}`}
+                                  type="button"
+                                  className="tc-difficulty-row"
+                                  onClick={() => openMatchCenter(row.match_key)}
+                                >
+                                  <span className="tc-difficulty-top">
+                                    <strong>{row.display_name}</strong>
+                                    <span className={`center-alliance-pill ${row.alliance.toLowerCase()}`}>
+                                      {row.alliance}{row.station ? ` ${row.station}` : ''}
+                                    </span>
+                                    <span className={`center-difficulty-pill ${row.difficulty_tier}`}>
+                                      {metric(row.schedule_difficulty_0_10, 1)} / 10
+                                    </span>
+                                  </span>
+                                  <small>
+                                    vs {row.opponents.join(', ') || 'TBD'}
+                                    {row.partners.length ? ` · with ${row.partners.join(', ')}` : ''}
+                                  </small>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         />
                       </>
                     ) : null}

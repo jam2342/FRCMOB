@@ -153,6 +153,8 @@ import {
 } from './scoutingPage.helpers';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useScoutCountdown } from './scoutDraftTimer';
+import { usePhaseFollow } from './scoutPhaseFollow';
+import { MatchClock } from '../features/matchResult/MatchClock';
 import { listFailedMutations, listQueuedMutations } from '../utils/offlineQueue';
 import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
 import { getOrCreateScoutingRoomClientId } from './scoutingRoomClientId';
@@ -279,6 +281,7 @@ function CounterInput(props: {
   return (
     <FieldStepper
       feedback
+      inline
       label={label}
       badge={badge}
       value={value}
@@ -812,6 +815,18 @@ export function ScoutingPage() {
     [liveOverallScoutRating.score_0_100],
   );
   const timerPhase = phaseLabelForTimer(timerSec);
+  const lastCounterTapAt = useRef(0);
+  usePhaseFollow({
+    enabled: isMobileLayout && mobileScoutSection === 'capture',
+    running: timerRunning,
+    phase: timerPhase,
+    panel: mobileCapturePanel,
+    lastTapAt: lastCounterTapAt,
+    onAdvance: (next) => {
+      hapticTap();
+      setMobileCapturePanel(next);
+    },
+  });
 
   /* Which capture card the match is actually in right now.
    *
@@ -2275,6 +2290,7 @@ export function ScoutingPage() {
   }, [form, scoutNotes, selectedDraftKey, loadedDraftKey]);
 
   function updateCounter(field: CounterField, nextValue: number) {
+    lastCounterTapAt.current = Date.now();
     const safe = Math.max(0, Math.floor(nextValue));
     setForm((current) => {
       const next = {
@@ -2298,11 +2314,13 @@ export function ScoutingPage() {
   function jumpToNextMatchTarget() {
     if (!nextMatchTarget || !confirmDraftScopeChange(nextMatchTarget.match_key !== selectedMatchKey)) return;
     setSelectedMatchKey(nextMatchTarget.match_key);
+    // A scout watches one driver station (Red 2) all event, so the next match keeps it.
+    // That is what the phone's old "Next team" button was mostly used to fix by hand.
+    const stationIndex = teamOptions.findIndex((team) => team.team_key === selectedTeamKey);
+    const sameStation = stationIndex >= 0 ? nextMatchTarget.teams[stationIndex]?.team_key || '' : '';
     const hasCurrentTeam = nextMatchTarget.teams.some((team) => team.team_key === selectedTeamKey);
-    if (!hasCurrentTeam) {
-      const fallbackTeam = nextMatchTarget.teams[0]?.team_key || '';
-      if (fallbackTeam) setSelectedTeamKey(fallbackTeam);
-    }
+    const nextTeam = sameStation || (hasCurrentTeam ? selectedTeamKey : nextMatchTarget.teams[0]?.team_key || '');
+    if (nextTeam && nextTeam !== selectedTeamKey) setSelectedTeamKey(nextTeam);
     setStatusText(`Loaded next match: ${nextMatchTarget.match_display}.`);
     if (isMobileLayout) setMobileFinderOpen(false);
   }
@@ -2325,6 +2343,25 @@ export function ScoutingPage() {
     const elapsed = nowSec - start;
     const remaining = clampNumber(MATCH_DURATION_SEC - elapsed, 0, MATCH_DURATION_SEC);
     setCountdown(remaining, elapsed >= 0 && remaining > 0);
+  }
+
+  // The phone's one clock control (the time in the board header). Starting a fresh clock while
+  // the match is on the field joins the field's clock, so there's no separate "Sync" button;
+  // otherwise it counts from 2:40. A finished clock starts over.
+  function startOrPauseClock() {
+    if (timerRunning) { toggleTimer(); return; }
+    if (timerSec <= 0) { setCountdown(MATCH_DURATION_SEC); return; }
+    if (timerSec === MATCH_DURATION_SEC) {
+      const start = matchStartTime(selectedMatch);
+      const elapsed = start ? Math.floor(Date.now() / 1000) - start : -1;
+      if (elapsed >= 0 && elapsed < MATCH_DURATION_SEC) { syncTimerToMatch(); return; }
+    }
+    toggleTimer();
+  }
+
+  // Scouts start tapping when the robots move, so the first Auto count starts an untouched clock.
+  function startClockOnFirstAutoTap(increase: boolean) {
+    if (increase && !timerRunning && timerSec === MATCH_DURATION_SEC) startOrPauseClock();
   }
 
   async function createOrJoinRoom(options?: { overrideRoomKey?: string; restoring?: boolean }): Promise<{ ok: boolean; error?: string }> {
@@ -3457,14 +3494,17 @@ export function ScoutingPage() {
   }
 
   const captureAutoCard = showCaptureAutoCard ? (
-    <SurfaceCard title="Auto" className={phaseEmphasis('Auto')}>
+    <SurfaceCard title="Auto" hideTitleOnPhone className={phaseEmphasis('Auto')}>
       <div className="scout-control-card">
         {countersFor('auto').map((field) => (
           <CounterInput
             key={field.key}
             label={field.label}
             value={form[field.key]}
-            onChange={(next) => updateCounter(field.key, next)}
+            onChange={(next) => {
+              startClockOnFirstAutoTap(next > form[field.key]);
+              updateCounter(field.key, next);
+            }}
             step={field.step}
             badge={renderAutoScoutBadge(field.key)}
           />
@@ -3493,7 +3533,7 @@ export function ScoutingPage() {
   ) : null;
 
   const captureEndgameCard = showCaptureEndgameCard ? (
-    <SurfaceCard title="Endgame" className={phaseEmphasis('Endgame')}>
+    <SurfaceCard title="Endgame" hideTitleOnPhone className={phaseEmphasis('Endgame')}>
       <div className="scout-control-card">
         {isMobileLayout ? (
           <FieldRadioGroup
@@ -4323,7 +4363,7 @@ export function ScoutingPage() {
           </SurfaceCard>
         ) : null}
         {!isMobileLayout || !nextPhoneAssignment || chooseAnotherRobot ? (
-        <SurfaceCard title={isMobileLayout ? "Robot" : "Scouting Mode"} subtitle={isMobileLayout ? undefined : "Tap-first scouting with direct number entry."} collapsible>
+        <SurfaceCard title={isMobileLayout ? "Robot" : "Scouting Mode"} subtitle={isMobileLayout ? undefined : "Tap-first scouting with direct number entry."} collapsible={!isMobileLayout}>
           {!isMobileLayout ? (
           <SegmentedTabs
             className={styles.modeTabs}
@@ -4418,16 +4458,6 @@ export function ScoutingPage() {
                 aria-label="Jump to next match"
               >
                 <ClockIcon size={16} /> Next match
-              </button>
-              <button
-                type="button"
-                className="scout-match-quick-btn"
-                onClick={jumpToNextTeamTarget}
-                disabled={!nextTeamTarget?.team_key}
-                title={nextTeamTarget ? `Next team: ${scoutingTeamLabel(nextTeamTarget.team_key)}` : 'No next team'}
-                aria-label="Jump to next team"
-              >
-                <UsersIcon size={16} /> Next team
               </button>
             </div>
           ) : (
@@ -4717,8 +4747,25 @@ export function ScoutingPage() {
                 <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? scoutingTeamLabel(selectedTeamKey) : MISSING}</strong></span>
                 {autoScoutEnabled ? <span className="fm-scout-hero-chip mode" role="listitem">Auto Draft</span> : null}
                 <span className="fm-scout-hero-chip points" role="listitem">Pts <strong>{pointsSummary.total}</strong></span>
-                <span className={`fm-scout-hero-chip timer ${timerPhaseState}`.trim()} role="listitem">
-                  {timerClockLabel} · {timerPhase}
+                {/* The match clock: tap to start or pause. It replaced a Match Timer card
+                    (Start, Reset, Sync) at the bottom of the board. */}
+                <span className={styles.clockItem} role="listitem">
+                  <button
+                    type="button"
+                    className={`fm-scout-hero-chip timer ${timerPhaseState} ${styles.clockChip}`.trim()}
+                    onClick={startOrPauseClock}
+                    aria-label={timerRunning
+                      ? `Pause match clock, ${timerClockLabel} left`
+                      : timerSec <= 0 ? 'Restart match clock' : `Start match clock, ${timerClockLabel} left`}
+                  >
+                    {timerRunning ? <PauseIcon size={12} /> : timerSec <= 0 ? <ResetIcon size={12} /> : <PlayIcon size={12} />}
+                    {timerClockLabel} · {timerRunning || timerSec <= 0 || timerSec === MATCH_DURATION_SEC ? timerPhase : 'Paused'}
+                  </button>
+                  {!timerRunning && timerSec > 0 && timerSec < MATCH_DURATION_SEC ? (
+                    <button type="button" className={styles.clockReset} onClick={() => setCountdown(MATCH_DURATION_SEC)} aria-label="Reset match clock">
+                      <ResetIcon size={12} />
+                    </button>
+                  ) : null}
                 </span>
               </div>
               {/* The save result, here and not only on the Data tab: scouts on the Board
@@ -4748,7 +4795,11 @@ export function ScoutingPage() {
                     { value: 'review', label: 'Review' },
                   ]}
                 />
-
+                {/* Where the match is (REBUILT's shifts say whose hub is active), once the clock
+                    has started. */}
+                {timerRunning || (timerSec > 0 && timerSec < MATCH_DURATION_SEC) ? (
+                  <MatchClock progress={((MATCH_DURATION_SEC - timerSec) / MATCH_DURATION_SEC) * 100} className={styles.boardClock} />
+                ) : null}
               </div>
             ) : null}
           </>
@@ -4794,7 +4845,7 @@ export function ScoutingPage() {
           )}
 
           {showCaptureTeleopCard ? (
-          <SurfaceCard title="Teleop" className={phaseEmphasis('Teleop')}>
+          <SurfaceCard title="Teleop" hideTitleOnPhone className={phaseEmphasis('Teleop')}>
             <div className="scout-control-card">
               {[...countersFor('teleop'), ...(isMobileLayout ? countersFor('mobility') : [])].map((field) => (
                 <CounterInput
@@ -5220,7 +5271,6 @@ export function ScoutingPage() {
         ) : null}
 
         {showHistorySection ? savedMatchesCard : null}
-        {isMobileLayout && !mobileFinderOpen ? matchTimerCard : null}
       </section>
     </div>
     <AutoScoutEvidencePanel

@@ -32,7 +32,8 @@ describe('MoreSheet', () => {
     expect(screen.getByRole('link', { name: 'My Team' })).toHaveFocus();
     expect(document.body.style.overflow).toBe('hidden');
 
-    const lastLink = screen.getByRole('link', { name: 'Terms of Service' });
+    // Settings is the last link: Privacy and Terms live in every page's footer.
+    const lastLink = screen.getByRole('link', { name: 'Settings' });
     lastLink.focus();
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(screen.getByRole('link', { name: 'My Team' })).toHaveFocus();
