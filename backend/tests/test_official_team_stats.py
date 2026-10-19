@@ -156,3 +156,19 @@ class OfficialTeamStatsTests(DBTestCase):
 
         self.assertFalse(result["available"])
         self.assertIsNone(result["climb"]["rate"])
+
+
+def test_b_teams_are_never_looked_up_on_tba():
+    # TBA has no team page for frc973b: each lookup was a 404 with a traceback (~275 an hour
+    # once live ingest registered off-season B teams, 2026-10-19).
+    from unittest import mock
+
+    from app.services.scoring import official_team_stats
+
+    tba = mock.Mock()
+    assert official_team_stats._official_events(tba, "frc973b", 2026) is None
+    assert official_team_stats._official_events(tba, "frc973B", 2026) is None
+    tba.team_events.assert_not_called()
+    tba.team_events.return_value = []
+    assert official_team_stats._official_events(tba, "frc973", 2026) == {}
+    tba.team_events.assert_called_once_with("frc973", 2026)
