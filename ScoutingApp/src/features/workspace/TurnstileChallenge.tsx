@@ -90,7 +90,7 @@ export function TurnstileChallenge({ siteKey, onToken }: {
 
   return (
     <div>
-      <div ref={container} aria-label="Workspace security check" />
+      <div ref={container} role="group" aria-label="Workspace security check" />
       {error ? (
         <p className="my-team__note" role="status">
           The security check could not finish. Check your connection and{' '}

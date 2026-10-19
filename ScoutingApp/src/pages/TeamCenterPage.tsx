@@ -355,15 +355,6 @@ function teamInputLabel(teamKey: string): string {
   return teamKey.replace(/^frc/i, '');
 }
 
-function PositionalLoadError({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="center-callout warning" role="alert">
-      <p>Couldn't load this right now. Check your connection.</p>
-      <button type="button" className="center-btn ghost" onClick={onRetry}>Try again</button>
-    </div>
-  );
-}
-
 // Recordings your team made that nobody has reviewed yet: counted here for you,
 // hidden from everyone else until an operator accepts them.
 function OwnRecordingsNote({ matches }: { matches?: number }) {
@@ -415,12 +406,7 @@ export function TeamCenterPage() {
   const [eventTeams, setEventTeams] = useState<EventTeamsIntelResponse | null>(null);
 
   const [teamHeatmap, setTeamHeatmap] = useState<TeamHeatmapResponse | null>(null);
-  const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [teamShiftPlay, setTeamShiftPlay] = useState<TeamShiftPlayResponse | null>(null);
-  const [shiftPlayLoading, setShiftPlayLoading] = useState(false);
-  const [heatmapFailed, setHeatmapFailed] = useState(false);
-  const [shiftPlayFailed, setShiftPlayFailed] = useState(false);
-  const [positionalRetry, setPositionalRetry] = useState(0);
   const [teamRobotImageLoading, setTeamRobotImageLoading] = useState(false);
 
   const [loadingTeamData, setLoadingTeamData] = useState(false);
@@ -795,34 +781,27 @@ export function TeamCenterPage() {
   useEffect(() => {
     setTeamHeatmap(null);
     setTeamShiftPlay(null);
-    setHeatmapFailed(false);
-    setShiftPlayFailed(false);
   }, [selectedTeamKey, selectedEventKey]);
 
   useEffect(() => {
     if (activeTab !== 'performance' || !selectedTeamKey || !selectedEventKey) return;
     let cancelled = false;
-    setHeatmapLoading(true);
-    setHeatmapFailed(false);
+    // Supplementary: a failed load just leaves the card hidden.
     getTeamHeatmap(selectedTeamKey, selectedEventKey, { include_workspace: inWorkspace })
       .then((res) => { if (!cancelled) setTeamHeatmap(res); })
-      .catch(() => { if (!cancelled) { setTeamHeatmap(null); setHeatmapFailed(true); } })
-      .finally(() => { if (!cancelled) setHeatmapLoading(false); });
+      .catch(() => { if (!cancelled) setTeamHeatmap(null); });
     return () => { cancelled = true; };
-  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry, inWorkspace, workspaceId]);
+  }, [activeTab, selectedTeamKey, selectedEventKey, inWorkspace, workspaceId]);
 
   /* ── shift-play (offense/defense + attack/defense heat maps) ────── */
   useEffect(() => {
     if (activeTab !== 'performance' || !selectedTeamKey || !selectedEventKey) return;
     let cancelled = false;
-    setShiftPlayLoading(true);
-    setShiftPlayFailed(false);
     getTeamShiftPlay(selectedTeamKey, selectedEventKey, { include_workspace: inWorkspace })
       .then((res) => { if (!cancelled) setTeamShiftPlay(res); })
-      .catch(() => { if (!cancelled) { setTeamShiftPlay(null); setShiftPlayFailed(true); } })
-      .finally(() => { if (!cancelled) setShiftPlayLoading(false); });
+      .catch(() => { if (!cancelled) setTeamShiftPlay(null); });
     return () => { cancelled = true; };
-  }, [activeTab, selectedTeamKey, selectedEventKey, positionalRetry, inWorkspace, workspaceId]);
+  }, [activeTab, selectedTeamKey, selectedEventKey, inWorkspace, workspaceId]);
 
   useEffect(() => {
     if (activeTab !== 'media' || !selectedTeamKey) return;
@@ -1799,20 +1778,17 @@ export function TeamCenterPage() {
                   </div>
                 </SurfaceCard>
 
-                {/* ── Robot Profile from accepted phone recordings ─────── */}
+                {/* ── Recording-based cards ────────────────────────────
+                    Only reviewed phone recordings (or your team's own) feed these, and almost
+                    no team has any yet, so a card shows only when it has something: an
+                    empty field drawn as a heat map read like broken data. */}
+                {robotProfileRows.length > 0 ? (
                 <SurfaceCard
                   title="Robot Profile (from recordings)"
-                  subtitle={
-                    autoScoutProfile?.available
-                      ? `${autoScoutProfile.sample_matches} recorded match${autoScoutProfile.sample_matches === 1 ? '' : 'es'}${autoScoutProfile.is_last_season ? ' · last season' : ''}`
-                      : 'Auto-scout signals from accepted phone recordings.'
-                  }
+                  subtitle={`${autoScoutProfile?.sample_matches ?? 0} recorded match${autoScoutProfile?.sample_matches === 1 ? '' : 'es'}${autoScoutProfile?.is_last_season ? ' · last season' : ''}`}
                   collapsible
                   compactable
                 >
-                  {robotProfileRows.length === 0 ? (
-                    <p className="center-callout muted">No recording-derived signals yet for this team.</p>
-                  ) : (
                     <div className="center-metric-bar-list">
                       {robotProfileRows.map((row) => (
                         <article key={`robot-profile-${row.key}`} className="center-metric-bar-row">
@@ -1832,46 +1808,24 @@ export function TeamCenterPage() {
                         </article>
                       ))}
                     </div>
-                  )}
                 </SurfaceCard>
+                ) : null}
 
-                {/* ── Positional Heatmap ──────────────────────────── */}
+                {teamHeatmap && teamHeatmap.match_count > 0 ? (
                 <SurfaceCard expandable title="Field Heatmap" collapsible compactable>
-                  {heatmapLoading ? (
-                    <div style={{ minHeight: 180 }}>
-                      <SkeletonBlock rows={5} compact />
-                    </div>
-                  ) : !selectedEventKey ? (
-                    <p className="center-callout muted">Choose an event to see where this team plays on the field.</p>
-                  ) : heatmapFailed ? (
-                    <PositionalLoadError onRetry={() => setPositionalRetry((n) => n + 1)} />
-                  ) : teamHeatmap ? (
-                    <>
                       <FieldHeatmap data={teamHeatmap} />
                       <OwnRecordingsNote matches={teamHeatmap.own_unreviewed_matches} />
-                    </>
-                  ) : (
-                    <p className="center-callout muted">No tracking data available for this team at this event.</p>
-                  )}
                 </SurfaceCard>
+                ) : null}
 
-                {/* ── Attack vs Defense (shift analysis) ──────────── */}
+                {teamShiftPlay?.available && teamShiftPlay.offense && teamShiftPlay.defense ? (
                 <SurfaceCard
                   expandable
                   title="Attack vs Defense"
-                  subtitle={
-                    teamShiftPlay?.available
-                      ? `Shift analysis · ${teamShiftPlay.sample_matches} match${teamShiftPlay.sample_matches === 1 ? '' : 'es'}`
-                      : 'Offense vs defense from the match shift schedule.'
-                  }
+                  subtitle={`Shift analysis · ${teamShiftPlay.sample_matches} match${teamShiftPlay.sample_matches === 1 ? '' : 'es'}`}
                   collapsible
                   compactable
                 >
-                  {shiftPlayLoading ? (
-                    <div style={{ minHeight: 180 }}>
-                      <SkeletonBlock rows={5} compact />
-                    </div>
-                  ) : teamShiftPlay?.available && teamShiftPlay.offense && teamShiftPlay.defense ? (
                     <div className="fm-content-stack">
                       <div className="center-metric-bar-list">
                         <article className="center-metric-bar-row">
@@ -1919,14 +1873,8 @@ export function TeamCenterPage() {
                         </div>
                       </div>
                     </div>
-                  ) : !selectedEventKey ? (
-                    <p className="center-callout muted">Choose an event to see attack and defense play.</p>
-                  ) : shiftPlayFailed ? (
-                    <PositionalLoadError onRetry={() => setPositionalRetry((n) => n + 1)} />
-                  ) : (
-                    <p className="center-callout muted">No shift analysis available for this team at this event.</p>
-                  )}
                 </SurfaceCard>
+                ) : null}
                 </div>
 
             ) : null}

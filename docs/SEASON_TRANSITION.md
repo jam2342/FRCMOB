@@ -155,6 +155,28 @@ grep -rn --include="*.py" -E "\b2026\b" backend/app | grep -vE "test|txhou|demo|
 
 ---
 
+## Kickoff timeline (2027)
+
+The game is revealed at kickoff (early January); week 0 events start late February.
+Everything game-specific waits for the manual and the first real TBA payloads; the rest
+can't break anything meanwhile: ingesting a 2027 event before its rules exist fails
+closed (`require_known_season_rules`), so the live-ingest job (every 3 min, events in
+play) and `scripts/live_consistency_check.py` (cron on the VM) only log errors for
+2027 events until then, and 2026 pages keep working.
+
+| When | What | Time |
+|---|---|---|
+| End of the 2026 off-season (Dec) | `build_prior_strengths.py --season 2026 --source db` (early-season prior) | ~1 min |
+| Kickoff day | Read the manual: scoring, bonus RPs, match timing, field → Tier 0 config (`season_template.json`, `season.ts`, `gameFields.ts`) | ~half a day |
+| Kickoff week | Scouting form fields; game name in `SEASON_GAMES`; provisional `SEASON_BASELINES` row (typical points from the manual's scoring and 2026's spread) | 1–2 days |
+| First TBA payloads (week 0) | Breakdown parser + `COMPONENT_PARSERS` + `COPR_METRICS_BY_SEASON`, verified against real JSON; `require_known_season_rules` allows 2027 | 1–2 days |
+| Rules landed, deployed | Bump `AUTOMATION_REGIONAL_HALFDAY_SEASON` on the VM, recreate containers; `freeze_season.py --season 2026`; `season_readiness.py --season 2027 --db` ready | ~1 h |
+| After week 1 | Real `SEASON_BASELINES` from `evaluate_rating_replay.py --season 2027`; bonus RP calibration | ~2 h |
+| After week 2–3 | `train_win_correction.py --season 2027`, ship only if it beats the team model | ~1 h |
+
+Deploy at quiet times: a backend restart costs ~30 s of slow prediction pages while
+each worker rebuilds the season (measured 2026-10-18).
+
 ## Quick checklist
 
 - [ ] `season_template.json`: year, name, field, zones, phases, scoring,

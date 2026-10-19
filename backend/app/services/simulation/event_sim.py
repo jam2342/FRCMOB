@@ -109,7 +109,10 @@ def simulate(
             for side, won, bonus, pts in ((m.red, red_won, m.red_bonus, m.red_points), (m.blue, not red_won, m.blue_bonus, m.blue_points)):
                 rp = (3.0 if won else 0.0) + sum(1.0 for p in bonus.values() if rng.random() < p)
                 for t in side:
-                    row = table[t]
+                    # A robot in a lineup but not on the event's team list (an off-season B
+                    # team before ingest registers it) still plays: 2026catt's forecast
+                    # failed with KeyError 'frc4414b' on 2026-10-18.
+                    row = table.setdefault(t, Standing())
                     row.ranking_points += rp
                     row.matches += 1
                     row.points += pts

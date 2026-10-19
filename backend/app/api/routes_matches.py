@@ -20,6 +20,7 @@ from app.api.schemas import ScheduleResponse, TeamLiveFormResponse
 from app.services.cache import get_cache
 from app.services.events.first_events_client import FIRSTEventsClient
 from app.services.events.first_live_results import first_results_for_waiting_matches
+from app.services.events.match_lineups import write_match_lineups
 from app.services.events.match_times import match_times_from_payload
 from app.services.phase_windows import compute_phase_windows_payload, get_or_compute_match_phase_windows
 from app.services.utils import COMP_LEVEL_ORDER
@@ -874,16 +875,11 @@ def _refresh_event_schedule_from_tba(db: Session, tba: TBAClient, event_key: str
             existing_team.nickname = nickname
     db.flush()
 
-    for match_key, team_key, alliance, idx in match_team_links:
-        db.merge(
-            models.MatchTeam(
-                match_key=match_key,
-                team_key=team_key,
-                event_key=event_key,
-                alliance=alliance,
-                station=f"{alliance[0]}{idx}",
-            )
-        )
+    write_match_lineups(
+        db,
+        event_key,
+        ((match_key, team_key, alliance, f"{alliance[0]}{idx}") for match_key, team_key, alliance, idx in match_team_links),
+    )
 
     db.commit()
     return len(payload)
@@ -1041,16 +1037,7 @@ def _refresh_event_schedule_from_first(
     for team_key in event_team_links:
         db.merge(models.EventTeam(event_key=event_key, team_key=team_key))
 
-    for match_key, team_key, alliance, station in match_team_links:
-        db.merge(
-            models.MatchTeam(
-                match_key=match_key,
-                team_key=team_key,
-                event_key=event_key,
-                alliance=alliance,
-                station=station,
-            )
-        )
+    write_match_lineups(db, event_key, match_team_links)
 
     db.commit()
     return len(schedule), last_modified, False

@@ -7,12 +7,17 @@ const HTML_502 = '<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></ht
 // own Minimize/Expand button (not the toolbar's "Minimize All"). It used to be the card's
 // "View Event" button, which #212 replaced with a link on the event name.
 const HOME_LOADED = /\b(?:Minimize|Expand)\b(?! All)/;
+// Home checks run on a day with six events, so Home always has cards to show: on a real
+// day without matches it rightly shows "No matches on this day" and they could never pass
+// (mirror CI, Monday 2026-10-19). 22:00 UTC is still Oct 18 from Hawaii to Europe; past
+// days' data doesn't change.
+const MATCH_DAY = '2026-10-18T22:00:00Z';
 
 export default [
   {
     name: 'one extra failing to download leaves the page up',
     async run(browser) {
-      const ctx = await phone(browser);
+      const ctx = await phone(browser, { now: MATCH_DAY });
       const page = await ctx.newPage();
       const errors = [];
       page.on('pageerror', (error) => errors.push(String(error.message)));
@@ -58,7 +63,7 @@ export default [
   {
     name: 'a server error shows the saved copy, not an empty day',
     async run(browser) {
-      const ctx = await phone(browser);
+      const ctx = await phone(browser, { now: MATCH_DAY });
       const first = await ctx.newPage();
       await first.goto(`${BASE}/#/home`);
       await until(async () => HOME_LOADED.test(await bodyText(first)), { timeout: 30000, what: 'Home on the first visit' });
@@ -87,7 +92,7 @@ export default [
   {
     name: 'Home recovers by itself after a short outage',
     async run(browser) {
-      const ctx = await phone(browser);
+      const ctx = await phone(browser, { now: MATCH_DAY });
       const page = await ctx.newPage();
       let down = true;
       await page.route('**/api/**', (route) => (down ? route.fulfill({ status: 502, contentType: 'text/html', body: HTML_502 }) : route.continue()));
@@ -100,7 +105,7 @@ export default [
   {
     name: 'a stalled first request does not leave Home loading forever',
     async run(browser) {
-      const ctx = await phone(browser);
+      const ctx = await phone(browser, { now: MATCH_DAY });
       const page = await ctx.newPage();
       await page.route('**/api/events/suggested**', () => undefined); // never answers
       await page.goto(`${BASE}/#/home`);

@@ -254,6 +254,11 @@ class Settings(BaseSettings):
     # FRC Events has a result ~10 s after the field posts it; TBA takes 1-3 min. While a
     # match waits on TBA, its result comes from FRC Events (services/events/first_live_results.py).
     first_live_results_enabled: bool = True
+    # Events in play are re-ingested this often, so ratings and the forecast follow each
+    # match (services/events/live_ingest.py). Off: only the 12 h job ingests, after events end.
+    live_event_ingest_enabled: bool = True
+    live_event_ingest_interval_minutes: int = 3
+    live_event_ingest_max_events: int = 80
 
     @field_validator(
         "tba_auth_key",

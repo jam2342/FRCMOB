@@ -306,6 +306,25 @@ export function nearestLoadedMatchDayMs(
   return best ? best.day : null;
 }
 
+// The jump button's day: the closer of a day with loaded matches and a day with an event
+// on the calendar. Loaded matches win ties (an off-season event can have no match list),
+// but not when they're further away: with yesterday's events on the calendar and a
+// September schedule in memory, Home pointed a month back (2026-10-19).
+export function closerDay(
+  loadedMatchDayMs: number | null,
+  calendarDayMs: number | null,
+  selectedDayMs: number,
+): { ms: number; hasMatches: boolean } | null {
+  if (loadedMatchDayMs === null && calendarDayMs === null) return null;
+  if (calendarDayMs === null) return { ms: loadedMatchDayMs as number, hasMatches: true };
+  if (loadedMatchDayMs === null) return { ms: calendarDayMs, hasMatches: false };
+  const loadedDistance = Math.abs(loadedMatchDayMs - selectedDayMs);
+  const calendarDistance = Math.abs(calendarDayMs - selectedDayMs);
+  return calendarDistance < loadedDistance
+    ? { ms: calendarDayMs, hasMatches: false }
+    : { ms: loadedMatchDayMs, hasMatches: true };
+}
+
 // The event Home opens on: the one you were on, else the first suggested. The suggested
 // list is the biggest events (and whatever is running), so a small off-season event is
 // rarely in it; swapping it for another event made Home show your event for a moment

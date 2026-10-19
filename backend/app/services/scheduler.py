@@ -392,6 +392,18 @@ def start_scheduler() -> None:
             misfire_grace_time=max(300, check_minutes * 60),
         )
 
+    if settings.live_event_ingest_enabled:
+        interval_minutes = max(1, int(settings.live_event_ingest_interval_minutes))
+        _register_job(
+            job_fn=_scheduled_live_event_ingest,
+            trigger="interval",
+            job_id="live_event_ingest",
+            job_name="Ingest events in play",
+            success_log=f"Scheduled live event ingest job added (interval: {interval_minutes} min)",
+            minutes=interval_minutes,
+            misfire_grace_time=interval_minutes * 60,
+        )
+
     if settings.ops_smoke_check_enabled:
         interval_minutes = max(5, int(settings.ops_smoke_check_interval_minutes))
         _register_job(
@@ -520,6 +532,32 @@ def _scheduled_cleanup_empty_workspaces() -> None:
             result.get("deleted_workspaces"), result.get("deleted_members"), result.get("cutoff"),
         )
         details.update(result)
+
+
+def _scheduled_live_event_ingest() -> None:
+    interval_minutes = max(1, int(settings.live_event_ingest_interval_minutes))
+    # The lock outlives a slow run (many events plus one season replay) so runs never overlap.
+    with _scheduled_job("live_event_ingest", lock_ttl_sec=max(600, interval_minutes * 4 * 60), use_db=True) as details:
+        if details is None:
+            return
+        from app.services.events.live_ingest import ingest_events_in_play
+        from app.tba.client import TBAClient
+
+        result = ingest_events_in_play(details["_db"], TBAClient())
+        # Most runs find nothing in play; that isn't worth an info line.
+        log = logger.info if result["events"] else logger.debug
+        log(
+            "Live event ingest events=%s changed=%s rebuilt=%s errors=%s skipped=%s runtime_sec=%s",
+            len(result["events"]), result["changed"], len(result["rebuilt"]), result["errors"],
+            len(result["skipped_over_limit"]), result["runtime_sec"],
+        )
+        details.update(
+            event_count=len(result["events"]),
+            changed=result["changed"],
+            rebuilt_count=len(result["rebuilt"]),
+            errors=result["errors"],
+            runtime_sec=result["runtime_sec"],
+        )
 
 
 REGIONAL_DUE_CHECK_MINUTES = 30

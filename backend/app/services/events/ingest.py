@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.db import models
 from app.services.analysis.evidence import evidence_rejection_reason
 from app.services.events.match_times import match_times_from_payload
+from app.services.events.match_lineups import write_match_lineups
 from app.services.scoring.alliance_results import upsert_alliance_results
 from app.services.scoring.truth import (
     _extract_score_breakdown_truth_rows,
@@ -628,22 +629,16 @@ def ingest_event(
         )
     db.flush()
 
-    linked_match_teams = 0
-    for match in matches:
-        for alliance in ("red", "blue"):
-            alliance_payload = (match.get("alliances") or {}).get(alliance) or {}
-            team_keys = alliance_payload.get("team_keys") or []
-            for idx, team_key in enumerate(team_keys, start=1):
-                db.merge(
-                    models.MatchTeam(
-                        match_key=match["key"],
-                        team_key=team_key,
-                        event_key=event_key,
-                        alliance=alliance,
-                        station=f"{alliance[0]}{idx}",
-                    )
-                )
-                linked_match_teams += 1
+    linked_match_teams = write_match_lineups(
+        db,
+        event_key,
+        (
+            (match["key"], team_key, alliance, f"{alliance[0]}{idx}")
+            for match in matches
+            for alliance in ("red", "blue")
+            for idx, team_key in enumerate(((match.get("alliances") or {}).get(alliance) or {}).get("team_keys") or [], start=1)
+        ),
+    )
 
 
     score_breakdown_truth = upsert_score_breakdown_truth(
