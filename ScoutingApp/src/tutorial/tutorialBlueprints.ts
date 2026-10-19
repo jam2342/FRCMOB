@@ -732,7 +732,7 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
         system: 'UI Baseline',
         title: 'Set appearance defaults for your crew',
         description:
-          'Theme and density are operational settings. Use compact mode for shared displays and crowded pit workflows.',
+          'Pick a theme here. Density (compact mode for shared displays and crowded pit workflows) is under Advanced.',
         actions: [
           'Pick theme and density intentionally.',
           'Verify immediate application on current page.',
@@ -748,10 +748,10 @@ const BLUEPRINTS: Record<TutorialScope, TutorialBlueprint> = {
       },
       {
         id: 'settings-workflow',
-        system: 'Workflow Defaults',
+        system: 'Advanced',
         title: 'Configure quick search and tutorial behavior',
         description:
-          'Workflow defaults control navigation speed and onboarding consistency for the full team.',
+          'Advanced holds density, region and refresh defaults, tutorial behavior, device resets and operator sign-in.',
         actions: [
           'Set quick search mode and region defaults.',
           'Set tutorial autoplay policy for device role.',

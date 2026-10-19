@@ -762,32 +762,6 @@ export type EventPredictionScheduleResponse = {
   matches: PredictedScheduleMatch[];
 };
 
-type MatchPhaseWindow = {
-  start_sec: number;
-  end_sec: number;
-  duration_sec: number;
-  start_unix: number | null;
-  end_unix: number | null;
-  confidence_0_1?: number;
-};
-
-export type MatchPhasesResponse = {
-  ok: boolean;
-  match_key: string;
-  event_key: string;
-  time: number | null;
-  source: string;
-  config_season: number;
-  config_version: string;
-  total_sec: number;
-  windows: {
-    auto: MatchPhaseWindow;
-    teleop: MatchPhaseWindow;
-    teleop_scoring: MatchPhaseWindow;
-    endgame: MatchPhaseWindow;
-  };
-};
-
 // ── Heatmap types ────────────────────────────────────────────────
 
 export type TeamHeatmapResponse = {
@@ -2492,18 +2466,6 @@ export async function getAllianceOutlook(eventKey: string, teamKeys: string[]): 
   }));
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as AllianceOutlookResponse;
-}
-
-export async function getMatchPhases(matchKey: string): Promise<MatchPhasesResponse> {
-  const res = await apiFetch(
-    `${API}/matches/${matchKey}/phases`,
-    _cacheRequestOptions(undefined, {
-      cacheTtlMs: EVENT_LIVE_FORM_CACHE_TTL_MS,
-      staleWhileRevalidateMs: EVENT_LIVE_FORM_CACHE_TTL_MS * 3,
-    }),
-  );
-  if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as MatchPhasesResponse;
 }
 
 export async function getEventSchedule(

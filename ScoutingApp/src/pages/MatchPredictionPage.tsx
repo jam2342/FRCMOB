@@ -445,14 +445,7 @@ export function MatchPredictionPage() {
             loading={loading}
           />
 
-          {predictionData ? (
-            <div>
-              <p className="center-event-status">
-                {/* The picker above already shows the event's name. */}
-                {predictions.length} match{predictions.length === 1 ? '' : 'es'}
-              </p>
-            </div>
-          ) : null}
+          {/* No count here: the Matches card below carries it. */}
 
           {scheduleError ? <p className="center-callout warning">{scheduleError} <button type="button" className="center-btn ghost" onClick={() => void fetchData(eventKey, true)}>Retry schedule</button></p> : null}
           {errorText ? <p className="center-callout warning">{errorText}</p> : null}

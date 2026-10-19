@@ -97,6 +97,12 @@ export function SyncStatusCard() {
     } catch { setError('Could not export this recording. Try again.'); }
   };
 
+  // Someone with no team and nothing saved got "0 changes waiting · 0 recordings waiting · No
+  // confirmed sync yet": a card about nothing. It appears as soon as anything is waiting.
+  const nothingToShow = !workspaceId && queueSize === 0 && recordings !== null && recordings.length === 0
+    && failedChanges === 0 && !issue && !readError && !error && !lastSync;
+  if (nothingToShow) return null;
+
   return (
     <SurfaceCard title="Saved on this phone" subtitle="Changes and recordings stay here until the server confirms them." mobileCollapsible={false}>
       <p>{queueSize} scouting change{queueSize === 1 ? '' : 's'} waiting · {recordings === null ? (readError ? 'Could not read recordings' : 'Checking recordings…') : `${recordings.length} recording${recordings.length === 1 ? '' : 's'} waiting`}</p>

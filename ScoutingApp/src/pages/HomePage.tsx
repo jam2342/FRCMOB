@@ -28,6 +28,7 @@ import {
   normalizeMatchKey,
   parseNumber,
   relativeFromTimestamp,
+  teamDisplayNumber,
 } from './centerUtils';
 import {
   buildHomeFilterCounts,
@@ -898,6 +899,11 @@ export function HomePage() {
     return buildHomeFilterCounts(feedEventKeys, scheduleByEvent, nowMs, { dayMs: selectedDayMs });
   }, [feedEventKeys, nowMs, scheduleByEvent, selectedDayMs]);
 
+  // Filters only help when the day mixes kinds of match. A finished day read "All 70 · Live 0 ·
+  // Upcoming 0 · Final 70": two tabs that showed nothing and two that showed the same list.
+  const showHomeFilters = activeFilter !== 'all'
+    || (['live', 'upcoming', 'completed'] as const).filter((key) => filterCounts[key] > 0).length > 1;
+
   const todayDateToken = useMemo(() => localDateTokenFromMs(nowMs), [nowMs]);
 
   const selectHomeEventKey = useCallback((eventKey: string, options?: { manual?: boolean }) => {
@@ -1661,13 +1667,35 @@ export function HomePage() {
                 tabIndex={-1}
               />
             </div>
-            <p>{selectedDayDateLabel}</p>
+            {isMobileLayout ? (
+              // The date and Event info share a row on phones; Event info had a row of its own
+              // beside "Minimize All", which nobody needed with the day filter right there.
+              <div className="home-day-meta-row">
+                <p>{selectedDayDateLabel}</p>
+                <button
+                  type="button"
+                  className={`home-mini-tab-btn ${mobileDrawerOpen ? 'active' : ''}`.trim()}
+                  onClick={() => {
+                    setMobileCalendarOpen(false);
+                    setMobileDrawerOpen(true);
+                  }}
+                  title="View leaderboard, stream & links"
+                >
+                  <InfoIcon className="icon-inline" /> <span className="home-mini-tab-label">Event info</span>
+                </button>
+              </div>
+            ) : (
+              <p>{selectedDayDateLabel}</p>
+            )}
             {!isMobileLayout && !selectedEventKey && selectedDayPrimaryEventName ? (
               <small className="home-day-default-event">{selectedDayPrimaryEventName}</small>
             ) : null}
           </div>
 
           {/* ── Expandable event search ─────────────────────────────── */}
+          {/* Desktop only: on a phone the search in the top bar finds events too, and this
+              second box sat right under it. */}
+          {isMobileLayout ? null : (
           <div
             ref={eventSearchContainerRef}
             className={`home-event-search-widget ${eventSearchOpen ? 'expanded' : ''}`.trim()}
@@ -1710,6 +1738,7 @@ export function HomePage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Only a match with a published start gets a countdown; tapping it opens that match. */}
           {nextHomeMatchHero ? (
@@ -1724,6 +1753,7 @@ export function HomePage() {
             </Link>
           ) : null}
 
+          {showHomeFilters ? (
           <SegmentedTabs<HomeFilter>
             ariaLabel="Home feed filters"
             value={activeFilter}
@@ -1735,13 +1765,15 @@ export function HomePage() {
                 { key: 'upcoming', label: 'Upcoming', icon: <ClockIcon className="icon-inline icon-status-upcoming" /> },
                 { key: 'completed', label: 'Final', icon: <CheckCircleIcon className="icon-inline icon-status-final" /> },
               ] as Array<{ key: HomeFilter; label: string; icon: React.ReactNode }>
-            ).map((item) => ({
+            ).filter((item) => item.key === 'all' || item.key === activeFilter || filterCounts[item.key] > 0).map((item) => ({
               value: item.key,
               icon: item.icon ?? undefined,
               label: <>{item.label} <small>{filterCounts[item.key]}</small></>,
               title: `Show ${item.label.toLowerCase()} matches`,
             }))}
           />
+          ) : null}
+          {isMobileLayout ? null : (
           <div className="home-board-toolbar-actions">
             <button
               type="button"
@@ -1752,20 +1784,8 @@ export function HomePage() {
             >
               <ChevronDownIcon className={`icon-inline ${allHomeCardsCollapsed ? '' : 'icon-rotate-180'}`.trim()} /> {allHomeCardsCollapsed ? 'Expand All' : 'Minimize All'}
             </button>
-            {isMobileLayout ? (
-              <button
-                type="button"
-                className={`home-mini-tab-btn ${mobileDrawerOpen ? 'active' : ''}`.trim()}
-                onClick={() => {
-                  setMobileCalendarOpen(false);
-                  setMobileDrawerOpen(true);
-                }}
-                title="View leaderboard, stream & links"
-              >
-                <InfoIcon className="icon-inline" /> Event info
-              </button>
-            ) : null}
           </div>
+          )}
         </section>
 
         {!isMobileLayout ? (
@@ -1928,9 +1948,9 @@ export function HomePage() {
                                         </span>
                                       </div>
                                       <div className="home-match-compact-line">
-                                        <span className="home-match-compact-side red" title={match.red.map((team) => `#${team.team_number}`).join(' · ')}>{compactRed}</span>
+                                        <span className="home-match-compact-side red" title={match.red.map((team) => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactRed}</span>
                                         <span className="home-match-compact-score">{headerValue}</span>
-                                        <span className="home-match-compact-side blue" title={match.blue.map((team) => `#${team.team_number}`).join(' · ')}>{compactBlue}</span>
+                                        <span className="home-match-compact-side blue" title={match.blue.map((team) => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactBlue}</span>
                                       </div>
                                     </div>
                                   ) : (
@@ -1972,10 +1992,10 @@ export function HomePage() {
                                             data-team-peek={team.team_key.toLowerCase()}
                                             data-team-peek-event={section.event_key}
                                             onClick={() => openTeamCenter(team.team_key.toLowerCase(), section.event_key)}
-                                            title={`View Team ${team.team_number}`}
+                                            title={`View Team ${teamDisplayNumber(team)}`}
                                           >
                                             <TeamAvatar teamKey={team.team_key.toLowerCase()} teamNumber={team.team_number} eventKey={section.event_key} size={16} />
-                                            #{team.team_number}
+                                            #{teamDisplayNumber(team)}
                                           </button>
                                         )) : 'TBD'}
                                       </div>

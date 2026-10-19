@@ -1,4 +1,5 @@
 // Event date and calendar helpers shared by Home and Events (they were two copies).
+import { teamDisplayNumber } from './centerUtils';
 import type { EventScheduleItem, EventSearchItem } from '../api';
 
 export type EventDateRange = {
@@ -77,9 +78,8 @@ export function shiftMonthToken(monthToken: string, delta: number): string {
   return `${year}-${month}`;
 }
 
+// Every robot: "+1" hid the third one, and a fan looking for their team had to open the match.
 export function compactAllianceLabel(teams: EventScheduleItem['red']): string {
   if (!Array.isArray(teams) || teams.length === 0) return 'TBD';
-  const labels = teams.map((team) => `#${team.team_number}`);
-  if (labels.length <= 2) return labels.join(' · ');
-  return `${labels.slice(0, 2).join(' · ')} +${labels.length - 2}`;
+  return teams.map((team) => `#${teamDisplayNumber(team)}`).join(' · ');
 }

@@ -243,6 +243,42 @@
   }
 }
 
+/* Inline stepper: label on the left, buttons on the right, when the row has room (about a
+   390px phone and up). Narrower than that the label would wrap to three lines, so it stays
+   stacked. */
+.inlineStepperHost {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+@container (min-width: 300px) {
+  .inlineStepperField {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--space-3);
+  }
+
+  .inlineStepperField > .labelRow {
+    grid-column: 1;
+  }
+
+  .inlineStepperField > .stepper {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .inlineStepperField > .stepper .stepperValue {
+    flex: none;
+    width: 64px;
+  }
+
+  .inlineStepperField > .hint,
+  .inlineStepperField > .error {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ── Toggle ───────────────────────────────────────────────────────── */
 
 .toggleRow {

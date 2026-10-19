@@ -17,7 +17,9 @@ type LiveRatingsPanelProps = {
   // Rows shown before "Show all". Fifty rows is several phone screens of
   // scrolling past to reach whatever sits below the board.
   collapsedRows?: number;
+  // Leave out inside a card that already has a title (Strategy): two titles, two boxes.
   title?: string;
+  flat?: boolean;
 };
 
 function formatAgo(fetchedAtMs: number | null, nowMs: number): string {
@@ -39,7 +41,8 @@ export function LiveRatingsPanel({
   showLive,
   maxRows = 50,
   collapsedRows = 10,
-  title = 'Live ratings',
+  title,
+  flat = false,
 }: LiveRatingsPanelProps) {
   const { online } = useOnlineStatus();
   const { ratings, lastFetchedAtMs, loading, error, recentChanges, refreshNow } =
@@ -75,25 +78,28 @@ export function LiveRatingsPanel({
   if (!eventKey) return null;
 
   return (
-    <section className="live-ratings-panel" aria-live="polite">
+    <section className={`live-ratings-panel${flat ? ' live-ratings-panel--flat' : ''}`} aria-live="polite">
       <header className="live-ratings-panel__header">
         <div className="live-ratings-panel__title">
           {(showLive ?? live) ? <span className="live-ratings-panel__dot" aria-hidden="true" /> : null}
-          <h3>{title}</h3>
-        </div>
-        <div className="live-ratings-panel__meta">
+          {title ? <h3>{title}</h3> : null}
           <span className="live-ratings-panel__ago">
             {online ? `Updated ${formatAgo(lastFetchedAtMs, nowMs)}` : 'Saved copy'}
           </span>
-          <button
-            type="button"
-            className="live-ratings-panel__refresh"
-            onClick={refreshNow}
-            disabled={loading || !online}
-          >
-            Refresh
-          </button>
         </div>
+        {/* It polls by itself, so a Refresh button only earns its place after a failed poll. */}
+        {error ? (
+          <div className="live-ratings-panel__meta">
+            <button
+              type="button"
+              className="live-ratings-panel__refresh"
+              onClick={refreshNow}
+              disabled={loading || !online}
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {error ? (

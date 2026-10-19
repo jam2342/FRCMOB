@@ -118,6 +118,13 @@ export function teamNumberFromTeamKey(teamKey: string): number | null {
   return Number(match[1]);
 }
 
+// The number to print for a robot in a lineup. B teams (frc4159B) come back with
+// team_number 0, which read as "#0"; their key says who they are.
+export function teamDisplayNumber(team: { team_key: string; team_number?: number | null }): string {
+  if (team.team_number && team.team_number > 0) return String(team.team_number);
+  return team.team_key.replace(/^frc/i, '').toUpperCase();
+}
+
 export function normalizeTeamKeyInput(raw: string): string | null {
   const value = raw.trim().toLowerCase();
   if (!value) return null;

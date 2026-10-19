@@ -564,35 +564,66 @@ export function ComparePage() {
     { key: 'matches', label: 'Matches', numeric: true, render: (row) => row.rating?.matches_here ?? '—' },
   ];
 
-  /* Below the breakpoint a compare row becomes a compact metric grid rather
-     than one stacked card per figure: eight short numbers fit on a scouting
-     phone, twelve labelled lines do not. The cells still come out of the
-     columns above through renderCell, so there is one definition of how a
-     compare figure is formatted — the second copy that used to live here is
-     what let the mobile view quietly drift two metrics behind the desktop one. */
-  const CARD_METRIC_KEYS = ['rating', 'robot', 'rank', 'climb', 'fuel', 'auto', 'matches'];
-  const renderSummaryCards = (rows: CompareRow[]) => (
-    <div className={styles.mobileList}>
-      {rows.map((row) => {
-        return (
-          <article key={`compare-mobile-${row.team_key}`} className={styles.mobileCard}>
-            <div className={styles.mobileHead}>
-              {renderCell(summaryColumns[0], row)}
-            </div>
-            <div className={styles.mobileMetrics}>
-              {summaryColumns
-                .filter((column) => CARD_METRIC_KEYS.includes(column.key))
-                .map((column) => (
-                  <span key={column.key}>
-                    {column.label} <strong>{renderCell(column, row)}</strong>
-                  </span>
-                ))}
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  );
+  /* Below the breakpoint the comparison turns sideways: one row per figure, one column per
+     team, the leader in each row marked. The phone used to show a card per team and then the
+     same numbers again as "highlight" cards. Cells still come from the columns above through
+     renderCell, so a figure is formatted in one place. */
+  const SIDE_BY_SIDE_KEYS = ['rating', 'points', 'fuel', 'auto', 'climb', 'rank', 'matches'];
+  const sideBySideValue = (key: string, row: CompareRow): number | null => {
+    switch (key) {
+      case 'rating': return row.rating?.rating_0_100 ?? null;
+      case 'points': return row.rating?.expected_points?.total ?? null;
+      case 'fuel': return row.breakdown?.averages?.fuel_scoring_rate ?? null;
+      case 'auto': return row.breakdown?.averages?.auto_contribution ?? null;
+      case 'climb': return row.breakdown?.averages?.climb_success_prob ?? null;
+      case 'rank': return parseNumber(asRecord(asRecord(asRecord(row.tba_event_status)?.qual)?.ranking)?.rank);
+      default: return null;
+    }
+  };
+  const renderSummaryCards = (rows: CompareRow[]) => {
+    const metricColumns = SIDE_BY_SIDE_KEYS
+      .map((key) => summaryColumns.find((column) => column.key === key))
+      .filter((column): column is TableColumn<CompareRow> => Boolean(column))
+      // A row every team leaves blank (no TBA rank outside a shared event) is just dashes.
+      .filter((column) => column.key === 'matches' || rows.some((row) => sideBySideValue(column.key, row) !== null));
+    return (
+      <div className={styles.sideScroll}>
+        <table className={styles.sideTable}>
+          <thead>
+            <tr>
+              <th scope="col"><span className="sr-only">Figure</span></th>
+              {rows.map((row) => (
+                <th key={`side-head-${row.team_key}`} scope="col">
+                  <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)} title={row.breakdown?.team.nickname || undefined}>
+                    #{teamNumberFromTeamKey(row.team_key) ?? row.team_key}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {metricColumns.map((column) => {
+              const values = rows.map((row) => sideBySideValue(column.key, row));
+              const known = values.filter((value): value is number => value !== null);
+              const best = rows.length > 1 && known.length > 1
+                ? (column.key === 'rank' ? Math.min(...known) : Math.max(...known))
+                : null;
+              return (
+                <tr key={`side-row-${column.key}`}>
+                  <th scope="row">{column.label}</th>
+                  {rows.map((row, index) => (
+                    <td key={`side-${column.key}-${row.team_key}`} className={best !== null && values[index] === best && known.some((value) => value !== best) ? styles.sideBest : undefined}>
+                      {renderCell(column, row)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   const metricHighlights = useMemo(() => {
     const definitions = [
@@ -785,7 +816,7 @@ export function ComparePage() {
     <>
     <PageViewBar items={COMPARE_VIEWS} />
     <div className={`compare-layout-grid mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
-      {isMobileLayout ? (
+      {isMobileLayout && mobileFinderOpen ? (
         <MobileViewActions
           label="Compare views"
           actions={
@@ -932,6 +963,9 @@ export function ComparePage() {
         <SurfaceCard
           title={viewTitle(COMPARE_VIEWS, '/compare')}
           className="compare-header-card"
+          right={isMobileLayout && !mobileFinderOpen && compareTeamKeys.length > 0 ? (
+            <MobileViewActions inline label="Compare views" actions={[{ label: 'Edit teams', onClick: () => setMobileFinderOpen(true) }]} />
+          ) : undefined}
         >
           {compareTeamKeys.length > 0 ? (
           <div className="center-tabs-header">
@@ -987,7 +1021,7 @@ export function ComparePage() {
         </SurfaceCard>
 
         {activeTab === 'summary' && compareTeamKeys.length > 0 ? (
-            <SurfaceCard expandable title="Summary" className="compare-summary-card" compactable>
+            <SurfaceCard expandable hideTitleOnPhone title="Summary" className="compare-summary-card" compactable>
             {/* Highlights below the teams: they need every team's data, and arriving
                 above the list they pushed it ~300 px down on a phone. */}
             <Table
@@ -998,7 +1032,7 @@ export function ComparePage() {
               renderCards={renderSummaryCards}
               empty="Pick teams to compare."
             />
-            {metricHighlights.length > 0 ? (
+            {isMobileLayout ? null : metricHighlights.length > 0 ? (
               <div className="compare-highlights-grid">
                 {metricHighlights.map((highlight) => (
                   <article

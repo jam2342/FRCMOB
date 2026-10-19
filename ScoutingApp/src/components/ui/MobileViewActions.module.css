@@ -24,3 +24,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.inline {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.inlineButton {
+  white-space: nowrap;
+}

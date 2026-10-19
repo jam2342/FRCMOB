@@ -34,8 +34,7 @@ it('drops alliance analysis after a slot changes', async () => {
   vi.mocked(getEventTeamsIntel).mockResolvedValue(teams(2000) as never);
   vi.mocked(getAllianceOutlook).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   render(<MemoryRouter initialEntries={['/?event=2026new&teams=frc2000,frc2001,frc2002']}><AllianceAdvisorPage /></MemoryRouter>);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Alliance' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: 'Analyze Alliance' }));
+  // A full lineup from the link analyses itself; there is no Analyze button.
   await waitFor(() => expect(finish).toBeDefined());
   fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'frc2003' } });
   await act(async () => { finish({ alliance: { team_keys: [] } } as never); });
@@ -58,8 +57,6 @@ it('shows the alliance outlook with plain strengths and risks', async () => {
     })),
   } as never);
   render(<MemoryRouter initialEntries={['/?event=2026new&teams=frc2000,frc2001,frc2002']}><AllianceAdvisorPage /></MemoryRouter>);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Alliance' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: 'Analyze Alliance' }));
   // The default 1 s ran out on a loaded CI runner (1.1 s on 2026-10-18).
   await screen.findByText('Beats a strong alliance', undefined, { timeout: 5000 });
   expect(vi.mocked(getAllianceOutlook).mock.calls.at(-1)?.[1]).toEqual(['frc2000', 'frc2001', 'frc2002']);

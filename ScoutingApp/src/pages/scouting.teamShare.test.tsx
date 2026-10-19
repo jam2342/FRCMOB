@@ -153,7 +153,8 @@ describe('Scouting team-room sharing and labels', () => {
     await screen.findByText('Red 1', undefined, FIND_TIMEOUT);
     expect(screen.getByText('Blue 2')).toBeInTheDocument();
     expect(screen.getByRole('button',{name:'Jump to next match'})).toHaveTextContent('Next match');
-    expect(screen.getByRole('button',{name:'Jump to next team'})).toHaveTextContent('Next team');
+    // "Next match" keeps the station, so phones no longer carry a separate "Next team".
+    expect(screen.queryByRole('button',{name:'Jump to next team'})).not.toBeInTheDocument();
   }, HEAVY_RENDER_TIMEOUT_MS);
 
 });

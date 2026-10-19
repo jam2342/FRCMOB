@@ -1624,6 +1624,13 @@ select.center-input option,
   min-height: 94px;
 }
 
+/* A source tag ("Estimate", "Official") is as wide as its word, not a bar across the tile. */
+.center-kpi-card .kpi-tag {
+  justify-self: start;
+  align-self: flex-start;
+  width: fit-content;
+}
+
 .center-kpi-card span {
   color: var(--color-text-muted);
   font-size: var(--font-size-legacy-11);
@@ -2382,7 +2389,17 @@ select.center-input option,
   gap: 6px;
 }
 
-.center-team-card header {
+.center-team-card--button {
+  width: 100%;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.center-team-card header,
+.center-team-card-head {
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -2419,12 +2436,6 @@ select.center-input option,
 .center-alliance-pill.blue {
   border-color: color-mix(in srgb, var(--color-alliance-blue) 72%, transparent);
   color: var(--color-text);
-}
-
-.center-phase-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .center-stream-embed-wrap {
@@ -2670,8 +2681,7 @@ select.center-input option,
   .center-content-grid,
   .center-team-card-grid,
   .center-alliance-split,
-  .center-kpi-grid,
-  .center-phase-grid {
+  .center-kpi-grid {
     grid-template-columns: 1fr;
   }
 

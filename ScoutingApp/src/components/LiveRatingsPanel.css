@@ -5,6 +5,12 @@
   padding: 0.75rem 0.85rem;
 }
 
+.live-ratings-panel--flat {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .live-ratings-panel__header {
   display: flex;
   align-items: center;

@@ -159,7 +159,14 @@
 
   .phoneCaptureNav {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
+    min-width: 0;
+  }
+
+  /* The match clock bar, on its own line under the phase tabs. */
+  .boardClock {
+    flex: 1 0 100%;
     min-width: 0;
   }
 
@@ -286,4 +293,44 @@
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+/* The header's match clock: the time chip is the button. Sized here (two classes beat the
+   unlayered 44px button rule in touch-polish), so it stays a chip inside the clamped header;
+   ::before gives it a 44px-tall tap area without growing it. */
+.clockItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.clockItem .clockChip,
+.clockItem .clockReset {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.clockItem .clockReset {
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--color-text-muted);
+}
+
+.clockItem .clockChip::before,
+.clockItem .clockReset::before {
+  content: '';
+  position: absolute;
+  inset: -11px -4px;
 }
