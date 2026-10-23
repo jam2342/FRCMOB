@@ -1,7 +1,7 @@
 # Detector training and evaluation (scripts/train_frc_yolo.py, eval_detector.py,
 # verify_holdout.py, export_on_device_model.py, dataset tools). Not part of the
 # server image: install on the training machine on top of requirements.txt.
-ultralytics>=8.4.177,<9.0.0
+ultralytics>=8.4.183,<9.0.0
 # scripts/train_win_correction.py fits the win-probability correction with torch
 # (ultralytics needs it too). Install the CPU wheel on a machine with no GPU:
 # pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1
