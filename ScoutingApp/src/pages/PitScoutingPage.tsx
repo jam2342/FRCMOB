@@ -459,7 +459,7 @@ function PitScoutingWorkspacePage() {
       <ScoutingViewBar />
       <div className="center-page-container">
 
-          <SurfaceCard
+          <SurfaceCard tourId="pit-head"
             title={scoutingViewTitle('/scouting/pit')}
             subtitle="Robot specs, claimed capabilities, and photos — one entry per team."
             mobileCollapsible={false}
@@ -493,7 +493,7 @@ function PitScoutingWorkspacePage() {
             </div>
           ) : null}
           {teams.length > 0 && (!isMobile || !selectedTeam || teamChooserOpen) ? (
-            <SurfaceCard
+            <SurfaceCard tourId="pit-teams"
               title="Teams"
               subtitle="Tap a team to fill out its pit form. Green = completed, camera = has photos."
               mobileCollapsible={false}
@@ -534,7 +534,7 @@ function PitScoutingWorkspacePage() {
           ) : null}
 
           {selectedTeam ? (
-            <SurfaceCard
+            <SurfaceCard tourId="pit-form"
               title={`Team ${teamNumber(selectedTeam)}`}
               subtitle={
                 teams.find((team) => team.team_key === selectedTeam)?.nickname ??

@@ -62,15 +62,23 @@
   gap: 9px;
 }
 
+/* Placeholders hold their space at once but only show after a moment: a load that lands
+   within ~200 ms never flashes grey bars. */
 .skeleton-stack {
   display: grid;
   gap: 8px;
+  animation: uiFadeIn 240ms ease 200ms both;
 }
 
 .skeleton-line {
   height: 14px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(90, 112, 132, 0.18) 0%, rgba(144, 170, 196, 0.26) 50%, rgba(90, 112, 132, 0.18) 100%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-text-muted) 14%, transparent) 0%,
+    color-mix(in srgb, var(--color-text-muted) 24%, transparent) 50%,
+    color-mix(in srgb, var(--color-text-muted) 14%, transparent) 100%
+  );
   background-size: 220% 100%;
   animation: skeletonShimmer 1.3s linear infinite;
 }

@@ -61,7 +61,7 @@ import { usePageVisibility } from '../hooks/usePageVisibility';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { countersFor, scalesFor } from '../config/gameFields';
 import { downloadCsv } from '../utils/csvExport';
-import { hapticTap, hapticUndo, hapticSuccess } from '../utils/haptics';
+import { hapticPhase, hapticTap, hapticUndo, hapticSuccess } from '../utils/haptics';
 import { closeToast, showToast } from '../components/ui/toast';
 import {
   PlayIcon, PauseIcon, ResetIcon, SettingsIcon, ClipboardIcon,
@@ -153,7 +153,12 @@ import {
 } from './scoutingPage.helpers';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useScoutCountdown } from './scoutDraftTimer';
-import { usePhaseFollow } from './scoutPhaseFollow';
+import { usePhaseCue, usePhaseFollow } from './scoutPhaseFollow';
+import { NoteTagPicker } from '../features/scoutNotes/NoteTagPicker';
+import { normalizeNoteTags, type ScoutNoteTag } from '../features/scoutNotes/noteTags';
+import { LIVE_FLAG_TAGS, liveFlagRequest, liveFlagToast, parseLiveFlag } from '../features/scoutNotes/liveFlags';
+import { useScreenWakeLock } from '../hooks/useScreenWakeLock';
+import { useAssignmentBadge } from '../hooks/useAssignmentBadge';
 import { MatchClock } from '../features/matchResult/MatchClock';
 import { listFailedMutations, listQueuedMutations } from '../utils/offlineQueue';
 import { QrShareModal, QrImportModal, RoomQrModal } from './QrShareModals';
@@ -367,6 +372,7 @@ export function ScoutingPage() {
   const [myTeamKey, setMyTeamKey] = useState(defaultMyTeamKey);
   const [form, setForm] = useState<ScoutFormState>(EMPTY_FORM);
   const [scoutNotes, setScoutNotes] = useState('');
+  const [scoutTags, setScoutTags] = useState<ScoutNoteTag[]>([]);
   const [entries, setEntries] = useState<SavedScoutingEntry[]>(() =>
     readStoredEntries(getWorkspaceSession()?.workspace.id ?? null),
   );
@@ -492,6 +498,10 @@ export function ScoutingPage() {
   const roomJoinGenRef = useRef(0);
   const roomReconnectAttemptsRef = useRef(0);
   const roomReconnectTimerRef = useRef<number | null>(null);
+  // The open room socket, for live flags; null whenever it isn't connected.
+  const roomSocketRef = useRef<WebSocket | null>(null);
+  // Leaders hear live flags; scouts with eyes on a robot don't need other people's.
+  const hearsLiveFlagsRef = useRef(false);
   const roomAccessRefreshPromiseRef = useRef<Promise<string> | null>(null);
   const floatingTimerRef = useRef<HTMLDivElement | null>(null);
   const floatingTimerDragRef = useRef<{
@@ -544,7 +554,8 @@ export function ScoutingPage() {
       try {
         const response = await createOrJoinScoutingRoom({
           room_key: normalizedRoomKey,
-          event_key: selectedEventKey || activeRoom?.event_key || undefined,
+          // A team room belongs to one event; sending the page's newly picked event is a 422.
+          event_key: (isTeamRoomKey(normalizedRoomKey) ? activeRoom?.event_key : selectedEventKey || activeRoom?.event_key) || undefined,
           scout_profile: normalizedScoutProfile,
           client_id: roomClientId,
           title: selectedEventKey ? `Scouting ${eventDisplayNameRef.current(selectedEventKey)}` : undefined,
@@ -822,11 +833,12 @@ export function ScoutingPage() {
     phase: timerPhase,
     panel: mobileCapturePanel,
     lastTapAt: lastCounterTapAt,
-    onAdvance: (next) => {
-      hapticTap();
-      setMobileCapturePanel(next);
-    },
+    onAdvance: setMobileCapturePanel,
   });
+  // After the board's own effect, so the long phase buzz is the one the phone plays.
+  usePhaseCue({ running: timerRunning, phase: timerPhase, onCue: hapticPhase });
+  // A match under way, clock running or paused: the screen stays on until it ends.
+  useScreenWakeLock(timerRunning || (timerSec > 0 && timerSec < MATCH_DURATION_SEC));
 
   /* Which capture card the match is actually in right now.
    *
@@ -1227,11 +1239,11 @@ export function ScoutingPage() {
     const normalized = Array.from(rollupMap.values()).map((row) => {
       const avgApi = row.api_count > 0 ? row.sum_api / row.api_count : null;
       const avgOverall = row.sum_overall / row.entries_count;
-      let headUp = 'Balanced profile; gather one more scout sample for confidence.';
+      let headUp = 'Balanced so far; one more scout report would firm it up.';
       if (avgApi !== null && avgApi >= 80) {
-        headUp = 'High-priority target with strong manual + API alignment.';
+        headUp = "High priority: your scouting and official data agree they're strong.";
       } else if (avgOverall >= 82) {
-        headUp = 'High-priority scouting target from room inputs; verify alliance fit.';
+        headUp = 'High priority from your scouts; check how they fit your alliance.';
       } else if (row.strong_count >= Math.ceil(row.entries_count * 0.6)) {
         headUp = 'Consistently strong manual reports from scouts.';
       } else if (row.risk_count >= Math.ceil(row.entries_count * 0.45)) {
@@ -1602,7 +1614,9 @@ export function ScoutingPage() {
     if (restoredRoomRef.current) return;
     const storedRoomKey = normalizeRoomKey(window.sessionStorage.getItem(SCOUTING_ROOM_KEY_STORAGE) || '');
     // Rooms belong to a team workspace; without one there is nothing to restore.
-    if (!storedRoomKey || !getWorkspaceToken()) {
+    // Team rooms rejoin through the team-room join below, for whichever event is picked now.
+    // Restoring one here sent the new event with the old event's room (422 on every visit).
+    if (!storedRoomKey || !getWorkspaceToken() || isTeamRoomKey(storedRoomKey)) {
       restoredRoomRef.current = true;
       return;
     }
@@ -1877,6 +1891,7 @@ export function ScoutingPage() {
       room_access_token: roomAccessToken,
     });
     const socket = new WebSocket(roomWsUrl);
+    roomSocketRef.current = socket;
     let proxyUpgradeLikelyBlocked = false;
     try {
       const parsedWsUrl = new URL(roomWsUrl);
@@ -2024,6 +2039,12 @@ export function ScoutingPage() {
           }
           return;
         }
+        if (messageType === 'live_flag') {
+          const flag = parseLiveFlag(payload);
+          const toast = flag && hearsLiveFlagsRef.current ? liveFlagToast(flag, scoutProfile) : null;
+          if (toast) showToast({ ...toast, durationMs: 8000 });
+          return;
+        }
         if (messageType === 'entry_saved') {
           const serverEntry = asRecord(payload.server_entry);
           const roomEntry = asRecord(serverEntry?.entry) || asRecord(payload.entry);
@@ -2102,6 +2123,7 @@ export function ScoutingPage() {
 
     return () => {
       closedByEffect = true;
+      if (roomSocketRef.current === socket) roomSocketRef.current = null;
       clearHeartbeat();
       try {
         socket.close();
@@ -2275,6 +2297,7 @@ export function ScoutingPage() {
     setLoadedDraftKey(selectedDraftKey);
     setForm(draft ? { ...EMPTY_FORM, ...draft.form } : EMPTY_FORM);
     setScoutNotes(draft?.notes ?? '');
+    setScoutTags(normalizeNoteTags(draft?.tags));
     setCountdown(MATCH_DURATION_SEC);
     if (draft) setStatusText('Picked up your unsaved report for this match.');
   }, [selectedDraftKey, setCountdown]);
@@ -2283,11 +2306,26 @@ export function ScoutingPage() {
     // Wait for the new scope's form to load before writing. Persist each edit:
     // a debounce discarded the final tap when the scout immediately navigated.
     if (!selectedDraftKey || loadedDraftKey !== selectedDraftKey) return;
-    const empty = form === EMPTY_FORM && !scoutNotes.trim();
+    const empty = form === EMPTY_FORM && !scoutNotes.trim() && scoutTags.length === 0;
     setDraftStorageFailed(!writeScoutDraft(selectedDraftKey, empty ? null : {
-      form, notes: scoutNotes, saved_at_ms: Date.now(),
+      form, notes: scoutNotes, tags: scoutTags, saved_at_ms: Date.now(),
     }));
-  }, [form, scoutNotes, selectedDraftKey, loadedDraftKey]);
+  }, [form, scoutNotes, scoutTags, selectedDraftKey, loadedDraftKey]);
+
+  // A tag turned on mid-match also goes to the room at once, so a leader hears "broke down"
+  // now rather than when the report saves. It still saves with the report either way.
+  function changeScoutTags(next: ScoutNoteTag[], toggled: { tag: ScoutNoteTag; on: boolean }) {
+    setScoutTags(next);
+    const socket = roomSocketRef.current;
+    if (!toggled.on || !socket || socket.readyState !== WebSocket.OPEN || !selectedTeam || !selectedMatch) return;
+    const request = liveFlagRequest(toggled.tag, selectedTeam.team_key, selectedMatch.match_key.toLowerCase());
+    if (!request) return;
+    try {
+      socket.send(request);
+    } catch {
+      // The socket is closing; the tag still saves with the report.
+    }
+  }
 
   function updateCounter(field: CounterField, nextValue: number) {
     lastCounterTapAt.current = Date.now();
@@ -2449,6 +2487,9 @@ export function ScoutingPage() {
   // Team mode: a workspace member scouting an event is in their team's room for
   // it, with no key to type. A room picked by key stays put.
   const teamRoom = useTeamRoom(workspace ? selectedEventKey : null);
+  useEffect(() => {
+    hearsLiveFlagsRef.current = hasRoomOwnerAuthority || teamRoom.isLeader;
+  });
   const teamRoomKey = normalizeRoomKey(teamRoom.snapshot?.room_key || '');
   const teamRoomJoinRef = useRef('');
   const [teamJoinNonce, setTeamJoinNonce] = useState(0);
@@ -2545,6 +2586,8 @@ export function ScoutingPage() {
       : []),
     [scheduleRows, teamRoom.schedule, teamRoom.snapshot],
   );
+  // Without a schedule nothing can be matched up, which isn't the same as nothing left.
+  useAssignmentBadge(teamRoom.snapshot && (teamRoom.schedule || scheduleRows.length) ? myTeamAssignments : null);
   const inTeamRoom = Boolean(teamRoomKey) && normalizeRoomKey(activeRoom?.room_key || '') === teamRoomKey;
 
   const nextPhoneAssignment = inTeamRoom && teamRoom.schedule !== null && !teamRoom.scheduleError
@@ -2974,6 +3017,7 @@ export function ScoutingPage() {
         scouting_api_rating: apiRating,
         api_snapshot: apiSnapshot,
         notes: normalizeScoutingNotes(scoutNotes),
+        tags: scoutTags,
         entry_source: entrySource,
         auto_scout_meta: autoScoutMeta,
         field_overrides: fieldOverrides,
@@ -3010,6 +3054,7 @@ export function ScoutingPage() {
       if (!isMobileLayout && scoutingMode === 'rapid') {
         setForm(EMPTY_FORM);
         setScoutNotes('');
+        setScoutTags([]);
         setCountdown(MATCH_DURATION_SEC);
       }
       savedEntry = entry;
@@ -3068,11 +3113,12 @@ export function ScoutingPage() {
     // Back to an unsaved draft, so the counters survive a reload like any other draft.
     const draftKey = scoutDraftKey(workspaceId, entry.match_key, entry.team_key);
     setDraftStorageFailed(!writeScoutDraft(draftKey, {
-      form: entry.form, notes: entry.notes ?? '', saved_at_ms: Date.now(),
+      form: entry.form, notes: entry.notes ?? '', tags: entry.tags ?? [], saved_at_ms: Date.now(),
     }));
     if (selectedDraftKey === draftKey) {
       setForm({ ...EMPTY_FORM, ...entry.form });
       setScoutNotes(entry.notes ?? '');
+      setScoutTags(entry.tags ?? []);
     }
     hapticUndo();
     setStatusText(replaced
@@ -3985,6 +4031,7 @@ export function ScoutingPage() {
               <span className="center-chip">{scoutNotes.length}/600</span>
               <span className="center-chip">Saved on report save</span>
             </div>
+            <NoteTagPicker value={scoutTags} onChange={changeScoutTags} />
           </div>
           </SurfaceCard>
   );
@@ -4236,7 +4283,7 @@ export function ScoutingPage() {
         </div>
       ) : null}
       {isMobileLayout ? (
-        <div ref={phoneNavRef} className={`mobile-view-toggle ${styles.phoneNav}`}>
+        <div ref={phoneNavRef} data-tour="scouting-sections" className={`mobile-view-toggle ${styles.phoneNav}`}>
           <SegmentedTabs
             variant="board"
             className={styles.robotTabs}
@@ -4258,7 +4305,7 @@ export function ScoutingPage() {
       <aside className={`center-sidebar ${scoutingSidebarSideCollapsed ? 'scout-sidebar-side-collapsed' : ''}`.trim()}>
         {!isMobileLayout ? (
         <div
-          className={`finder-sidebar-header scout-sidebar-hub ${setupHeaderCollapsed ? 'collapsed' : ''}`.trim()}
+          data-tour="scouting-sections" className={`finder-sidebar-header scout-sidebar-hub ${setupHeaderCollapsed ? 'collapsed' : ''}`.trim()}
           aria-label="Scouting session controls"
         >
           {!isMobileLayout ? (
@@ -4406,7 +4453,7 @@ export function ScoutingPage() {
           />
           {!isMobileLayout ? (
             <p className="center-callout muted">
-              Auto Draft prefills supported objective fields with evidence, then routes the reviewed result through the normal save flow.
+              Auto Draft prefills supported objective fields with evidence, then saves the reviewed result like any other entry.
             </p>
           ) : null}
             </>
@@ -4709,7 +4756,7 @@ export function ScoutingPage() {
         </div>
       </aside>
 
-      <section className="center-main">
+      <section data-tour="scouting-board" className="center-main">
         {workspace && selectedEventKey && (teamRoom.schedule === null || teamRoom.scheduleError) ? <ScheduleStatus error={teamRoom.scheduleError} loading={teamRoom.scheduleLoading} retry={teamRoom.retry} /> : null}
         {sharingNotice?.workspaceId === workspaceId && sharingNotice?.eventKey === selectedEventKey ? <p className="center-callout muted" role="status">{sharingNotice.text}</p> : null}
         {!isMobileLayout && workspace && selectedEventKey && teamRoom.snapshot && teamRoom.schedule !== null && !teamRoom.scheduleError && (!teamRoom.isLeader || myTeamAssignments.length > 0) ? (
@@ -4862,6 +4909,9 @@ export function ScoutingPage() {
           ) : null}
 
           {showCaptureMobilityCard ? mobilityCard : null}
+          {isMobileLayout && (showCaptureAutoCard || showCaptureTeleopCard || showCaptureEndgameCard) ? (
+            <NoteTagPicker value={scoutTags} onChange={changeScoutTags} only={LIVE_FLAG_TAGS} label="Flag this robot" showLabel />
+          ) : null}
           </div>
         ) : null}
 

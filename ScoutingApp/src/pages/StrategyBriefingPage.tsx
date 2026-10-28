@@ -30,6 +30,8 @@ import { metric, pct, normalizeTeamKeyInput, teamNumberFromTeamKey } from './cen
 import { readMyTeamKey, saveMyTeamKey, workspaceTeamKey } from '../features/workspace/myTeam';
 import { matchWinProbability } from '../features/predictions/winProbability';
 import { MISSING, signedChange } from '../utils/formatValue';
+import { StrategyBoard } from '../features/strategyBoard/StrategyBoard';
+import { useWorkspace } from '../features/workspace/useWorkspace';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & types                                                  */
@@ -179,7 +181,7 @@ function buildBriefing(
         team_key: profile.team_key,
         action: 'climb',
         confidence: 'Medium',
-        reason: `Endgame subscore ${metric(endgameScore, 0)}/100 — attempt climb if time allows`,
+        reason: `Endgame subscore ${metric(endgameScore, 0)}/100 — climb if there's time`,
       });
     } else {
       climbPlan.push({
@@ -192,64 +194,64 @@ function buildBriefing(
   }
 
   // Offensive focus
-  let offensiveFocus = 'Run controlled cycles and keep possession clean through traffic.';
+  let offensiveFocus = 'Keep scoring at a steady pace and hold on to fuel in traffic.';
   if (throughputDiff != null && throughputDiff >= 8) {
-    offensiveFocus = `Lean into pace: projected throughput edge is ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}). Extra clean possessions should compound if you avoid foul-risk routes.`;
+    offensiveFocus = `You out-score them: throughput ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}). Keep the pace up and stay off routes that risk fouls.`;
   } else if (throughputDiff != null && throughputDiff <= -8) {
-    offensiveFocus = `Prioritize efficiency: projected throughput trails ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}). Shorter routes and fewer dead trips are the best way to stay in range.`;
+    offensiveFocus = `They out-score you: throughput ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}). Take shorter routes and cut empty trips to stay close.`;
   } else if (endgameDiff != null && endgameDiff >= 8) {
-    offensiveFocus = `Play for a close teleop, then convert late. Endgame profile edge is ${signed(endgameDiff, 0)} (${metric(myEndgameAvg, 0)} vs ${metric(oppEndgameAvg, 0)}).`;
+    offensiveFocus = `Keep teleop close and win it in the endgame: endgame ${signed(endgameDiff, 0)} (${metric(myEndgameAvg, 0)} vs ${metric(oppEndgameAvg, 0)}).`;
   } else if (autoDiff != null && autoDiff >= 8) {
-    offensiveFocus = `Front-load scoring in auto. Auto contribution edge is ${signed(autoDiff, 0)} (${metric(myAutoAvg, 0)} vs ${metric(oppAutoAvg, 0)}), so early separation reduces pressure later.`;
+    offensiveFocus = `Score hard in auto: auto ${signed(autoDiff, 0)} (${metric(myAutoAvg, 0)} vs ${metric(oppAutoAvg, 0)}). An early lead takes pressure off later.`;
   }
   if (winProb != null) {
     if (winProb >= 0.7) {
-      offensiveFocus += ` Win model is ${pct(winProb, 0)}, so disciplined execution has better value than high-variance gambles.`;
+      offensiveFocus += ` You're ${pct(winProb, 0)} to win, so play it safe rather than gamble.`;
     } else if (winProb <= 0.35) {
-      offensiveFocus += ` Win model is ${pct(winProb, 0)}, so you likely need higher tempo and one additional scoring swing to flip the match.`;
+      offensiveFocus += ` You're ${pct(winProb, 0)} to win, so you'll need a faster pace and one big scoring swing to turn it around.`;
     } else {
-      offensiveFocus += ` Win model is ${pct(winProb, 0)}, so early-cycle efficiency and endgame timing are likely the deciding factors.`;
+      offensiveFocus += ` You're ${pct(winProb, 0)} to win: a clean start and endgame timing will likely decide it.`;
     }
   }
 
   // Defensive recommendation
-  let defensiveRec = 'Start offense-first and use short disruption windows only if opponents chain uncontested cycles.';
+  let defensiveRec = 'Start on offense. Defend in short bursts only if an opponent keeps scoring unopposed.';
   if (defenseTarget && defenseTarget.rating) {
     const targetThroughput = defenseTarget.rating.subscores.throughput ?? 0;
     const targetVsAlliance = oppThroughputAvg != null ? targetThroughput - oppThroughputAvg : null;
     if (targetThroughput >= 72) {
-      defensiveRec = `Target selective defense on ${teamNum(defenseTarget.team_key)} during lane transitions. They project ${metric(targetThroughput, 0)}/100 throughput`;
+      defensiveRec = `Defend ${teamNum(defenseTarget.team_key)} now and then as they cross the field. Their throughput is ${metric(targetThroughput, 0)}/100`;
       if (targetVsAlliance != null) {
         defensiveRec += ` (${signed(targetVsAlliance, 0)} vs their alliance average)`;
       }
-      defensiveRec += ', so breaking a few high-value cycles can swing teleop pace.';
+      defensiveRec += ', so stopping a few of their trips can swing teleop.';
     } else if (targetThroughput >= 60) {
-      defensiveRec = `Use situational pressure on ${teamNum(defenseTarget.team_key)} after securing your first cycles. Their throughput is ${metric(targetThroughput, 0)}/100; full-time defense is likely lower value than maintaining your own scoring cadence.`;
+      defensiveRec = `Pressure ${teamNum(defenseTarget.team_key)} once your first trips are in. Their throughput is ${metric(targetThroughput, 0)}/100, so full-time defense is probably worth less than your own scoring.`;
     } else {
-      defensiveRec = 'Opponent throughput profile is balanced; prioritize clean scoring and avoid overcommitting a robot to defense.';
+      defensiveRec = 'Their robots score about evenly, so focus on scoring and don\'t commit a robot to defense.';
     }
   } else if (oppThroughputAvg != null && oppThroughputAvg < 58) {
-    defensiveRec = `Opponent average throughput projects at ${metric(oppThroughputAvg, 0)}/100. Defense should be low priority unless match flow changes.`;
+    defensiveRec = `Their average throughput is ${metric(oppThroughputAvg, 0)}/100. Defense can wait unless the match changes.`;
   }
 
   const strategyWhy: string[] = [];
   if (throughputDiff != null) {
-    strategyWhy.push(`Throughput projection: ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}).`);
+    strategyWhy.push(`Throughput gap: ${signed(throughputDiff, 0)} (${metric(myThroughputAvg, 0)} vs ${metric(oppThroughputAvg, 0)}).`);
   }
   if (endgameDiff != null) {
-    strategyWhy.push(`Endgame differential: ${signed(endgameDiff, 0)} (${metric(myEndgameAvg, 0)} vs ${metric(oppEndgameAvg, 0)}).`);
+    strategyWhy.push(`Endgame gap: ${signed(endgameDiff, 0)} (${metric(myEndgameAvg, 0)} vs ${metric(oppEndgameAvg, 0)}).`);
   }
   if (autoDiff != null) {
-    strategyWhy.push(`Auto contribution differential: ${signed(autoDiff, 0)} (${metric(myAutoAvg, 0)} vs ${metric(oppAutoAvg, 0)}).`);
+    strategyWhy.push(`Auto gap: ${signed(autoDiff, 0)} (${metric(myAutoAvg, 0)} vs ${metric(oppAutoAvg, 0)}).`);
   }
   if (winProb != null) {
-    strategyWhy.push(`Model win probability for your alliance: ${pct(winProb, 0)}.`);
+    strategyWhy.push(`Your chance to win: ${pct(winProb, 0)}.`);
   }
   const ratedCount = allProfiles.filter((profile) => profile.rating != null).length;
   if (ratedCount < allProfiles.length) {
     const missing = allProfiles.length - ratedCount;
     strategyWhy.push(
-      `${missing} of ${allProfiles.length} robot${allProfiles.length === 1 ? '' : 's'} ${allProfiles.length === 1 ? 'has' : 'have'} limited rating coverage, so plan for wider-than-normal performance variance.`,
+      `${missing} of ${allProfiles.length} robot${allProfiles.length === 1 ? '' : 's'} ${allProfiles.length === 1 ? 'has' : 'have'} few rated matches, so expect them to vary more than usual.`,
     );
   }
 
@@ -258,14 +260,14 @@ function buildBriefing(
   // Check for cold form opponents (could be underrated)
   for (const opp of opponents) {
     if (opp.form?.in_form_label === 'in_form') {
-      warnings.push(`${teamNum(opp.team_key)} is in hot form (${opp.form.recent_form.join('')}) and may outperform baseline projections.`);
+      warnings.push(`${teamNum(opp.team_key)} is in form (${opp.form.recent_form.join('')}) and may beat these numbers.`);
     }
   }
   // Check if any ally has low confidence rating
   for (const ally of allies) {
     if (ally.rating && ally.rating.confidence_0_1 < 0.3) {
       warnings.push(
-        `Limited data on ally ${teamNum(ally.team_key)} — rating confidence is ${(ally.rating.confidence_0_1 * 100).toFixed(0)}%, so role assumptions should stay flexible.`,
+        `Little data on ally ${teamNum(ally.team_key)} (rating confidence ${(ally.rating.confidence_0_1 * 100).toFixed(0)}%), so don't lock in their role yet.`,
       );
     }
   }
@@ -273,12 +275,12 @@ function buildBriefing(
     const ratingGap = strongest.rating.rating_0_100 - myProfile.rating.rating_0_100;
     if (ratingGap >= 12) {
       warnings.push(
-        `Top opponent ${teamNum(strongest.team_key)} is rated ${signed(ratingGap, 0)} above your robot (${metric(strongest.rating.rating_0_100, 0)} vs ${metric(myProfile.rating.rating_0_100, 0)}). Avoid isolated pace races.`,
+        `Top opponent ${teamNum(strongest.team_key)} is rated ${metric(ratingGap, 0)} above your robot (${metric(strongest.rating.rating_0_100, 0)} vs ${metric(myProfile.rating.rating_0_100, 0)}). Don't try to out-score them one on one.`,
       );
     }
   }
   if (endgameDiff != null && endgameDiff <= -10) {
-    warnings.push(`Endgame projection trails ${signed(endgameDiff, 0)}. Bank points earlier and start setup sooner than normal.`);
+    warnings.push(`Your endgame trails by ${metric(-endgameDiff, 0)}. Score early and start climbing sooner than usual.`);
   }
 
   return {
@@ -309,6 +311,8 @@ function buildBriefing(
 /* ------------------------------------------------------------------ */
 
 export function StrategyBriefingPage() {
+  // Plans are drawn into the team's workspace; without one the page still briefs.
+  const inWorkspace = Boolean(useWorkspace());
   const navigate = useNavigate();
   const isMobile = useMobileLayout();
 
@@ -482,7 +486,7 @@ export function StrategyBriefingPage() {
     <div className="center-page-container">
 
         {/* ---- Event + Team Selection ---- */}
-        <SurfaceCard
+        <SurfaceCard tourId="strategy-head"
           title={viewTitle(MATCH_HUB_VIEWS, '/match-center/strategy')}
           subtitle="Your next matches: who you're with, who you're against, and what to watch."
           className="no-print"
@@ -553,7 +557,7 @@ export function StrategyBriefingPage() {
 
         {/* ---- Briefing Overview ---- */}
         {briefings.length > 0 ? (
-          <SurfaceCard
+          <SurfaceCard tourId="strategy-briefings"
             title="Upcoming Match Briefings"
             subtitle={`${briefings.length} match${briefings.length === 1 ? '' : 'es'} with tactical analysis for Team ${teamNum(myTeamKey)}.`}
             right={
@@ -747,6 +751,16 @@ export function StrategyBriefingPage() {
               {/* Expanded details */}
               {isExpanded ? (
                 <div className="briefing-expanded">
+                  {/* The plan the drive team walks to queue with, drawn by the team and shared. */}
+                  <div className="briefing-section no-print">
+                    <h4>Plan on the field</h4>
+                    {inWorkspace ? (
+                      <StrategyBoard matchKey={briefing.match_key} ourAlliance={briefing.my_alliance} />
+                    ) : (
+                      <p className="center-callout muted">Join your team on My Team to draw a plan your drive team can see.</p>
+                    )}
+                  </div>
+
                   {/* Opponent deep dive */}
                   <div className="briefing-section">
                     <h4>Opponent Breakdown</h4>
@@ -829,7 +843,7 @@ export function StrategyBriefingPage() {
 
         {/* ---- Live ratings board ---- */}
         {eventKey ? (
-          <SurfaceCard
+          <SurfaceCard tourId="strategy-ratings"
             title={schedule != null && eventHasMatchesLeft ? 'Live Ratings' : 'Event Ratings'}
             className="no-print"
           >

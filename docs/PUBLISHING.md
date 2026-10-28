@@ -1,35 +1,24 @@
-# Publishing FRCMOB safely
+# Keeping this repo safe to publish
 
-Do not change the existing repository to public until its historical artifacts are handled. The current source tree excludes them, but older commits contain `game manual.txt` and `backend/yolo11n.pt`.
+This repository is public, and production deploys straight from `main`. Anything pushed here, on any branch or in any pull request, should be treated as published for good.
 
-## Recommended: publish a clean-history repository
+## Never commit
 
-Keep the current private repository as an archive. After committing the reviewed release tree, export that commit into a new repository with a single clean initial commit. Verify the exported file list and rerun secret scanning before adding a public remote. This avoids exposing private collaboration refs and old third-party artifacts.
+- Credentials of any kind: API keys, tokens, passwords, SSH keys, `.env` files. Example env files (`*.example`) hold placeholders only.
+- Maintainers' private operating notes (they live outside the repo).
+- Model weights, labeled datasets, match recordings, database exports, logs, team member data, or FIRST game manuals. See [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md).
 
-Do not copy `.git`, `.env`, local media, `Oracle/`, model files, databases, or build output into the new repository.
+## What checks for leaks
 
-## Alternative: rewrite the existing history
+- GitHub secret scanning with push protection refuses pushes that contain known token formats.
+- Dependabot alerts and security updates cover the dependencies.
 
-Only choose this if preserving commit history is important. Back up the repository and coordinate with every collaborator because all rewritten commit IDs change. In a disposable mirror, the removal operation validated for this repository is:
+## If a secret gets committed
 
-```bash
-git clone --mirror <private-repository-url> frcmob-public.git
-git -C frcmob-public.git filter-repo --force --invert-paths \
-  --path 'game manual.txt' \
-  --path 'backend/yolo11n.pt'
-git -C frcmob-public.git fsck --full --strict
-git -C frcmob-public.git log --all --name-only --format= | \
-  sort -u | grep -E '(game manual\.txt|\.pt$)'
-```
+1. **Rotate it first.** Assume it was copied the moment it was pushed.
+2. Then remove it from the branch. Rewriting history doesn't make it secret again: forks, clones and GitHub's pull-request refs keep the old commits. GitHub Support can purge cached views ([removing sensitive data](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)).
+3. Say in the fixing pull request what was rotated.
 
-The final `grep` must print nothing. Then run a full secret scanner against all refs. Inspect and remove local tool-only refs and branches that are not intended for publication. Force-pushing rewritten history is destructive and must be an explicit owner action.
+## History of this repo
 
-## Visibility gate
-
-Before publishing either form:
-
-1. Rerun the commands in the README from the exact commit that will be public.
-2. Confirm the repository license is detected as AGPL-3.0.
-3. Enable the GitHub protections in `OPEN_SOURCE_RELEASE_CHECKLIST.md`.
-4. Rotate any credential whose secrecy is uncertain.
-5. Review the public file list one final time, then change visibility or push the clean repository.
+Until 2026-10-28 development happened in a private repository, and this one received `git archive` snapshots (the "Sync from upstream" commits). Since then this is the only repository. The private history is not published: it holds third-party files that can't be redistributed.

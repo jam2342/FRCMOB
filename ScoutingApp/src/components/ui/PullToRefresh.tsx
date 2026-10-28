@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { readFreshFor } from '../../api';
 import { activePollCount, refreshActivePolls } from '../../hooks/useSingleFlightPolling';
 import { isNativeApp } from '../../platform/runtime';
+import { hapticTap } from '../../utils/haptics';
 import styles from './PullToRefresh.module.css';
 
 // Pull down from the top of a page to refresh what it shows. Only in the installed app (home-screen
@@ -92,11 +93,7 @@ export function PullToRefresh({ areaRef, pathname }: { areaRef: { current: HTMLE
       }
       setPhase('refreshing');
       setPull(TRIGGER_PX * 0.8);
-      try {
-        navigator.vibrate?.(10);
-      } catch {
-        // No vibration here.
-      }
+      hapticTap();
       const startedAt = Date.now();
       const endFreshReads = navigator.onLine === false ? () => undefined : readFreshFor(10_000);
       void refreshActivePolls().finally(() => {

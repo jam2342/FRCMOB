@@ -139,8 +139,8 @@ def guard_pit_photo_storage(db: Session, workspace_id: int, incoming_bytes: int,
 
 
 def delete_abandoned_empty_workspaces(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
-    # Only workspaces that never held anything (no rooms, picklists, pit notes or
-    # recordings) and never had a second member: a team that formed keeps its
+    # Only workspaces that never held anything (no rooms, picklists, pit notes,
+    # recordings or strategy boards) and never had a second member: a team that formed keeps its
     # roster and code between seasons even if its rooms were cleaned up. Locked
     # ones (the legacy bucket, or left by their last member) exist to hold rows.
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(
@@ -160,6 +160,7 @@ def delete_abandoned_empty_workspaces(db: Session, *, now: datetime | None = Non
         exists().where(models.EventPicklist.workspace_id == workspace.id),
         exists().where(models.PitScoutingEntry.workspace_id == workspace.id),
         exists().where(models.OnDeviceSession.workspace_id == workspace.id),
+        exists().where(models.StrategyBoard.workspace_id == workspace.id),
     )
     rows = db.execute(
         select(workspace.id, workspace.name, workspace.created_at)

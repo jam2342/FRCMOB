@@ -87,6 +87,7 @@ import { loadEventsRankings, loadEventsTeamsHistory } from '../features/prefetch
 import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 import { MISSING } from '../utils/formatValue';
+import { useEventNames } from '../hooks/useEventNames';
 
 const EVENT_TABS = ['overview', 'schedule', 'breakdown', 'rankings', 'forecast', 'teams'] as const;
 type EventTab = (typeof EVENT_TABS)[number];
@@ -493,6 +494,7 @@ const ALLIANCE_SLOTS: AllianceSlot[] = [
 ];
 
 export function EventsPage() {
+  const eventName = useEventNames();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1841,7 +1843,9 @@ export function EventsPage() {
     );
   }
 
-  const eventHeaderName = eventScheduleName || eventTeams?.event_name || selectedEventKey || 'Event Center';
+  // The startup event index has the name before the schedule arrives; the raw key showed for a
+  // frame and then changed.
+  const eventHeaderName = eventScheduleName || eventTeams?.event_name || (selectedEventKey ? eventName(selectedEventKey) : 'Event Center');
   // Where and when, instead of the raw event key under the name.
   const eventHeaderSubtitle = useMemo(() => {
     if (!selectedEventKey) return 'Select an event from Finder';
@@ -1872,7 +1876,7 @@ export function EventsPage() {
       ) : null}
       <aside className="center-sidebar">
         {!isMobileLayout || mobilePanel === 'finder' ? (
-        <SurfaceCard title="Event Finder">
+        <SurfaceCard tourId="events-finder" title="Event Finder">
           <form className="center-input-row center-input-row-event-search" onSubmit={handleSearchSubmit}>
             <input
               value={eventQuery}
@@ -1958,7 +1962,7 @@ export function EventsPage() {
         ) : null}
 
         {!isMobileLayout || mobilePanel === 'calendar' ? (
-        <SurfaceCard title={calendarMonthLabel} subtitle={`${visibleCalendarEvents.length} event${visibleCalendarEvents.length === 1 ? '' : 's'}`} className="events-calendar-card">
+        <SurfaceCard tourId="events-calendar" title={calendarMonthLabel} subtitle={`${visibleCalendarEvents.length} event${visibleCalendarEvents.length === 1 ? '' : 's'}`} className="events-calendar-card">
           {isMobileLayout ? (
             <>
               <div className="events-cal-nav">
@@ -2077,7 +2081,7 @@ export function EventsPage() {
               {usingScheduleFallbackTeams && !firstEventLoad ? (
                 <p className="fm-event-header-notice">Using roster from published match schedule.</p>
               ) : null}
-              <SegmentedTabs
+              <SegmentedTabs tourId="events-tabs"
                 motion
                 swipe
                 ariaLabel="Event center tabs"
@@ -2094,7 +2098,7 @@ export function EventsPage() {
 
         {/* ── Desktop: standard SurfaceCard header ── */}
         {!isMobileLayout ? (
-        <SurfaceCard
+        <SurfaceCard tourId="events-event"
           title={eventHeaderName}
           subtitle={eventHeaderSubtitle}
           right={
@@ -2138,7 +2142,7 @@ export function EventsPage() {
             <p className="center-callout muted helper-text">Team history unavailable, using roster from published match schedule.</p>
           ) : null}
           <div className="center-tabs-header">
-            <SegmentedTabs
+            <SegmentedTabs tourId="events-tabs"
               motion
               ariaLabel="Event center tabs"
               value={activeTab}

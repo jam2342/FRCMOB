@@ -1,6 +1,7 @@
 /**
  * Type definitions for the ScoutingPage component.
  */
+import type { ScoutNoteTag } from '../features/scoutNotes/noteTags';
 
 export type FloatingTimerPosition = {
   x: number;
@@ -226,6 +227,8 @@ export type SavedScoutingEntry = {
   scouting_api_rating: ScoutingApiRating | null;
   api_snapshot: ApiTeamSnapshot | null;
   notes: string;
+  // Quick tags beside the notes (features/scoutNotes). Absent on reports saved before tags.
+  tags?: ScoutNoteTag[];
   entry_source?: 'manual' | 'reviewed_auto';
   auto_scout_meta?: AutoScoutMeta | null;
   field_overrides?: Record<string, AutoScoutFieldOverride> | null;

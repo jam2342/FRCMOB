@@ -258,6 +258,10 @@ class Settings(BaseSettings):
     # match (services/events/live_ingest.py). Off: only the 12 h job ingests, after events end.
     live_event_ingest_enabled: bool = True
     live_event_ingest_interval_minutes: int = 3
+    # Pages watching an event hear about a new result within seconds (live_signal.py):
+    # the results of watched events are refreshed this often.
+    live_results_signal_enabled: bool = True
+    live_results_signal_interval_sec: int = 5
     live_event_ingest_max_events: int = 80
 
     @field_validator(

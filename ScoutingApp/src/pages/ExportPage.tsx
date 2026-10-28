@@ -52,6 +52,7 @@ import { downloadCsv } from '../utils/csvExport';
 import { metric, pct } from './centerUtils';
 import { plainSignalLabel } from './teamCenterOfficial';
 import { useWorkspace } from '../features/workspace/useWorkspace';
+import { normalizeNoteTags } from '../features/scoutNotes/noteTags';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -302,7 +303,7 @@ function ExportPageContent() {
       const sortedPointKeys = Array.from(pointKeys).sort();
       const headers = [
         'room_key', 'scout_profile', 'event_key', 'match_key', 'team_key',
-        'created_at', 'entry_source', 'notes',
+        'created_at', 'entry_source', 'notes', 'tags',
         'total_points', 'driver_score_0_100', 'manual_rating_0_100',
         'scouting_api_rating_0_100', 'overall_scout_rating_0_100',
         ...sortedPointKeys.map((key) => `points_${key}`),
@@ -325,6 +326,7 @@ function ExportPageContent() {
           item.created_at ?? '',
           (entry.entry_source as string) ?? 'manual',
           (entry.notes as string) ?? '',
+          normalizeNoteTags(entry.tags).join('; '),
           item.scores?.total_points ?? '',
           item.scores?.driver_score_0_100 ?? '',
           item.scores?.manual_rating_0_100 ?? '',

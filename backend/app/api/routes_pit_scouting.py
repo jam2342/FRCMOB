@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -73,7 +73,7 @@ def _normalize_payload(raw: Any) -> dict[str, Any]:
             cleaned[token] = [str(item)[:120] for item in value[:24]]
     return cleaned
 
-def _serialize_entry(row: models.PitScoutingEntry) -> dict[str, Any]:
+def _serialize_entry(row: models.PitScoutingEntry, member_id: int) -> dict[str, Any]:
     return {
         "id": row.id,
         "event_key": row.event_key,
@@ -82,7 +82,7 @@ def _serialize_entry(row: models.PitScoutingEntry) -> dict[str, Any]:
         "payload": row.payload if isinstance(row.payload, dict) else {},
         "photos": row.photos if isinstance(row.photos, list) else [],
         # What to display: the stored paths above stay the identifiers (delete uses them).
-        "photo_urls": [sign_media_path(str(path)) for path in (row.photos if isinstance(row.photos, list) else [])],
+        "photo_urls": [sign_media_path(str(path), member_id=member_id) for path in (row.photos if isinstance(row.photos, list) else [])],
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -124,6 +124,34 @@ def _validate_photo(data: bytes) -> str:
         raise HTTPException(status_code=400, detail="This photo is damaged or invalid. Choose a different photo.") from None
     return extension
 
+# Phone photos carry EXIF: GPS position, device, time. The app re-encodes on a canvas,
+# which drops it, but the API can be called directly, so the server drops it too.
+# Photos without metadata (the app's own uploads) are stored byte for byte.
+_PHOTO_METADATA_KEYS = ("exif", "xmp", "XML:com.adobe.xmp", "comment")
+_SAVE_FORMATS = {".jpg": ("JPEG", {"quality": 90}), ".png": ("PNG", {}), ".webp": ("WEBP", {"quality": 90})}
+
+
+def _strip_photo_metadata(data: bytes, extension: str) -> bytes:
+    with Image.open(io.BytesIO(data)) as image:
+        has_metadata = (
+            any(image.info.get(key) for key in _PHOTO_METADATA_KEYS)
+            or bool(getattr(image, "text", None))
+            or len(image.getexif()) > 0
+        )
+        if not has_metadata:
+            return data
+        # Orientation lives in EXIF; apply it to the pixels before dropping it.
+        upright = ImageOps.exif_transpose(image)
+        save_format, options = _SAVE_FORMATS[extension]
+        if save_format == "JPEG" and upright.mode not in ("RGB", "L", "CMYK"):
+            upright = upright.convert("RGB")
+        icc_profile = image.info.get("icc_profile")
+        if icc_profile:
+            options = {**options, "icc_profile": icc_profile}
+        output = io.BytesIO()
+        upright.save(output, format=save_format, **options)
+        return output.getvalue()
+
 class PitEntryUpsertRequest(BaseModel):
     event_key: str
     team_key: str
@@ -161,7 +189,7 @@ def list_pit_entries(
         "ok": True,
         "event_key": normalized,
         "count": len(rows),
-        "entries": [_serialize_entry(row) for row in rows],
+        "entries": [_serialize_entry(row, actor.member.id) for row in rows],
     }
 
 
@@ -191,7 +219,7 @@ def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Sessi
             row.scout_profile = scout_profile
     db.commit()
     db.refresh(row)
-    return {"ok": True, "entry": _serialize_entry(row)}
+    return {"ok": True, "entry": _serialize_entry(row, actor.member.id)}
 
 @router.post("/photo")
 def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Session = Depends(get_db)):
@@ -215,6 +243,9 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
         raise HTTPException(status_code=413, detail="Photo too large (6 MB max)")
 
     extension = _validate_photo(data)
+    data = _strip_photo_metadata(data, extension)
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="Photo too large (6 MB max)")
 
     guard_pit_photo_storage(db, actor.workspace_id, len(data), photos_root=PIT_PHOTOS_ROOT)
     quota = int(settings.pit_photo_quota_bytes_per_workspace_event or 0)
@@ -268,7 +299,7 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
         file_path.unlink(missing_ok=True)
         raise
     db.refresh(row)
-    return {"ok": True, "photo": photo_url, "photo_url": sign_media_path(photo_url), "entry": _serialize_entry(row)}
+    return {"ok": True, "photo": photo_url, "photo_url": sign_media_path(photo_url, member_id=actor.member.id), "entry": _serialize_entry(row, actor.member.id)}
 
 @router.post("/photo/delete")
 def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Session = Depends(get_db)):
@@ -306,7 +337,7 @@ def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Sessi
                 logger.warning("Failed to delete pit photo file %s", candidate)
 
     row.photos = [item for item in photos if item != photo_path]
-    response_entry = _serialize_entry(row)
+    response_entry = _serialize_entry(row, actor.member.id)
     remove_placeholder = not row.photos and not row.payload
     if remove_placeholder:
         # Photo-only placeholder, with no scouting answers to preserve.
@@ -314,5 +345,5 @@ def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Sessi
     db.commit()
     if not remove_placeholder:
         db.refresh(row)
-        response_entry = _serialize_entry(row)
+        response_entry = _serialize_entry(row, actor.member.id)
     return {"ok": True, "entry": response_entry}

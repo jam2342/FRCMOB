@@ -90,7 +90,7 @@ export function AutoScoutReviewPanel({
                 : status === 'low_confidence'
                   ? 'Draft is usable, but one or more machine-filled fields are below the confidence threshold.'
                   : status === 'approved'
-                    ? 'Draft approval is recorded. Saving will persist the reviewed entry through the normal flow.'
+                    ? 'Draft approval is recorded. Saving stores the reviewed entry like any other scouting entry.'
                     : status === 'generating'
                       ? 'Generating a draft from the accepted phone recording.'
                       : 'No usable draft yet.'}

@@ -19,6 +19,8 @@ type SurfaceCardProps = {
   // On a phone, a card whose title only repeats the tab just tapped ("Schedule" under the
   // Schedule tab) keeps the title for screen readers and gives the space back.
   hideTitleOnPhone?: boolean;
+  // What a page tour points at (`data-tour`); tutorialBlueprints.test.ts checks every hook exists.
+  tourId?: string;
 };
 
 const MOBILE_COLLAPSE_MEDIA_QUERY = '(max-width: 900px)';
@@ -110,6 +112,7 @@ export function SurfaceCard({
   collapsible = false,
   compactable = false,
   hideTitleOnPhone = false,
+  tourId,
 }: SurfaceCardProps) {
   const [expanded, setExpanded] = useState(false);
   const expandedRef = useRef<HTMLElement>(null);
@@ -211,7 +214,7 @@ export function SurfaceCard({
 
   return (
     <>
-      <section className={normalCardClass} aria-hidden={expanded || undefined}>
+      <section className={normalCardClass} aria-hidden={expanded || undefined} data-tour={tourId}>
         <header className={cx('surface-card-head', headless && 'surface-card-head--hidden')}>
           <div>
             {/* A collapsed title is cut with "…"; the full title is one hover or long-press away. */}

@@ -1,6 +1,12 @@
 /* My Team: create/join a team workspace and manage its members. Tokens only. */
 
 .my-team__lede,
+/* The security check's slot, the height of Cloudflare's widget from the first frame: the
+   "Checking…" line, then an empty box, then the widget pushed the page down twice. */
+.my-team__challenge {
+  min-height: 65px;
+}
+
 .my-team__note {
   margin: 0;
   color: var(--color-text-muted);

@@ -8,6 +8,10 @@ import { useEventKeyParam } from '../../hooks/useEventKeyParam';
 import { NextAssignment } from './NextAssignment';
 import { coverageSummary, myAssignments } from './teamAssignments';
 import { useTeamRoom } from './useTeamRoom';
+import { useWorkspace } from './useWorkspace';
+import { useAssignmentBadge } from '../../hooks/useAssignmentBadge';
+import { TeamCalendarLinks } from '../calendar/TeamCalendarLinks';
+import { ScoutThanksNote } from '../scoutThanks/ScoutThanksNote';
 import styles from './TeamScoutingCard.module.css';
 
 const EVENT_STORAGE_KEY = 'scouting_center_event_key';
@@ -18,12 +22,16 @@ export function TeamScoutingCard() {
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(EVENT_STORAGE_KEY);
   const [changingEvent, setChangingEvent] = useState(false);
   const room = useTeamRoom(eventKey);
+  const session = useWorkspace();
+  const teamNumber = session?.workspace.frc_team_number ?? null;
   const schedule = useMemo(() => room.schedule ?? [], [room.schedule]);
   const snapshot = room.snapshot;
   const mine = useMemo(
     () => (snapshot ? myAssignments(snapshot.me.member_id, snapshot.assignments, schedule) : []),
     [schedule, snapshot],
   );
+  // Without the schedule nothing can be matched up, which isn't the same as nothing left.
+  useAssignmentBadge(snapshot && room.schedule ? mine : null);
   const coverage = useMemo(
     () => coverageSummary(snapshot?.assignments ?? [], schedule),
     [schedule, snapshot],
@@ -32,7 +40,7 @@ export function TeamScoutingCard() {
 
   if (!eventKey || changingEvent) {
     return (
-      <SurfaceCard
+      <SurfaceCard tourId="myteam-scouting"
         title="Team scouting"
         subtitle="Pick the event your team is at. Assignments and scouting follow it."
         mobileCollapsible={false}
@@ -56,7 +64,7 @@ export function TeamScoutingCard() {
   const loading = !snapshot && room.status === 'loading';
 
   return (
-    <SurfaceCard
+    <SurfaceCard tourId="myteam-scouting"
       title={title}
       subtitle={room.isLeader ? 'You can assign matches to everyone on your team.' : undefined}
       right={<Button size="sm" variant="quiet" onClick={() => setChangingEvent(true)}>Change event</Button>}
@@ -98,6 +106,10 @@ export function TeamScoutingCard() {
             showAllHref={mine.length > 0 ? assignHref : undefined}
           />
         ) : null}
+        {snapshot && session ? (
+          <ScoutThanksNote eventKey={eventKey} me={session.me.display_name} allDone={mine.length > 0 && mine.every((item) => item.done)} />
+        ) : null}
+        {teamNumber ? <TeamCalendarLinks eventKey={eventKey} teamNumber={teamNumber} /> : null}
       </div>
     </SurfaceCard>
   );

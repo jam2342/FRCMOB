@@ -3,6 +3,7 @@
  * Pure logic - no React dependency.
  */
 
+import { normalizeNoteTags } from '../features/scoutNotes/noteTags';
 import { persistRecoverableScoutDraft, readRecoverableScoutDraft } from '../features/offline/scoutRecovery';
 import type {
   AutoScoutDraftPayload,
@@ -519,15 +520,15 @@ export function manualScoutingRating(
   if (teleopSignal >= 0.72) pushUnique(pros, 'High teleop production and efficiency.');
   if (antiDefenseSignal >= 0.68) pushUnique(pros, 'Maintains output while under defense.');
   if (endgameSignal >= 0.75) pushUnique(pros, 'Reliable endgame value under pressure.');
-  if (disciplineSignal >= 0.82) pushUnique(pros, 'Low foul and handling risk profile.');
+  if (disciplineSignal >= 0.82) pushUnique(pros, 'Few fouls or handling problems.');
 
   if (autoSignal <= 0.4) pushUnique(cons, 'Autonomous output currently limited.');
-  if (teleopSignal <= 0.46) pushUnique(cons, 'Teleop conversion and pace need improvement.');
+  if (teleopSignal <= 0.46) pushUnique(cons, 'Teleop scoring is slow or misses a lot.');
   if (antiDefenseSignal <= 0.42) pushUnique(cons, 'Defense pressure causes meaningful drop-off.');
   if (endgameSignal <= 0.38) pushUnique(cons, 'Endgame ceiling appears limited.');
   if (disciplineSignal <= 0.46) pushUnique(cons, 'Penalties and handling errors add risk.');
 
-  if (pros.length === 0) pushUnique(pros, 'Balanced baseline with no single dominant signal yet.');
+  if (pros.length === 0) pushUnique(pros, 'No clear strength yet.');
   if (cons.length === 0) pushUnique(cons, 'No major red flags in this scouting sample.');
 
   return {
@@ -695,8 +696,8 @@ export function scoutingApiRating(
         api_cycle_0_100: 50,
         freshness_penalty_0_100: 0,
       },
-      pros: ['Manual scouting is the dominant signal for this report.'],
-      cons: ['API context is limited; confidence is reduced until more synced data arrives.'],
+      pros: ['This report rests mostly on your scouting.'],
+      cons: ['Little official data yet, so confidence is lower until more arrives.'],
     };
   }
 
@@ -793,22 +794,22 @@ export function scoutingApiRating(
   const pros: string[] = [];
   const cons: string[] = [];
 
-  if (strength >= 74) pushUnique(pros, 'API baseline projects above-average match contribution.');
-  if (reliability >= 72) pushUnique(pros, 'API reliability trend is steady.');
-  if (apiComposite >= 76 && manualRating.score_0_100 >= 72) pushUnique(pros, 'Manual and API signals align on a strong ceiling.');
-  if (manualRating.breakdown.anti_defense_0_1 >= 0.65) pushUnique(pros, 'Manual scouting confirms anti-defense resilience.');
-  if (auto >= 68) pushUnique(pros, 'Strong autonomous component from synced API context.');
-  if (climb >= 72) pushUnique(pros, 'Endgame projection is favorable from synced climb signals.');
+  if (strength >= 74) pushUnique(pros, 'Official data puts them above average.');
+  if (reliability >= 72) pushUnique(pros, 'Official results are steady.');
+  if (apiComposite >= 76 && manualRating.score_0_100 >= 72) pushUnique(pros, 'Your scouting and official data agree they score a lot.');
+  if (manualRating.breakdown.anti_defense_0_1 >= 0.65) pushUnique(pros, 'Your scouting shows they keep scoring under defense.');
+  if (auto >= 68) pushUnique(pros, 'Official data shows a strong auto.');
+  if (climb >= 72) pushUnique(pros, 'Official climb results look good.');
 
-  if (strength <= 45) pushUnique(cons, 'API baseline indicates limited ceiling versus event field.');
-  if (reliability <= 46) pushUnique(cons, 'API reliability trend is volatile.');
-  if (alignmentGap >= 0.34) pushUnique(cons, 'Manual and API signals disagree; prioritize additional live scouts.');
-  if (cycle <= 38 && strength >= 65) pushUnique(cons, 'Cycle-time signal is lagging relative to projected strength.');
-  if (manualRating.breakdown.discipline_0_1 <= 0.45) pushUnique(cons, 'Manual scouting reports discipline risk.');
-  if (freshnessPenalty >= 4) pushUnique(cons, 'Some API context is fallback/outdated and should be validated.');
+  if (strength <= 45) pushUnique(cons, 'Official data puts their best below most of this event.');
+  if (reliability <= 46) pushUnique(cons, 'Official results swing a lot.');
+  if (alignmentGap >= 0.34) pushUnique(cons, 'Your scouting and official data disagree; send another scout.');
+  if (cycle <= 38 && strength >= 65) pushUnique(cons, 'Cycle times are slower than their rating suggests.');
+  if (manualRating.breakdown.discipline_0_1 <= 0.45) pushUnique(cons, 'Your scouting reports fouls or rough play.');
+  if (freshnessPenalty >= 4) pushUnique(cons, 'Some official data is old or a stand-in; check it.');
 
-  if (pros.length === 0) pushUnique(pros, 'Manual and API signals are balanced with moderate confidence.');
-  if (cons.length === 0) pushUnique(cons, 'No significant API-adjusted risk flags in this sample.');
+  if (pros.length === 0) pushUnique(pros, 'Your scouting and official data roughly agree.');
+  if (cons.length === 0) pushUnique(cons, 'Official data adds no risk flags.');
 
   const roundedScore = Number(score.toFixed(1));
   return {
@@ -832,10 +833,10 @@ export function scoutingApiRating(
 export function entryHeadUp(entry: SavedScoutingEntry): string {
   const api = entry.scouting_api_rating?.score_0_100 ?? null;
   const manual = entry.manual_rating.score_0_100;
-  if (api !== null && api >= 80) return 'High-value target based on manual + API alignment.';
-  if (manual >= 78) return 'Strong manual scouting report; confirm it with another scout.';
-  if (manual <= 48) return 'Risk profile elevated; validate with additional scouts.';
-  return 'Balanced profile; use with alliance-fit context.';
+  if (api !== null && api >= 80) return 'High-value target: your scouting and official data agree.';
+  if (manual >= 78) return 'Strong scouting report; confirm it with another scout.';
+  if (manual <= 48) return 'Looks risky; check with more scouts.';
+  return 'Balanced; judge them by how they fit your alliance.';
 }
 
 function normalizeApiSnapshot(raw: Record<string, unknown> | null): ApiTeamSnapshot | null {
@@ -994,6 +995,7 @@ export function buildSavedScoutingEntry(payload: {
   scouting_api_rating: ScoutingApiRating | null;
   api_snapshot: ApiTeamSnapshot | null;
   notes: string;
+  tags?: readonly string[];
   entry_source?: SavedScoutingEntry['entry_source'];
   auto_scout_meta?: AutoScoutMeta | null;
   field_overrides?: Record<string, AutoScoutFieldOverride> | null;
@@ -1020,6 +1022,7 @@ export function buildSavedScoutingEntry(payload: {
     scouting_api_rating: payload.scouting_api_rating,
     api_snapshot: payload.api_snapshot,
     notes: normalizeScoutingNotes(payload.notes),
+    tags: normalizeNoteTags(payload.tags),
     entry_source: payload.entry_source === 'reviewed_auto' ? 'reviewed_auto' : 'manual',
     auto_scout_meta: payload.entry_source === 'reviewed_auto' ? (payload.auto_scout_meta ?? null) : null,
     field_overrides: payload.entry_source === 'reviewed_auto' ? (payload.field_overrides ?? null) : null,
@@ -1085,6 +1088,7 @@ export function normalizeEntry(value: unknown): SavedScoutingEntry | null {
     scouting_api_rating: apiRating,
     api_snapshot: normalizeApiSnapshot(asRecord(row.api_snapshot)),
     notes: typeof row.notes === 'string' ? normalizeScoutingNotes(row.notes) : '',
+    tags: normalizeNoteTags(row.tags),
     entry_source: row.entry_source === 'reviewed_auto' ? 'reviewed_auto' : 'manual',
     auto_scout_meta: normalizeAutoScoutMeta(asRecord(row.auto_scout_meta)),
     field_overrides: normalizeFieldOverrides(row.field_overrides),
@@ -1480,7 +1484,7 @@ export function apiSnapshotFromIntel(intelPayload: unknown, selectedEventKey: st
 const SCOUT_DRAFT_PREFIX = 'frcmob_scout_draft_v1:';
 
 // Drafts saved before the RP checks were removed still carry an "rp" field; it is ignored.
-export type ScoutDraft<F> = { form: F; notes: string; saved_at_ms: number };
+export type ScoutDraft<F> = { form: F; notes: string; tags?: string[]; saved_at_ms: number };
 
 export function scoutDraftKey(workspaceId: number | null, matchKey: string, teamKey: string): string {
   return `${SCOUT_DRAFT_PREFIX}w${workspaceId ?? 0}:${matchKey.toLowerCase()}:${teamKey.toLowerCase()}`;

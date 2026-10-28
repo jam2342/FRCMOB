@@ -111,7 +111,7 @@ export function OfflineReadyCard({ compact = false }: { compact?: boolean }) {
   const mustInstallFirst = isIos() && !isStandalone();
 
   return (
-    <SurfaceCard
+    <SurfaceCard tourId="myteam-offline"
       title="Ready for no signal"
       subtitle="Most event venues have little or no reception. Save what you need here while you have Wi-Fi."
       mobileCollapsible={false}

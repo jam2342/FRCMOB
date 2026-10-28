@@ -28,6 +28,7 @@ import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 
 const PHONE_PAGE_SIZE = 20;
 import { matchWinProbability, type WinProbabilitySource } from '../features/predictions/winProbability';
+import { CustomMatchup } from '../features/predictions/CustomMatchup';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & helpers                                                */
@@ -420,6 +421,13 @@ export function MatchPredictionPage() {
   }
 
 
+  // Every team on the schedule: the custom match-up's choices.
+  const eventTeamKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const pred of predictions) for (const team of [...pred.red_teams, ...pred.blue_teams]) keys.add(team.toLowerCase());
+    return [...keys];
+  }, [predictions]);
+
   return (
     <>
     <PageViewBar items={MATCH_HUB_VIEWS} />
@@ -430,7 +438,7 @@ export function MatchPredictionPage() {
             titled "Match Predictions", so the page had two identically named
             cards and two identical "Open Match Predictions fullscreen"
             buttons. This one is a picker. */}
-        <SurfaceCard
+        <SurfaceCard tourId="predictions-head"
           title={viewTitle(MATCH_HUB_VIEWS, '/match-center/predictions')}
           subtitle="Who's likely to win each match, from the official results so far."
           mobileCollapsible={false}
@@ -453,12 +461,12 @@ export function MatchPredictionPage() {
 
         {/* ---- Filter + Match List ---- */}
         {predictions.length > 0 ? (
-          <SurfaceCard
+          <SurfaceCard tourId="predictions-matches"
             expandable
             title="Matches"
             subtitle={`${filteredPredictions.length} match${filteredPredictions.length === 1 ? '' : 'es'}`}
             right={
-              <SegmentedTabs<FilterMode>
+              <SegmentedTabs<FilterMode> tourId="predictions-filter"
                 ariaLabel="Which matches"
                 value={filterMode}
                 onChange={setFilterMode}
@@ -494,9 +502,11 @@ export function MatchPredictionPage() {
           </SurfaceCard>
         ) : null}
 
+        {eventKey && eventTeamKeys.length >= 6 ? <CustomMatchup eventKey={eventKey} teamKeys={eventTeamKeys} /> : null}
+
         {/* ---- Model Accuracy ---- */}
         {stats.completed > 0 ? (
-          <SurfaceCard
+          <SurfaceCard tourId="predictions-check"
             title={stats.forecast > 0 ? 'Forecast Check' : 'Hindsight Check'}
             subtitle={
               stats.forecast === stats.completed

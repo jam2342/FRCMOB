@@ -8,6 +8,7 @@ vi.mock('../api', () => ({
   getEventTeamsIntel: vi.fn(),
   getTeamIntel: vi.fn(),
   searchTeams: vi.fn(async () => ({ teams: [] })),
+  getTeamHeadToHead: vi.fn(async () => ({ ok: true, team_key: '', other_key: '', together: { played: 0, wins: 0, losses: 0, ties: 0 }, against: { played: 0, wins: 0, losses: 0, ties: 0 }, seasons: [], match_count: 0, matches: [] })),
 }));
 
 function intelFor(nickname: string) {

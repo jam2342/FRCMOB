@@ -80,6 +80,66 @@ def select_alliances(order: list[str], strength: dict[str, float]) -> list[list[
     return alliances
 
 
+def _play_quals(
+    rng: random.Random, teams: list[str], standings: dict[str, Standing], remaining: list[QualMatch]
+) -> tuple[list[str], dict[str, Standing]]:
+    # One run of the rest of the quals: the final standings table and ranking order.
+    table = {t: Standing(s.ranking_points, s.matches, s.points) for t, s in standings.items()}
+    for t in teams:
+        table.setdefault(t, Standing())
+    for m in remaining:
+        red_won = rng.random() < m.red_win
+        for side, won, bonus, pts in ((m.red, red_won, m.red_bonus, m.red_points), (m.blue, not red_won, m.blue_bonus, m.blue_points)):
+            rp = (3.0 if won else 0.0) + sum(1.0 for p in bonus.values() if rng.random() < p)
+            for t in side:
+                # A robot in a lineup but not on the event's team list (an off-season B
+                # team before ingest registers it) still plays: 2026catt's forecast
+                # failed with KeyError 'frc4414b' on 2026-10-18.
+                row = table.setdefault(t, Standing())
+                row.ranking_points += rp
+                row.matches += 1
+                row.points += pts
+    order = sorted(
+        teams,
+        key=lambda t: (
+            -(table[t].ranking_points / table[t].matches if table[t].matches else 0.0),
+            -(table[t].points / table[t].matches if table[t].matches else 0.0),
+            rng.random(),
+        ),
+    )
+    return order, table
+
+
+def simulate_rank(
+    team: str,
+    teams: list[str],
+    standings: dict[str, Standing],
+    remaining: list[QualMatch],
+    *,
+    runs: int = 1000,
+    seed: int = 7,
+) -> dict[str, float | list[int]]:
+    # Where one team finishes the quals, over many runs: no selection, no playoffs, so a
+    # what-if answers quickly. `rank_counts[r - 1]` is how many runs ended at rank r.
+    rng = random.Random(seed)
+    counts = [0] * len(teams)
+    rank_sum = 0
+    for _ in range(runs):
+        order, _table = _play_quals(rng, teams, standings, remaining)
+        rank = order.index(team) + 1
+        counts[rank - 1] += 1
+        rank_sum += rank
+    ranks = sorted(r for r, n in enumerate(counts, start=1) for _ in range(n))
+    return {
+        "expected_rank": round(rank_sum / runs, 2),
+        "top8": round(sum(counts[:8]) / runs, 4),
+        "top4": round(sum(counts[:4]) / runs, 4),
+        "rank_likely_best": ranks[int(0.1 * (runs - 1))],
+        "rank_likely_worst": ranks[int(0.9 * (runs - 1))],
+        "rank_counts": counts,
+    }
+
+
 def simulate(
     teams: list[str],
     standings: dict[str, Standing],
@@ -101,29 +161,7 @@ def simulate(
         return playoff_cache[key]
 
     for _ in range(runs):
-        table = {t: Standing(s.ranking_points, s.matches, s.points) for t, s in standings.items()}
-        for t in teams:
-            table.setdefault(t, Standing())
-        for m in remaining:
-            red_won = rng.random() < m.red_win
-            for side, won, bonus, pts in ((m.red, red_won, m.red_bonus, m.red_points), (m.blue, not red_won, m.blue_bonus, m.blue_points)):
-                rp = (3.0 if won else 0.0) + sum(1.0 for p in bonus.values() if rng.random() < p)
-                for t in side:
-                    # A robot in a lineup but not on the event's team list (an off-season B
-                    # team before ingest registers it) still plays: 2026catt's forecast
-                    # failed with KeyError 'frc4414b' on 2026-10-18.
-                    row = table.setdefault(t, Standing())
-                    row.ranking_points += rp
-                    row.matches += 1
-                    row.points += pts
-        order = sorted(
-            teams,
-            key=lambda t: (
-                -(table[t].ranking_points / table[t].matches if table[t].matches else 0.0),
-                -(table[t].points / table[t].matches if table[t].matches else 0.0),
-                rng.random(),
-            ),
-        )
+        order, table = _play_quals(rng, teams, standings, remaining)
         for rank, t in enumerate(order, start=1):
             counts[t]["rank_sum"] += rank
             if rank <= 8:

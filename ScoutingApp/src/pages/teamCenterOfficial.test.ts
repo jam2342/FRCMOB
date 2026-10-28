@@ -34,7 +34,7 @@ describe('parseOfficialStats', () => {
 describe('officialMetricsNote', () => {
   it('names the source and how much data it rests on', () => {
     expect(officialMetricsNote(parseOfficialStats(PAYLOAD_254))).toBe(
-      "From official results. Fuel and auto are TBA's per-team estimates from 67 official matches at 2 events this season, so one event's numbers can differ; climb is its official record.",
+      'From official results · 67 matches at 2 events this season',
     );
   });
 

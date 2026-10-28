@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScoutingPage } from './ScoutingPage';
-import { saveScoutingRoomEntry, getEventSchedule, ensureTeamRoom } from '../api';
+import { saveScoutingRoomEntry, getEventSchedule, ensureTeamRoom, createOrJoinScoutingRoom } from '../api';
 import { normalizeEntry, scoutingEntriesStorageKey } from './scoutingPage.helpers';
 import { signInTestWorkspace } from '../test/workspace';
 
@@ -141,6 +141,19 @@ describe('Scouting team-room sharing and labels', () => {
     render(<MemoryRouter initialEntries={['/scouting?event=2026week0']}><ScoutingPage /></MemoryRouter>);
     await new Promise((resolve) => setTimeout(resolve, 1500));
     expect(vi.mocked(saveScoutingRoomEntry).mock.calls.slice(callsBefore).filter(([room]) => room === 'room-test')).toHaveLength(0);
+  }, HEAVY_RENDER_TIMEOUT_MS);
+
+  it("doesn't rejoin the last event's team room after the scout switched events", async () => {
+    // The server refuses a team room with another event's key (422), and this ran every visit.
+    localStorage.setItem('team_room_keys_v1', JSON.stringify(['room-old', 'room-next']));
+    sessionStorage.setItem('scouting_room_active_key_v1', 'room-old');
+    vi.mocked(ensureTeamRoom).mockResolvedValue(teamRoomFor('room-next', '2026week0'));
+    const callsBefore = vi.mocked(createOrJoinScoutingRoom).mock.calls.length;
+    render(<MemoryRouter initialEntries={['/scouting?event=2026week0']}><ScoutingPage /></MemoryRouter>);
+    await waitFor(() => {
+      expect(vi.mocked(createOrJoinScoutingRoom).mock.calls.slice(callsBefore).map(([body]) => body.room_key)).toContain('room-next');
+    }, FIND_TIMEOUT);
+    expect(vi.mocked(createOrJoinScoutingRoom).mock.calls.slice(callsBefore).map(([body]) => body.room_key)).not.toContain('room-old');
   }, HEAVY_RENDER_TIMEOUT_MS);
 
   it('shows readable station names and visible mobile quick-action text', async () => {
