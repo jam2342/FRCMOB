@@ -20,7 +20,7 @@ from app.api.routes_scouting_rooms import (
 from app.core.security import issue_workspace_access_token, request_has_explicit_admin_credential, require_admin_access, require_write_access
 from app.db import models
 from app.db.session import get_db
-from app.services.workspace_limits import take_workspace_creation_slot
+from app.services.workspace_limits import record_join_failure, take_workspace_creation_slot
 from app.services.signup_challenge import signup_policy, verify_signup_challenge
 from app.services.workspaces import (
     ROLE_LEADER,
@@ -168,6 +168,8 @@ def join_workspace(body: WorkspaceJoinRequest, db: Session = Depends(get_db)):
             .where(models.TeamWorkspace.join_code_hash == hash_join_code(normalized))
             .with_for_update()
         ).scalar_one_or_none()
+    if workspace is None:
+        record_join_failure()
     if workspace is None or workspace.is_locked:
         raise HTTPException(status_code=404, detail="No workspace uses that code. Check it with your team lead.")
     # A workspace left without leaders (after an admin recovery) is claimed by

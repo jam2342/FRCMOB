@@ -140,6 +140,29 @@ class CreationBudgetTests(_DbCase):
             self.assertTrue(workspace_limits.take_workspace_creation_slot())
 
 
+class JoinFailureTests(_DbCase):
+    def test_wrong_codes_are_counted_and_a_burst_raises_an_ops_alert(self):
+        client = self._client(workspaces_router)
+        code = client.post("/workspaces", json={"name": "Team", "display_name": "Lead"}).json()["join_code"]
+        with mock.patch.object(workspace_limits, "JOIN_FAILURE_ALERT_PER_HOUR", 3):
+            joined = client.post("/workspaces/join", json={"join_code": code, "display_name": "Scout"})
+            wrong = [client.post("/workspaces/join", json={"join_code": "ZZZZZZZZZZ", "display_name": "X"}).status_code for _ in range(3)]
+            status = workspace_limits.join_failure_status()
+        self.assertEqual(joined.status_code, 200)
+        self.assertEqual(wrong, [404, 404, 404])
+        self.assertEqual(status["this_hour"], 3)
+        self.assertEqual(len(status["high_hours_24h"]), 1)
+        codes = [alert["code"] for alert in _security_alerts({"workspace_join_failures": status})]
+        self.assertEqual(codes, ["workspace_join_failures_high"])
+
+    def test_without_redis_a_wrong_code_still_gets_a_plain_404(self):
+        client = self._client(workspaces_router)
+        with mock.patch.object(workspace_limits, "get_cache", return_value=mock.Mock(redis_client=None)):
+            response = client.post("/workspaces/join", json={"join_code": "ZZZZZZZZZZ", "display_name": "X"})
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(workspace_limits.join_failure_status()["this_hour"], None)
+
+
 class PitPhotoQuotaTests(_DbCase):
     def setUp(self) -> None:
         super().setUp()
