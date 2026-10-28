@@ -93,6 +93,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+      # detector weights for the frontend build (Caddyfile /model-files/)
+      - ${MODEL_FILES_DIR:-/home/ubuntu/frcmob-model-files}:/srv/model-files:ro
 
 volumes:
   backend_media:

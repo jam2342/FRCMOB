@@ -7,7 +7,7 @@ Production is one backend container (API + in-process scheduler) with Postgres a
 Redis beside it. Match data comes from official sources (TBA, FRC Events).
 Team-level positional data comes from the on-device recorder. The server-side
 broadcast-video pipeline was retired on 2026-09-28: broadcast footage could not
-identify individual robots reliably (see `docs/HISTORY.md`, "Video Step 2").
+identify individual robots reliably.
 
 ## Smoke test after every deploy
 

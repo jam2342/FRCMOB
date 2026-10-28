@@ -9,7 +9,7 @@ on:
       - 'ScoutingApp/package.json'
       - 'ScoutingApp/package-lock.json'
       - 'ScoutingApp/brand/**'
-      - 'ScoutingApp/public/models/**'
+      - 'ScoutingApp/build/modelChecksums.json'
       - 'ScoutingApp/src/platform/**'
       - '.github/workflows/native-android.yml'
   workflow_dispatch:

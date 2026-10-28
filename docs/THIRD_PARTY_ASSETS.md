@@ -6,7 +6,7 @@ The AGPL-3.0 license covers FRCMOB source code. It does not grant rights to unre
 
 The detector training scripts use the `ultralytics` package, and the on-device detector is derived from that toolchain. Ultralytics publishes its open-source code and models under AGPL-3.0 and offers a separate enterprise license. FRCMOB therefore uses AGPL-3.0. Preserve upstream notices and review the current [Ultralytics licensing terms](https://www.ultralytics.com/license) before redistributing weights.
 
-FRCMOB's trained `.pt` and `.onnx` weights and training datasets are not included. Operators must provision an authorized ONNX artifact with `VITE_ONDEVICE_MODEL_URL`.
+FRCMOB's trained `.pt` and `.onnx` weights and training datasets are not included. Operators must provision an authorized ONNX artifact: put files matching `ScoutingApp/build/modelChecksums.json` in `ScoutingApp/public/models/` (FRCMOB's own builds download them with `scripts/fetch-models.mjs`), or set `VITE_ONDEVICE_MODEL_URL`.
 
 ## FIRST materials and marks
 
@@ -29,7 +29,7 @@ The site footer (`ScoutingApp/src/components/SiteFooter.tsx`, on every page) and
 | [The Blue Alliance developer guidelines](https://www.thebluealliance.com/apidocs) | "Powered by The Blue Alliance" with a link back; don't use TBA's name or lamp logo in our branding. | Footer |
 | [YouTube developer policies](https://developers.google.com/youtube/terms/developer-policies) | The embedded player counts as YouTube API Services: link the YouTube ToS, say in our terms that users agree to it, say in our privacy policy that we use YouTube API Services and link the Google Privacy Policy. | Footer, Terms §5, Privacy |
 | Vercel Web Analytics, Cloudflare Turnstile | Disclose in the privacy policy (we are the controller). Analytics is off under DNT/GPC like our own timings. | Privacy |
-| AGPL-3.0 | Offer network users the source: footer "Source code" links the public mirror, so keep it in sync with what's deployed. | Footer, Terms §11 |
+| AGPL-3.0 | Offer network users the source: footer "Source code" links this repository, which is what production deploys from. | Footer, Terms §11 |
 | Bundled npm packages, IBM Plex (OFL) | Ship their notices: Vite writes `third-party-licenses.txt` at build (`build.license`); the font license is `public/fonts/OFL.txt`. | Footer, Terms §11 |
 
 Written permission from FIRST to use "FRC" in the FRCMOB name is being requested (October 2026, via customerservice@firstinspires.org for Marketing and Development); record the answer here. API access does not imply permission to republish bulk datasets or recordings. Contributors must use synthetic or independently licensed fixtures.

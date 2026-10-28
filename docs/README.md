@@ -28,4 +28,4 @@ Living documents: keep these true when the thing they describe changes. Dated re
 
 ## Legal and publishing
 - [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md): third-party terms and how the app meets them
-- [PUBLISHING.md](PUBLISHING.md), [OPEN_SOURCE_RELEASE_CHECKLIST.md](OPEN_SOURCE_RELEASE_CHECKLIST.md): the public mirror
+- [PUBLISHING.md](PUBLISHING.md): keeping a public repo safe (what never goes in, leak checks, what to do after a leak)
