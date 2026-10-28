@@ -78,3 +78,43 @@ def match_predictions(
         variance = (prediction.red_var or 0.0) + (prediction.blue_var or 0.0) + prediction.red_fouls_var + prediction.blue_fouls_var
         out[key] = (margin, math.sqrt(max(variance, 1e-6)), seen, prediction, feature_row)
     return out
+
+
+def custom_matchup(db: Session, event_key: str, red: list[str], blue: list[str], *, playoff: bool = False) -> dict:
+    # Any six teams at this event, as if they met now: expected scores and win chance from the
+    # same model and correction as the schedule's predictions (routes_events schedule). Nothing
+    # is stored, and no team is entered into a match.
+    from app.services.ratings.win_correction import corrected
+    from app.services.seasons import is_frozen, is_rated
+
+    season = int(str(event_key)[:4])
+    red_keys = [t.strip().lower() for t in red]
+    blue_keys = [t.strip().lower() for t in blue]
+    if not is_rated(season) or is_frozen(db, season):
+        reason = "season_not_rated" if not is_rated(season) else "season_frozen"
+        return {"ok": True, "event_key": event_key, "red": red_keys, "blue": blue_keys, "unavailable": reason}
+    teams_here = {str(t).lower() for (t,) in db.query(models.EventTeam.team_key).filter(models.EventTeam.event_key == event_key)}
+    six = red_keys + blue_keys
+    if len(red_keys) != 3 or len(blue_keys) != 3 or len(set(six)) != 6 or any(t not in teams_here for t in six):
+        raise ValueError("Pick three different teams from this event for each alliance.")
+
+    match_key = f"{event_key}_matchup"
+    details = match_predictions(db, event_key, [(match_key, red_keys, blue_keys)], comp_levels={match_key: "sf" if playoff else "qm"})
+    if match_key not in details:
+        return {"ok": True, "event_key": event_key, "red": red_keys, "blue": blue_keys, "unavailable": "no_prediction"}
+    margin, sd, seen, prediction, feature_row = details[match_key]
+    red_prob = max(0.0, min(1.0, corrected(season, red_win_prob(margin, sd, matches_seen=seen, playoff=playoff), feature_row)))
+    return {
+        "ok": True,
+        "event_key": event_key,
+        "red": red_keys,
+        "blue": blue_keys,
+        "playoff": playoff,
+        "red_points": round(prediction.red_mean + prediction.red_fouls, 1),
+        "blue_points": round(prediction.blue_mean + prediction.blue_fouls, 1),
+        "margin_sd": round(sd, 1),
+        "red_win_prob": round(red_prob, 4),
+        "blue_win_prob": round(1.0 - red_prob, 4),
+        # Fewest matches any of the six has played here: below three, trust it less.
+        "matches_seen": int(seen),
+    }

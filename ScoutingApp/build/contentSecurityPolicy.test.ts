@@ -57,7 +57,7 @@ describe('content security policy', () => {
       'policies.google.com': 'Google Privacy Policy link required by YouTube API Services',
       'www.twitch.tv': 'Twitch terms and privacy links',
       'vercel.com': 'Vercel Web Analytics privacy link',
-      'portfolio-wine-three-iox2jn0bx6.vercel.app': "author's site, a link",
+      'jam2342.github.io': "author's site, a link",
       'i.ytimg.com': 'YouTube thumbnail image (img-src allows https:)',
       'frcmob-api-cache.invalid': 'Cache Storage key prefix, never fetched',
     }

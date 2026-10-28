@@ -103,11 +103,10 @@ breakdown schema every year.
 1. Extend the existing explicit per-season dispatch (`2026 → REBUILT`, `2027 →
    new adapter`, otherwise raise).
 2. Write the 2027 breakdown parser against the real 2027 TBA payload — verify
-   against actual JSON, not mocked happy paths (see CLAUDE.md: Events/knockouts
-   gotcha).
+   against actual JSON, not mocked happy paths.
 3. Until the parser exists, **failing loud beats silently inheriting REBUILT.**
 
-The rating (`services/ratings/`, rating_v15) is in the same family. It reads only
+The rating (`services/ratings/`) is in the same family. It reads only
 official per-robot points: `ratings/official_points.py` turns one official finding
 into teleop / auto / climb points for REBUILT, and `ratings/constants.py`
 `SEASON_BASELINES` holds the season's typical robot (what a rating of 50 means).
@@ -132,11 +131,11 @@ grep -rn --include="*.py" -E "\b2026\b" backend/app | grep -vE "test|txhou|demo|
 
 ## Tier 4 — models & ops (don't reset these)
 
-- **ML detector model is season-specific.** `frc_robot_detector_v2.pt` was trained
+- **ML detector model is season-specific.** `frc_robot_detector_v4_{s,n}` were trained
   on FRC robots; a new game's robots/field may need retraining + a fresh locked
   holdout. See `docs/TRAINING.md`.
 - **Calibration homographies are per-resolution and per-field** — old calibrations
-  do not carry over. (See CLAUDE.md local-dev gotchas.)
+  do not carry over.
 - **Ratings start over each season by design**: a team's strength only reads
   matches from the same season. Early in a new season everything leans on the
   baseline's typical robot, so set a provisional baseline from week 1 and

@@ -1,3 +1,4 @@
+import { useAssignmentBadge } from '../hooks/useAssignmentBadge';
 import { ScheduleStatus } from '../features/workspace/ScheduleStatus';
 import { useMemo, useState } from 'react';
 import type { EventScheduleItem, TeamRoomAssignment, TeamRoomAssignmentChange, TeamRoomMember } from '../api';
@@ -142,6 +143,8 @@ function ScoutingAssignWorkspacePage() {
     () => (snapshot ? myAssignments(snapshot.me.member_id, assignments, schedule) : []),
     [assignments, schedule, snapshot],
   );
+  // Without the schedule nothing can be matched up, which isn't the same as nothing left.
+  useAssignmentBadge(snapshot && room.schedule ? mine : null);
   const canEdit = room.isLeader && room.online;
   const autoMembers = members.filter((member) => !skipped.has(member.member_id)).map((member) => member.member_id);
   const pendingChanges = useMemo<TeamRoomAssignmentChange[]>(() => {
@@ -218,7 +221,7 @@ function ScoutingAssignWorkspacePage() {
   };
 
   const eventCard = (
-    <SurfaceCard
+    <SurfaceCard tourId="assign-head"
       title={scoutingViewTitle('/scouting/assignments')}
       subtitle="Who scouts which robot in each match. Your team sees changes as you make them."
       mobileCollapsible={false}
@@ -275,7 +278,7 @@ function ScoutingAssignWorkspacePage() {
     <>
       {eventCard}
 
-      <SurfaceCard
+      <SurfaceCard tourId="assign-scouts"
         title={`Scouts (${members.length})`}
         subtitle="Everyone on your team. Tap a name to leave them out of auto-assign."
       >
@@ -312,7 +315,7 @@ function ScoutingAssignWorkspacePage() {
         ) : null}
       </SurfaceCard>
 
-      <SurfaceCard title="Coverage">
+      <SurfaceCard tourId="assign-coverage" title="Coverage">
         <div className={styles.stats}>
           <Stat
             label="Slots assigned"
@@ -348,7 +351,7 @@ function ScoutingAssignWorkspacePage() {
         </div>
       </SurfaceCard>
 
-      <SurfaceCard
+      <SurfaceCard tourId="assign-matches"
         expandable
         title="Match Assignments"
         subtitle={`${visibleMatches.length} match${visibleMatches.length === 1 ? '' : 'es'}. Each change saves straight away.`}

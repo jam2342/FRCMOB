@@ -2,7 +2,7 @@
 
 Update: the combined candidate on current main and subsequent read-only production observations are recorded in [release readiness](SECURITY_RELEASE_2026-10-17.md). The results below describe the original isolated security checkout.
 
-Local fixes for all six findings in [the audit](SECURITY_AUDIT_2026-10-17.md) are implemented in `<local>/FRCMOB-security-20261017`. The user approved these security, dependency and migration changes, then asked to leave Git alone. The original working checkout and its concurrent cleanup edits were preserved. No merge, commit, push, deployment, production test or real credential access was performed.
+Local fixes for all six findings in [the audit](SECURITY_AUDIT_2026-10-17.md) are implemented in `/Users/jamalmammadzada/Desktop/Projects/FRCMOB-security-20261017`. The user approved these security, dependency and migration changes, then asked to leave Git alone. The original working checkout and its concurrent cleanup edits were preserved. No merge, commit, push, deployment, production test or real credential access was performed.
 
 ## Changes
 

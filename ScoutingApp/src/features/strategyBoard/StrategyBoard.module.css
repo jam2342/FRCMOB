@@ -1,0 +1,45 @@
+.board {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* A grid, not a flex row: a fieldset in a flex row shrinks to its narrowest, and the segments
+   inside it stacked into a column. */
+.tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+.field {
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  /* A finger drawing on the field must not scroll the page. */
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.status {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.actions {
+  display: inline-flex;
+  gap: var(--space-1);
+}

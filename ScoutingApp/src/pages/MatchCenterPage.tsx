@@ -61,6 +61,9 @@ import { loadMatchCenterPredictions } from '../features/prefetch/pageRequests';
 import { MatchClock } from '../features/matchResult/MatchClock';
 import { MatchPredictionNote } from '../features/predictions/MatchPredictionNote';
 import { RollingScore } from '../features/matchResult/RollingScore';
+import { OurWin } from '../features/matchResult/OurWin';
+import { ourWinningTeam } from '../features/matchResult/ourWinningTeam';
+import { useWorkspace } from '../features/workspace/useWorkspace';
 import resultStyles from '../features/matchResult/MatchResult.module.css';
 import { ShareMatchDialog } from '../features/shareCard/ShareMatchDialog';
 import { eventDisplayName } from '../utils/eventSearchIndex';
@@ -574,6 +577,9 @@ export function MatchCenterPage() {
     return () => window.clearTimeout(timer);
   }, [selectedMatchKeyForReveal, selectedHasScores]);
   const revealing = Boolean(revealMatchKey) && revealMatchKey === selectedMatchKeyForReveal;
+  // Your own team on the side that just won gets a moment of its own.
+  const ourTeamNumber = useWorkspace()?.workspace.frc_team_number ?? null;
+  const ourWin = revealing ? ourWinningTeam(selectedMatch, resolvedWinner, ourTeamNumber) : null;
   const revealClass = (side: 'red' | 'blue') => {
     if (!revealing || !resolvedWinner || resolvedWinner === 'tie') return '';
     if (resolvedWinner !== side) return resultStyles.lost;
@@ -773,7 +779,7 @@ export function MatchCenterPage() {
         />
       ) : null}
       <aside className="center-sidebar">
-        <SurfaceCard title="Match Finder" compactable>
+        <SurfaceCard tourId="match-finder" title="Match Finder" compactable>
           <EventPicker
             label="Event"
             value={selectedEventKey}
@@ -975,7 +981,7 @@ export function MatchCenterPage() {
         {/* ── Mobile: score hero ── */}
         {isMobileLayout && selectedMatch ? (
           <>
-            <div className={`fm-score-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
+            <div data-tour="match-hero" className={`fm-score-hero ${revealing ? resultStyles.reveal : ''}`.trim()}>
               {/* Share and Change ride in the card's top corners; each used to take a row. */}
               <div className="fm-score-hero-bar">
                 <span className="fm-score-hero-corner">
@@ -1016,12 +1022,13 @@ export function MatchCenterPage() {
                   {titleizeKey(selectedWinner)} alliance wins{selectedMatch.winning_score != null ? ` · ${selectedMatch.winning_score} pts` : ''}
                 </span>
               ) : null}
+              {ourWin ? <OurWin teamNumber={ourWin} /> : null}
               <MatchPredictionNote match={selectedPrediction} completed={selectedCompleted} winner={resolvedWinner} />
               {selectedMatchProgress !== null && !selectedCompleted ? (
                 <MatchClock progress={selectedMatchProgress} className="fm-match-clock" />
               ) : null}
             </div>
-            <SegmentedTabs
+            <SegmentedTabs tourId="match-tabs"
               motion
               swipe
               ariaLabel="Match center tabs"
@@ -1037,7 +1044,7 @@ export function MatchCenterPage() {
 
         {/* ── Desktop: standard SurfaceCard header ── */}
         {!isMobileLayout ? (
-        <SurfaceCard
+        <SurfaceCard tourId="match-hero"
           className="mc-hero-card"
           title={eventTitle}
           subtitle={selectedMatch ? selectedMatch.display_name : pendingMatchLabel ?? 'Select a match'}
@@ -1059,7 +1066,7 @@ export function MatchCenterPage() {
           }
         >
           <div className="center-tabs-header">
-            <SegmentedTabs
+            <SegmentedTabs tourId="match-tabs"
               motion
               ariaLabel="Match center tabs"
               value={activeTab}
@@ -1083,9 +1090,10 @@ export function MatchCenterPage() {
         </SurfaceCard>
         ) : null}
 
-        {/* Shaped like the Match Snapshot card that replaces it, so the page doesn't jump. */}
+        {/* Shaped like the Match Snapshot card that replaces it, so the page doesn't jump. Phones
+            have no such card, so the title there would show for a moment and vanish. */}
         {selectedEventKey && loadingEventData && scheduleRows.length === 0 ? (
-          <SurfaceCard title={pendingMatchLabel ? 'Match Snapshot' : 'Loading'} compactable>
+          <SurfaceCard title="Match Snapshot" compactable hideTitleOnPhone>
             <SkeletonBlock rows={4} />
           </SurfaceCard>
         ) : null}
@@ -1143,6 +1151,7 @@ export function MatchCenterPage() {
                       {`${selectedMatchTimer.label}: ${selectedMatchTimer.value}`}
                     </span>
                   )}
+                  {ourWin ? <OurWin teamNumber={ourWin} /> : null}
                   <MatchPredictionNote match={selectedPrediction} completed={selectedCompleted} winner={resolvedWinner} />
                 </div>
                 <div className={`match-live-alliance blue ${resolvedWinner === 'blue' ? 'winner' : ''} ${revealClass('blue')}`.trim()}>
@@ -1244,7 +1253,7 @@ export function MatchCenterPage() {
               {selectedIsLive ? (
                 renderLiveStreamCard('Live Broadcast', 'Stream replaces lineup while match is live.')
               ) : (
-                <SurfaceCard title="Alliances" compactable>
+                <SurfaceCard tourId="match-alliances" title="Alliances" compactable>
                   <div className="center-alliance-split">
                     <div className={`center-alliance-col red ${resolvedWinner === 'red' ? 'winner' : ''}`.trim()}>
                       <label>

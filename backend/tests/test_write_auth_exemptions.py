@@ -71,13 +71,15 @@ class WriteAuthExemptionsTests(unittest.TestCase):
         from app.main import _enforce_media_access
 
         path = "/media/pit_photos/2026test/frc254/robot.jpg"
-        signed = sign_media_path(path)
-        _enforce_media_access(_make_request("GET", path, signed.split("?", 1)[1]))
+        signed = sign_media_path(path, member_id=7)
+        # A valid link names the member it was issued to; the middleware checks them.
+        self.assertEqual(_enforce_media_access(_make_request("GET", path, signed.split("?", 1)[1])), 7)
 
-        expired = sign_media_path(path, now=0)
+        expired = sign_media_path(path, member_id=7, now=0)
         tampered = signed.split("?", 1)[1].replace("sig=", "sig=0")
-        other_photo = sign_media_path("/media/pit_photos/2026test/frc254/other.jpg").split("?", 1)[1]
-        for query in ("", expired.split("?", 1)[1], tampered, other_photo):
+        other_member = signed.split("?", 1)[1].replace("m=7", "m=8")
+        other_photo = sign_media_path("/media/pit_photos/2026test/frc254/other.jpg", member_id=7).split("?", 1)[1]
+        for query in ("", expired.split("?", 1)[1], tampered, other_member, other_photo):
             with self.assertRaises(HTTPException) as context:
                 _enforce_media_access(_make_request("GET", path, query))
             self.assertEqual(context.exception.status_code, 403)
@@ -85,6 +87,34 @@ class WriteAuthExemptionsTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as context:
             _enforce_media_access(_make_request("GET", "/media/usage"))
         self.assertEqual(context.exception.status_code, 403)
+
+    def test_a_removed_members_photo_links_stop_working(self):
+        from datetime import datetime, timezone
+        from unittest import mock
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        from app import main
+        from app.db import models
+        from app.db.base import Base
+        from tests.workspace_helpers import seed_workspace
+
+        engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine)
+        with factory() as db:
+            _workspace, member, _headers = seed_workspace(db)
+            member_id = member.id
+        with mock.patch.object(main, "SessionLocal", factory):
+            self.assertTrue(main._media_member_active(member_id))
+            with factory() as db:
+                db.get(models.TeamWorkspaceMember, member_id).removed_at = datetime.now(timezone.utc)
+                db.commit()
+            self.assertFalse(main._media_member_active(member_id))
+            self.assertFalse(main._media_member_active(999))
+        engine.dispose()
 
 if __name__ == "__main__":
     unittest.main()

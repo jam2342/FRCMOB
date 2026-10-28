@@ -8,7 +8,7 @@ export const SOURCE_CODE_URL = 'https://github.com/jam2342/FRCMOB';
 export const LEGAL_CONTACT_URL = `${SOURCE_CODE_URL}/issues`;
 export const LEGAL_CONTACT_LABEL = 'open an issue on GitHub';
 export const AUTHOR_NAME = 'Jamal Mammadzada';
-export const AUTHOR_SITE_URL = 'https://portfolio-wine-three-iox2jn0bx6.vercel.app/';
+export const AUTHOR_SITE_URL = 'https://jam2342.github.io/JamalsPortfolio/';
 
 // Vite writes the bundled packages' licenses here at build time (vite.config.ts).
 export const THIRD_PARTY_LICENSES_PATH = '/third-party-licenses.txt';

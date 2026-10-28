@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { showToast } from '../../components/ui/toast';
 import { readStoredCenterContext } from '../../layout/centerContext';
 import { readFavoriteTeams, saveFavoriteTeams } from '../../layout/userSettings';
+import { hapticTap } from '../../utils/haptics';
 import { navigateWithTransition } from '../../utils/viewTransition';
 import { loadTeamCenterIntel } from '../prefetch/pageRequests';
 import { peekFromIntel, type TeamPeekData } from './peekData';
@@ -154,11 +155,7 @@ export function TeamPeek() {
           const next = anchorFrom(el, 'sheet');
           if (!next) return;
           suppressClick.current = true;
-          try {
-            navigator.vibrate?.(10);
-          } catch {
-            // No vibration here.
-          }
+          hapticTap();
           setAnchor(next);
         }, LONG_PRESS_MS),
       };

@@ -1,6 +1,6 @@
 # FRCMOB native app
 
-The React frontend now has Capacitor 8.5.2 projects for iOS and Android. App name:
+The React frontend has Capacitor 8.5.3 projects for iOS and Android. App name:
 **FRCMOB**. Bundle/application ID: `com.frcmob.app` (matches the planned `frcmob.com`; it was
 `app.frcmob.scouting` until 2026-10-18, built on `frcmob.app`, a domain we don't own). Register it
 under the owner's developer accounts before store submission: **an ID can never change once an app
@@ -249,7 +249,7 @@ to confirm Keychain retention and removal of WebView/recording data. Never run
 that test on a device containing scouting work.
 
 Detailed evidence and remaining release gates:
-[`NATIVE_IOS_VERIFICATION_2026-10-01.md`](NATIVE_IOS_VERIFICATION_2026-10-01.md).
+[`NATIVE_IOS_VERIFICATION_2026-10-01.md`](archive/2026-10/NATIVE_IOS_VERIFICATION_2026-10-01.md).
 
 ## Private beta preparation
 

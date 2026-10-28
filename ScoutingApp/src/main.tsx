@@ -19,6 +19,7 @@ import { startRum, trackingAllowed } from './perf/rum';
 import { startCspReports } from './perf/cspReports';
 import { startIntentPrefetch } from './features/prefetch/intentPrefetch';
 import { startMatchPreload } from './features/prefetch/matchPreload';
+import { startLiveResults } from './features/live/liveResults';
 import { resolveApiBaseUrl } from './platform/runtime';
 
 // Register service worker only in production. In local dev, proactively
@@ -69,6 +70,8 @@ async function bootstrap() {
     void preloadEventSearchIndex();
   }, { fallbackDelayMs: 1500, timeoutMs: 2500 });
 
+  // Before the first render, so the first schedule a page loads can open its event's socket.
+  startLiveResults();
   // Before the first render, so anything blocked while the page paints is counted.
   startCspReports(resolveApiBaseUrl());
   createRoot(document.getElementById('root')!).render(

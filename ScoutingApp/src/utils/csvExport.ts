@@ -5,10 +5,16 @@ import { exportTextFile } from '../platform/exportFile';
  * Generates a CSV string and downloads it on the web or shares it in the app.
  */
 
+// Excel and Sheets run a cell that starts with one of these as a formula, so a
+// teammate's "=HYPERLINK(...)" note would run on whoever opens the export.
+const FORMULA_START = /^[=+\-@\t\r]/;
+
 /** Escape a cell value for RFC 4180 compliant CSV. */
 function escapeCell(value: unknown): string {
   if (value == null) return '';
-  const str = String(value);
+  // Numbers stay numbers (a negative one is data, not a formula); text that would
+  // start a formula gets a leading quote, which spreadsheets show as plain text.
+  const str = typeof value === 'string' && FORMULA_START.test(value) ? `'${value}` : String(value);
   if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }

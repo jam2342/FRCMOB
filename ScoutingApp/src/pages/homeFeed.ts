@@ -1,5 +1,6 @@
 import type { EventScheduleItem, EventSearchItem } from '../api';
 import { liveTimerLabel, matchStartTime } from './centerUtils';
+import { isEventKeyShape } from '../utils/eventKey';
 
 export type HomeFilter = 'all' | 'live' | 'upcoming' | 'completed';
 
@@ -331,5 +332,5 @@ export function closerDay(
 // and then replace it.
 export function homeStartEvent(storedEventKey: string | null | undefined, suggestedKeys: string[]): string {
   const stored = String(storedEventKey || '').trim().toLowerCase();
-  return /^\d{4}[a-z0-9]+$/.test(stored) ? stored : suggestedKeys[0] || '';
+  return isEventKeyShape(stored) ? stored : suggestedKeys[0] || '';
 }

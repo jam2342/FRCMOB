@@ -26,7 +26,7 @@ export function WorkspaceGate({
   return (
     <>
       {viewBar}
-      <div className="workspace-gate">
+      <div data-tour="workspace-gate" className="workspace-gate">
         <EmptyState
           icon={<UsersIcon />}
           title={revoked ? 'You were signed out of your team' : `${feature} are private to your team`}

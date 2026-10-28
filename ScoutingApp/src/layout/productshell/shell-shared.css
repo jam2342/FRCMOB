@@ -1818,6 +1818,12 @@
     gap: 6px;
   }
 
+  /* Keeping its own size never means wider than the card: a tab strip scrolls instead
+     (Predictions' All/Upcoming/Completed ran 30px off a 250px phone). */
+  .product-shell .surface-card-right > * {
+    max-width: 100%;
+  }
+
   .product-shell .surface-card-collapse-btn {
     min-height: 30px;
     padding: 0 10px;

@@ -374,6 +374,16 @@
   --home-polish-shadow-strong:             0 20px 42px rgba(6, 10, 16, 0.24);
 }
 
+/* Native parts (scrollbars, select menus, date pickers, autofill) follow the app's theme,
+   not the phone's. */
+:root {
+  color-scheme: dark;
+}
+
+:root.theme-light {
+  color-scheme: light;
+}
+
 /* ── Light theme overrides ─────────────────────────────────────── */
 :root.theme-light,
 .product-shell.theme-light {

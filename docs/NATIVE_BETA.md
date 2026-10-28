@@ -1,7 +1,7 @@
 # FRCMOB private beta — preparation and verification
 
 October 2 follow-up: PostgreSQL concurrency and revoked-member writes now have
-real HTTP regression coverage; see [Beta reliability and ML release audit](BETA_RELIABILITY_2026-10-02.md).
+real HTTP regression coverage; see [Beta reliability and ML release audit](archive/2026-10/BETA_RELIABILITY_2026-10-02.md).
 That round also fixes inactive ML candidates leaking into live inference. The
 patch is locally verified; the owner approved production rollout on October 2.
 

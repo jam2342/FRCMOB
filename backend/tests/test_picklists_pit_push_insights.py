@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.security import WORKSPACE_ACCESS_HEADER
 from app.api import routes_pit_scouting
 from app.api.routes_picklists import router as picklists_router
 from app.api.routes_pit_scouting import router as pit_scouting_router
@@ -215,6 +216,32 @@ class PitScoutingEndpointTests(_EndpointTestCase):
         self.assertEqual(response.json()["entry"]["photos"], [])
         self.assertFalse(stored.exists())
 
+    def _upload(self, data: bytes) -> Path:
+        response = self.client.post(
+            "/pit-scouting/photo",
+            json={"event_key": "2026test", "team_key": "frc254", "image_base64": base64.b64encode(data).decode()},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return Path(self._tmpdir.name) / "2026test" / "frc254" / Path(response.json()["photo"]).name
+
+    def test_photo_location_metadata_is_dropped(self):
+        import io
+
+        from PIL import Image
+
+        exif = Image.Exif()
+        exif[0x0110] = "Pixel 9"  # camera model
+        exif[0x8825] = {1: "N", 2: (29.0, 45.0, 0.0)}  # GPS latitude
+        output = io.BytesIO()
+        Image.new("RGB", (4, 2), (30, 60, 90)).save(output, format="JPEG", exif=exif)
+        with Image.open(self._upload(output.getvalue())) as stored:
+            self.assertEqual(len(stored.getexif()), 0)
+            self.assertEqual(stored.size, (4, 2))
+
+    def test_photo_without_metadata_is_stored_unchanged(self):
+        plain = jpeg_bytes()
+        self.assertEqual(self._upload(plain).read_bytes(), plain)
+
     def test_photo_rejects_non_image(self):
         response = self.client.post(
             "/pit-scouting/photo",
@@ -247,8 +274,10 @@ class PushEndpointTests(_EndpointTestCase):
             db.add(models.Event(event_key="2026test", name="Test Event", year=2026))
             db.commit()
 
-    def _subscribe(self, endpoint="one", **extra):
-        return self.client.post("/push/subscribe", json={
+    def _subscribe(self, endpoint="one", *, anonymous=False, **extra):
+        # The client sends workspace credentials by default; an empty header is a fan.
+        headers = {WORKSPACE_ACCESS_HEADER: ""} if anonymous else None
+        return self.client.post("/push/subscribe", headers=headers, json={
             "endpoint": f"https://fcm.googleapis.com/fcm/send/{endpoint}",
             "keys": PUSH_TEST_KEYS,
             **extra,
@@ -406,21 +435,33 @@ class PushEndpointTests(_EndpointTestCase):
         from app.core.config import settings
 
         with mock.patch.object(settings, "push_subscriptions_max_new_per_hour", 1):
-            self.assertEqual(self._subscribe().status_code, 200)
-            self.assertEqual(self._subscribe(team_keys=["frc254"]).status_code, 200)
+            self.assertEqual(self._subscribe(anonymous=True).status_code, 200)
+            self.assertEqual(self._subscribe(anonymous=True, team_keys=["frc254"]).status_code, 200)
             self.assertEqual(self.registration_count, 1)
-            self.assertEqual(self._subscribe("two").status_code, 429)
+            self.assertEqual(self._subscribe("two", anonymous=True).status_code, 429)
             self.client.post("/push/unsubscribe", json={"endpoint": "https://fcm.googleapis.com/fcm/send/one"})
-            self.assertEqual(self._subscribe().status_code, 429)
+            self.assertEqual(self._subscribe(anonymous=True).status_code, 429)
 
     def test_total_cap_preserves_existing_subscription_updates(self):
         from app.core.config import settings
 
         with mock.patch.object(settings, "push_subscriptions_max_total", 1):
-            self.assertEqual(self._subscribe().status_code, 200)
-            self.assertEqual(self._subscribe("two").status_code, 429)
-            self.assertEqual(self._subscribe(team_keys=["frc118"]).status_code, 200)
+            self.assertEqual(self._subscribe(anonymous=True).status_code, 200)
+            self.assertEqual(self._subscribe("two", anonymous=True).status_code, 429)
+            self.assertEqual(self._subscribe(anonymous=True, team_keys=["frc118"]).status_code, 200)
         self.assertEqual(self.registration_count, 1)
+
+    def test_anonymous_flood_cannot_lock_a_team_out_of_alerts(self):
+        from app.core.config import settings
+
+        with mock.patch.object(settings, "push_subscriptions_max_total", 1), \
+                mock.patch.object(settings, "push_subscriptions_max_new_per_hour", 1):
+            self.assertEqual(self._subscribe("fan", anonymous=True).status_code, 200)
+            self.assertEqual(self._subscribe("fan-two", anonymous=True).status_code, 429)
+            # A workspace member still gets in: own hourly budget, room past the anonymous total.
+            self.assertEqual(self._subscribe("member").status_code, 200)
+            # The ceiling still holds for everyone.
+            self.assertEqual(self._subscribe("member-two").status_code, 429)
 
     def test_unknown_event_is_unavailable_without_admission(self):
         response = self._subscribe(event_key="2026unknown")
@@ -526,6 +567,54 @@ class ScoutingInsightsEndpointTests(_EndpointTestCase):
         entry = body["entries"][0]
         self.assertEqual(entry["team_key"], "frc1")
         self.assertEqual(entry["entry"]["form"]["teleop_scored"], 12)
+
+    def test_team_notes_lists_what_scouts_wrote_and_tagged(self):
+        self._seed()
+        with self.SessionLocal() as db:
+            db.add(models.Match(match_key="2026test_qm2", event_key="2026test", comp_level="qm", set_number=1, match_number=2))
+            db.add(models.ScoutingRoomEntry(
+                room_key="room-a", event_key="2026test", match_key="2026test_qm1", team_key="frc2",
+                scout_profile="Scout One",
+                payload={"notes": "  Pinned hard for 40s  ", "tags": ["defense", "DEFENSE", "made_up", 7], "saved_at_ms": 1000},
+            ))
+            db.add(models.ScoutingRoomEntry(
+                room_key="room-a", event_key="2026test", match_key="2026test_qm2", team_key="frc2",
+                scout_profile="Scout Two",
+                payload={"notes": "", "tags": ["broke_down", "defense"], "saved_at_ms": 2000},
+            ))
+            # Neither notes nor tags: counted as a report, not listed.
+            db.add(models.ScoutingRoomEntry(
+                room_key="room-a", event_key="2026test", match_key="2026test_qm2", team_key="frc2",
+                scout_profile="Scout Three", payload={"notes": "   "},
+            ))
+            # Another workspace's room never shows.
+            other = models.TeamWorkspace(name="Other", join_code_hash="other-hash")
+            db.add(other)
+            db.flush()
+            db.add(models.ScoutingRoom(room_key="room-b", workspace_id=other.id, event_key="2026test"))
+            db.add(models.ScoutingRoomEntry(
+                room_key="room-b", event_key="2026test", match_key="2026test_qm1", team_key="frc2",
+                scout_profile="Spy", payload={"notes": "secret", "tags": ["tipped"]},
+            ))
+            db.commit()
+
+        response = self.client.get("/scouting/insights/team-notes", params={"team_key": "frc2", "event_key": "2026test"})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["reports"], 3)
+        self.assertEqual([(n["scout_profile"], n["notes"], n["tags"]) for n in body["notes"]], [
+            ("Scout Two", "", ["broke_down", "defense"]),
+            ("Scout One", "Pinned hard for 40s", ["defense"]),
+        ])
+        self.assertEqual(body["tag_counts"], [{"tag": "defense", "count": 2}, {"tag": "broke_down", "count": 1}])
+
+        season = self.client.get("/scouting/insights/team-notes", params={"team_key": "frc2"}).json()
+        self.assertEqual(len(season["notes"]), 2)
+        self.assertIsNone(season["event_key"])
+
+    def test_team_notes_rejects_a_bad_team_key(self):
+        response = self.client.get("/scouting/insights/team-notes", params={"team_key": "254; drop"})
+        self.assertEqual(response.status_code, 422)
 
 if __name__ == "__main__":
     unittest.main()

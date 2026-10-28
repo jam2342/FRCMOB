@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "recorded_at_utc": "2026-10-18T03:53:19.758547+00:00",
-  "checkout": "<local>/FRCMOB-security-release-20261017",
+  "checkout": "/Users/jamalmammadzada/Desktop/Projects/FRCMOB-security-release-20261017",
   "baseline_commit": "55b304c5cfb10a06bbe6c82e67ce46b1d3f68f0d",
   "status": "combined_candidate_locally_verified_not_deployed",
   "results": {

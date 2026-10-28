@@ -48,6 +48,21 @@ function findTargetElement(selector: string | undefined): HTMLElement | null {
   }
 }
 
+function isVisible(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 2 && r.height > 2;
+}
+
+// The steps that belong on this screen: the right layout, and an optional target actually shown.
+function stepsFor(walkthrough: TutorialWalkthroughStep[], isMobile: boolean): TutorialWalkthroughStep[] {
+  return walkthrough.filter((step) => {
+    if (step.only === 'phone' && !isMobile) return false;
+    if (step.only === 'desktop' && isMobile) return false;
+    return !step.requiresTarget || isVisible(findTargetElement(resolveSelector(step, isMobile)));
+  });
+}
+
 function buildSpotlightRect(rect: DOMRect): SpotlightRect {
   const padding = 6;
   return {
@@ -142,18 +157,20 @@ function TutorialRobotGuide({
 
 export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) {
   const blueprint = useMemo(() => getTutorialBlueprint(scope), [scope]);
-  const [walkthrough, setWalkthrough] = useState(() => blueprint.walkthrough.filter((step) => !step.requiresTarget));
-  const [stepIndex, setStepIndex] = useState(0);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT_PX);
+  const [walkthrough, setWalkthrough] = useState(() =>
+    blueprint.walkthrough.filter((step) => !step.requiresTarget && step.only !== (isMobile ? 'desktop' : 'phone')),
+  );
+  const [stepIndex, setStepIndex] = useState(0);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [targetFound, setTargetFound] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
   useLayoutEffect(() => {
     // Panels mounted beside the overlay are available after the DOM commits.
-    setWalkthrough(blueprint.walkthrough.filter((step) => !step.requiresTarget || findTargetElement(step.selector)));
+    setWalkthrough(stepsFor(blueprint.walkthrough, isMobile));
     setStepIndex(0);
-  }, [blueprint]);
+  }, [blueprint, isMobile]);
 
   const totalSteps = walkthrough.length;
   const safeIndex = totalSteps ? Math.max(0, Math.min(stepIndex, totalSteps - 1)) : 0;
@@ -250,7 +267,6 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
     onClose();
   }
 
-  const tips = step ? (isMobile ? step.tooltips.slice(0, 1) : step.tooltips.slice(0, 3)) : [];
   const effectivePanelStyle = !isMobile && targetFound ? panelStyle : undefined;
 
   return (
@@ -281,7 +297,7 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
         </button>
 
         <header className="tut-head">
-          <p className="tut-eyebrow">{blueprint.scope.replace('-', ' ')}</p>
+          <p className="tut-eyebrow">Page tour</p>
           <h2 id="tut-title" className="tut-title">{blueprint.title}</h2>
         </header>
 
@@ -305,11 +321,9 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
               <p className="tut-label">{step.system}</p>
               <h3 className="tut-step-title">{step.title}</h3>
               <p className="tut-step-desc">{step.description}</p>
-              {tips.length > 0 ? (
+              {step.tip ? (
                 <ul className="tut-tips">
-                  {tips.map((t, i) => (
-                    <li key={`tut-tip-${i}`}>{t}</li>
-                  ))}
+                  <li>{step.tip}</li>
                 </ul>
               ) : null}
             </>

@@ -13,6 +13,7 @@ import time
 import uuid
 from unittest.mock import AsyncMock
 
+import anyio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 import httpx
@@ -364,6 +365,11 @@ def team_request(member):
     ]})
 
 
+def run_route(call):
+    # Room routes run in FastAPI's threadpool and hop to the event loop for presence.
+    return asyncio.run(anyio.to_thread.run_sync(call))
+
+
 def test_concurrent_first_team_room_calls_share_one_room(beta, monkeypatch):
     client, sessions, engine = beta
     lead = create_workspace(client)
@@ -372,7 +378,7 @@ def test_concurrent_first_team_room_calls_share_one_room(beta, monkeypatch):
 
     def join_room(member):
         with sessions() as db:
-            return asyncio.run(routes_scouting_rooms.create_or_join_team_room(
+            return run_route(lambda: routes_scouting_rooms.create_or_join_team_room(
                 routes_scouting_rooms.TeamRoomRequest(event_key=EVENT_KEY), team_request(member), db,
             ))
 
@@ -404,7 +410,7 @@ def test_team_write_waiting_for_lock_rechecks_removed_leader(beta, monkeypatch):
 
     def write():
         with sessions() as db:
-            return asyncio.run(routes_scouting_rooms.update_team_assignments(
+            return run_route(lambda: routes_scouting_rooms.update_team_assignments(
                 EVENT_KEY, routes_scouting_rooms.TeamAssignmentRequest(changes=[{
                     "match_key": MATCH_KEY, "team_key": "frc118", "assigned_member_id": second['me']['id'],
                 }]), team_request(lead), db,

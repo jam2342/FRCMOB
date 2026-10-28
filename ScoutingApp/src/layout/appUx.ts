@@ -1,14 +1,26 @@
 import type { TutorialScope } from './userSettings';
 
-export function resolveScopeFromPath(pathname: string): TutorialScope {
-  const path = String(pathname || '').trim().toLowerCase();
-  if (path.startsWith('/events')) return 'events';
-  if (path.startsWith('/scouting')) return 'scouting';
-  if (path.startsWith('/match-center')) return 'match-center';
-  if (path.startsWith('/team-center')) return 'team-center';
-  if (path.startsWith('/compare')) return 'compare';
-  if (path.startsWith('/favorites')) return 'favorites';
-  if (path.startsWith('/settings')) return 'settings';
-  if (path.startsWith('/ops')) return 'ops';
-  return 'home';
+// Each tour belongs to one page. A page without its own tour gets none: falling back to
+// Home's tour on, say, Predictions pointed every step at things that weren't there.
+const SCOPE_BY_PATH: Record<string, TutorialScope> = {
+  '/home': 'home',
+  '/events': 'events',
+  '/scouting': 'scouting',
+  '/scouting/pit': 'pit-scouting',
+  '/scouting/assignments': 'assignments',
+  '/match-center': 'match-center',
+  '/match-center/predictions': 'predictions',
+  '/match-center/strategy': 'strategy',
+  '/team-center': 'team-center',
+  '/compare': 'compare',
+  '/compare/alliance-advisor': 'alliance-advisor',
+  '/compare/picklist': 'picklist',
+  '/favorites': 'favorites',
+  '/settings': 'settings',
+  '/my-team': 'my-team',
+};
+
+export function resolveScopeFromPath(pathname: string): TutorialScope | null {
+  const path = String(pathname || '').trim().toLowerCase().replace(/\/+$/, '') || '/home';
+  return SCOPE_BY_PATH[path] ?? null;
 }

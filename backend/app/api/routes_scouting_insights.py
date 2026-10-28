@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.routes_scouting_rooms import _serialize_entry
 from app.db import models
 from app.db.session import get_db
+from app.services.scouting_rooms.note_tags import SCOUT_NOTE_TAGS, entry_note_tags
 from app.services.workspaces import require_workspace_actor
 
 logger = logging.getLogger(__name__)
@@ -271,4 +272,77 @@ def get_event_coverage(
         "grid": grid,
         "leaderboard": leaderboard,
         "outliers": outliers[:80],
+    }
+
+
+_TEAM_NOTES_LIMIT = 200
+
+
+@router.get("/team-notes")
+def get_team_notes(
+    request: Request,
+    team_key: str = Query(..., min_length=4, max_length=12, pattern=r"^frc\d{1,5}$"),
+    event_key: str | None = Query(default=None, max_length=48),
+    db: Session = Depends(get_db),
+):
+    # What this workspace's scouts wrote and tagged about one team: one event, or the
+    # whole season when no event is picked. Reports with neither notes nor tags are left out.
+    actor = require_workspace_actor(request, db)
+    normalized_team = team_key.strip().lower()
+    normalized_event = str(event_key or "").strip().lower() or None
+    query = (
+        select(models.ScoutingRoomEntry)
+        .join(models.ScoutingRoom, models.ScoutingRoom.room_key == models.ScoutingRoomEntry.room_key)
+        .where(
+            models.ScoutingRoom.workspace_id == actor.workspace_id,
+            models.ScoutingRoomEntry.team_key == normalized_team,
+        )
+    )
+    if normalized_event:
+        query = query.where(models.ScoutingRoomEntry.event_key == normalized_event)
+    rows = db.execute(
+        query.order_by(models.ScoutingRoomEntry.created_at.desc()).limit(2000)
+    ).scalars().all()
+
+    notes: list[dict[str, Any]] = []
+    tag_counts: dict[str, int] = {}
+    reports = 0
+    for row in rows:
+        payload = row.payload if isinstance(row.payload, dict) else {}
+        reports += 1
+        text = str(payload.get("notes") or "").strip()[:600]
+        tags = entry_note_tags(payload)
+        for tag in tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        if not text and not tags:
+            continue
+        saved_ms = payload.get("saved_at_ms")
+        if not isinstance(saved_ms, (int, float)) and row.created_at is not None:
+            saved_ms = row.created_at.timestamp() * 1000
+        notes.append(
+            {
+                "id": row.id,
+                "event_key": row.event_key,
+                "match_key": row.match_key,
+                "scout_profile": row.scout_profile,
+                "notes": text,
+                "tags": tags,
+                "saved_at_ms": float(saved_ms) if isinstance(saved_ms, (int, float)) else None,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+        )
+
+    notes.sort(
+        key=lambda note: note["saved_at_ms"] if note["saved_at_ms"] is not None else 0.0,
+        reverse=True,
+    )
+    return {
+        "ok": True,
+        "team_key": normalized_team,
+        "event_key": normalized_event,
+        "reports": reports,
+        "tag_counts": [
+            {"tag": tag, "count": tag_counts[tag]} for tag in SCOUT_NOTE_TAGS if tag_counts.get(tag)
+        ],
+        "notes": notes[:_TEAM_NOTES_LIMIT],
     }

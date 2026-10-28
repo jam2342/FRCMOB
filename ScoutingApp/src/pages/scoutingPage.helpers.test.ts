@@ -298,3 +298,16 @@ describe('reports a room snapshot or another tab must not erase', () => {
     expect(withReportsFromOtherTabs(mine, [])).toBe(mine);
   });
 });
+
+describe('quick tags on a report', () => {
+  it('survive storage and reload, known tags only', () => {
+    const entry = normalizeEntry({ id: 'e1', event_key: '2026arc', match_key: '2026arc_qm1', team_key: 'frc254', scout_profile: 'Sam', notes: 'pinned', tags: ['tipped', 'defense', 'bogus'] })!;
+    expect(entry.tags).toEqual(['defense', 'tipped']);
+    const reloaded = normalizeEntry(JSON.parse(JSON.stringify(entry)))!;
+    expect(reloaded.tags).toEqual(['defense', 'tipped']);
+  });
+
+  it('are empty on reports saved before tags existed', () => {
+    expect(normalizeEntry({ id: 'e2', team_key: 'frc1', notes: 'old' })!.tags).toEqual([]);
+  });
+});

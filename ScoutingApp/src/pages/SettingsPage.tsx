@@ -438,7 +438,7 @@ export function SettingsPage() {
   return (
     <div className={styles.layout}>
       {/* Theme is the one display setting people change; the rest is under Advanced. */}
-      <SurfaceCard title="Appearance" className="settings-appearance-card">
+      <SurfaceCard tourId="settings-appearance" title="Appearance" className="settings-appearance-card">
         <CardBody>
           <FieldSelect
             label="Theme"
@@ -454,7 +454,7 @@ export function SettingsPage() {
       <PushNotificationsCard />
 
       {adminModeEnabled ? (
-      <SurfaceCard title="Refresh + Runtime" className="settings-runtime-card">
+      <SurfaceCard tourId="settings-operator" title="Refresh + Runtime" className="settings-runtime-card">
         <CardBody>
           <FieldText
             label="Admin API Key (session mint only)"
@@ -512,7 +512,7 @@ export function SettingsPage() {
 
       {adminModeEnabled ? (
       <>
-      <SurfaceCard title="Ops Dashboard" className="settings-ops-card">
+      <SurfaceCard tourId="settings-ops" title="Ops Dashboard" className="settings-ops-card">
         <CardBody>
           <div className={styles.actions}>
             <Button variant="quiet" onClick={() => void refreshOpsDashboard()} loading={opsLoading}>
@@ -620,7 +620,7 @@ export function SettingsPage() {
 
       {/* Folded: settings most people never change. A plain disclosure row says "tap to open"
           better than a card with an icon-only restore button. */}
-      <details className={`${styles.advanced} settings-workflow-card`} open={adminModeEnabled || undefined}>
+      <details data-tour="settings-advanced" className={`${styles.advanced} settings-workflow-card`} open={adminModeEnabled || undefined}>
         <summary className={styles.advancedSummary}>
           <span>
             <strong>Advanced</strong>

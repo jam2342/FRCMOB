@@ -1,4 +1,4 @@
-import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals';
+import type { Metric } from 'web-vitals';
 import { isNativeApp } from '../platform/runtime';
 import { markRoute, onFirstData, type DataSource } from './routeTiming';
 
@@ -98,11 +98,15 @@ export function startRum(apiBase: string): void {
   // Load metrics belong to the route the page was opened on.
   const landing = routePattern(window.location.hash);
   const report = (metric: Metric) => push(metric.name === 'INP' ? routePattern(window.location.hash) : landing, metric.name, metric.value);
-  onLCP(report);
-  onFCP(report);
-  onTTFB(report);
-  onCLS(report);
-  onINP(report);
+  // Its own chunk, off the startup path: the browser buffers the entries these read, so
+  // a library that arrives a moment after the page still sees the whole load.
+  void import('web-vitals').then(({ onCLS, onFCP, onINP, onLCP, onTTFB }) => {
+    onLCP(report);
+    onFCP(report);
+    onTTFB(report);
+    onCLS(report);
+    onINP(report);
+  }).catch(() => undefined);
 
   onFirstData((route: string, ms: number, source: DataSource) => push(route, 'TTFD', ms, source));
   markRoute(landing, 0);

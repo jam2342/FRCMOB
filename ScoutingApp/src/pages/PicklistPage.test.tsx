@@ -71,3 +71,31 @@ it('deletes a list with Undo instead of a confirm, and only tells the server onc
   act(() => toast.closeToast(toast.currentToast()!.id, 'timeout'));
   await waitFor(() => expect(api.deletePicklist).toHaveBeenCalledWith(1));
 });
+
+it('runs selection on the draft board: captains from the rankings, then Picked goes to the alliance on the clock, with Undo', async () => {
+  const api = await import('../api');
+  const toast = await import('../components/ui/toast');
+  const { act } = await import('@testing-library/react');
+  vi.spyOn(api, 'getEventRankings').mockResolvedValue({
+    ok: true, event_key: '2026old', source: 'test',
+    rankings: { rankings: Array.from({ length: 9 }, (_, i) => ({ team_key: `frc${i + 1}`, rank: i + 1 })) },
+  });
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><PicklistPage /></MemoryRouter>);
+  const seed = await screen.findByRole('button', { name: 'Set captains from rankings' });
+  await waitFor(() => expect(seed).toBeEnabled());
+  fireEvent.click(seed);
+  expect(await screen.findByText('Alliance 1 is on the clock · round 1')).toBeInTheDocument();
+  act(() => toast.closeToast(toast.currentToast()!.id, 'timeout'));
+
+  // The list's own Picked button (254 is on our list but not a captain).
+  const row = document.querySelector('.picklist-rows')!.querySelector('li')!;
+  expect(row).toHaveTextContent('#254');
+  fireEvent.click(row.querySelector('button.picklist-mini-btn')!);
+  expect(screen.getByText('Alliance 2 is on the clock · round 1')).toBeInTheDocument();
+  const change = saved.edit.mock.calls.at(-1)![0] as Picklist;
+  expect(change.slots.find((s) => s.team_key === 'frc254')).toMatchObject({ status: 'picked', picked_by_alliance: 1 });
+  expect(toast.currentToast()?.message).toBe('Alliance 1 picked #254');
+
+  act(() => toast.runToastAction(toast.currentToast()!.id));
+  expect(screen.getByText('Alliance 1 is on the clock · round 1')).toBeInTheDocument();
+});
