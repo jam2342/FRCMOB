@@ -58,6 +58,12 @@ def tba_teams(m: dict, color: str) -> list[str]:
     return sorted(str(k).lower() for k in (((m.get("alliances") or {}).get(color) or {}).get("team_keys") or []))
 
 
+def tba_lineup_known(m: dict) -> bool:
+    # TBA lists later playoff rounds before their alliances are decided (2026cacc's
+    # finals were up 3 h early on 2026-10-25); nothing can be predicted until it fills them.
+    return all(teams and "frc0" not in teams for teams in (tba_teams(m, "red"), tba_teams(m, "blue")))
+
+
 def prod_teams(m: dict, color: str) -> list[str]:
     return sorted(str(t.get("team_key") or "").lower() for t in (m.get(color) or []) if t.get("team_key"))
 
@@ -110,7 +116,7 @@ def compare_event(
         }
         for t in tba_matches:
             key = str(t.get("key") or "").lower()
-            if not tba_completed(t) and not predicted.get(key):
+            if not tba_completed(t) and tba_lineup_known(t) and not predicted.get(key):
                 add("missing_prediction", key, "unplayed match without a prediction")
 
     if frc_played is not None and prod_schedule is not None:
