@@ -133,11 +133,12 @@ def subscribe(payload: PushSubscribeRequest, request: Request, db: Session = Dep
         raise HTTPException(status_code=503, detail="This event's notification data is not available yet.")
 
     prefs = _bind_shift_alerts(_normalize_prefs(payload.prefs), request, db)
+    member = resolve_workspace_actor(request, db)
     lock_subscription_admission(db)
     purge_expired_subscriptions(db)
     row = _load_by_endpoint(db, endpoint)
     if row is None:
-        admit_new_subscription(db)
+        admit_new_subscription(db, workspace_id=member.workspace_id if member is not None else None)
         row = models.PushSubscription(
             endpoint=endpoint,
             keys={"p256dh": p256dh, "auth": auth},

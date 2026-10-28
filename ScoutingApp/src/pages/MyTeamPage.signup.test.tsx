@@ -7,6 +7,10 @@ import { signOutTestWorkspace } from '../test/workspace';
 import { isNativeApp } from '../platform/runtime';
 
 vi.mock('../api', () => ({
+  // The thank-you note has its own tests; here nobody has scouted yet.
+  getScoutingCoverage: vi.fn(async () => ({ ok: true, event_key: '', summary: { total_slots: 0, covered_slots: 0, coverage_pct: 0, total_entries: 0, scout_count: 0, outlier_count: 0 }, grid: [], leaderboard: [], outliers: [] })),
+  // The season card has its own tests; here the team hasn't played yet.
+  getTeamSeasonStory: vi.fn(async () => ({ ok: true, team_key: '', nickname: null, season: 2026, game: null, events: [], totals: { wins: 0, losses: 0, ties: 0, events: 0, event_wins: 0, best_match: null } })),
   getWorkspaceSignupPolicy: vi.fn(),
   createWorkspace: vi.fn(),
   joinWorkspace: vi.fn(),

@@ -111,6 +111,7 @@ allowed to have no hero. It is not allowed to have four.
 | `/scouting/coverage` | Coverage percentage | Baselined by slots covered |
 | `/scouting/calibrate` | — | A canvas |
 | `/scouting/record` | Match clock | |
+| `/scouting/practice` | — | A form; the result card is a list of checks |
 | `/compare` | — | Two columns; a hero would pick a side |
 | `/compare/picklist` | — | A ranked list. The order is the hero. |
 | `/compare/alliance-advisor` | Alliance score | Only once an alliance is built |

@@ -64,18 +64,34 @@ def purge_expired_subscriptions(db: Session, *, now: datetime | None = None) -> 
     return int(result.rowcount or 0)
 
 
-def admit_new_subscription(db: Session) -> None:
+# Registration is anonymous, so the site-wide caps above are all that bound it, and
+# one script can spend them. Workspace members (signup is challenged and budgeted)
+# get their own hourly budget per workspace and room past the anonymous total, so a
+# flood of anonymous subscribers can't stop a team turning on its alerts.
+WORKSPACE_REGISTRATIONS_PER_HOUR = 60
+
+
+def subscription_ceiling() -> int:
+    return 2 * max(0, int(settings.push_subscriptions_max_total))
+
+
+def admit_new_subscription(db: Session, *, workspace_id: int | None = None) -> None:
     # Caller holds the transaction lock until its new subscription is committed.
     total = db.scalar(select(func.count()).select_from(models.PushSubscription)) or 0
-    if total >= max(0, int(settings.push_subscriptions_max_total)):
+    cap = subscription_ceiling() if workspace_id is not None else max(0, int(settings.push_subscriptions_max_total))
+    if total >= cap:
         raise HTTPException(status_code=429, detail="Notification subscriptions are at capacity. Try again later.")
-    limit = max(0, int(settings.push_subscriptions_max_new_per_hour))
     now = datetime.now(timezone.utc)
+    hour = int(now.timestamp()) // 3600
+    if workspace_id is not None:
+        limit, budget_key = WORKSPACE_REGISTRATIONS_PER_HOUR, f"push:registrations:w{int(workspace_id)}:{hour}"
+    else:
+        limit, budget_key = max(0, int(settings.push_subscriptions_max_new_per_hour)), f"push:registrations:{hour}"
     try:
         client = get_cache().redis_client
         if client is None:
             raise RuntimeError("Push registration budget unavailable")
-        count = int(client.eval(_CONSUME_BUDGET, 1, f"push:registrations:{int(now.timestamp()) // 3600}"))
+        count = int(client.eval(_CONSUME_BUDGET, 1, budget_key))
     except Exception:
         if settings.is_production_like:
             logger.warning("push registration budget unavailable", exc_info=True)

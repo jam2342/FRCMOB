@@ -8,7 +8,7 @@ FRCMOB is an independent community project. It is not affiliated with, endorsed 
 
 - `ScoutingApp/`: React + TypeScript web/PWA frontend and Capacitor iOS/Android projects
 - `backend/`: FastAPI API, official-data ingest, ratings and ML, scheduler, database models, and tests
-- `game_config/`: season-specific field and scoring configuration
+- `backend/app/game_config/`: season-specific field and scoring configuration
 - `docker/`: local and production Compose definitions
 
 Model weights, training datasets, match recordings, database contents, credentials, and FIRST game manuals are intentionally not distributed. See [Third-party assets](docs/THIRD_PARTY_ASSETS.md).
@@ -19,7 +19,7 @@ The iOS and Android foundation bundles the frontend and on-device detector for o
 
 ## Local development
 
-Requirements: Node.js 20+, Python 3.11+, PostgreSQL 16, and Redis 7. Detector training needs `backend/requirements-training.txt` on top.
+Requirements: Node.js 22.22+ or 24.15+ (CI uses 24), Python 3.11+, PostgreSQL 16, and Redis 7. Detector training needs `backend/requirements-training.txt` on top.
 
 1. Copy `.env.example` to `.env`. The defaults describe local development; generate secrets before enabling admin access.
 2. Start PostgreSQL and Redis with `docker compose -f docker/docker-compose.yml up postgres redis -d`.

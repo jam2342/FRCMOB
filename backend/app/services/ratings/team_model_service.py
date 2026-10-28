@@ -4,10 +4,10 @@
 # cached per process and redone only when the season's alliance results change.
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 import time
-from collections import defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import func
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.services.ratings.constants import season_baseline
-from app.services.ratings.replay import Prediction, load_season
+from app.services.ratings.replay import MatchResult, Prediction, load_season
 from app.services.ratings.strength import MatchPoints
 from app.services.ratings.team_model import SeasonTeamModel, TeamModelParams
 
@@ -35,6 +35,10 @@ class SeasonRun:
     # Why a rating moved: (team, event) -> [(match_key, points before, points after)].
     changes: dict[tuple[str, str], list[tuple[str, float, float]]] = field(default_factory=dict)
     seconds: float = 0.0
+    # What this run replayed and the starting beliefs it used, so the next run can carry
+    # on from here when new results only add matches at the end (see _compute).
+    results: list[MatchResult] = field(default_factory=list)
+    setup: tuple = ()
 
 
 _cache: dict[int, tuple[tuple, SeasonRun]] = {}
@@ -119,45 +123,81 @@ def warm_up(season: int) -> None:
     threading.Thread(target=_warm, daemon=True, name=f"team-model-warm-{season}").start()
 
 
-def _compute(db: Session, season: int, fingerprint: tuple) -> SeasonRun:
-    started = time.perf_counter()
-    baseline = season_baseline(season)
+def _fresh_run(season: int, baseline: dict, setup: tuple) -> SeasonRun:
+    multipliers, var_multipliers = setup
     params: TeamModelParams = baseline["team_model_params"]
-    multipliers, var_multipliers = season_prior_multipliers(db, season, baseline)
     model = SeasonTeamModel(
         dict(baseline["team_model_priors"]),
         params,
-        team_multipliers=multipliers,
-        team_var_multipliers=var_multipliers,
+        team_multipliers=dict(multipliers),
+        team_var_multipliers=dict(var_multipliers),
         week_multipliers=list(baseline.get("week_multipliers") or []),
     )
-    run = SeasonRun(season=season, model=model)
-    played_here: dict[tuple[str, str], int] = defaultdict(int)
-    played_total: dict[str, int] = defaultdict(int)
-    robots_here: dict[tuple[str, str], list[MatchPoints]] = defaultdict(list)
-    changes: dict[tuple[str, str], list[tuple[str, float, float]]] = defaultdict(list)
-    for result in load_season(db, season).results:
+    return SeasonRun(season=season, model=model, setup=setup)
+
+
+def _fork(run: SeasonRun) -> SeasonRun:
+    # A copy to extend, so requests can keep reading the cached run meanwhile.
+    return SeasonRun(
+        season=run.season,
+        model=copy.deepcopy(run.model),
+        before_match=dict(run.before_match),
+        played_total=dict(run.played_total),
+        played_here=dict(run.played_here),
+        robots_here={key: list(value) for key, value in run.robots_here.items()},
+        changes={key: list(value) for key, value in run.changes.items()},
+        results=list(run.results),
+        setup=run.setup,
+    )
+
+
+def _compute(db: Session, season: int, fingerprint: tuple) -> SeasonRun:
+    # A full replay takes ~10 s for a season, and during an event every new result
+    # would redo it. New results almost always come after every replayed match, so the
+    # previous run is extended with just those; anything else (a corrected score, new
+    # priors) replays the season from the start.
+    started = time.perf_counter()
+    baseline = season_baseline(season)
+    setup = season_prior_multipliers(db, season, baseline)
+    results = load_season(db, season, evaluation_split=False).results
+    with _lock:
+        cached = _cache.get(season)
+    previous = cached[1] if cached is not None else None
+    if (
+        previous is not None
+        and previous.setup == setup
+        and len(results) >= len(previous.results)
+        and results[: len(previous.results)] == previous.results
+    ):
+        run, start = _fork(previous), len(previous.results)
+    else:
+        run, start = _fresh_run(season, baseline, setup), 0
+    model = run.model
+    played_here, played_total = run.played_here, run.played_total
+    for result in results[start:]:
         card = result.card
         teams = card.red + card.blue
         prediction = model.predict(card)
-        seen = min(played_here[(team, card.event_key)] for team in teams)
-        before_events = min(played_total[team] - played_here[(team, card.event_key)] for team in teams)
+        seen = min(played_here.get((team, card.event_key), 0) for team in teams)
+        before_events = min(played_total.get(team, 0) - played_here.get((team, card.event_key), 0) for team in teams)
         run.before_match[card.match_key] = (prediction, seen, correction_features(model, card, prediction, seen, before_events))
         before = {team: model.team_points(team, card.event_key) for team in teams}
         model.observe(result)
         for team in teams:
-            changes[(team, card.event_key)].append((card.match_key, before[team], model.team_points(team, card.event_key)))
+            run.changes.setdefault((team, card.event_key), []).append(
+                (card.match_key, before[team], model.team_points(team, card.event_key))
+            )
         for team in teams:
-            played_here[(team, card.event_key)] += 1
-            played_total[team] += 1
+            played_here[(team, card.event_key)] = played_here.get((team, card.event_key), 0) + 1
+            played_total[team] = played_total.get(team, 0) + 1
         for team, mp in result.robots.items():
-            robots_here[(team, card.event_key)].append(mp)
-    run.played_here = dict(played_here)
-    run.played_total = dict(played_total)
-    run.robots_here = dict(robots_here)
-    run.changes = dict(changes)
+            run.robots_here.setdefault((team, card.event_key), []).append(mp)
+    run.results = results
     run.seconds = round(time.perf_counter() - started, 2)
-    logger.info("team_model.season_run season=%s matches=%d seconds=%.2f", season, len(run.before_match), run.seconds)
+    logger.info(
+        "team_model.season_run season=%s matches=%d replayed=%d seconds=%.2f",
+        season, len(run.before_match), len(results) - start, run.seconds,
+    )
     with _lock:
         _cache[season] = (fingerprint, run)
     return run

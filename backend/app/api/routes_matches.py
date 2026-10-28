@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket
 from sqlalchemy import func, text, true
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,7 @@ from app.api.schemas import ScheduleResponse, TeamLiveFormResponse
 from app.services.cache import get_cache
 from app.services.events.first_events_client import FIRSTEventsClient
 from app.services.events.first_live_results import first_results_for_waiting_matches
+from app.services.events.live_signal import EVENT_KEY_RE, live_results_hub, note_results, watched_events
 from app.services.events.match_lineups import write_match_lineups
 from app.services.events.match_times import match_times_from_payload
 from app.services.phase_windows import compute_phase_windows_payload, get_or_compute_match_phase_windows
@@ -95,7 +97,45 @@ def _cached_live_results_for_event(tba: TBAClient, event_key: str) -> dict[str, 
     if _event_results_settled(result_by_match_key):
         ttl_sec = SETTLED_RESULTS_CACHE_TTL_SEC
     cache.set(redis_key, json.dumps(result_by_match_key), ttl=ttl_sec)
+    note_results(cache_key, result_by_match_key)
     return result_by_match_key
+
+
+def refresh_watched_live_results() -> int:
+    # Scheduler job: keep the results of events with an open page current, so a change
+    # reaches those pages without waiting for one of them to ask (live_signal.py).
+    events = watched_events()
+    if not events:
+        return 0
+    tba = TBAClient()
+    for event_key in events:
+        try:
+            _cached_live_results_for_event(tba, event_key)
+        except Exception:  # noqa: BLE001 - one event must not stop the others
+            logger.warning("live_results.watch_failed event=%s", event_key, exc_info=True)
+    return len(events)
+
+
+def _event_known(event_key: str) -> bool:
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return db.get(models.Event, event_key) is not None
+    finally:
+        db.close()
+
+
+@router.websocket("/event/{event_key}/live")
+async def live_results_socket(websocket: WebSocket, event_key: str):
+    # Public and read-only: says when this event's results change, nothing else.
+    event_key = str(event_key or "").strip().lower()
+    # An open socket makes the scheduler fetch that event from TBA every few seconds, so
+    # made-up keys must not get one (they'd cost TBA calls and crowd out real events).
+    if EVENT_KEY_RE.fullmatch(event_key) and not await asyncio.to_thread(_event_known, event_key):
+        await websocket.close(code=4404, reason="Unknown event")
+        return
+    await live_results_hub.serve(websocket, event_key)
 
 
 # A finished event's results never change, but the 5 s live TTL sent every Home
@@ -1755,6 +1795,112 @@ def get_event_live_stream(event_key: str):
     }
 
 
+def _match_video(match_key: str) -> dict[str, str] | None:
+    # The match's own video from TBA, when someone has posted one; None without a TBA key,
+    # without a video, or when TBA can't be reached (practice still works with any video).
+    if not settings.tba_auth_key.strip():
+        return None
+    try:
+        payload = TBAClient().match(match_key)
+    except Exception as exc:  # noqa: BLE001 - TBA being down must not break practice
+        logger.info("practice.video_unavailable match=%s error=%s", match_key, type(exc).__name__)
+        return None
+    videos = payload.get("videos") if isinstance(payload, dict) else None
+    for video in videos if isinstance(videos, list) else []:
+        if isinstance(video, dict) and str(video.get("type") or "").lower() == "youtube":
+            video_id = _youtube_video_id(str(video.get("key") or ""))
+            if video_id:
+                return {
+                    "embed_url": f"https://www.youtube.com/embed/{video_id}",
+                    "watch_url": f"https://www.youtube.com/watch?v={video_id}",
+                }
+    return None
+
+
+@router.get("/{match_key}/practice")
+def get_match_practice(
+    match_key: str,
+    team: str = Query(..., max_length=12, pattern=r"^(?i:frc)?\d{1,5}$"),
+    db: Session = Depends(get_db),
+) -> dict:
+    # Scout training: one robot in a played match, with what the official result knows about
+    # it (its climbs, its alliance's fuel) for checking a practice report against.
+    match_key = match_key.strip().lower()
+    team_key = team.strip().lower()
+    team_key = team_key if team_key.startswith("frc") else f"frc{team_key}"
+    match = db.get(models.Match, match_key)
+    slot = db.get(models.MatchTeam, (match_key, team_key)) if match is not None else None
+    if match is None or slot is None:
+        raise HTTPException(status_code=404, detail="That team isn't in that match.")
+    alliance = str(slot.alliance or "").lower()
+    result = db.get(models.MatchAllianceResult, (match_key, alliance))
+    components = (result.components or {}) if result is not None else {}
+    order = [str(t).lower() for t in (result.team_keys or [])] if result is not None else []
+    robot = order.index(team_key) if team_key in order else None
+
+    def _robot_value(name: str) -> float | None:
+        values = components.get(name)
+        if robot is None or not isinstance(values, list) or robot >= len(values):
+            return None
+        value = values[robot]
+        return float(value) if isinstance(value, (int, float)) else None
+
+    return {
+        "ok": True,
+        "match_key": match_key,
+        "event_key": match.event_key,
+        "label": _display_match_name(str(match.comp_level or "qm"), int(match.set_number or 0), int(match.match_number or 0)),
+        "team_key": team_key,
+        "alliance": alliance,
+        "played": result is not None,
+        # Robot-level climbs and alliance-level fuel exist only for seasons with a parser.
+        "checkable": bool(components),
+        "video": _match_video(match_key),
+        "official": {
+            "auto_tower_points": _robot_value("robot_auto_tower_points"),
+            "endgame_tower_points": _robot_value("robot_endgame_tower_points"),
+            "alliance_fuel": components.get("hub_fuel_count"),
+            "alliance_score": result.total_score if result is not None else None,
+        },
+    }
+
+
+@router.get("/event/{event_key}/team/{team_key}/calendar.ics")
+def get_team_match_calendar(event_key: str, team_key: str, db: Session = Depends(get_db)) -> Response:
+    # A team's matches here as a calendar people subscribe to; it re-reads every 15 minutes.
+    from app.services.events.calendar import team_calendar
+
+    event_key = event_key.strip().lower()
+    team_key = team_key.strip().lower()
+    team_key = team_key if team_key.startswith("frc") else f"frc{team_key}"
+    if not re.fullmatch(r"frc\d{1,5}", team_key):
+        raise HTTPException(status_code=404, detail="Unknown team.")
+    event = db.get(models.Event, event_key)
+    if event is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
+    slots = db.query(models.MatchTeam).filter(models.MatchTeam.event_key == event_key).all()
+    by_match: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"red": [], "blue": []})
+    for slot in slots:
+        alliance = str(slot.alliance or "").lower()
+        if alliance in ("red", "blue"):
+            by_match[slot.match_key][alliance].append(slot.team_key.lower())
+    mine = {key: ("red" if team_key in sides["red"] else "blue") for key, sides in by_match.items() if team_key in sides["red"] + sides["blue"]}
+    matches = db.query(models.Match).filter(models.Match.match_key.in_(list(mine))).all() if mine else []
+    rows = []
+    for match in matches:
+        alliance = mine[match.match_key]
+        sides = by_match[match.match_key]
+        rows.append((match, alliance, [t for t in sides[alliance] if t != team_key], sides["blue" if alliance == "red" else "red"]))
+    body = team_calendar(event_key=event_key, event_name=event.name or event_key, team_key=team_key, matches=rows, now=int(time.time()))
+    filename = f"{team_key.removeprefix('frc')}-{event_key}.ics"
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        # Not JSON, so the edge cache leaves it alone; calendars poll, five minutes is fresh enough.
+        headers={"Content-Disposition": f'inline; filename="{filename}"', "Cache-Control": "public, max-age=300"},
+    )
+
+
 @router.get("/event/{event_key}/alliances")
 def get_event_alliances(
     event_key: str,
@@ -1770,12 +1916,16 @@ def get_event_alliances(
     season, event_code = _split_event_key(event_key)
     tba_error: str | None = None
     first_error: str | None = None
+    tba_answer: dict[str, Any] | None = None
 
     # TBA provides alliance picks in a consistent shape for event breakdown cards.
     if settings.tba_auth_key.strip() and not if_modified_since and not only_modified_since:
         try:
             tba = TBAClient()
             payload = tba.event_alliances(event_key)
+            # null until alliance selection happens.
+            if payload is None:
+                payload = []
             if not isinstance(payload, list):
                 raise RuntimeError("Unexpected TBA alliances payload.")
             alliances = [
@@ -1783,18 +1933,19 @@ def get_event_alliances(
                 for idx, row in enumerate(payload, start=1)
                 if isinstance(row, dict)
             ]
+            tba_answer = {
+                "ok": True,
+                "event_key": event_key,
+                "season": season,
+                "event_code": event_code,
+                "source": "tba",
+                "not_modified": False,
+                "last_modified": None,
+                "count": len(alliances),
+                "alliances": alliances,
+            }
             if alliances or not (settings.first_frc_api_username.strip() and settings.first_frc_api_auth_key.strip()):
-                return {
-                    "ok": True,
-                    "event_key": event_key,
-                    "season": season,
-                    "event_code": event_code,
-                    "source": "tba",
-                    "not_modified": False,
-                    "last_modified": None,
-                    "count": len(alliances),
-                    "alliances": alliances,
-                }
+                return tba_answer
         except (TBAClientError, RuntimeError, ValueError, TypeError) as exc:
             tba_error = str(exc)
 
@@ -1813,6 +1964,9 @@ def get_event_alliances(
             only_modified_since=only_modified_since,
         )
     except (RuntimeError, ValueError, TypeError) as exc:
+        # FRC Events doesn't list off-season events; TBA's "none yet" is the answer then.
+        if tba_answer is not None:
+            return tba_answer
         first_error = str(exc)
         detail = f"Unable to load alliance selections for {event_key}"
         if tba_error:

@@ -18,15 +18,25 @@ function Where() {
 
 afterEach(cleanup);
 
-function mount(onClose = vi.fn()) {
+function mount(onClose = vi.fn(), { tour = true } = {}) {
   render(
     <MemoryRouter initialEntries={['/home']}>
       <Routes><Route path="*" element={<Where />} /></Routes>
-      <CommandPalette open onClose={onClose} recentEvents={[]} recentTeams={[]} onStartTour={vi.fn()} />
+      <CommandPalette open onClose={onClose} recentEvents={[]} recentTeams={[]} onStartTour={tour ? vi.fn() : undefined} />
     </MemoryRouter>,
   );
   return onClose;
 }
+
+it('offers the page tour only on pages that have one', () => {
+  mount();
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'tour' } });
+  expect(screen.getByRole('option', { name: /Take the tour of this page/ })).toBeInTheDocument();
+  cleanup();
+  mount(vi.fn(), { tour: false });
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'tour' } });
+  expect(screen.queryByRole('option', { name: /Take the tour of this page/ })).toBeNull();
+});
 
 it('moves with the arrow keys and opens the highlighted result with Enter', () => {
   const onClose = mount();

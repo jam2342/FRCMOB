@@ -21,7 +21,7 @@ export function MobileViewActions({ actions, label, inline = false }: { actions:
   // cost ~70px above every page for a button pressed once a visit.
   if (inline) {
     return (
-      <nav className={`mobile-view-actions ${styles.inline}`} aria-label={label}>
+      <nav data-tour="page-actions" className={`mobile-view-actions ${styles.inline}`} aria-label={label}>
         {actions.map((action) => (
           <Button key={action.label} size="sm" variant="quiet" onClick={action.onClick} className={styles.inlineButton} aria-label={action.ariaLabel}>
             {action.back ? `‹ ${action.label}` : action.label}
@@ -31,11 +31,11 @@ export function MobileViewActions({ actions, label, inline = false }: { actions:
     );
   }
   return (
-    <nav className={`mobile-view-actions ${styles.row}`} aria-label={label}>
+    <nav data-tour="page-actions" className={`mobile-view-actions ${styles.row}`} aria-label={label}>
       <div className={styles.side}>
         {back.map((action) => (
-          <Button key={action.label} size="sm" variant="quiet" onClick={action.onClick} className={styles.back}>
-            ‹ {action.label}
+          <Button key={action.label} size="sm" variant="quiet" onClick={action.onClick} className={styles.back} title={action.label}>
+            <span className={styles.backText}>‹ {action.label}</span>
           </Button>
         ))}
       </div>

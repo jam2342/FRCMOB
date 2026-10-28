@@ -1,0 +1,82 @@
+.picker,
+.filters,
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.picker {
+  margin-top: var(--space-3);
+}
+
+.labelled {
+  margin-top: var(--space-3);
+}
+
+.labelled .picker {
+  margin-top: var(--space-2);
+}
+
+.pickerLabel {
+  margin: 0;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* A chosen tag has to read at a glance mid-match, so it's an accent outline and text
+   rather than the faint tint of other pressed toggles. */
+.picker .chip[aria-pressed='true'],
+.filters .chip[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.filters {
+  margin-bottom: var(--space-3);
+}
+
+.search {
+  margin-bottom: var(--space-3);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.note {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width-1) solid var(--color-border);
+}
+
+.note:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.meta {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.meta strong {
+  color: var(--color-text);
+}
+
+.text {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

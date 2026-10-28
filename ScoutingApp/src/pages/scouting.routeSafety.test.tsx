@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScoutingPage } from './ScoutingPage';
 import { addScoutingRoomSecondaryLeader, removeScoutingRoomSecondaryLeader } from '../api';
 import { signInTestWorkspace } from '../test/workspace';
+import { closeToast, currentToast } from '../components/ui/toast';
 
 vi.mock('../api', () => ({
   clientAdminKeyAvailable: () => false,
@@ -176,6 +177,35 @@ describe('Scouting route safety', () => {
     expect(removeScoutingRoomSecondaryLeader).toHaveBeenLastCalledWith('room-test', {
       scout_profile: 'Scout B', room_access_token: 'token-test',
     });
+  }, HEAVY_RENDER_TIMEOUT_MS);
+
+  it("tells a room leader the moment a scout flags a robot, but not about the leader's own flags", async () => {
+    type FakeSocket = { readyState: number; send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>; onopen?: () => void; onmessage?: (event: { data: string }) => void };
+    const sockets: FakeSocket[] = [];
+    vi.stubGlobal('WebSocket', class {
+      static OPEN = 1;
+      readyState = 1;
+      send = vi.fn();
+      close = vi.fn();
+      constructor() { sockets.push(this as unknown as FakeSocket); }
+    });
+    localStorage.setItem('scouting_manual_profile_v1', 'Scout A');
+    render(<MemoryRouter><ScoutingPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Room' }, FIND_TIMEOUT));
+    fireEvent.change(screen.getByLabelText('Scouting room key'), { target: { value: 'room-test' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Join Room' }));
+    await waitFor(() => expect(sockets.length).toBeGreaterThan(0), FIND_TIMEOUT);
+    // The owner's role arrives with the join; wait for the leader controls before the flag.
+    await screen.findByRole('button', { name: 'Promote Scout B' }, FIND_TIMEOUT);
+    const socket = sockets.at(-1)!;
+    socket.onopen?.();
+    const flag = (scout: string) => ({ data: JSON.stringify({ type: 'live_flag', scout_profile: scout, team_key: 'frc254', match_key: '2026week0_qm3', tag: 'broke_down' }) });
+
+    socket.onmessage?.(flag('Test Scout'));
+    expect(currentToast()).toBeNull();
+    socket.onmessage?.(flag('Scout B'));
+    expect(currentToast()).toMatchObject({ message: 'Scout B: 254 · Broke down · QM 3', tone: 'warning' });
+    closeToast(currentToast()!.id);
   }, HEAVY_RENDER_TIMEOUT_MS);
 
 });

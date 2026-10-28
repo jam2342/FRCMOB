@@ -266,3 +266,98 @@ class ContextTests(unittest.TestCase):
         plain, _ = self._season(TeamModelParams(teleop=QUIET), offset=60.0)
         # With the offset, teams aren't credited the field's extra 20 points each.
         self.assertLess(model.belief("frc1", "e0")["teleop"].mean, plain.belief("frc1", "e0")["teleop"].mean)
+
+
+class SeasonRunExtendTests(unittest.TestCase):
+    # During an event every new result changes the season; the run is extended with the
+    # new matches instead of replaying ~22k. It must equal a replay from the start.
+    def _compute(self, results):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from app.services.ratings import team_model_service as service
+
+        observed = []
+        real_observe = SeasonTeamModel.observe
+
+        def counting_observe(model, result):
+            observed.append(result.card.match_key)
+            return real_observe(model, result)
+
+        with (
+            patch.object(service, "load_season", return_value=SimpleNamespace(results=list(results))),
+            patch.object(service, "season_prior_multipliers", return_value=({}, {})),
+            patch.object(SeasonTeamModel, "observe", counting_observe),
+        ):
+            run = service._compute(unittest.mock.MagicMock(), 2026, (len(results),))
+        return run, observed
+
+    def _summary(self, run):
+        return (
+            run.before_match,
+            run.played_total,
+            run.played_here,
+            run.changes,
+            {key: run.model.team_points(*key) for key in run.played_here},
+        )
+
+    def setUp(self):
+        from app.services.ratings import team_model_service as service
+
+        self.service = service
+        service.clear_cache()
+        self.results = _season(events=3, per_event=30).results
+
+    def tearDown(self):
+        self.service.clear_cache()
+
+    def test_new_matches_extend_the_run_and_match_a_full_replay(self):
+        first, _ = self._compute(self.results[:-12])
+        extended, observed = self._compute(self.results)
+        self.assertEqual(observed, [r.card.match_key for r in self.results[-12:]])
+        self.assertEqual(len(first.before_match), len(self.results) - 12)  # the cached run is not touched
+        self.service.clear_cache()
+        full, _ = self._compute(self.results)
+        self.assertEqual(self._summary(extended), self._summary(full))
+
+    def test_a_corrected_earlier_score_replays_from_the_start(self):
+        self._compute(self.results)
+        corrected = list(self.results)
+        old = corrected[5]
+        corrected[5] = MatchResult(old.card, old.red_score + 40, old.blue_score, old.red_points, old.blue_points, old.robots, old.red_components, old.blue_components)
+        rerun, observed = self._compute(corrected)
+        self.assertEqual(len(observed), len(corrected))
+        self.service.clear_cache()
+        full, _ = self._compute(corrected)
+        self.assertEqual(self._summary(rerun), self._summary(full))
+
+
+class LoadSeasonTests(DBTestCase):
+    def test_a_match_without_stored_results_takes_its_score_and_lineup_from_findings(self):
+        from app.db import models
+        from app.services.ratings.replay import load_season
+
+        db = self.db
+        db.add(models.Event(event_key="2026tst", name="Test", year=2026))
+        for n in range(1, 7):
+            db.add(models.Team(team_key=f"frc{n}", team_number=n, nickname=str(n)))
+        db.add(models.Match(match_key="2026tst_qm1", event_key="2026tst", comp_level="qm", set_number=1, match_number=1, time=1_772_000_000))
+        db.add(models.AnalysisRun(id=1, match_key="2026tst_qm1", run_kind="official_truth", status="completed"))
+        db.flush()
+        for n in range(1, 7):
+            alliance = "red" if n <= 3 else "blue"
+            db.add(models.MatchTeam(match_key="2026tst_qm1", team_key=f"frc{n}", event_key="2026tst", alliance=alliance))
+            db.add(models.TeamMatchFinding(
+                analysis_run_id=1, match_key="2026tst_qm1", event_key="2026tst", team_key=f"frc{n}", alliance=alliance,
+                source="tba_score_breakdown", fuel_scoring_rate=2.0, auto_contribution=4.0,
+                summary={"red_score": 101, "blue_score": 77, "status": {"auto_allocation": "no_hub_fuel", "endgame_tower": "Level2", "hub_shift_counts": {"a": 1}}},
+            ))
+        db.commit()
+
+        result = load_season(db, 2026).results[0]
+        self.assertEqual((result.red_score, result.blue_score), (101, 77))
+        self.assertEqual(sorted(result.card.red), ["frc1", "frc2", "frc3"])
+        self.assertEqual(sorted(result.card.blue), ["frc4", "frc5", "frc6"])
+        robot = result.robots["frc1"]
+        self.assertEqual(robot.auto, 4.0)  # no_hub_fuel: the robot's own auto counts
+        self.assertGreater(robot.climb, 0.0)  # Level2 read from the summary's status

@@ -114,3 +114,64 @@ class ForecastAndPickValueTests(DBTestCase):
         self.assertFalse(forecast["simulated"])
         self.assertEqual(len(forecast["teams"]), 30)
         self.assertNotIn("top8", forecast["teams"][0])
+
+    def test_matchup_favours_the_stronger_six_and_adds_up(self):
+        result = routes_events.get_event_matchup(EVENT, red="frc30,frc29,frc28", blue="1,2,3", playoff=False, db=self.db)
+        self.assertEqual(result["red"], ["frc30", "frc29", "frc28"])
+        self.assertEqual(result["blue"], ["frc1", "frc2", "frc3"])
+        self.assertGreater(result["red_points"], result["blue_points"])
+        self.assertGreater(result["red_win_prob"], 0.9)
+        self.assertAlmostEqual(result["red_win_prob"] + result["blue_win_prob"], 1.0, places=3)
+        swapped = routes_events.get_event_matchup(EVENT, red="1,2,3", blue="frc30,frc29,frc28", playoff=False, db=self.db)
+        self.assertAlmostEqual(swapped["blue_win_prob"], result["red_win_prob"], places=2)
+        playoff = routes_events.get_event_matchup(EVENT, red="frc30,frc29,frc28", blue="1,2,3", playoff=True, db=self.db)
+        self.assertTrue(playoff["playoff"])
+
+    def test_matchup_refuses_bad_lineups(self):
+        bad = (
+            ("frc30,frc29", "1,2,3"),
+            ("frc30,frc29,frc28", "frc30,2,3"),
+            ("frc30,frc29,frc999", "1,2,3"),
+            ("frc30,frc29,frc28,frc27", "1,2,3"),  # a fourth team is refused, not dropped
+        )
+        for red, blue in bad:
+            with pytest.raises(HTTPException) as caught:
+                routes_events.get_event_matchup(EVENT, red=red, blue=blue, playoff=False, db=self.db)
+            self.assertEqual(caught.value.status_code, 400)
+        with pytest.raises(HTTPException) as missing:
+            routes_events.get_event_matchup("2026nowhere", red="1,2,3", blue="4,5,6", playoff=False, db=self.db)
+        self.assertEqual(missing.value.status_code, 404)
+
+    def test_what_if_moves_a_team_up_when_it_wins_out(self):
+        model = routes_events.get_event_what_if(EVENT, team="frc5", wins="", losses="", db=self.db)
+        matches = model["matches"]
+        self.assertTrue(matches)
+        self.assertEqual(model["field_size"], 30)
+        for row in matches:
+            self.assertIn(row["alliance"], ("red", "blue"))
+            self.assertEqual(len(row["partners"]), 2)
+            self.assertEqual(len(row["opponents"]), 3)
+            self.assertIsNone(row["forced"])
+        # Nothing forced: the what-if is the model.
+        self.assertEqual(model["what_if"]["expected_rank"], model["model"]["expected_rank"])
+        keys = ",".join(row["match_key"] for row in matches)
+        win_out = routes_events.get_event_what_if(EVENT, team="5", wins=keys, losses="", db=self.db)
+        lose_out = routes_events.get_event_what_if(EVENT, team="frc5", wins="", losses=keys, db=self.db)
+        self.assertTrue(all(row["forced"] == "win" for row in win_out["matches"]))
+        self.assertLess(win_out["what_if"]["expected_rank"], model["model"]["expected_rank"])
+        self.assertGreater(lose_out["what_if"]["expected_rank"], model["model"]["expected_rank"])
+        self.assertGreaterEqual(win_out["what_if"]["top8"], model["model"]["top8"])
+        counts = win_out["what_if"]["rank_counts"]
+        self.assertEqual((len(counts), sum(counts)), (30, win_out["runs"]))
+        self.assertLessEqual(win_out["what_if"]["rank_likely_best"], win_out["what_if"]["rank_likely_worst"])
+
+    def test_what_if_refuses_a_team_not_at_the_event(self):
+        with pytest.raises(HTTPException) as caught:
+            routes_events.get_event_what_if(EVENT, team="frc9999", wins="", losses="", db=self.db)
+        self.assertEqual(caught.value.status_code, 400)
+
+    def test_what_if_refuses_a_match_set_as_both_a_win_and_a_loss(self):
+        key = routes_events.get_event_what_if(EVENT, team="frc5", wins="", losses="", db=self.db)["matches"][0]["match_key"]
+        with pytest.raises(HTTPException) as caught:
+            routes_events.get_event_what_if(EVENT, team="frc5", wins=key, losses=key.upper(), db=self.db)
+        self.assertEqual(caught.value.status_code, 400)

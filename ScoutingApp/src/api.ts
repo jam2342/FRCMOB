@@ -1,4 +1,5 @@
 import { API_CACHE_BUDGET_CHARS, API_CACHE_PREFIX, freeApiCacheSpace } from "./utils/apiCacheSpace";
+import { liveFreshRead, noteLiveSchedule, stripLiveVersion, withLiveVersion } from "./features/live/liveVersions";
 import { isNativeApp } from './platform/runtime';
 import { resolveApiBaseUrl, resolveWebSocketBaseUrl } from './platform/runtime';
 
@@ -1143,6 +1144,8 @@ function shouldBypassCache(url: string, init?: ApiFetchInit): boolean {
   if (Date.now() < freshReadsUntilMs) return true;
   if (url.includes("refresh=true")) return true;
   if (url.includes("onlyModifiedSince=")) return true;
+  // An event's results just changed (live results socket): read past cached copies.
+  if (liveFreshRead(url)) return true;
   return false;
 }
 
@@ -1150,7 +1153,8 @@ function cacheKeyFor(url: string, init?: ApiFetchInit): string {
   // Keyed by workspace too: picklists and pit notes share URLs across teams, so
   // a URL-only key would show one team's cached data after switching to another.
   const workspaceId = getWorkspaceSession()?.workspace.id ?? 0;
-  return `${normalizeMethod(init?.method)}:w${workspaceId}:${url}`;
+  // Without the live results version: saved copies stay under the plain URL (offline).
+  return `${normalizeMethod(init?.method)}:w${workspaceId}:${stripLiveVersion(url)}`;
 }
 
 function _cacheValueInt(value: number | undefined, fallback: number): number {
@@ -2508,14 +2512,16 @@ export async function getEventSchedule(
   if (options?.ifModifiedSince) params.set("ifModifiedSince", options.ifModifiedSince);
   if (options?.onlyModifiedSince) params.set("onlyModifiedSince", options.onlyModifiedSince);
   const res = await apiFetch(
-    `${API}/matches/event/${eventKey}/schedule?${params.toString()}`,
+    withLiveVersion(`${API}/matches/event/${eventKey}/schedule?${params.toString()}`, [eventKey]),
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
     }),
   );
   if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as EventScheduleResponse;
+  const schedule = (await res.json()) as EventScheduleResponse;
+  noteLiveSchedule(eventKey, schedule.matches);
+  return schedule;
 }
 
 type EventSchedulesBatchResponse = {
@@ -2541,7 +2547,7 @@ export async function getEventSchedules(
     let batch: EventSchedulesBatchResponse | null = null;
     try {
       const res = await apiFetch(
-        `${API}/matches/schedules?${new URLSearchParams({ event_keys: chunk.join(",") }).toString()}`,
+        withLiveVersion(`${API}/matches/schedules?${new URLSearchParams({ event_keys: chunk.join(",") }).toString()}`, chunk),
         _cacheRequestOptions(requestOptions, {
           cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
           staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
@@ -2565,6 +2571,7 @@ export async function getEventSchedules(
       if (entry && entry.ok !== false && Array.isArray((entry as EventScheduleResponse).matches)) {
         const schedule = entry as EventScheduleResponse;
         out[key] = schedule;
+        noteLiveSchedule(key, schedule.matches);
         seedGetCache(`${API}/matches/event/${key}/schedule?refresh=false`, schedule, EVENT_SCHEDULE_CACHE_TTL_MS);
       } else {
         const detail = entry && "detail" in entry && entry.detail ? entry.detail : "Schedule unavailable";
@@ -2600,7 +2607,7 @@ export async function getEventTeamLiveForm(
   if (typeof options?.live_window_sec === "number") params.set("live_window_sec", String(options.live_window_sec));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await apiFetch(
-    `${API}/matches/event/${eventKey}/team-live-form${suffix}`,
+    withLiveVersion(`${API}/matches/event/${eventKey}/team-live-form${suffix}`, [eventKey]),
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_LIVE_FORM_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_LIVE_FORM_CACHE_TTL_MS * 3,
@@ -2621,7 +2628,7 @@ export async function getEventPredictionSchedule(
   },
 ): Promise<EventPredictionScheduleResponse> {
   const res = await apiFetch(
-    `${API}/events/${eventKey}/schedule-with-synergy`,
+    withLiveVersion(`${API}/events/${eventKey}/schedule-with-synergy`, [eventKey]),
     _cacheRequestOptions(
       options?.bypassCache ? { bypassCache: true } : { showSavedMaxAgeMs: options?.showSavedMaxAgeMs },
       {
@@ -2765,9 +2772,180 @@ export async function getPickValues(eventKey: string, teamKeys: string[], limit 
   return (await res.json()) as PickValuesResponse;
 }
 
+export interface EventMatchupResponse {
+  ok: boolean;
+  event_key: string;
+  red: string[];
+  blue: string[];
+  playoff?: boolean;
+  red_points?: number;
+  blue_points?: number;
+  margin_sd?: number;
+  red_win_prob?: number;
+  blue_win_prob?: number;
+  matches_seen?: number;
+  unavailable?: 'season_not_rated' | 'season_frozen' | 'no_prediction';
+}
+
+// Any six teams at an event, predicted as if they played now (not a scheduled match).
+export async function getEventMatchup(eventKey: string, red: string[], blue: string[], playoff: boolean): Promise<EventMatchupResponse> {
+  const params = new URLSearchParams({ red: red.join(','), blue: blue.join(','), playoff: String(playoff) });
+  const res = await apiFetch(`${API}/events/${eventKey}/matchup?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as EventMatchupResponse;
+}
+
+export interface WhatIfRank {
+  expected_rank: number;
+  top8: number;
+  top4: number;
+  rank_likely_best: number;
+  rank_likely_worst: number;
+  rank_counts: number[];
+}
+
+export interface EventWhatIfResponse {
+  ok: boolean;
+  event_key: string;
+  team_key: string;
+  matches: Array<{
+    match_key: string;
+    alliance: 'red' | 'blue';
+    partners: string[];
+    opponents: string[];
+    model_win_prob: number;
+    forced: 'win' | 'loss' | null;
+  }>;
+  field_size?: number;
+  runs?: number;
+  model?: WhatIfRank;
+  what_if?: WhatIfRank;
+  unavailable?: 'season_not_rated' | 'season_frozen' | 'event_finished' | 'quals_over' | 'no_matches_left';
+}
+
+// Where a team would finish the quals if it won or lost the matches given.
+export async function getEventWhatIf(eventKey: string, teamKey: string, wins: string[], losses: string[]): Promise<EventWhatIfResponse> {
+  const params = new URLSearchParams({ team: teamKey, wins: wins.join(','), losses: losses.join(',') });
+  const res = await apiFetch(`${API}/events/${eventKey}/what-if?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as EventWhatIfResponse;
+}
+
+export interface HeadToHeadRecord { played: number; wins: number; losses: number; ties: number }
+
+export interface HeadToHeadResponse {
+  ok: boolean;
+  team_key: string;
+  other_key: string;
+  together: HeadToHeadRecord;
+  against: HeadToHeadRecord;
+  seasons: number[];
+  match_count: number;
+  matches: Array<{
+    match_key: string;
+    event_key: string;
+    event_name: string | null;
+    season: number;
+    comp_level: string;
+    relation: 'together' | 'against';
+    alliance: 'red' | 'blue';
+    score: number | null;
+    opponent_score: number | null;
+    result: 'win' | 'loss' | 'tie' | null;
+    time: number | null;
+  }>;
+}
+
+// Every match two teams played on the same alliance or against each other, any season.
+export async function getTeamHeadToHead(teamKey: string, otherKey: string): Promise<HeadToHeadResponse> {
+  const params = new URLSearchParams({ other: otherKey });
+  const res = await apiFetch(`${API}/teams/${teamKey}/head-to-head?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as HeadToHeadResponse;
+}
+
+export interface SeasonStoryMatch {
+  match_key: string;
+  alliance: 'red' | 'blue';
+  score: number | null;
+  opponent_score: number | null;
+  result: 'win' | 'loss' | 'tie';
+  event_key?: string;
+}
+
+export interface SeasonStoryEvent {
+  event_key: string;
+  event_name: string;
+  start: number | null;
+  qual_rank: number | null;
+  field_size: number | null;
+  record: { wins: number; losses: number; ties: number };
+  best_match: SeasonStoryMatch | null;
+  finish: 'won' | 'finalist' | 'playoffs' | 'quals';
+  rating_0_100: number | null;
+  points_per_match: number | null;
+}
+
+export interface SeasonStoryResponse {
+  ok: boolean;
+  team_key: string;
+  nickname: string | null;
+  season: number;
+  game: string | null;
+  events: SeasonStoryEvent[];
+  totals: { wins: number; losses: number; ties: number; events: number; event_wins: number; best_match: SeasonStoryMatch | null };
+}
+
+// A team's season event by event: finish, record, best match, rating.
+export async function getTeamSeasonStory(teamKey: string, season?: number): Promise<SeasonStoryResponse> {
+  const params = new URLSearchParams();
+  if (season) params.set('season', String(season));
+  const query = params.toString();
+  const res = await apiFetch(`${API}/teams/${teamKey}/season-story${query ? `?${query}` : ''}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as SeasonStoryResponse;
+}
+
+export interface MatchPracticeResponse {
+  ok: boolean;
+  match_key: string;
+  event_key: string;
+  label: string;
+  team_key: string;
+  alliance: 'red' | 'blue';
+  played: boolean;
+  // False for a season the official breakdown isn't parsed for: nothing to check against.
+  checkable: boolean;
+  video: { embed_url: string; watch_url: string } | null;
+  official: {
+    auto_tower_points: number | null;
+    endgame_tower_points: number | null;
+    alliance_fuel: number | null;
+    alliance_score: number | null;
+  };
+}
+
+// Scout training: one robot in a played match and what the official result knows about it.
+export async function getMatchPractice(matchKey: string, teamKey: string): Promise<MatchPracticeResponse> {
+  const params = new URLSearchParams({ team: teamKey });
+  const res = await apiFetch(`${API}/matches/${encodeURIComponent(matchKey)}/practice?${params.toString()}`, _cacheRequestOptions(undefined, {
+    cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+  }));
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as MatchPracticeResponse;
+}
+
 export async function getEventRankings(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventRankingsResponse> {
   const res = await apiFetch(
-    `${API}/events/${eventKey}/rankings`,
+    withLiveVersion(`${API}/events/${eventKey}/rankings`, [eventKey]),
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
@@ -3344,6 +3522,29 @@ export async function syncOnDeviceSession(session: {
   return (await res.json()) as OnDeviceSessionSyncResponse;
 }
 
+function webSocketBase(): URL {
+  const base = new URL(WS_API, window.location.origin);
+  if (base.protocol === "https:") base.protocol = "wss:";
+  else if (base.protocol === "http:") base.protocol = "ws:";
+  else if (base.protocol !== "ws:" && base.protocol !== "wss:") {
+    base.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  }
+  if (window.location.protocol === "https:" && base.protocol === "ws:") {
+    // Prevent mixed-content websocket failures when UI is loaded over HTTPS.
+    base.protocol = "wss:";
+  }
+  return base;
+}
+
+// Public and credential-free: it only says when an event's results change.
+export function liveResultsWebSocketUrl(eventKey: string): string {
+  const base = webSocketBase();
+  const basePathPrefix = base.pathname && base.pathname !== "/" ? base.pathname.replace(/\/+$/, "") : "";
+  base.pathname = `${basePathPrefix}/matches/event/${encodeURIComponent(eventKey.trim().toLowerCase())}/live`;
+  base.search = "";
+  return base.toString();
+}
+
 export function scoutingRoomWebSocketUrl(
   roomKey: string,
   options?: {
@@ -3356,16 +3557,7 @@ export function scoutingRoomWebSocketUrl(
   },
 ): string {
   const normalizedRoom = roomKey.trim().toLowerCase();
-  const base = new URL(WS_API, window.location.origin);
-  if (base.protocol === "https:") base.protocol = "wss:";
-  else if (base.protocol === "http:") base.protocol = "ws:";
-  else if (base.protocol !== "ws:" && base.protocol !== "wss:") {
-    base.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  }
-  if (window.location.protocol === "https:" && base.protocol === "ws:") {
-    // Prevent mixed-content websocket failures when UI is loaded over HTTPS.
-    base.protocol = "wss:";
-  }
+  const base = webSocketBase();
   const basePathPrefix = base.pathname && base.pathname !== "/" ? base.pathname.replace(/\/+$/, "") : "";
   base.pathname = `${basePathPrefix}/scouting/rooms/${normalizedRoom}/ws`;
   base.search = "";
@@ -3655,6 +3847,45 @@ export async function updatePicklist(
   return (await res.json()) as PicklistUpdateResult;
 }
 
+export type StrategyStroke = {
+  tool: 'pen' | 'arrow' | 'zone';
+  color: 'ours' | 'theirs' | 'note';
+  // Field fractions: x 0 (left) to 1 (right), y 0 (top) to 1 (bottom) as drawn.
+  points: Array<[number, number]>;
+};
+
+export interface StrategyBoard {
+  match_key: string;
+  strokes: StrategyStroke[];
+  // 0 for a board nobody has drawn on yet.
+  version: number;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+export async function getStrategyBoard(matchKey: string): Promise<StrategyBoard> {
+  const res = await apiFetch(`${API}/strategy-boards/${encodeURIComponent(matchKey)}`, { bypassCache: true, cacheTtlMs: 0 });
+  if (!res.ok) throw new Error(await readError(res));
+  return ((await res.json()) as { board: StrategyBoard }).board;
+}
+
+// A stale `version` comes back as { conflict: true, board: <theirs> } rather than overwriting it.
+export type SaveStrategyBoardResult = { ok: boolean; conflict?: boolean; board: StrategyBoard };
+
+export async function saveStrategyBoard(
+  matchKey: string,
+  version: number,
+  strokes: StrategyStroke[],
+): Promise<SaveStrategyBoardResult> {
+  const res = await apiFetch(`${API}/strategy-boards/${encodeURIComponent(matchKey)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version, strokes }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as SaveStrategyBoardResult;
+}
+
 export async function deletePicklist(picklistId: number): Promise<{ ok: boolean }> {
   const res = await apiFetch(`${API}/picklists/${picklistId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await readError(res));
@@ -3791,6 +4022,37 @@ export async function getScoutingCoverage(eventKey: string): Promise<ScoutingCov
   });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as ScoutingCoverageResponse;
+}
+
+export interface TeamScoutNote {
+  id: number;
+  event_key: string | null;
+  match_key: string | null;
+  scout_profile: string;
+  notes: string;
+  tags: string[];
+  saved_at_ms: number | null;
+  created_at: string | null;
+}
+
+export interface TeamNotesResponse {
+  ok: boolean;
+  team_key: string;
+  event_key: string | null;
+  reports: number;
+  tag_counts: Array<{ tag: string; count: number }>;
+  notes: TeamScoutNote[];
+}
+
+// What your workspace's scouts wrote and tagged about one team (one event, or the season).
+export async function getTeamNotes(teamKey: string, eventKey?: string): Promise<TeamNotesResponse> {
+  const params = new URLSearchParams({ team_key: teamKey });
+  if (eventKey) params.set('event_key', eventKey);
+  const res = await apiFetch(`${API}/scouting/insights/team-notes?${params.toString()}`, {
+    cacheTtlMs: 15000,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as TeamNotesResponse;
 }
 
 export interface ExportedRoomEntry {

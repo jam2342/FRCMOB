@@ -2,6 +2,7 @@ import { cx } from '../ui/primitives/cx';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { isPlainClick, navigateWithTransition, sectionDirection } from '../../utils/viewTransition';
 import { useHideOnScroll } from '../../hooks/useHideOnScroll';
+import { hapticTap } from '../../utils/haptics';
 import './BottomTabBar.css';
 
 
@@ -149,15 +150,6 @@ const ICON_MAP: Record<string, React.FC<{ active: boolean }>> = {
   '/match-center': MatchesIcon,
 };
 
-function triggerHaptic() {
-  try {
-    if ('vibrate' in navigator) {
-      navigator.vibrate(8);
-    }
-  } catch {
-    // Haptic not available — silently ignore
-  }
-}
 
 export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
   const barVisible = useHideOnScroll();
@@ -166,7 +158,7 @@ export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
 
   return (
     <nav
-      className={cx('btb', !barVisible && 'btb--hidden')}
+      data-tour="nav" className={cx('btb', !barVisible && 'btb--hidden')}
       aria-label="Quick navigation"
     >
       {TAB_ITEMS.map((tab) => (
@@ -175,7 +167,7 @@ export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
           to={tab.to}
           className={({ isActive }) => cx('btb__tab', isActive && 'btb__tab--active')}
           onClick={(event) => {
-            triggerHaptic();
+            hapticTap();
             if (!isPlainClick(event) || location.pathname === tab.to) return;
             event.preventDefault();
             navigateWithTransition(navigate, tab.to, {
@@ -201,7 +193,7 @@ export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
         type="button"
         className={cx('btb__tab', 'btb__tab--more', moreOpen && 'btb__tab--active')}
         onClick={() => {
-          triggerHaptic();
+          hapticTap();
           onToggleMore();
         }}
         aria-label="More navigation"

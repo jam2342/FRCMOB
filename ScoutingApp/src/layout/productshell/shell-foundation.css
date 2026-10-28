@@ -2505,6 +2505,9 @@ select.center-input option,
 
 .team-avatar {
   border-radius: 5px;
+  /* A hairline edge, so a logo with a white or black background has a shape on either theme. */
+  outline: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  outline-offset: -1px;
   object-fit: contain;
   flex-shrink: 0;
   vertical-align: middle;

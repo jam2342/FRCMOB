@@ -18,6 +18,7 @@ import type {
 } from '../api';
 import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { HeadToHeadCard } from '../features/headToHead/HeadToHeadCard';
 import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
 import styles from './ComparePage.module.css';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
@@ -830,7 +831,7 @@ export function ComparePage() {
         />
       ) : null}
       <aside className="center-sidebar">
-        <SurfaceCard
+        <SurfaceCard tourId="compare-controls"
           title="Compare Controls"
           className="compare-controls-card"
         >
@@ -899,7 +900,7 @@ export function ComparePage() {
           {statusText ? <p className="center-callout muted">{statusText}</p> : null}
         </SurfaceCard>
 
-        <SurfaceCard
+        <SurfaceCard tourId="compare-pool"
           title="Event Team Pool"
           subtitle={
             selectedEventKey
@@ -960,7 +961,7 @@ export function ComparePage() {
       </aside>
 
       <section className="center-main">
-        <SurfaceCard
+        <SurfaceCard tourId="compare-header"
           title={viewTitle(COMPARE_VIEWS, '/compare')}
           className="compare-header-card"
           right={isMobileLayout && !mobileFinderOpen && compareTeamKeys.length > 0 ? (
@@ -1021,7 +1022,7 @@ export function ComparePage() {
         </SurfaceCard>
 
         {activeTab === 'summary' && compareTeamKeys.length > 0 ? (
-            <SurfaceCard expandable hideTitleOnPhone title="Summary" className="compare-summary-card" compactable>
+            <SurfaceCard tourId="compare-summary" expandable hideTitleOnPhone title="Summary" className="compare-summary-card" compactable>
             {/* Highlights below the teams: they need every team's data, and arriving
                 above the list they pushed it ~300 px down on a phone. */}
             <Table
@@ -1058,6 +1059,8 @@ export function ComparePage() {
             </SurfaceCard>
 
         ) : null}
+
+        {activeTab === 'summary' && compareTeamKeys.length >= 2 ? <HeadToHeadCard teamKeys={compareTeamKeys} /> : null}
 
         {activeTab === 'detailed' ? (
             <SurfaceCard

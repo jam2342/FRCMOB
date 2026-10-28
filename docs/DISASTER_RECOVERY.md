@@ -17,11 +17,11 @@ production except 30 matches newer than the last hourly copy, the expected lag.
 | Secrets (`.env`) | Jamal's Mac: `~/.config/frcmob/backend.env` (mode 600, never in git) | refresh after any `.env` change: `scp -i ~/.ssh/frcmob_oci ubuntu@<ip>:frcmob/.env ~/.config/frcmob/backend.env` |
 | TLS certificate | nothing needed: Caddy gets a new one on first start | — |
 | Frontend | Vercel, unaffected | — |
-| **Pit photos** | **only on the VM** (daily tarball in `/home/ubuntu/backups`, same disk) | — |
+| Pit photos | OCI Object Storage bucket `frcmob-media-backup` (`pit_photos/`), copied by `docker/backup_database.sh` | hourly |
 
-Not covered yet: pit photos. A Neon restore brings back the rows that point at them,
-and the images will 404. Fix when needed: copy the daily
-`frcmob_media_*.tar.gz` (~30 MB) off the VM (OCI Object Storage is free up to 20 GB).
+Pit photos come back with `rclone` from the bucket once the new VM is in the
+`frcmob-backend-vm` dynamic group (`BACKEND_HOST.md`, "Pit photos off-site"). Without
+that step a Neon restore brings back the rows that point at them, and the images 404.
 
 ## Rebuild on a new VM (~30–45 min, most of it waiting)
 

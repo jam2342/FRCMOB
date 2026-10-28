@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProductShell } from './ProductShell';
 
@@ -126,6 +126,29 @@ describe('ProductShell finder collapse', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /collapse finder/i }));
     expect(root).toHaveClass('finder-collapsed');
+  });
+});
+
+function LocationProbe() {
+  const location = useLocation();
+  return <p data-testid="location">{location.pathname + location.search}</p>;
+}
+
+describe('ProductShell header search', () => {
+  it('searches for a long number instead of opening it as an event', async () => {
+    render(
+      <MemoryRouter initialEntries={['/events']}>
+        <Routes>
+          <Route element={<ProductShell />}>
+            <Route path="/events" element={<LocationProbe />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    const box = screen.getByLabelText('Global quick jump');
+    fireEvent.change(box, { target: { value: '99999999' } });
+    fireEvent.submit(box.closest('form')!);
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/events?q=99999999'));
   });
 });
 

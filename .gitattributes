@@ -2,3 +2,7 @@
 # how the public repo is synced (docs/THIRD_PARTY_ASSETS.md: weights are not included).
 ScoutingApp/public/models/** binary export-ignore
 ScoutingApp/public/models export-ignore
+# Agent notes and the dated history mention people, hosts and habits; private repo only.
+CLAUDE.md export-ignore
+AGENTS.md export-ignore
+docs/HISTORY.md export-ignore

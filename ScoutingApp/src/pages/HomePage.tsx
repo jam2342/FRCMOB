@@ -296,6 +296,15 @@ function homeDayHeading(dayMs: number, nowMs: number): string {
   return new Date(dayMs).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+// What Home last showed, for this session: coming back to the tab paints it at once and
+// refreshes quietly, instead of "Loading matches" for half a second over data it just had.
+const HOME_SNAPSHOT_MAX_AGE_MS = 10 * 60_000;
+let homeSnapshot: { at: number; events: EventSearchItem[]; schedules: Record<string, HomeEventSchedule> } | null = null;
+
+function freshHomeSnapshot() {
+  return homeSnapshot && Date.now() - homeSnapshot.at < HOME_SNAPSHOT_MAX_AGE_MS ? homeSnapshot : null;
+}
+
 export function HomePage() {
   const navigate = useNavigate();
   const pageVisible = usePageVisibility();
@@ -303,19 +312,19 @@ export function HomePage() {
   const nowMs = usePageClock(pageVisible);
   const liveRefreshSec = useLiveRefreshSetting();
 
-  const [suggestedEvents, setSuggestedEvents] = useState<EventSearchItem[]>([]);
+  const [suggestedEvents, setSuggestedEvents] = useState<EventSearchItem[]>(() => freshHomeSnapshot()?.events ?? []);
   const [calendarSeasonEvents, setCalendarSeasonEvents] = useState<EventSearchItem[]>([]);
   const [selectedEventKey, setSelectedEventKey] = useState(() =>
     readStoredCenterContext().eventKey,
   );
-  const [scheduleByEvent, setScheduleByEvent] = useState<Record<string, HomeEventSchedule>>({});
+  const [scheduleByEvent, setScheduleByEvent] = useState<Record<string, HomeEventSchedule>>(() => freshHomeSnapshot()?.schedules ?? {});
   const [selectedEventRankings, setSelectedEventRankings] = useState<EventRankingsResponse | null>(null);
   const [selectedEventStream, setSelectedEventStream] = useState<EventLiveStreamResponse | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<HomeFilter>('all');
   // Starts true: the first paint happens before the load effect runs, and
   // false here showed "No matches scheduled" for a frame on every open.
-  const [loadingHome, setLoadingHome] = useState(true);
+  const [loadingHome, setLoadingHome] = useState(() => !freshHomeSnapshot());
   const [homeReloadToken, setHomeReloadToken] = useState(0);
   const [loadingSelectedContext, setLoadingSelectedContext] = useState(false);
   const [, setStatusText] = useState('Loading Home feed…');
@@ -419,7 +428,7 @@ export function HomePage() {
     let cancelled = false;
 
     async function run() {
-      setLoadingHome(true);
+      if (!freshHomeSnapshot()) setLoadingHome(true);
       setErrorText('');
       try {
         const events = await loadSeasonEventCatalog({
@@ -482,7 +491,8 @@ export function HomePage() {
 
         const initialScheduleMap = await fetchSchedulesInBatches(initialPreloadKeys);
         if (cancelled) return;
-        setScheduleByEvent(initialScheduleMap);
+        // Merged, so events shown from the snapshot don't blink out while the rest load.
+        setScheduleByEvent((previous) => ({ ...previous, ...initialScheduleMap }));
         setLastUpdatedAt(Date.now());
         setStatusText(
           preferredEventKey
@@ -1142,6 +1152,10 @@ export function HomePage() {
     };
   }, [failedDayKey]);
 
+  useEffect(() => {
+    if (suggestedEvents.length > 0) homeSnapshot = { at: Date.now(), events: suggestedEvents, schedules: scheduleByEvent };
+  }, [scheduleByEvent, suggestedEvents]);
+
   const selectedDaySchedulesPending = useMemo(() => {
     if (loadingHome) return true;
     const dayToken = localDateTokenFromMs(selectedDayMs);
@@ -1620,8 +1634,8 @@ export function HomePage() {
       </aside>
       )}
 
-      <section className="home-board-center" aria-label="Matches">
-        <section className="home-board-toolbar">
+      <section data-tour="home-matches" className="home-board-center" aria-label="Matches">
+        <section data-tour="home-day" className="home-board-toolbar">
           <div className="home-board-toolbar-left">
             <div className="home-day-switcher" role="group" aria-label="Change schedule day">
               <button
@@ -1674,7 +1688,7 @@ export function HomePage() {
                 <p>{selectedDayDateLabel}</p>
                 <button
                   type="button"
-                  className={`home-mini-tab-btn ${mobileDrawerOpen ? 'active' : ''}`.trim()}
+                  data-tour="home-event-info" className={`home-mini-tab-btn ${mobileDrawerOpen ? 'active' : ''}`.trim()}
                   onClick={() => {
                     setMobileCalendarOpen(false);
                     setMobileDrawerOpen(true);
@@ -2053,7 +2067,7 @@ export function HomePage() {
           ) : (
             <>
               <p id={cardContentId('compare-builder')} className="home-board-note">
-                Build and compare 3-team lineups with compatibility scoring.
+                Build and compare 3-team lineups.
               </p>
               <Link
                 className="home-board-btn"
@@ -2113,7 +2127,7 @@ export function HomePage() {
           )}
         </section>
 
-        <section className={`home-board-card ${leaderboardCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
+        <section data-tour="home-leaderboard" className={`home-board-card ${leaderboardCollapsed ? 'home-card-collapsed' : ''}`.trim()}>
           <header className="home-card-head">
             <div>
               <h3>Leaderboard</h3>

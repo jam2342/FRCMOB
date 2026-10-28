@@ -12,14 +12,24 @@
   min-width: 0;
 }
 
+.side:first-child {
+  flex: 0 1 auto;
+}
+
 .side:last-child {
+  flex: none;
   margin-left: auto;
 }
 
-/* "‹ Back to Archimedes Division" can be long; it shortens instead of pushing the row wider. */
+/* "‹ Back to Archimedes Division" can be long; it shortens instead of pushing the row wider.
+   The button is inline-flex, so the text needs its own box to show an ellipsis. */
 .back {
   min-width: 0;
   max-width: 100%;
+}
+
+.backText {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

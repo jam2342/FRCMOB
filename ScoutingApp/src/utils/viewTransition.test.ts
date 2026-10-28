@@ -27,6 +27,25 @@ describe('view transitions', () => {
     expect(navigate).toHaveBeenCalledWith('/events');
   });
 
+  it('swallows a transition the browser aborts (phone viewport changed) instead of throwing', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    transitionDoc().startViewTransition = (update: () => Promise<void> | void) => {
+      const abort = () => Promise.reject(new DOMException('Transition was aborted because of invalid state', 'InvalidStateError'));
+      void update();
+      return { ready: abort(), finished: abort() };
+    };
+    const navigate = vi.fn();
+    navigateWithTransition(navigate, '/events');
+    notifyRouteCommitted();
+    switchTabWithTransition(vi.fn(), 'forward');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    process.off('unhandledRejection', unhandled);
+    expect(navigate).toHaveBeenCalledWith('/events');
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it('navigates directly when reduced motion is on', () => {
     fakeTransitions();
     vi.stubGlobal('matchMedia', () => ({ matches: true }));

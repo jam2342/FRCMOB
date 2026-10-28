@@ -55,6 +55,7 @@ import { readStoredCenterContext } from '../layout/centerContext';
 import { showToast } from '../components/ui/toast';
 import { MISSING } from '../utils/formatValue';
 import { EmptyState } from '../components/ui/EmptyState';
+import { isEventKeyShape } from '../utils/eventKey';
 
 type FavoritesTab = 'overview' | 'events' | 'teams';
 
@@ -104,7 +105,7 @@ type LiveFavoriteMatch = {
 };
 
 function isEventKey(value: string): boolean {
-  return /^\d{4}[a-z0-9]+$/.test(value);
+  return isEventKeyShape(value);
 }
 
 function normalizeEventKey(value: string): string {
@@ -831,7 +832,7 @@ export function FavoritesPage() {
         />
       ) : null}
       <aside className="center-sidebar">
-        <SurfaceCard
+        <SurfaceCard tourId="favorites-manager"
           title="Favorite Manager"
           subtitle="Pin teams and events, set rating context."
           className="favorites-manager-card"
@@ -908,7 +909,7 @@ export function FavoritesPage() {
           </CardBody>
         </SurfaceCard>
 
-        <SurfaceCard title="Snapshot" className="favorites-snapshot-card">
+        <SurfaceCard tourId="favorites-snapshot" title="Snapshot" className="favorites-snapshot-card">
           <CardGrid dense>
             <Stat label="Events" value={favoriteEvents.length} size="sm" />
             <Stat label="Teams" value={favoriteTeams.length} size="sm" />
@@ -947,7 +948,7 @@ export function FavoritesPage() {
       </aside>
 
       <section className="center-main">
-        <SurfaceCard
+        <SurfaceCard tourId="favorites-header"
           title="Favorites"
           className="favorites-header-card"
           right={isMobileLayout && !mobileFinderOpen ? (
@@ -985,7 +986,7 @@ export function FavoritesPage() {
           ) : (
           <div className={activeTab === 'overview' ? styles.overviewGrid : undefined}>
             {activeTab !== 'teams' ? (
-              <SurfaceCard
+              <SurfaceCard tourId="favorites-events"
                 title="Favorite Events"
                 right={<Chip>{loadingEvents ? 'Loading…' : `${orderedEventCards.length} event${orderedEventCards.length === 1 ? '' : 's'}`}</Chip>}
                 compactable
@@ -994,7 +995,7 @@ export function FavoritesPage() {
               </SurfaceCard>
             ) : null}
             {activeTab !== 'events' ? (
-              <SurfaceCard
+              <SurfaceCard tourId="favorites-teams"
                 title="Favorite Teams"
                 right={<Chip>{loadingTeams ? 'Loading…' : `${orderedTeamCards.length} team${orderedTeamCards.length === 1 ? '' : 's'}`}</Chip>}
                 compactable

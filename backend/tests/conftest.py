@@ -76,6 +76,20 @@ def _no_workspace_creation_budget():
 
 
 @pytest.fixture(autouse=True)
+def _no_admin_key_failure_budget():
+    # With a real Redis (CI) every wrong-key test would spend the site-wide budget
+    # and lock later tests out; the budget's own tests patch in a fake Redis.
+    from unittest import mock
+
+    from app.core import security
+    from app.tba import client as tba_client
+
+    with mock.patch.object(security, "_admin_key_failure_redis", return_value=None):
+        yield
+    tba_client._TBA_MISSING.clear()
+
+
+@pytest.fixture(autouse=True)
 def _no_first_live_results():
     # A local .env carries real FRC Events credentials; tests must never call it.
     # The overlay's own tests switch it back on with a fake client.

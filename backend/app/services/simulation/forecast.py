@@ -6,7 +6,8 @@ from __future__ import annotations
 import threading
 import time
 from collections import defaultdict
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import Any, Callable
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ from app.services.events.win_probability import match_predictions, red_win_prob
 from app.services.ratings.win_correction import corrected
 from app.services.ratings.ranking_points import BONUS_RP_CALIBRATION, bonus_chances, event_thresholds
 from app.services.ratings.team_model_service import season_run
-from app.services.simulation.event_sim import QualMatch, Standing, simulate
+from app.services.simulation.event_sim import QualMatch, Standing, simulate, simulate_rank
 
 RUNS = 2000
 _cache: dict[str, tuple[tuple, dict]] = {}
@@ -114,30 +115,19 @@ def _final_payload(db: Session, event_key: str, teams: list[str], quals: list, r
     }
 
 
-def event_forecast(db: Session, event_key: str, runs: int = RUNS) -> dict[str, Any]:
-    from app.services.seasons import is_frozen, is_rated
+@dataclass
+class _SimInputs:
+    teams: list[str]
+    quals: list
+    standings: dict[str, Standing]
+    # (match_key, QualMatch) for every qual not yet played.
+    remaining: list[tuple[str, QualMatch]]
+    strength: dict[str, float]
+    playoff_win: Callable[[tuple[str, ...], tuple[str, ...]], float]
+    playoffs_started: bool
 
-    started = time.perf_counter()
-    event_key = event_key.lower()
-    season = int(event_key[:4])
-    if not is_rated(season):
-        return {"ok": True, "event_key": event_key, "finished": False, "simulated": False, "unavailable": "season_not_rated", "teams": []}
-    results = {
-        (row.match_key.lower(), row.alliance): row
-        for row in db.query(models.MatchAllianceResult).filter(models.MatchAllianceResult.event_key == event_key)
-    }
-    outcome = finals_outcome(db, event_key)
-    if outcome is not None or is_frozen(db, season):
-        teams = sorted({str(t).lower() for (t,) in db.query(models.EventTeam.team_key).filter(models.EventTeam.event_key == event_key)})
-        quals = [m for m in db.query(models.Match).filter(models.Match.event_key == event_key) if str(m.comp_level or "").lower() == "qm"]
-        return _final_payload(db, event_key, teams, quals, results, outcome)
-    run = season_run(db, season, allow_stale=True)
-    fingerprint = (id(run), len(results), max((str(r.updated_at) for r in results.values()), default=""))
-    with _lock:
-        cached = _cache.get(event_key)
-        if cached is not None and cached[0] == fingerprint:
-            return cached[1]
 
+def _sim_inputs(db: Session, event_key: str, season: int, results: dict, run) -> _SimInputs:
     teams = sorted({str(t).lower() for (t,) in db.query(models.EventTeam.team_key).filter(models.EventTeam.event_key == event_key)})
     matches = db.query(models.Match).filter(models.Match.event_key == event_key).all()
     sides: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"red": [], "blue": []})
@@ -167,12 +157,12 @@ def event_forecast(db: Session, event_key: str, runs: int = RUNS) -> dict[str, A
     for key, red, blue in remaining_cards:
         margin, sd, seen, prediction, feature_row = predictions[key]
         p = corrected(season, red_win_prob(margin, sd, seen), feature_row)
-        remaining.append(QualMatch(
+        remaining.append((key, QualMatch(
             tuple(red), tuple(blue), p,
             bonus_chances(season, thresholds, prediction.red_hub, prediction.red_tower, calibration),
             bonus_chances(season, thresholds, prediction.blue_hub, prediction.blue_tower, calibration),
             prediction.red_mean, prediction.blue_mean,
-        ))
+        )))
 
     event_start = min((int(m.actual_time or m.time or 0) for m in matches if (m.actual_time or m.time)), default=None)
     model = run.model
@@ -182,6 +172,38 @@ def event_forecast(db: Session, event_key: str, runs: int = RUNS) -> dict[str, A
         sa = model.alliance_strength(event_key, a, event_start)["total"]
         sb = model.alliance_strength(event_key, b, event_start)["total"]
         return red_win_prob(sa[0] - sb[0], (sa[1] + sb[1]) ** 0.5, 3, playoff=True)
+
+    return _SimInputs(teams, quals, standings, remaining, strength, playoff_win, playoffs_started)
+
+
+def event_forecast(db: Session, event_key: str, runs: int = RUNS) -> dict[str, Any]:
+    from app.services.seasons import is_frozen, is_rated
+
+    started = time.perf_counter()
+    event_key = event_key.lower()
+    season = int(event_key[:4])
+    if not is_rated(season):
+        return {"ok": True, "event_key": event_key, "finished": False, "simulated": False, "unavailable": "season_not_rated", "teams": []}
+    results = {
+        (row.match_key.lower(), row.alliance): row
+        for row in db.query(models.MatchAllianceResult).filter(models.MatchAllianceResult.event_key == event_key)
+    }
+    outcome = finals_outcome(db, event_key)
+    if outcome is not None or is_frozen(db, season):
+        teams = sorted({str(t).lower() for (t,) in db.query(models.EventTeam.team_key).filter(models.EventTeam.event_key == event_key)})
+        quals = [m for m in db.query(models.Match).filter(models.Match.event_key == event_key) if str(m.comp_level or "").lower() == "qm"]
+        return _final_payload(db, event_key, teams, quals, results, outcome)
+    run = season_run(db, season, allow_stale=True)
+    fingerprint = (id(run), len(results), max((str(r.updated_at) for r in results.values()), default=""))
+    with _lock:
+        cached = _cache.get(event_key)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+
+    inputs = _sim_inputs(db, event_key, season, results, run)
+    teams, quals, standings, strength = inputs.teams, inputs.quals, inputs.standings, inputs.strength
+    remaining = [match for _key, match in inputs.remaining]
+    playoff_win, playoffs_started = inputs.playoff_win, inputs.playoffs_started
 
     # A playoff-only event (Einstein lists every Championship team and plays no quals)
     # has no rankings to simulate.
@@ -217,3 +239,60 @@ def event_forecast(db: Session, event_key: str, runs: int = RUNS) -> dict[str, A
     with _lock:
         _cache[event_key] = (fingerprint, payload)
     return payload
+
+
+WHAT_IF_RUNS = 1000
+
+
+def what_if(db: Session, event_key: str, team: str, forced: dict[str, str], runs: int = WHAT_IF_RUNS) -> dict[str, Any]:
+    # "What do we need?": one team's remaining quals, some set to a win or a loss by the
+    # person asking, the rest left to the model; where the team would then finish, next to
+    # where the model has it now. Quals only, so it answers in a moment.
+    from app.services.seasons import is_frozen, is_rated
+
+    event_key, team = event_key.lower(), team.lower()
+    season = int(event_key[:4])
+    base = {"ok": True, "event_key": event_key, "team_key": team, "matches": []}
+    if not is_rated(season) or is_frozen(db, season):
+        return {**base, "unavailable": "season_not_rated" if not is_rated(season) else "season_frozen"}
+    results = {
+        (row.match_key.lower(), row.alliance): row
+        for row in db.query(models.MatchAllianceResult).filter(models.MatchAllianceResult.event_key == event_key)
+    }
+    if finals_outcome(db, event_key) is not None:
+        return {**base, "unavailable": "event_finished"}
+    inputs = _sim_inputs(db, event_key, season, results, season_run(db, season, allow_stale=True))
+    if team not in inputs.teams:
+        raise ValueError("That team is not at this event.")
+    if not inputs.quals or inputs.playoffs_started:
+        return {**base, "unavailable": "quals_over"}
+
+    rows, adjusted = [], []
+    for key, match in inputs.remaining:
+        side = "red" if team in match.red else "blue" if team in match.blue else None
+        choice = forced.get(key) if side else None
+        if side:
+            model_win = match.red_win if side == "red" else 1.0 - match.red_win
+            rows.append({
+                "match_key": key,
+                "alliance": side,
+                "partners": [t for t in (match.red if side == "red" else match.blue) if t != team],
+                "opponents": list(match.blue if side == "red" else match.red),
+                "model_win_prob": round(model_win, 4),
+                "forced": choice,
+            })
+        if choice in ("win", "loss"):
+            team_wins = choice == "win"
+            match = replace(match, red_win=1.0 if team_wins == (side == "red") else 0.0)
+        adjusted.append(match)
+    if not rows:
+        return {**base, "unavailable": "no_matches_left"}
+    model = [m for _key, m in inputs.remaining]
+    return {
+        **base,
+        "matches": rows,
+        "field_size": len(inputs.teams),
+        "runs": runs,
+        "model": simulate_rank(team, inputs.teams, inputs.standings, model, runs=runs),
+        "what_if": simulate_rank(team, inputs.teams, inputs.standings, adjusted, runs=runs),
+    }

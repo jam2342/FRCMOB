@@ -59,7 +59,7 @@ function normalizeCenterTeamKey(value: string | null | undefined): string {
 
 // What a stored key must look like to be used: a corrupted or old value ("[]") was
 // shown as-is in the match box.
-const STORED_EVENT_KEY = /^\d{4}[a-z0-9]+$/;
+const STORED_EVENT_KEY = /^(19|20)\d{2}[a-z][a-z0-9]{1,15}$/;
 const STORED_MATCH_KEY = /^\d{4}[a-z0-9]+_[a-z0-9]+$/;
 const STORED_TEAM_KEY = /^frc\d{1,5}[a-z]?$/;
 const valid = (value: string, shape: RegExp) => (shape.test(value) ? value : '');
