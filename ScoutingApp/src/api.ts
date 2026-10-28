@@ -1629,11 +1629,20 @@ function noteFirstData(url: string, source: DataSource): void {
   if (!SHELL_REQUEST_RE.test(url)) markData(source);
 }
 
+export function hasDotSegment(url: string): boolean {
+  const path = url.replace(/^https?:\/\/[^/]+/i, "").split(/[?#]/)[0];
+  return path.split("/").some((part) => /^(\.|%2e){1,2}$/i.test(part));
+}
+
 async function apiFetch(input: string, init?: ApiFetchInit): Promise<Response> {
   const normalizedInput = String(input || "");
   const hasAbsoluteScheme = normalizedInput.startsWith("http://") || normalizedInput.startsWith("https://");
   const isRootRelative = normalizedInput.startsWith("/");
   const url = hasAbsoluteScheme || isRootRelative ? normalizedInput : `${API}/${normalizedInput.replace(/^\/+/, "")}`;
+  // Path values are encoded where URLs are built, so a dot segment can only come from
+  // injected data (a crafted room or match key) aiming at another endpoint with this
+  // user's workspace headers.
+  if (hasDotSegment(url)) throw new Error("Refused an API path with a dot segment.");
   const method = normalizeMethod(init?.method);
   const bypassCache = shouldBypassCache(url, init);
   const cacheTtlMs = bypassCache ? 0 : _cacheValueInt(init?.cacheTtlMs, DEFAULT_GET_CACHE_TTL_MS);
@@ -2028,7 +2037,7 @@ export async function ingestEvent(eventKey: string): Promise<{
     count?: number;
   };
 }> {
-  const res = await apiFetch(`${API}/events/${eventKey}/ingest`, { method: "POST" });
+  const res = await apiFetch(`${API}/events/${encodeURIComponent(eventKey)}/ingest`, { method: "POST" });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as {
     ok: boolean;
@@ -2221,7 +2230,7 @@ export async function getTeamRobotImage(
   });
   if (eventKey) params.set("event_key", eventKey);
   const res = await apiFetch(
-    `${API}/teams/${teamKey}/robot-image?${params.toString()}`,
+    `${API}/teams/${encodeURIComponent(teamKey)}/robot-image?${params.toString()}`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: STATIC_MEDIA_CACHE_TTL_MS,
       staleWhileRevalidateMs: STATIC_MEDIA_CACHE_TTL_MS,
@@ -2242,7 +2251,7 @@ export async function getTeamLogo(
   });
   if (eventKey) params.set("event_key", eventKey);
   const res = await apiFetch(
-    `${API}/teams/${teamKey}/logo?${params.toString()}`,
+    `${API}/teams/${encodeURIComponent(teamKey)}/logo?${params.toString()}`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: STATIC_MEDIA_CACHE_TTL_MS,
       staleWhileRevalidateMs: STATIC_MEDIA_CACHE_TTL_MS,
@@ -2283,7 +2292,7 @@ export async function getTeamIntel(
     cacheTtlMs: TEAM_INTEL_CACHE_TTL_MS,
     staleWhileRevalidateMs: TEAM_INTEL_CACHE_TTL_MS * 3,
   });
-  let res = await apiFetch(`${API}/teams/${teamKey}/intel${makeSuffix(params)}`, resolvedRequestOptions);
+  let res = await apiFetch(`${API}/teams/${encodeURIComponent(teamKey)}/intel${makeSuffix(params)}`, resolvedRequestOptions);
   if (
     (res.status === 401 || res.status === 403) &&
     ((params.get("auto_heal_ratings") || "").toLowerCase() === "true" ||
@@ -2293,7 +2302,7 @@ export async function getTeamIntel(
     fallbackParams.delete("auto_heal_ratings");
     fallbackParams.delete("refresh");
     const fallbackRes = await apiFetch(
-      `${API}/teams/${teamKey}/intel${makeSuffix(fallbackParams)}`,
+      `${API}/teams/${encodeURIComponent(teamKey)}/intel${makeSuffix(fallbackParams)}`,
       resolvedRequestOptions,
     );
     if (fallbackRes.ok) {
@@ -2334,7 +2343,7 @@ export async function getEventTeamsIntel(
     staleWhileRevalidateMs: EVENT_INTEL_CACHE_TTL_MS * 3,
   });
   let res = await apiFetch(
-    `${API}/teams/event/${eventKey}/intel${makeSuffix(params)}`,
+    `${API}/teams/event/${encodeURIComponent(eventKey)}/intel${makeSuffix(params)}`,
     resolvedRequestOptions,
   );
   if (
@@ -2346,7 +2355,7 @@ export async function getEventTeamsIntel(
     fallbackParams.delete("auto_heal_ratings");
     fallbackParams.delete("refresh");
     const fallbackRes = await apiFetch(
-      `${API}/teams/event/${eventKey}/intel${makeSuffix(fallbackParams)}`,
+      `${API}/teams/event/${encodeURIComponent(eventKey)}/intel${makeSuffix(fallbackParams)}`,
       resolvedRequestOptions,
     );
     if (fallbackRes.ok) {
@@ -2368,7 +2377,7 @@ export async function getEventTeamsHistory(
     exclude_current_event: String(excludeCurrentEvent),
   });
   const res = await apiFetch(
-    `${API}/scouting/event/${eventKey}/teams/history?${params.toString()}`,
+    `${API}/scouting/event/${encodeURIComponent(eventKey)}/teams/history?${params.toString()}`,
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS,
@@ -2389,7 +2398,7 @@ export async function getTeamBreakdown(
   });
   if (eventKey) params.set("event_key", eventKey);
   const res = await apiFetch(
-    `${API}/scouting/team/${teamKey}/breakdown?${params.toString()}`,
+    `${API}/scouting/team/${encodeURIComponent(teamKey)}/breakdown?${params.toString()}`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: TEAM_INTEL_CACHE_TTL_MS,
       staleWhileRevalidateMs: TEAM_INTEL_CACHE_TTL_MS * 2,
@@ -2408,7 +2417,7 @@ export async function getEventRatings(
   const params = new URLSearchParams({ refresh: String(refresh), view: "summary" });
   if (options?.includeTrend) params.set("include_trend", "true");
   const res = await apiFetch(
-    `${API}/scouting/event/${eventKey}/ratings?${params.toString()}`,
+    `${API}/scouting/event/${encodeURIComponent(eventKey)}/ratings?${params.toString()}`,
     _cacheRequestOptions(
       options?.bypassCache ? { bypassCache: true } : { showSavedMaxAgeMs: options?.showSavedMaxAgeMs },
       {
@@ -2428,7 +2437,7 @@ export async function getEventRatingsLive(
 ): Promise<EventRatingsResponse> {
   const params = new URLSearchParams({ refresh: "false", include_trend: "true", view: "summary" });
   const res = await apiFetch(
-    `${API}/scouting/event/${eventKey}/ratings?${params.toString()}`,
+    `${API}/scouting/event/${encodeURIComponent(eventKey)}/ratings?${params.toString()}`,
     // 2 s and no stale window: calls that overlap (the panel's first run, a page's own
     // load, a restart when the live flag flips) share one request, while polls (8 s at
     // the fastest) always get a fresh answer.
@@ -2456,7 +2465,7 @@ export async function getSelectionModel(
     simulations: String(options.simulations),
     rank_source: options.rank_source ?? "auto",
   });
-  const res = await apiFetch(`${API}/events/${eventKey}/selection-model?${params.toString()}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/events/${encodeURIComponent(eventKey)}/selection-model?${params.toString()}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2465,7 +2474,7 @@ export async function getSelectionModel(
 
 export async function getAllianceOutlook(eventKey: string, teamKeys: string[]): Promise<AllianceOutlookResponse> {
   const params = new URLSearchParams({ teams: teamKeys.join(',') });
-  const res = await apiFetch(`${API}/events/${eventKey}/alliance-outlook?${params.toString()}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/events/${encodeURIComponent(eventKey)}/alliance-outlook?${params.toString()}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2512,7 +2521,7 @@ export async function getEventSchedule(
   if (options?.ifModifiedSince) params.set("ifModifiedSince", options.ifModifiedSince);
   if (options?.onlyModifiedSince) params.set("onlyModifiedSince", options.onlyModifiedSince);
   const res = await apiFetch(
-    withLiveVersion(`${API}/matches/event/${eventKey}/schedule?${params.toString()}`, [eventKey]),
+    withLiveVersion(`${API}/matches/event/${encodeURIComponent(eventKey)}/schedule?${params.toString()}`, [eventKey]),
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
@@ -2572,7 +2581,7 @@ export async function getEventSchedules(
         const schedule = entry as EventScheduleResponse;
         out[key] = schedule;
         noteLiveSchedule(key, schedule.matches);
-        seedGetCache(`${API}/matches/event/${key}/schedule?refresh=false`, schedule, EVENT_SCHEDULE_CACHE_TTL_MS);
+        seedGetCache(`${API}/matches/event/${encodeURIComponent(key)}/schedule?refresh=false`, schedule, EVENT_SCHEDULE_CACHE_TTL_MS);
       } else {
         const detail = entry && "detail" in entry && entry.detail ? entry.detail : "Schedule unavailable";
         out[key] = new Error(detail);
@@ -2584,7 +2593,7 @@ export async function getEventSchedules(
 
 export async function getEventLiveStream(eventKey: string): Promise<EventLiveStreamResponse> {
   const res = await apiFetch(
-    `${API}/matches/event/${eventKey}/live-stream`,
+    `${API}/matches/event/${encodeURIComponent(eventKey)}/live-stream`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 3,
@@ -2607,7 +2616,7 @@ export async function getEventTeamLiveForm(
   if (typeof options?.live_window_sec === "number") params.set("live_window_sec", String(options.live_window_sec));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await apiFetch(
-    withLiveVersion(`${API}/matches/event/${eventKey}/team-live-form${suffix}`, [eventKey]),
+    withLiveVersion(`${API}/matches/event/${encodeURIComponent(eventKey)}/team-live-form${suffix}`, [eventKey]),
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_LIVE_FORM_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_LIVE_FORM_CACHE_TTL_MS * 3,
@@ -2628,7 +2637,7 @@ export async function getEventPredictionSchedule(
   },
 ): Promise<EventPredictionScheduleResponse> {
   const res = await apiFetch(
-    withLiveVersion(`${API}/events/${eventKey}/schedule-with-synergy`, [eventKey]),
+    withLiveVersion(`${API}/events/${encodeURIComponent(eventKey)}/schedule-with-synergy`, [eventKey]),
     _cacheRequestOptions(
       options?.bypassCache ? { bypassCache: true } : { showSavedMaxAgeMs: options?.showSavedMaxAgeMs },
       {
@@ -2652,7 +2661,7 @@ export async function getEventAlliances(
   if (options?.onlyModifiedSince) params.set("onlyModifiedSince", options.onlyModifiedSince);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await apiFetch(
-    `${API}/matches/event/${eventKey}/alliances${suffix}`,
+    `${API}/matches/event/${encodeURIComponent(eventKey)}/alliances${suffix}`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
@@ -2701,7 +2710,7 @@ export type EventForecastResponse = {
    expected rank and chances of the top 8, captaining, an alliance and the title. */
 export async function getEventForecast(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventForecastResponse> {
   const res = await apiFetch(
-    `${API}/events/${eventKey}/forecast`,
+    `${API}/events/${encodeURIComponent(eventKey)}/forecast`,
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
@@ -2753,7 +2762,7 @@ export type RatingHistoryResponse = { ok: boolean; team_key: string; seasons: Ra
 
 /* A team's FRCMOB ratings season by season; seasons are different games, listed apart. */
 export async function getTeamRatingHistory(teamKey: string): Promise<RatingHistoryResponse> {
-  const res = await apiFetch(`${API}/teams/${teamKey}/rating-history`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/teams/${encodeURIComponent(teamKey)}/rating-history`, _cacheRequestOptions(undefined, {
     cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
     staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
   }));
@@ -2765,7 +2774,7 @@ export async function getTeamRatingHistory(teamKey: string): Promise<RatingHisto
    strong alliance at the event with them. */
 export async function getPickValues(eventKey: string, teamKeys: string[], limit = 30): Promise<PickValuesResponse> {
   const params = new URLSearchParams({ teams: teamKeys.join(','), limit: String(limit) });
-  const res = await apiFetch(`${API}/events/${eventKey}/pick-values?${params.toString()}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/events/${encodeURIComponent(eventKey)}/pick-values?${params.toString()}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2790,7 +2799,7 @@ export interface EventMatchupResponse {
 // Any six teams at an event, predicted as if they played now (not a scheduled match).
 export async function getEventMatchup(eventKey: string, red: string[], blue: string[], playoff: boolean): Promise<EventMatchupResponse> {
   const params = new URLSearchParams({ red: red.join(','), blue: blue.join(','), playoff: String(playoff) });
-  const res = await apiFetch(`${API}/events/${eventKey}/matchup?${params.toString()}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/events/${encodeURIComponent(eventKey)}/matchup?${params.toString()}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2828,7 +2837,7 @@ export interface EventWhatIfResponse {
 // Where a team would finish the quals if it won or lost the matches given.
 export async function getEventWhatIf(eventKey: string, teamKey: string, wins: string[], losses: string[]): Promise<EventWhatIfResponse> {
   const params = new URLSearchParams({ team: teamKey, wins: wins.join(','), losses: losses.join(',') });
-  const res = await apiFetch(`${API}/events/${eventKey}/what-if?${params.toString()}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/events/${encodeURIComponent(eventKey)}/what-if?${params.toString()}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2863,7 +2872,7 @@ export interface HeadToHeadResponse {
 // Every match two teams played on the same alliance or against each other, any season.
 export async function getTeamHeadToHead(teamKey: string, otherKey: string): Promise<HeadToHeadResponse> {
   const params = new URLSearchParams({ other: otherKey });
-  const res = await apiFetch(`${API}/teams/${teamKey}/head-to-head?${params.toString()}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/teams/${encodeURIComponent(teamKey)}/head-to-head?${params.toString()}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2907,7 +2916,7 @@ export async function getTeamSeasonStory(teamKey: string, season?: number): Prom
   const params = new URLSearchParams();
   if (season) params.set('season', String(season));
   const query = params.toString();
-  const res = await apiFetch(`${API}/teams/${teamKey}/season-story${query ? `?${query}` : ''}`, _cacheRequestOptions(undefined, {
+  const res = await apiFetch(`${API}/teams/${encodeURIComponent(teamKey)}/season-story${query ? `?${query}` : ''}`, _cacheRequestOptions(undefined, {
     cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
   }));
   if (!res.ok) throw new Error(await readError(res));
@@ -2945,7 +2954,7 @@ export async function getMatchPractice(matchKey: string, teamKey: string): Promi
 
 export async function getEventRankings(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventRankingsResponse> {
   const res = await apiFetch(
-    withLiveVersion(`${API}/events/${eventKey}/rankings`, [eventKey]),
+    withLiveVersion(`${API}/events/${encodeURIComponent(eventKey)}/rankings`, [eventKey]),
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
       staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
@@ -2957,7 +2966,7 @@ export async function getEventRankings(eventKey: string, requestOptions?: ApiReq
 
 export async function getEventPredictions(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventPredictionsResponse> {
   const res = await apiFetch(
-    `${API}/events/${eventKey}/predictions`,
+    `${API}/events/${encodeURIComponent(eventKey)}/predictions`,
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
@@ -2969,7 +2978,7 @@ export async function getEventPredictions(eventKey: string, requestOptions?: Api
 
 export async function getEventAwards(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventAwardsResponse> {
   const res = await apiFetch(
-    `${API}/events/${eventKey}/awards`,
+    `${API}/events/${encodeURIComponent(eventKey)}/awards`,
     _cacheRequestOptions(requestOptions, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 4,
@@ -3146,7 +3155,7 @@ export async function getScoutingRoomState(
   if (options?.client_id) params.set("client_id", String(options.client_id || "").trim());
   if (options?.presence_heartbeat) params.set("presence_heartbeat", "1");
   const roomAccessToken = String(options?.room_access_token || "").trim();
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}?${params.toString()}`, {
+  const res = await apiFetch(`${API}/scouting/rooms/${encodeURIComponent(roomKey)}?${params.toString()}`, {
     headers: roomAccessToken ? { [ROOM_ACCESS_HEADER]: roomAccessToken } : undefined,
     bypassCache: true,
     cacheTtlMs: 0,
@@ -3253,7 +3262,7 @@ export async function kickScoutingRoomMember(
     headers.set(ROOM_ACCESS_HEADER, String(payload.room_access_token || "").trim());
   }
   const body = withoutRoomAccessToken(payload);
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/kick`, {
+  const res = await apiFetch(`${API}/scouting/rooms/${encodeURIComponent(roomKey)}/kick`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -3274,7 +3283,7 @@ export async function addScoutingRoomSecondaryLeader(
     headers.set(ROOM_ACCESS_HEADER, String(payload.room_access_token || "").trim());
   }
   const body = withoutRoomAccessToken(payload);
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/leaders`, {
+  const res = await apiFetch(`${API}/scouting/rooms/${encodeURIComponent(roomKey)}/leaders`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -3295,7 +3304,7 @@ export async function removeScoutingRoomSecondaryLeader(
     headers.set(ROOM_ACCESS_HEADER, String(payload.room_access_token || "").trim());
   }
   const body = withoutRoomAccessToken(payload);
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/leaders/remove`, {
+  const res = await apiFetch(`${API}/scouting/rooms/${encodeURIComponent(roomKey)}/leaders/remove`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -3319,7 +3328,7 @@ export async function saveScoutingRoomEntry(
     headers.set(ROOM_ACCESS_HEADER, String(payload.room_access_token || "").trim());
   }
   const body = withoutRoomAccessToken(payload);
-  const res = await apiFetch(`${API}/scouting/rooms/${roomKey}/entries`, {
+  const res = await apiFetch(`${API}/scouting/rooms/${encodeURIComponent(roomKey)}/entries`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -3349,7 +3358,7 @@ export async function getAutoScoutDraft(
   matchKey: string,
   teamKey: string,
 ): Promise<AutoScoutDraftResponse> {
-  const res = await apiFetch(`${API}/scouting/auto-drafts/${eventKey}/${matchKey}/${teamKey}`);
+  const res = await apiFetch(`${API}/scouting/auto-drafts/${encodeURIComponent(eventKey)}/${encodeURIComponent(matchKey)}/${encodeURIComponent(teamKey)}`);
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as AutoScoutDraftResponse;
 }
@@ -3362,7 +3371,7 @@ export async function approveAutoScoutDraft(
     edited_payload: Record<string, unknown>;
   },
 ): Promise<AutoScoutDraftResponse> {
-  const res = await apiFetch(`${API}/scouting/auto-drafts/${draftId}/approve`, {
+  const res = await apiFetch(`${API}/scouting/auto-drafts/${encodeURIComponent(draftId)}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -3378,7 +3387,7 @@ export async function rejectAutoScoutDraft(
     draft_version: number;
   },
 ): Promise<AutoScoutDraftResponse> {
-  const res = await apiFetch(`${API}/scouting/auto-drafts/${draftId}/reject`, {
+  const res = await apiFetch(`${API}/scouting/auto-drafts/${encodeURIComponent(draftId)}/reject`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -3411,7 +3420,7 @@ export async function getTeamHeatmap(
   if (options?.include_unreviewed) params.set("include_unreviewed", "true");
   if (options?.include_workspace) params.set("include_workspace", "true");
   const res = await apiFetch(
-    `${API}/tracks/heatmap/${teamKey}?${params.toString()}`,
+    `${API}/tracks/heatmap/${encodeURIComponent(teamKey)}?${params.toString()}`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
@@ -3444,7 +3453,7 @@ export async function getTeamShiftPlay(
   const params = new URLSearchParams({ event_key: eventKey });
   if (options?.include_workspace) params.set("include_workspace", "true");
   const res = await apiFetch(
-    `${API}/tracks/shift-play/${teamKey}?${params.toString()}`,
+    `${API}/tracks/shift-play/${encodeURIComponent(teamKey)}?${params.toString()}`,
     _cacheRequestOptions(undefined, {
       cacheTtlMs: LONG_CONTEXT_CACHE_TTL_MS,
       staleWhileRevalidateMs: LONG_CONTEXT_CACHE_TTL_MS * 2,
@@ -3559,7 +3568,7 @@ export function scoutingRoomWebSocketUrl(
   const normalizedRoom = roomKey.trim().toLowerCase();
   const base = webSocketBase();
   const basePathPrefix = base.pathname && base.pathname !== "/" ? base.pathname.replace(/\/+$/, "") : "";
-  base.pathname = `${basePathPrefix}/scouting/rooms/${normalizedRoom}/ws`;
+  base.pathname = `${basePathPrefix}/scouting/rooms/${encodeURIComponent(normalizedRoom)}/ws`;
   base.search = "";
   if (options?.scout_profile) base.searchParams.set("scout_profile", options.scout_profile);
   if (options?.event_key) base.searchParams.set("event_key", options.event_key);
@@ -3712,7 +3721,7 @@ export async function rotateWorkspaceJoinCode(): Promise<WorkspaceStateResponse>
 }
 
 export async function removeWorkspaceMember(memberId: number, rotateJoinCode = true): Promise<WorkspaceStateResponse> {
-  const res = await apiFetch(`${API}/workspaces/me/members/${memberId}/remove`, {
+  const res = await apiFetch(`${API}/workspaces/me/members/${encodeURIComponent(memberId)}/remove`, {
     method: "POST",
     headers: WORKSPACE_JSON,
     body: JSON.stringify({ rotate_join_code: rotateJoinCode }),
@@ -3722,7 +3731,7 @@ export async function removeWorkspaceMember(memberId: number, rotateJoinCode = t
 }
 
 export async function setWorkspaceMemberRole(memberId: number, role: "leader" | "member"): Promise<WorkspaceStateResponse> {
-  const res = await apiFetch(`${API}/workspaces/me/members/${memberId}/role`, {
+  const res = await apiFetch(`${API}/workspaces/me/members/${encodeURIComponent(memberId)}/role`, {
     method: "POST",
     headers: WORKSPACE_JSON,
     body: JSON.stringify({ role }),
@@ -3820,7 +3829,7 @@ export async function createPicklist(payload: {
 }
 
 export async function getPicklist(picklistId: number): Promise<{ ok: boolean; picklist: Picklist }> {
-  const res = await apiFetch(`${API}/picklists/${picklistId}`, {
+  const res = await apiFetch(`${API}/picklists/${encodeURIComponent(picklistId)}`, {
     bypassCache: true,
     cacheTtlMs: 0,
   });
@@ -3838,7 +3847,7 @@ export async function updatePicklist(
     archived?: boolean;
   },
 ): Promise<PicklistUpdateResult> {
-  const res = await apiFetch(`${API}/picklists/${picklistId}`, {
+  const res = await apiFetch(`${API}/picklists/${encodeURIComponent(picklistId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -3887,7 +3896,7 @@ export async function saveStrategyBoard(
 }
 
 export async function deletePicklist(picklistId: number): Promise<{ ok: boolean }> {
-  const res = await apiFetch(`${API}/picklists/${picklistId}`, { method: "DELETE" });
+  const res = await apiFetch(`${API}/picklists/${encodeURIComponent(picklistId)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as { ok: boolean };
 }
