@@ -11,6 +11,7 @@ This repository is public, and production deploys straight from `main`. Anything
 ## What checks for leaks
 
 - GitHub secret scanning with push protection refuses pushes that contain known token formats.
+- gitleaks scans the whole history on every pull request and push to `main` (the `secrets` job in CI, rules in `.gitleaks.toml`), and staged changes before each commit once the hook is on (`git config core.hooksPath .githooks`). The allowlist only drops FRC match/event/team keys, snake_case identifiers and published checksums; keep it that narrow.
 - Dependabot alerts and security updates cover the dependencies.
 
 ## If a secret gets committed
