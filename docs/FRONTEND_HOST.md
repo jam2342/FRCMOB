@@ -21,7 +21,7 @@ What `vercel.json` does today, which any replacement must do:
 3. `/record.html`: `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` (the recorder's multi-threaded WASM fails silently without them).
 4. `/assets/*`: `Cache-Control: public, max-age=31536000, immutable` **and** `Cross-Origin-Embedder-Policy: require-corp` (a worker started from the isolated page hangs without it).
 5. `/fonts/*` 30 days, `/models/*` 7 days with `Content-Type: application/octet-stream`.
-6. Build-time check that the ONNX models are present (`ONDEVICE_MODEL_REQUIRED` keys off `VERCEL` today; switch it to a host-neutral env var).
+6. Build-time check that the ONNX models are present (`ONDEVICE_MODEL_REQUIRED` keys off `VERCEL` today; switch it to a host-neutral env var), and `ONDEVICE_MODEL_SOURCE` set so `scripts/fetch-models.mjs` can download them (they aren't in git).
 7. Turn on API caching for `/api` at the new host and re-run the MISS/HIT and workspace-header checks from #2.
 8. Native shells point at the public site URL (`shareableAppUrl()`), so check that after a domain change.
 9. Every path: `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera/microphone self). The rest of the CSP travels in the HTML (`build/contentSecurityPolicy.ts`); if the backend's address changes, update `NATIVE_WS_URL` or the room socket is blocked.

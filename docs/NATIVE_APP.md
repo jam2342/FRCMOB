@@ -10,6 +10,9 @@ only a name inside the app and stays.
 The app installs its interface, lazy-loaded pages, both v4 detector models, ONNX
 runtime, fonts, and field-tracker code. It does not load the website as its shell.
 The website remains a separate `dist/` build; native assets go to `dist-native/`.
+The models aren't in git: `npm run build:native` first downloads them with
+`scripts/fetch-models.mjs` when `ONDEVICE_MODEL_SOURCE` is set, and the bundle check fails
+without them.
 Event data still needs to be downloaded before arriving at a venue with no signal.
 The installed app has its own storage; existing website/PWA drafts and credentials
 do not automatically transfer. Sync or export browser work before switching.

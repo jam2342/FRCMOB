@@ -1,7 +1,6 @@
 // Single source of truth for the legal pages and the site footer so Privacy,
-// Terms and the per-page credits can't drift apart. Contact is the public
-// mirror's issue tracker: the main repo is private, so its issues 404 for
-// visitors.
+// Terms and the per-page credits can't drift apart. Contact is the repo's
+// public issue tracker.
 export const LEGAL_EFFECTIVE_DATE = 'October 18, 2026';
 export const COPYRIGHT_YEAR = 2026;
 export const SOURCE_CODE_URL = 'https://github.com/jam2342/FRCMOB';

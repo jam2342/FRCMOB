@@ -1,6 +1,6 @@
 # Security release readiness — 2026-10-17
 
-All six audited fixes are prepared together with the latest main checkout, `55b304c5cfb10a06bbe6c82e67ce46b1d3f68f0d`, in `/Users/jamalmammadzada/Desktop/Projects/FRCMOB-security-release-20261017`. No commit, merge, push or deployment was performed. The earlier [fix report](SECURITY_FIXES_2026-10-17.md) describes the changes and bounded independent review; its test counts refer to the earlier baseline. This report records the combined release candidate.
+All six audited fixes are prepared together with the latest main checkout, `55b304c5cfb10a06bbe6c82e67ce46b1d3f68f0d`, in `<local>/FRCMOB-security-release-20261017`. No commit, merge, push or deployment was performed. The earlier [fix report](SECURITY_FIXES_2026-10-17.md) describes the changes and bounded independent review; its test counts refer to the earlier baseline. This report records the combined release candidate.
 
 **Release is blocked on real Turnstile configuration and production rollout approval.** Cloudflare's dashboard was opened, but the browser is signed out. Do not paste its secret into chat or put it in a frontend variable. Local verification cannot establish that a website is impossible to compromise.
 

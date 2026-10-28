@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "audit_date": "2026-10-17",
-  "checkout": "/Users/jamalmammadzada/Desktop/Projects/FRCMOB-security-20261017",
+  "checkout": "<local>/FRCMOB-security-20261017",
   "baseline_commit": "de8ebab9a6dd0486a7810e28505f5b0d79d6a1a8",
   "status": "locally_verified_not_deployed",
   "results": {
