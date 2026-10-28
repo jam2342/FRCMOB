@@ -64,7 +64,8 @@ label is worse than no image"): **train only on frames that are already near-com
   WebGPU at 0.35, v4_n on WASM at 0.25** (82 vs 243 ms/frame in WebKit; 10 MB). Full match:
   33 s in Chrome on the GPU, 55 s in WebKit on the CPU (M2).
 - Weights: `media/models/frc_robot_detector_v4_{s,n}.pt` (not in git); ONNX exports
-  (opset 19, dynamic, 896 base) are the tracked `ScoutingApp/public/models/*_v4_*.onnx`.
+  (opset 19, dynamic, 896 base) are `ScoutingApp/public/models/*_v4_*.onnx`, not in git either:
+  builds download them (`scripts/fetch-models.mjs`, checksums in `build/modelChecksums.json`).
 
 ## Review update — 7 September 2026
 
