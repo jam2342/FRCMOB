@@ -248,11 +248,12 @@ def _youtube_video_id(value: str | None) -> str | None:
         return raw
     if raw.startswith("http://") or raw.startswith("https://"):
         parsed = urlparse(raw)
-        host = (parsed.netloc or "").lower()
-        if "youtu.be" in host:
+        # exact hosts: a substring test let youtube.com.example.net through
+        host = (parsed.hostname or "").lower()
+        if host == "youtu.be":
             candidate = parsed.path.strip("/")
             return candidate if YOUTUBE_VIDEO_ID_RE.fullmatch(candidate) else None
-        if "youtube.com" in host:
+        if host == "youtube.com" or host.endswith(".youtube.com"):
             query_id = parse_qs(parsed.query).get("v", [None])[0]
             if isinstance(query_id, str) and YOUTUBE_VIDEO_ID_RE.fullmatch(query_id):
                 return query_id
@@ -698,16 +699,17 @@ def _first_start_time_to_unix(start_time: str | None) -> int | None:
     return int(dt.timestamp())
 
 
+def _trailing_int(value: str) -> int | None:
+    # Not re.search(r"(\d+)$"): that retries from every digit, so a long run of digits
+    # followed by anything else is quadratic, and these strings come from requests.
+    digits = value[len(value.rstrip("0123456789")):]
+    return int(digits) if digits else None
+
+
 def _parse_station_index(station: str | None) -> int | None:
     if not station:
         return None
-    m = re.search(r"(\d+)$", station)
-    if not m:
-        return None
-    try:
-        return int(m.group(1))
-    except ValueError:
-        return None
+    return _trailing_int(station)
 
 
 def _first_level_to_comp(
@@ -726,13 +728,8 @@ def _first_level_to_comp(
     if level == "qualification":
         return "qm", series_number, max(1, fallback_match_number)
 
-    trailing_match = fallback_match_number
-    trailing_match_re = re.search(r"(\d+)$", description_value)
-    if trailing_match_re:
-        try:
-            trailing_match = int(trailing_match_re.group(1))
-        except ValueError:
-            trailing_match = fallback_match_number
+    trailing = _trailing_int(description_value)
+    trailing_match = fallback_match_number if trailing is None else trailing
 
     if "quarterfinal" in desc_lower:
         set_number = ((max(1, trailing_match) - 1) // 2) + 1

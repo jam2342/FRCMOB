@@ -81,8 +81,13 @@ export function routeAssetMap(bundle: BundleLike, base = '/'): Record<string, { 
   return out
 }
 
+// JSON inside an inline <script>: escape "<" so no value can ever close the tag.
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c')
+}
+
 function routePreloadScript(map: Record<string, { js: string[]; css: string[] }>): string {
-  return `<script>try{(function(m){var p=(location.hash.replace(/^#/,"").split("?")[0]||"/home").replace(/\\/+$/,"")||"/home";var a=m[p]||m["/home"];if(!a)return;a.js.forEach(function(h){var l=document.createElement("link");l.rel="modulepreload";l.crossOrigin="";l.href=h;document.head.appendChild(l)});a.css.forEach(function(h){var l=document.createElement("link");l.rel="preload";l.as="style";l.href=h;document.head.appendChild(l)})})(${JSON.stringify(map)})}catch(e){}</script>`
+  return `<script>try{(function(m){var p=(location.hash.replace(/^#/,"").split("?")[0]||"/home").replace(/\\/+$/,"")||"/home";var a=m[p]||m["/home"];if(!a)return;a.js.forEach(function(h){var l=document.createElement("link");l.rel="modulepreload";l.crossOrigin="";l.href=h;document.head.appendChild(l)});a.css.forEach(function(h){var l=document.createElement("link");l.rel="preload";l.as="style";l.href=h;document.head.appendChild(l)})})(${scriptJson(map)})}catch(e){}</script>`
 }
 
 export function bootPrefetch(): Plugin {
@@ -105,7 +110,7 @@ export function bootPrefetch(): Plugin {
         if (!ctx.filename.endsWith('index.html')) return html
         const scripts: string[] = []
         if (apiBase) {
-          const url = JSON.stringify(`${apiBase}${bootSuggestedEventsPath()}`)
+          const url = scriptJson(`${apiBase}${bootSuggestedEventsPath()}`)
           // The empty catch marks the promise handled: offline it rejects before the app
           // takes it, which surfaced as an uncaught "Failed to fetch". The app still gets the rejection.
           scripts.push(`<script>try{window.__frcmobBoot={};var b=fetch(${url},{headers:{Accept:"application/json"}});b.catch(function(){});window.__frcmobBoot[${url}]=b;setTimeout(function(){window.__frcmobBoot={}},30000)}catch(e){}</script>`)

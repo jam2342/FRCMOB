@@ -533,3 +533,32 @@ describe('pitPhotoDisplayUrl', () => {
     expect(pitPhotoDisplayUrl({ photos: [path] }, 0)).toBe(`https://scouting.example.com/api${path}`);
   });
 });
+
+describe('API paths built from data', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('spots dot segments in the path only', async () => {
+    const { hasDotSegment } = await import('./api');
+    expect(hasDotSegment('/api/scouting/rooms/../workspaces/me')).toBe(true);
+    expect(hasDotSegment('https://h.example/api/%2E%2e/admin')).toBe(true);
+    expect(hasDotSegment('/api/teams/frc254/intel?next=../x')).toBe(false);
+    expect(hasDotSegment('/api/teams/frc100B/rating-history')).toBe(false);
+  });
+
+  it("encodes a crafted room key so it can't reach another endpoint", async () => {
+    vi.stubEnv('VITE_API_URL', '/api');
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const api = await import('./api');
+
+    await api.getTeamRatingHistory('frc254/../../workspaces/me?x=').catch(() => undefined);
+    const calledUrl = String(fetchMock.mock.calls[0]?.[0] || '');
+    expect(calledUrl).toBe('/api/teams/frc254%2F..%2F..%2Fworkspaces%2Fme%3Fx%3D/rating-history');
+  });
+});
