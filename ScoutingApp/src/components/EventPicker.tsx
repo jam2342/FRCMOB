@@ -5,6 +5,7 @@ import { loadSeasonEventCatalog } from '../features/events/eventCatalog';
 import { eventTypeTags } from '../features/events/eventTags';
 import { smartSearchEvents } from '../utils/eventSearch';
 import { CURRENT_SEASON_YEAR, FALLBACK_SEASON_YEAR } from '../pages/centerUtils';
+import { isEventKeyShape } from '../utils/eventKey';
 
 const EVENT_PICKER_SUGGEST_LIMIT = 60;
 const EVENT_PICKER_REMOTE_TEAM_COUNT_FETCH_LIMIT = 0;
@@ -256,6 +257,21 @@ export function EventPicker({
     [clearOnSelect, onSelect, onInputChange],
   );
 
+  // Nothing matched: only text shaped like an event key (2026txhou) is loaded as typed.
+  // Anything else ("5", "asdf") would load an event that doesn't exist, so the "No events
+  // match" hint stays open instead.
+  const submitTyped = useCallback(
+    (query: string) => {
+      if (query && !isEventKeyShape(query)) {
+        setOpen(true);
+        return;
+      }
+      onSubmit?.();
+      setOpen(false);
+    },
+    [onSubmit],
+  );
+
   function submitCurrent() {
     const query = inputValue.trim();
     if (hasQuery && query.length >= 2 && !resultsAreCurrent) {
@@ -264,10 +280,10 @@ export function EventPicker({
     }
     if (hasQuery && currentResults.length > 0) {
       handleSelect(currentResults[0].event_key);
+      setOpen(false);
     } else {
-      onSubmit?.();
+      submitTyped(hasQuery ? query : '');
     }
-    setOpen(false);
   }
 
   useEffect(() => {
@@ -278,10 +294,11 @@ export function EventPicker({
     }
     if (resultsQuery !== pendingSubmitQuery) return;
     setPendingSubmitQuery(null);
-    if (searchResults.length > 0) handleSelect(searchResults[0].event_key);
-    else onSubmit?.();
-    setOpen(false);
-  }, [handleSelect, inputValue, onSubmit, pendingSubmitQuery, resultsQuery, searchResults]);
+    if (searchResults.length > 0) {
+      handleSelect(searchResults[0].event_key);
+      setOpen(false);
+    } else submitTyped(pendingSubmitQuery);
+  }, [handleSelect, inputValue, pendingSubmitQuery, resultsQuery, searchResults, submitTyped]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') {

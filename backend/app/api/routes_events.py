@@ -993,6 +993,63 @@ def get_event_pick_values(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/{event_key}/what-if")
+def get_event_what_if(
+    event_key: str,
+    team: str = Query(..., max_length=12, pattern=r"^(?i:frc)?\d{1,5}$"),
+    wins: str = Query(default="", max_length=600, description="Match keys this team wins, comma separated."),
+    losses: str = Query(default="", max_length=600, description="Match keys this team loses, comma separated."),
+    db: Session = Depends(get_db),
+) -> dict:
+    # Where a team would finish the quals if it won or lost the matches you choose.
+    from app.services.simulation.forecast import what_if
+
+    event_key = event_key.strip().lower()
+    if db.get(models.Event, event_key) is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
+    team_key = team.strip().lower()
+    team_key = team_key if team_key.startswith("frc") else f"frc{team_key}"
+    forced: dict[str, str] = {}
+    for raw, outcome in ((wins, "win"), (losses, "loss")):
+        for key in raw.split(","):
+            key = key.strip().lower()
+            if not key:
+                continue
+            if forced.get(key, outcome) != outcome:
+                raise HTTPException(status_code=400, detail=f"{key} is set as both a win and a loss.")
+            forced[key] = outcome
+    try:
+        return what_if(db, event_key, team_key, forced)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{event_key}/matchup")
+def get_event_matchup(
+    event_key: str,
+    red: str = Query(..., max_length=64, description="Three team keys, comma separated."),
+    blue: str = Query(..., max_length=64, description="Three team keys, comma separated."),
+    playoff: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> dict:
+    # A match that isn't on the schedule: any six teams here, predicted like a real one.
+    from app.services.events.win_probability import custom_matchup
+
+    event_key = event_key.strip().lower()
+    if db.get(models.Event, event_key) is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
+
+    def _keys(raw: str) -> list[str]:
+        keys = [t.strip().lower() for t in raw.split(",") if t.strip()]
+        # No trimming to three: a fourth team is an error custom_matchup reports, not one to drop.
+        return [t if t.startswith("frc") else f"frc{t}" for t in keys]
+
+    try:
+        return custom_matchup(db, event_key, _keys(red), _keys(blue), playoff=playoff)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # The path predates synergy's removal (2026-10-17) and is kept so phones' saved offline
 # copies and the edge-cache rule still match: it is the schedule with predictions.
 @router.get("/{event_key}/schedule-with-synergy", response_model=SchedulePredictionsResponse)
@@ -1200,8 +1257,22 @@ def get_event_schedule_with_synergy(
         "matches": schedule_rows,
     }
 
+_TBA_EVENT_KEY_RE = re.compile(r"^\d{4}[a-z0-9]{1,16}$")
+
+
+def _tba_event_key_or_404(event_key: str) -> str:
+    # These routes forward the key into a TBA URL with the server's TBA key. Anything
+    # but a well-formed key would steer that request (a "?" or "..") or just spend
+    # TBA quota on a lookup that can't succeed.
+    normalized = str(event_key or "").strip().lower()
+    if not _TBA_EVENT_KEY_RE.fullmatch(normalized) or not 1992 <= int(normalized[:4]) <= datetime.now().year + 1:
+        raise HTTPException(status_code=404, detail="Unknown event.")
+    return normalized
+
+
 @router.get("/{event_key}/rankings")
 def get_event_rankings(event_key: str):
+    event_key = _tba_event_key_or_404(event_key)
     tba = _get_tba_client_or_503()
     try:
         payload = tba.event_rankings(event_key)
@@ -1217,6 +1288,7 @@ def get_event_rankings(event_key: str):
 
 @router.get("/{event_key}/predictions")
 def get_event_predictions(event_key: str):
+    event_key = _tba_event_key_or_404(event_key)
     tba = _get_tba_client_or_503()
     try:
         payload = tba.event_predictions(event_key)
@@ -1231,6 +1303,7 @@ def get_event_predictions(event_key: str):
 
 @router.get("/{event_key}/awards")
 def get_event_awards(event_key: str):
+    event_key = _tba_event_key_or_404(event_key)
     tba = _get_tba_client_or_503()
     try:
         payload = tba.event_awards(event_key)

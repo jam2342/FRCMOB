@@ -18,6 +18,30 @@ textarea {
   touch-action: manipulation;
 }
 
+/* ─── Every tap is acknowledged ────────────────────────────────────── */
+/* The tab bar, the board's tabs and icon buttons gave no sign they'd been pressed. `scale`
+   stacks with any transform a control already has, so nothing positioned by one moves. */
+@media (pointer: coarse) {
+  :where(button, [role="button"], [role="tab"], nav a):active:not(:disabled, [aria-disabled="true"]) {
+    scale: 0.96;
+  }
+}
+
+/* ─── Controls aren't text ─────────────────────────────────────────── */
+/* A long press on a tab, a stepper or the tab bar selected its label and opened the copy
+   menu, which native apps never do. Text in pages stays selectable. */
+@media (pointer: coarse) {
+  nav,
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="tablist"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 /* ─── Global touch improvements ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Smoother scrolling */

@@ -50,6 +50,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { isPlainClick, navigateWithTransition, notifyRouteCommitted, sectionDirection } from '../utils/viewTransition';
 import './ProductShell.css';
 import { storageGet, storageSet } from '../platform/safeStorage';
+import { isEventKeyShape } from '../utils/eventKey';
 
 
 // Each item carries its icon, so the collapsed rail has something to show.
@@ -104,7 +105,7 @@ function normalizedTeamKey(raw: string): string | null {
 }
 
 function isEventKey(value: string): boolean {
-  return /^\d{4}[a-z0-9]+$/.test(value);
+  return isEventKeyShape(value);
 }
 
 function parseMatchJump(value: string): { eventKey: string; matchKey: string } | null {
@@ -252,7 +253,7 @@ export function ProductShell() {
   }, []);
   const paletteShortcut = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K';
   const [tutorialOpen, setTutorialOpen] = useState<boolean>(false);
-  const [tutorialScope, setTutorialScope] = useState<TutorialScope>(() => resolveScopeFromPath(location.pathname));
+  const [tutorialScope, setTutorialScope] = useState<TutorialScope | null>(() => resolveScopeFromPath(location.pathname));
   const [, setTutorialProgressVersion] = useState<number>(0);
 
   const {
@@ -272,7 +273,8 @@ export function ProductShell() {
 
   const guessedTarget = useMemo(() => guessQuickJump(jumpInput), [jumpInput]);
   const activeScope = useMemo(() => resolveScopeFromPath(location.pathname), [location.pathname]);
-  const activeTutorialSeen = hasSeenTutorial(activeScope);
+  // A page without a tour counts as seen: nothing to autoplay or offer there.
+  const activeTutorialSeen = activeScope ? hasSeenTutorial(activeScope) : true;
   /* Whether the page on screen actually has a finder column.
    *
    * This used to be a list of path prefixes matched with startsWith, so
@@ -388,6 +390,8 @@ export function ProductShell() {
 
   useEffect(() => {
     setTutorialScope(activeScope);
+    // Leaving for a page with no tour closes the open one, or it would reappear on the next page that has one.
+    if (!activeScope) setTutorialOpen(false);
   }, [activeScope]);
 
   // ⌘K / Ctrl+K opens the palette from anywhere, typing included (it's the one shortcut people
@@ -635,7 +639,7 @@ export function ProductShell() {
   }, []);
 
   useEffect(() => {
-    if (!tutorialAutoplay) return;
+    if (!tutorialAutoplay || !activeScope) return;
     if (activeTutorialSeen) return;
     if (tutorialOpen) return;
     openTutorial(activeScope);
@@ -643,7 +647,7 @@ export function ProductShell() {
 
   // One quiet offer for brand-new visitors, never on a live scouting screen.
   const [tourPromptHidden, setTourPromptHidden] = useState<boolean>(() => tourPromptDismissed() || countSeenTutorials() > 0);
-  const showTourPrompt = !tourPromptHidden && !tutorialAutoplay && !tutorialOpen && !isLiveScoutingRoute;
+  const showTourPrompt = !tourPromptHidden && !tutorialAutoplay && !tutorialOpen && !isLiveScoutingRoute && activeScope !== null;
   const closeTourPrompt = useCallback(() => {
     dismissTourPrompt();
     setTourPromptHidden(true);
@@ -690,7 +694,7 @@ export function ProductShell() {
             <span className="ps-sidebar-toggle-label">Menu</span>
           </button>
         ) : null}
-        <nav className="ps-nav">
+        <nav data-tour="nav" className="ps-nav">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -752,7 +756,7 @@ export function ProductShell() {
                 thing in a 64px bar that should hold the page's way out (search). */}
             <button
               type="button"
-              className="ps-mobile-search-trigger"
+              data-tour="search" className="ps-mobile-search-trigger"
               onClick={() => setMobileSearchOpen(true)}
               aria-label="Open search"
             >
@@ -776,7 +780,7 @@ export function ProductShell() {
               </button>
             ) : null}
             {!isMobileLiveScoutingRoute ? (
-              <div className="ps-topbar-search">
+              <div data-tour="search" className="ps-topbar-search">
                 <form className="ps-topbar-search-form" onSubmit={handleJumpSubmit}>
                   <input
                     ref={searchInputRef}
@@ -1013,7 +1017,7 @@ export function ProductShell() {
         jumpRegion={jumpRegion}
       />
 
-      {tutorialOpen ? (
+      {tutorialOpen && tutorialScope ? (
         <QuietBoundary name="tour">
           <Suspense fallback={null}>
             <TabTutorialOverlay key={tutorialScope} scope={tutorialScope} onClose={() => setTutorialOpen(false)} />
@@ -1024,7 +1028,7 @@ export function ProductShell() {
         <TourPrompt
           onStart={() => {
             closeTourPrompt();
-            openTutorial(activeScope);
+            if (activeScope) openTutorial(activeScope);
           }}
           onDismiss={closeTourPrompt}
         />
@@ -1055,7 +1059,7 @@ export function ProductShell() {
               onClose={() => setPaletteOpen(false)}
               recentEvents={recentEventQuickPicks}
               recentTeams={recentTeamQuickPicks}
-              onStartTour={() => openTutorial(activeScope)}
+              onStartTour={activeScope ? () => openTutorial(activeScope) : undefined}
             />
           </Suspense>
         </QuietBoundary>

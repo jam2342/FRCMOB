@@ -11,5 +11,14 @@
 	request_body {
 		max_size 10MiB
 	}
-	reverse_proxy backend:8000
+	# Detector weights aren't in git; the frontend build downloads them from here
+	# (ScoutingApp/scripts/fetch-models.mjs). They sit in a folder with an unguessable
+	# name that only the build's ONDEVICE_MODEL_SOURCE knows, and nothing is listed.
+	handle_path /model-files/* {
+		root * /srv/model-files
+		file_server
+	}
+	handle {
+		reverse_proxy backend:8000
+	}
 }

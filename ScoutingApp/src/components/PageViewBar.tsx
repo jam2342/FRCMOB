@@ -174,7 +174,7 @@ export function PageViewBar({
     const active = items.find((item) => item.to === location.pathname) ?? items[0];
     const wrapClassName = ['page-view-menu', className].filter(Boolean).join(' ');
     return (
-      <div className={wrapClassName}>
+      <div data-tour="page-views" className={wrapClassName}>
         <button
           ref={triggerRef}
           type="button"
@@ -233,7 +233,7 @@ export function PageViewBar({
   // A divider once, before the first secondary item — not between every pair.
   const firstSecondary = items.findIndex((item) => item.secondary);
   return (
-    <nav ref={navRef} className={navClassName} aria-label="Page view">
+    <nav ref={navRef} data-tour="page-views" className={navClassName} aria-label="Page view">
       {items.map((item, index) => (
         <Fragment key={item.to}>
           {index === firstSecondary ? <span className="page-view-divider" aria-hidden="true" /> : null}

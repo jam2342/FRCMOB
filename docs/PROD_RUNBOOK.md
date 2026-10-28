@@ -4,10 +4,10 @@
 > [BACKEND_HOST.md](BACKEND_HOST.md). Environment reference: [OCI_ENV_VARS.md](OCI_ENV_VARS.md).
 
 Production is one backend container (API + in-process scheduler) with Postgres and
-Redis beside it. Match data comes from official sources (TBA, FRC Events, Statbotics).
+Redis beside it. Match data comes from official sources (TBA, FRC Events).
 Team-level positional data comes from the on-device recorder. The server-side
 broadcast-video pipeline was retired on 2026-09-28: broadcast footage could not
-identify individual robots reliably (see `CLAUDE.md`, "Video Step 2").
+identify individual robots reliably.
 
 ## Smoke test after every deploy
 
@@ -73,8 +73,7 @@ What accepting a session does:
 
 - its tracks appear in the public Team Center heatmap and "Attack vs Defense" view;
 - auto-scout can draft scouting forms from it (drafts still need human approval);
-- it does **not** reach ratings (they load only official-truth findings, plus legacy
-  broadcast rows that are all flagged ineligible);
+- it does **not** reach ratings (they load only official-truth findings);
 - it does **not** reach training: nothing trains on phone recordings (the auto-scout
   training export was removed on 2026-10-05), and every session is still marked
   `training_eligible=false` with the blocker `real_phone_ground_truth_validation_pending`.
@@ -103,7 +102,7 @@ harmless but noisy.
 
 ## Monthly: re-validate the detector
 
-The on-device ONNX model is exported from `frc_robot_detector_v2.pt`. Once a month, on
+The on-device ONNX models are exported from `frc_robot_detector_v4_{s,n}.pt`. Once a month, on
 the training machine (`pip install -r backend/requirements-training.txt`):
 
 ```bash

@@ -1,5 +1,6 @@
 export type ThemeMode = 'dark' | 'light';
 import { storageGet, storageSet } from '../platform/safeStorage';
+import { isEventKeyShape } from '../utils/eventKey';
 export type DensityMode = 'comfortable' | 'compact';
 export type UIMode = 'simple' | 'full';
 export type QuickJumpRegion = 'all' | 'usa' | 'canada' | 'international' | 'tx' | 'ca' | 'mi' | 'ny';
@@ -12,7 +13,13 @@ export type TutorialScope =
   | 'compare'
   | 'favorites'
   | 'settings'
-  | 'ops';
+  | 'my-team'
+  | 'picklist'
+  | 'pit-scouting'
+  | 'assignments'
+  | 'predictions'
+  | 'strategy'
+  | 'alliance-advisor';
 
 export const TUTORIAL_SCOPES: TutorialScope[] = [
   'home',
@@ -23,7 +30,13 @@ export const TUTORIAL_SCOPES: TutorialScope[] = [
   'compare',
   'favorites',
   'settings',
-  'ops',
+  'my-team',
+  'picklist',
+  'pit-scouting',
+  'assignments',
+  'predictions',
+  'strategy',
+  'alliance-advisor',
 ];
 
 export const SCOUTING_SETTINGS_UPDATED_EVENT = 'scouting:settings-updated';
@@ -149,6 +162,20 @@ export function applyBodySettingsClasses(settings: ScoutingSettings): void {
   root.classList.add(settings.theme === 'light' ? 'theme-light' : 'theme-dark');
   root.classList.remove('density-comfortable', 'density-compact');
   root.classList.add(settings.density === 'compact' ? 'density-compact' : 'density-comfortable');
+  syncBrowserChrome();
+}
+
+// The phone's status bar and the browser's toolbar take the page's own background. The app's
+// theme is its own setting, so the OS-scheme tags in index.html only cover the first paint.
+function syncBrowserChrome(): void {
+  const background = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim();
+  if (!background) return;
+  const tags = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+  const [first, ...rest] = tags;
+  rest.forEach((tag) => tag.remove());
+  const tag = first ?? document.head.appendChild(Object.assign(document.createElement('meta'), { name: 'theme-color' }));
+  tag.removeAttribute('media');
+  tag.content = background;
 }
 
 export function emitSettingsUpdated(settings?: ScoutingSettings): void {
@@ -178,7 +205,7 @@ export function readFavoriteEvents(): string[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .map((value) => String(value || '').trim().toLowerCase())
-      .filter((value, idx, array) => /^\d{4}[a-z0-9]+$/.test(value) && array.indexOf(value) === idx);
+      .filter((value, idx, array) => isEventKeyShape(value) && array.indexOf(value) === idx);
   } catch {
     return [];
   }
@@ -195,7 +222,7 @@ export function saveFavoriteTeams(teamKeys: string[]): string[] {
 export function saveFavoriteEvents(eventKeys: string[]): string[] {
   const normalized = eventKeys
     .map((value) => String(value || '').trim().toLowerCase())
-    .filter((value, idx, array) => /^\d{4}[a-z0-9]+$/.test(value) && array.indexOf(value) === idx);
+    .filter((value, idx, array) => isEventKeyShape(value) && array.indexOf(value) === idx);
   storageSet(FAVORITES_KEYS.events, JSON.stringify(normalized));
   return normalized;
 }

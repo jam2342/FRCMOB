@@ -38,14 +38,12 @@ export function officialMetricsNote(stats: OfficialTeamStats | null | undefined)
     return 'This team has no official results this season yet.';
   }
   const eventCount = stats.events.filter((event) => event.copr).length;
+  // One line: a card subtitle that wrapped to three lines pushed the page down when it arrived.
+  // Which numbers are estimates is on each number's own tag.
   if (stats.copr_matches > 0) {
-    return (
-      `From official results. Fuel and auto are TBA's per-team estimates from ` +
-      `${stats.copr_matches} official matches at ${eventCount} event${eventCount === 1 ? '' : 's'} this season, ` +
-      `so one event's numbers can differ; climb is its official record.`
-    );
+    return `From official results · ${stats.copr_matches} matches at ${eventCount} event${eventCount === 1 ? '' : 's'} this season`;
   }
-  return "From official results. Climb is its official record; TBA's per-team fuel estimates aren't available.";
+  return 'From official results · climb only, no fuel estimates yet';
 }
 
 export function scoreAgainst(value: number | null | undefined, elite: number): number | null {

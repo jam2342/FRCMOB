@@ -9,6 +9,7 @@ from app.services.intel.snapshots import (
     events_in_play,
     idle_snapshot_is_current,
     invalidate_event_snapshots,
+    write_snapshot,
 )
 from tests.conftest import DBTestCase
 
@@ -81,3 +82,18 @@ class IntelSnapshotRefreshScopeTests(DBTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntelSnapshotTeamKeyTests(DBTestCase):
+    def test_lowercased_b_team_key_is_stored_with_its_real_spelling(self):
+        self.db.add(models.Team(team_key="frc100B", team_number=100))
+        self.db.add(models.Event(event_key="2026cacg", name="cacg", year=2026))
+        self.db.commit()
+        for team_key in ("frc100b", "frc99999"):
+            write_snapshot(
+                self.db, snapshot_key=f"intel:v1:team:{team_key}", scope="team",
+                payload={"ok": True}, ttl_sec=60, event_key="2026cacg", team_key=team_key,
+            )
+        self.db.commit()
+        self.assertEqual(self.db.get(models.IntelSnapshot, "intel:v1:team:frc100b").team_key, "frc100B")
+        self.assertIsNone(self.db.get(models.IntelSnapshot, "intel:v1:team:frc99999").team_key)

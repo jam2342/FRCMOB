@@ -76,6 +76,9 @@ import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
 import { loadTeamCenterIntel, loadTeamCenterLogo } from '../features/prefetch/pageRequests';
 import { useWorkspace } from '../features/workspace/useWorkspace';
+import { ScoutNotesCard } from '../features/scoutNotes/ScoutNotesCard';
+import { WhatWeNeedCard } from '../features/forecast/WhatWeNeedCard';
+import { SeasonStoryCard } from '../features/seasonStory/SeasonStoryCard';
 import { MISSING } from '../utils/formatValue';
 
 const BASE_TEAM_TABS = ['overview', 'performance', 'events', 'media'] as const;
@@ -416,6 +419,8 @@ export function TeamCenterPage() {
      delimiter showing, in the middle of the page. They are separate
      messages, so they are separate list items. */
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
+  // A typo in the Team box, not a failed load.
+  const [teamInputError, setTeamInputError] = useState('');
   // The team whose numbers didn't arrive (failed or timed out), so the page can say so
   // where a phone shows it, instead of N/A and 0 that read like real data.
   const [intelFailedFor, setIntelFailedFor] = useState('');
@@ -1236,9 +1241,10 @@ export function TeamCenterPage() {
     const currentSelectionKey = `${selectedTeamKey}|${selectedEventKey || ''}`;
 
     if (!normalizedTeam) {
-      setErrorMessages(['Enter a team number, like 118.']);
+      setTeamInputError('Enter a team number, like 118.');
       return;
     }
+    setTeamInputError('');
 
     setSelectedTeamKey(normalizedTeam);
     setSelectedEventKey(normalizedEvent);
@@ -1298,7 +1304,7 @@ export function TeamCenterPage() {
         />
       ) : null}
       <aside className="center-sidebar">
-        <SurfaceCard title="Team Finder">
+        <SurfaceCard tourId="team-finder" title="Team Finder">
           <form className="center-stack-form" onSubmit={submitTeamAndEvent}>
             <label className="center-label" htmlFor="team-center-team-input">
               Team
@@ -1306,10 +1312,13 @@ export function TeamCenterPage() {
             <input
               id="team-center-team-input"
               value={teamInput}
-              onChange={(event) => setTeamInput(event.target.value)}
+              onChange={(event) => { setTeamInput(event.target.value); setTeamInputError(''); }}
               placeholder={TEAM_NUMBER_PLACEHOLDER}
               className="center-input"
+              aria-invalid={teamInputError ? true : undefined}
+              aria-describedby={teamInputError ? 'team-center-team-error' : undefined}
             />
+            {teamInputError ? <p id="team-center-team-error" className="center-callout warning" role="alert">{teamInputError}</p> : null}
             <label className="center-label" htmlFor="team-center-event-input">
               Event
             </label>
@@ -1408,7 +1417,7 @@ export function TeamCenterPage() {
             />
             {isMobileLayout ? (
               <>
-                <div className="fm-team-hero">
+                <div data-tour="team-hero" className="fm-team-hero">
                   <div className="fm-team-hero-top">
                     {teamLogo?.available && teamLogo.image_url ? (
                       <MediaImage
@@ -1478,7 +1487,7 @@ export function TeamCenterPage() {
                   {/* min-width 0: in the header's flex column this wrapper would otherwise be as wide as
                       all the tabs and push the page sideways on a narrow phone. */}
                   <div ref={heroTabsRef} style={{ minWidth: 0, maxWidth: '100%' }}>
-                  <SegmentedTabs
+                  <SegmentedTabs tourId="team-tabs"
                     motion
                     swipe
                     ariaLabel="Team center tabs"
@@ -1493,7 +1502,7 @@ export function TeamCenterPage() {
                 </div>
               </>
             ) : (
-            <SurfaceCard
+            <SurfaceCard tourId="team-hero"
               title={`Team ${teamNumber}`}
               subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Whole season (not at ${eventDisplayName(skippedEventKey)})` : ''}`}
             >
@@ -1549,7 +1558,7 @@ export function TeamCenterPage() {
               </div>
 
               <div className="center-tabs-header" ref={heroTabsRef}>
-                <SegmentedTabs
+                <SegmentedTabs tourId="team-tabs"
                   motion
                   ariaLabel="Team center tabs"
                   value={activeTab}
@@ -1626,7 +1635,7 @@ export function TeamCenterPage() {
                     </div>
                   </SurfaceCard>
 
-                  <SurfaceCard title="Rating Breakdown" compactable>
+                  <SurfaceCard tourId="team-rating" title="Rating Breakdown" compactable>
                     {/* The rating is these points per match on one season-wide
                         scale: the typical 2026 robot is 50. */}
                     <div className="center-kpi-grid">
@@ -1669,7 +1678,7 @@ export function TeamCenterPage() {
                     ) : null}
                   </SurfaceCard>
 
-                  <SurfaceCard title="Strengths" compactable>
+                  <SurfaceCard tourId="team-strengths" title="Strengths" compactable>
                     {teamRating?.pros?.some((signal) => isRobotSignal(signal.label)) ? (
                       <ul className="center-simple-list">
                         {teamRating.pros.filter((signal) => isRobotSignal(signal.label)).slice(0, isMobileLayout ? 3 : 6).map((signal) => (
@@ -1701,6 +1710,8 @@ export function TeamCenterPage() {
                     )}
                   </SurfaceCard>
                   )}
+
+                  {inWorkspace ? <ScoutNotesCard key={workspaceId ?? 'none'} teamKey={selectedTeamKey} eventKey={selectedEventKey || undefined} /> : null}
 
                   {/* Model internals; on a phone the page is long enough without them. */}
                   {!isMobileLayout ? (
@@ -1762,6 +1773,8 @@ export function TeamCenterPage() {
                     </div>
                     {tbaOverallStatus !== MISSING ? <p className="center-callout muted">{tbaOverallStatus}</p> : null}
                   </SurfaceCard>
+
+                  {selectedEventKey ? <WhatWeNeedCard eventKey={selectedEventKey} teamKey={selectedTeamKey} /> : null}
                 </div>
 
             ) : null}
@@ -1890,6 +1903,7 @@ export function TeamCenterPage() {
 
             {activeTab === 'events' ? (
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
+                  <SeasonStoryCard teamKey={selectedTeamKey} onOpenEvent={openTeamAtEvent} />
                   <RatingHistoryCard teamKey={selectedTeamKey} onOpenEvent={openTeamAtEvent} />
                   <SurfaceCard title="Competitions" compactable>
                     {!teamCompetitions || teamCompetitions.registered_events.length === 0 ? (

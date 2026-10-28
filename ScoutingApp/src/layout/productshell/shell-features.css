@@ -759,7 +759,8 @@
   justify-content: center;
   gap: 16px;
   padding: 80px 20px;
-  animation: uiFadeIn 400ms ease both;
+  /* Most pages are cached and open in well under this; the spinner is for the slow ones. */
+  animation: uiFadeIn 300ms ease 250ms both;
 }
 
 .page-spinner-ring {

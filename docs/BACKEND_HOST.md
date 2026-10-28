@@ -4,7 +4,7 @@ Since 2026-09-24 the backend runs on one OCI VM, not on Container Instances. The
 container instance this replaced was stopped on 2026-04-29, which is why production
 was offline from then until the move. Until 2026-09-28 an RQ worker container ran
 next to it for broadcast-video analysis; that pipeline is retired and the worker is
-gone. Everything scheduled (official-data refresh, ratings, ML training) runs inside
+gone. Everything scheduled (official-data refresh, live ingest, ratings) runs inside
 the backend's own scheduler.
 
 | | |
@@ -120,7 +120,7 @@ dump from `/home/ubuntu/backups`) before touching production.
   added to the dynamic group's matching rule.** New IAM rules take about a minute to apply.
   Restore: `sudo /usr/local/bin/rclone copy oos:frcmob-media-backup/pit_photos <media volume>/pit_photos`.
   The same bucket's `archive/ocir-2026-10-18/` holds the record of the old container-registry
-  images (deleted 2026-10-18): see `docs/OCIR_ARCHIVE_2026-10-18.md`.
+  images (deleted 2026-10-18): see `docs/archive/2026-10/OCIR_ARCHIVE_2026-10-18.md`.
 
 ## If the VM or its disk is lost
 
@@ -142,5 +142,5 @@ ssh -i ~/.ssh/frcmob_oci ubuntu@<ip> 'sudo docker ps; sudo docker logs --tail 50
 ## Why it's slow when it's slow
 
 Queries are local now, so the database is rarely the reason. Remaining costs: external
-APIs (TBA, Statbotics) on cold paths, event ingest (network-bound on TBA), and
+APIs (TBA, FRC Events) on cold paths, event ingest (network-bound on TBA), and
 the network between the user and Phoenix (~50-150 ms per request from most of the US).

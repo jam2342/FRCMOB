@@ -136,6 +136,22 @@ def read_snapshot(
     return payload, age_sec
 
 
+# Snapshot keys are lowercase, but B teams are stored as "frc100B": the team_key column only
+# indexes the row, so it takes the stored spelling (or nothing for an unregistered team)
+# instead of failing the foreign key and the whole event's batch with it.
+def _stored_team_key(db: Session, team_key: str | None) -> str | None:
+    if not team_key:
+        return None
+    if db.get(models.Team, team_key) is not None:
+        return team_key
+    row = (
+        db.query(models.Team.team_key)
+        .filter(func.lower(models.Team.team_key) == team_key.strip().lower())
+        .first()
+    )
+    return row[0] if row else None
+
+
 def write_snapshot(
     db: Session,
     *,
@@ -149,6 +165,7 @@ def write_snapshot(
 ) -> models.IntelSnapshot:
     now = _utc_now()
     expires_at = now + timedelta(seconds=max(20, int(ttl_sec)))
+    team_key = _stored_team_key(db, team_key)
 
     row = db.get(models.IntelSnapshot, snapshot_key)
     if row is None:

@@ -20,6 +20,7 @@ import { SyncStatusCard } from '../features/offline/SyncStatusCard';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, FieldText, Modal } from '../components/ui/primitives';
 import { TeamScoutingCard } from '../features/workspace/TeamScoutingCard';
+import { SeasonStoryCard } from '../features/seasonStory/SeasonStoryCard';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 import { issuedJoinCodeFor, workspaceEndReason } from '../features/workspace/workspaceSession';
 import { TurnstileChallenge } from '../features/workspace/TurnstileChallenge';
@@ -124,7 +125,7 @@ function SetUpTeam() {
 
   return (
     <>
-      <SurfaceCard
+      <SurfaceCard tourId="myteam-intro"
         title="My Team"
         subtitle="A private space for your team's picklists, pit notes and scouting rooms. Events, ratings and predictions stay public for everyone."
         mobileCollapsible={false}
@@ -141,7 +142,7 @@ function SetUpTeam() {
       </SurfaceCard>
 
       <div className="my-team__setup-grid">
-        <SurfaceCard title="Join your team" subtitle="Got a code from your team lead?" mobileCollapsible={false}>
+        <SurfaceCard tourId="myteam-join" title="Join your team" subtitle="Got a code from your team lead?" mobileCollapsible={false}>
           <form className="my-team__form" onSubmit={submitJoin}>
             <FieldText
               label="Join code"
@@ -177,7 +178,7 @@ function SetUpTeam() {
             <Button variant="quiet" size="sm" onClick={() => setShowCreate(true)}>Create a workspace</Button>
           </p>
         ) : (
-        <SurfaceCard title="Create a workspace" subtitle="Starting fresh for your team?" mobileCollapsible={false}>
+        <SurfaceCard tourId="myteam-create" title="Create a workspace" subtitle="Starting fresh for your team?" mobileCollapsible={false}>
           <form className="my-team__form" onSubmit={submitCreate}>
             <FieldText
               label="Workspace name"
@@ -208,8 +209,14 @@ function SetUpTeam() {
             ) : nativeChallenge ? (
               <p className="my-team__note">Create your workspace in a browser to complete the security check, then join here with its code. <a href={shareableAppUrl('/my-team')} target="_blank" rel="noopener noreferrer">Open My Team in a browser</a></p>
             ) : signupPolicy?.required && signupPolicy.site_key ? (
-              <TurnstileChallenge key={challengeAttempt} siteKey={signupPolicy.site_key} onToken={setChallengeToken} />
-            ) : !signupPolicy ? <p className="my-team__note" role="status">Checking workspace availability…</p> : null}
+              <div className="my-team__challenge">
+                <TurnstileChallenge key={challengeAttempt} siteKey={signupPolicy.site_key} onToken={setChallengeToken} />
+              </div>
+            ) : !signupPolicy ? (
+              <div className="my-team__challenge">
+                <p className="my-team__note" role="status">Checking workspace availability…</p>
+              </div>
+            ) : null}
             {error?.form === 'create' ? <p className="center-callout warning" role="alert">{error.text}</p> : null}
             <Button type="submit" variant="primary" fullWidth loading={busy === 'create'} disabled={busy !== null || !canCreate}>
               Create workspace
@@ -373,7 +380,9 @@ function TeamWorkspaceView() {
       {/* What a scout opens this page for: where they're scouting and what's next. */}
       <TeamScoutingCard />
 
-      <SurfaceCard
+      {workspace.frc_team_number ? <SeasonStoryCard teamKey={`frc${workspace.frc_team_number}`} title="Our season" /> : null}
+
+      <SurfaceCard tourId="myteam-workspace"
         title={workspace.name}
         subtitle={
           workspace.frc_team_number
@@ -449,7 +458,7 @@ function TeamWorkspaceView() {
         ) : null}
       </SurfaceCard>
 
-      <SurfaceCard title="Invite scouts" subtitle="Anyone with the code can join this workspace." mobileCollapsible={false}>
+      <SurfaceCard tourId="myteam-invite" title="Invite scouts" subtitle="Anyone with the code can join this workspace." mobileCollapsible={false}>
         <JoinCodePanel
           code={freshCode}
           isLeader={isLeader}
@@ -458,7 +467,7 @@ function TeamWorkspaceView() {
         />
       </SurfaceCard>
 
-      <SurfaceCard
+      <SurfaceCard tourId="myteam-members"
         title={state ? `Members (${members.length})` : 'Members'}
         subtitle={isLeader ? 'Leaders can promote, demote and remove members.' : undefined}
         mobileCollapsible={false}

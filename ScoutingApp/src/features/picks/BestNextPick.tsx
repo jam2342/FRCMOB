@@ -11,11 +11,13 @@ type Props = {
   // The alliance so far: captain first, then the first pick if chosen.
   partners: string[];
   onOpenTeam: (teamKey: string) => void;
+  // Teams already gone (picked by another alliance during selection): left out of the list.
+  exclude?: ReadonlySet<string>;
 };
 
 // Who raises this alliance's chance to beat a strong one here the most. A robot that
 // breaks down now and then counts for less than its average says.
-export function BestNextPick({ eventKey, partners, onOpenTeam }: Props) {
+export function BestNextPick({ eventKey, partners, onOpenTeam, exclude }: Props) {
   const [data, setData] = useState<PickValuesResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const key = partners.join(',');
@@ -39,7 +41,7 @@ export function BestNextPick({ eventKey, partners, onOpenTeam }: Props) {
     : 'Pick a captain above to see who fits best.';
 
   return (
-    <SurfaceCard expandable title={partners.length > 1 ? 'Best Third Pick' : 'Best Next Pick'} subtitle={subtitle}>
+    <SurfaceCard tourId="advisor-best-pick" expandable title={partners.length > 1 ? 'Best Third Pick' : 'Best Next Pick'} subtitle={subtitle}>
       {!partners.length ? <EmptyState compact title="No captain yet" description="Choose the captain (and first pick) in the builder." /> : null}
       {partners.length && !data && !failed ? <SkeletonBlock rows={5} compact /> : null}
       {failed ? <EmptyState compact type="offline" title="Couldn't load pick values" description="Try again in a moment." /> : null}
@@ -69,7 +71,7 @@ export function BestNextPick({ eventKey, partners, onOpenTeam }: Props) {
             { key: 'rating_0_100', label: 'Rating', numeric: true, render: (row) => metric(row.rating_0_100, 1) },
             { key: 'climb_points', label: 'Climb pts', numeric: true, render: (row) => metric(row.climb_points, 1) },
           ]}
-          rows={data.candidates}
+          rows={exclude ? data.candidates.filter((row) => !exclude.has(row.team_key)) : data.candidates}
           rowKey={(row) => row.team_key}
           empty="No candidates left."
         />

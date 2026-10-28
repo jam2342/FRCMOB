@@ -12,6 +12,7 @@ import {
 } from './detector';
 import { type Mat3 } from './homography';
 import { type RawDetection } from './simpleTracker';
+import { useScreenWakeLock } from '../../hooks/useScreenWakeLock';
 
 // Live match recorder: opens the back camera, samples frames at a target rate, runs the
 // in-browser detector on each, and emits a CapturedFrame (timestamp + detections + the
@@ -63,6 +64,7 @@ export function MatchRecorder({
   const [detectorState, setDetectorState] = useState<DetectorState>('idle');
   const [recording, setRecording] = useState(false);
   const busyForParent = recording;
+  useScreenWakeLock(recording);
   const onRecordingChangeRef = useRef(onRecordingChange);
   onRecordingChangeRef.current = onRecordingChange;
   useEffect(() => {

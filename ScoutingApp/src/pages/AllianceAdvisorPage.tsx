@@ -379,7 +379,7 @@ export function AllianceAdvisorPage() {
     <div className={styles.layout}>
 
         {/* ---- Event Selection ---- */}
-        <SurfaceCard
+        <SurfaceCard tourId="advisor-head"
           title={viewTitle(COMPARE_VIEWS, '/compare/alliance-advisor')}
           subtitle="Build an alliance and see who fits it best."
           mobileCollapsible={false}
@@ -411,7 +411,7 @@ export function AllianceAdvisorPage() {
 
         {/* ---- Selection Model Controls ---- */}
         {teamPool.length > 0 ? (
-          <SurfaceCard
+          <SurfaceCard tourId="advisor-selection"
             title="Selection Model"
             subtitle="Simulates alliance selection to predict who gets picked."
           >
@@ -567,7 +567,7 @@ export function AllianceAdvisorPage() {
 
         {/* ---- Alliance Builder (What-If) ---- */}
         {teamPool.length > 0 ? (
-          <SurfaceCard expandable title="Alliance Builder">
+          <SurfaceCard tourId="advisor-builder" expandable title="Alliance Builder">
             <CardBody>
               <div className={styles.paramGrid}>
                 {([0, 1, 2] as const).map((slot) => (

@@ -23,10 +23,19 @@
   stroke: var(--color-on-accent);
 }
 
-.body {
-  fill: var(--color-surface-muted);
-  stroke: var(--color-border-strong);
-  stroke-width: 1.5;
+.body,
+.limb {
+  /* A shade under the head, in either theme. */
+  fill: color-mix(in srgb, var(--color-accent) 80%, var(--color-on-accent));
+}
+
+.joint {
+  fill: color-mix(in srgb, var(--color-accent) 55%, var(--color-on-accent));
+}
+
+.light {
+  fill: var(--color-on-accent);
+  animation: robotGlow 3s ease-in-out infinite;
 }
 
 .bob {
@@ -34,12 +43,13 @@
 }
 
 .eyes {
-  transform-origin: 40px 38px;
+  transform-origin: 48px 34px;
   animation: robotBlink 4.5s infinite;
 }
 
 .arm {
-  transform-origin: 62px 46px;
+  /* Pivots at the shoulder, where the arm meets the body. */
+  transform-origin: 73.5px 60px;
   animation: robotWave 3.2s ease-in-out infinite;
 }
 
@@ -57,6 +67,12 @@
   }
   97% {
     transform: scaleY(0.1);
+  }
+}
+
+@keyframes robotGlow {
+  50% {
+    opacity: 0.55;
   }
 }
 
@@ -80,7 +96,8 @@
 @media (prefers-reduced-motion: reduce) {
   .bob,
   .eyes,
-  .arm {
+  .arm,
+  .light {
     animation: none;
   }
 }

@@ -35,6 +35,8 @@ _WRITE_PATH_ADMIN_EXEMPT_PREFIXES = (
     # trust model as scouting rooms. Still blocked in public readonly mode.
     "/picklists",
     "/api/picklists",
+    "/strategy-boards",
+    "/api/strategy-boards",
     "/pit-scouting",
     "/api/pit-scouting",
     "/push",
@@ -89,6 +91,62 @@ def _safe_compare_secret(provided: str, expected: str) -> bool:
         return False
     return secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
 
+# Every admin-key check counts toward one site-wide failure budget. Per-caller
+# limits don't work behind the Vercel rewrite (every visitor arrives from Vercel's
+# addresses), and the raw key is accepted on every admin route, not just the login.
+# Once the budget is spent, no key is accepted until the window rolls over; signed
+# admin sessions keep working, so an attacker can't lock out a signed-in operator.
+ADMIN_KEY_FAILURE_BUDGET = 20
+ADMIN_KEY_FAILURE_WINDOW_SEC = 900
+_ADMIN_KEY_FAILURE_KEY = "security:admin_key_failures:"
+
+
+def _admin_key_failure_redis():
+    from app.services.cache import get_cache
+
+    return get_cache().redis_client
+
+
+def _admin_key_window(now: float | None = None) -> str:
+    return _ADMIN_KEY_FAILURE_KEY + str(int((time.time() if now is None else now) // ADMIN_KEY_FAILURE_WINDOW_SEC))
+
+
+def _admin_key_guesses_exhausted() -> bool:
+    client = _admin_key_failure_redis()
+    if client is None:
+        return False
+    try:
+        return int(client.get(_admin_key_window()) or 0) >= ADMIN_KEY_FAILURE_BUDGET
+    except Exception:
+        logger.warning("admin key failure budget unavailable", exc_info=True)
+        return False
+
+
+def _record_admin_key_failure() -> None:
+    client = _admin_key_failure_redis()
+    if client is None:
+        return
+    key = _admin_key_window()
+    try:
+        count = int(client.incr(key))
+        if count == 1:
+            client.expire(key, ADMIN_KEY_FAILURE_WINDOW_SEC * 2)
+        if count == ADMIN_KEY_FAILURE_BUDGET:
+            logger.warning("security.admin_key_failure_budget_reached window=%s", key)
+    except Exception:
+        logger.warning("admin key failure budget unavailable", exc_info=True)
+
+
+def _admin_key_matches(provided: str, expected: str) -> bool:
+    if not provided or not expected:
+        return False
+    if _admin_key_guesses_exhausted():
+        return False
+    if _safe_compare_secret(provided, expected):
+        return True
+    _record_admin_key_failure()
+    return False
+
 def _secret_to_bytes(value: str | None) -> bytes:
     token = str(value or "").strip()
     if not token:
@@ -115,33 +173,48 @@ def _token_secret_bytes() -> bytes:
 
 # Pit photos load through <img>, which can't send the workspace header, so the API
 # hands its members expiring signed URLs. Expiry is rounded to the day so a URL stays
-# the same (and cacheable, offline included) for a day at a time.
+# the same (and cacheable, offline included) for a day at a time. Each URL names the
+# member it was issued to, and serving it checks that member is still on the team:
+# removing a scout cuts off their photo links at once, not when the links expire.
 MEDIA_URL_TTL_DAYS = 8
 
 
-def _media_signature(path: str, expires_unix: int) -> str:
+def _media_signature(path: str, expires_unix: int, member_id: int) -> str:
     secret = _token_secret_bytes()
     if not secret:
         return ""
-    return hmac.new(secret, f"media|{path}|{expires_unix}".encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    message = f"media|{path}|{expires_unix}|m{int(member_id)}"
+    return hmac.new(secret, message.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
 
 
-def sign_media_path(path: str, *, now: float | None = None) -> str:
+def sign_media_path(path: str, *, member_id: int, now: float | None = None) -> str:
     day = int((time.time() if now is None else now) // 86400)
     expires_unix = (day + MEDIA_URL_TTL_DAYS) * 86400
-    signature = _media_signature(path, expires_unix)
-    return f"{path}?exp={expires_unix}&sig={signature}" if signature else path
+    signature = _media_signature(path, expires_unix, member_id)
+    return f"{path}?exp={expires_unix}&m={int(member_id)}&sig={signature}" if signature else path
 
 
-def media_signature_valid(path: str, expires: str | None, signature: str | None, *, now: float | None = None) -> bool:
+def media_signature_member(
+    path: str,
+    expires: str | None,
+    member: str | None,
+    signature: str | None,
+    *,
+    now: float | None = None,
+) -> int | None:
+    # The member a valid link was issued to, or None. The caller still has to check
+    # that member hasn't been removed since.
     try:
         expires_unix = int(str(expires or ""))
+        member_id = int(str(member or ""))
     except ValueError:
-        return False
+        return None
     if expires_unix < (time.time() if now is None else now):
-        return False
-    expected = _media_signature(path, expires_unix)
-    return bool(expected) and hmac.compare_digest(expected, str(signature or ""))
+        return None
+    expected = _media_signature(path, expires_unix, member_id)
+    if expected and hmac.compare_digest(expected, str(signature or "")):
+        return member_id
+    return None
 
 
 def _signed_payload_token(payload: dict[str, Any]) -> str:
@@ -340,10 +413,7 @@ def admin_api_key_authorized(candidate_key: str) -> bool:
     expected = str(settings.security.admin_api_key or "").strip()
     if not expected:
         return not bool(settings.is_production_like)
-    provided = str(candidate_key or "").strip()
-    if provided and _safe_compare_secret(provided, expected):
-        return True
-    return False
+    return _admin_key_matches(str(candidate_key or "").strip(), expected)
 
 def request_has_explicit_admin_credential(request: Request) -> bool:
     # Proof of admin: a valid signed session token, or an API key matching the
@@ -356,8 +426,7 @@ def request_has_explicit_admin_credential(request: Request) -> bool:
     if not expected:
         return False
     header_name = str(settings.security.admin_api_header or "X-Admin-Key").strip() or "X-Admin-Key"
-    provided = str(request.headers.get(header_name) or "").strip()
-    return bool(provided and _safe_compare_secret(provided, expected))
+    return _admin_key_matches(str(request.headers.get(header_name) or "").strip(), expected)
 
 def request_has_admin_access(request: Request) -> bool:
     if not bool(settings.security.enforce_admin_auth_for_writes):

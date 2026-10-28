@@ -8,7 +8,7 @@ ultralytics>=8.4.177,<9.0.0
 torch==2.14.1
 lap>=0.5.13
 # Label review and audit tools (scripts/audit_labels.py).
-pillow>=12.3.0
+pillow>=13.0.0
 # tests/on_device_cv_reference.py (the Python twin of the in-browser optical-flow
 # stabiliser) and scripts/on_device_benchmark_detections.py.
 opencv-python-headless>=5.0.0.93,<6.0

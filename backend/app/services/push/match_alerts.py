@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.db import models
 from app.services.events.match_times import refresh_match_times
 from app.services.push.sender import push_configured, send_web_push
-from app.services.push.subscriptions import purge_expired_subscriptions
+from app.services.push.subscriptions import purge_expired_subscriptions, subscription_ceiling
 from app.tba.client import TBAClient
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ def run_match_alert_tick(db: Session) -> dict[str, Any]:
         select(models.PushSubscription).where(
             models.PushSubscription.enabled.is_(True),
             models.PushSubscription.event_key.in_(event_keys),
-        ).order_by(models.PushSubscription.id).limit(max(0, int(settings.push_subscriptions_max_total)))
+        ).order_by(models.PushSubscription.id).limit(subscription_ceiling())
     ).scalars().all()
     if not subs:
         db.commit()

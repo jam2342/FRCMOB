@@ -13,10 +13,10 @@ export type ShareCardMatch = {
   siteLabel: string;
 };
 
-const W = 1080;
-const H = 1350;
-const FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
-const COLORS = {
+export const W = 1080;
+export const H = 1350;
+export const FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
+export const COLORS = {
   bg: '#151413',
   surface: '#252422',
   border: '#33322e',
@@ -30,7 +30,7 @@ const COLORS = {
   blueFill: 'rgba(92, 141, 207, 0.30)',
 };
 
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, weight: number, startSize: number): number {
+export function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, weight: number, startSize: number): number {
   let size = startSize;
   ctx.font = `${weight} ${size}px ${FONT}`;
   while (size > 20 && ctx.measureText(text).width > maxWidth) {
@@ -48,12 +48,7 @@ export function winnerLine(match: Pick<ShareCardMatch, 'winner'>): string {
 }
 
 export async function renderShareCard(match: ShareCardMatch): Promise<Blob> {
-  // The page's font may not be loaded at these weights yet; a fallback font would still draw.
-  try {
-    await Promise.all([document.fonts.load(`700 120px ${FONT}`), document.fonts.load(`500 40px ${FONT}`)]);
-  } catch {
-    // Fall back to the system font.
-  }
+  await loadCardFonts();
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
@@ -125,8 +120,14 @@ export async function renderShareCard(match: ShareCardMatch): Promise<Blob> {
   drawAlliance(pad, 'RED', match.red, COLORS.red);
   drawAlliance(pad + boxW + gap, 'BLUE', match.blue, COLORS.blue);
 
-  // Footer: the wordmark and where to find it.
+  drawFooter(ctx, pad, match.siteLabel);
+  return canvasPng(canvas);
+}
+
+// Footer: the wordmark and where to find it. Every shared picture ends the same way.
+export function drawFooter(ctx: CanvasRenderingContext2D, pad: number, siteLabel: string): void {
   ctx.strokeStyle = COLORS.border;
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(pad, 1180);
   ctx.lineTo(W - pad, 1180);
@@ -140,9 +141,20 @@ export async function renderShareCard(match: ShareCardMatch): Promise<Blob> {
   ctx.font = `500 30px ${FONT}`;
   ctx.fillStyle = COLORS.muted;
   ctx.textAlign = 'right';
-  ctx.fillText(match.siteLabel, W - pad, 1258);
+  ctx.fillText(siteLabel, W - pad, 1258);
   ctx.textAlign = 'left';
+}
 
+export async function loadCardFonts(): Promise<void> {
+  // The page's font may not be loaded at these weights yet; a fallback font would still draw.
+  try {
+    await Promise.all([document.fonts.load(`700 120px ${FONT}`), document.fonts.load(`500 40px ${FONT}`)]);
+  } catch {
+    // Fall back to the system font.
+  }
+}
+
+export function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not make the picture.'))), 'image/png');
   });

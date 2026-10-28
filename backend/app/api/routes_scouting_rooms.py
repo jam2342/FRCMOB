@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from functools import partial
 from datetime import datetime, timezone
 import logging
 import math
@@ -9,6 +10,7 @@ import re
 import secrets
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -34,6 +36,7 @@ from app.services.scouting_rooms.team import (
     apply_assignment_changes, load_team_room, room_assignments, team_snapshot,
 )
 from app.services.scouting_rooms.bus import scouting_room_bus
+from app.services.scouting_rooms.note_tags import SCOUT_NOTE_TAG_SET
 from app.services.scouting_rooms.realtime import scouting_room_hub
 from app.services.utils import _clamp, pg_sqlstate_code as _pg_sqlstate_shared
 from app.services.workspaces import (
@@ -54,6 +57,12 @@ _ROOM_REALTIME_TIMEOUT_SEC = 1.5
 # A silent socket still gets its membership re-checked this often, so removal
 # holds even if the cross-worker disconnect message is lost.
 _ROOM_MEMBERSHIP_RECHECK_SEC = 30.0
+# Live flags ("Broke down", tapped mid-match) go to everyone in the room at once and are never
+# stored; the tag is saved with the report. A scout taps a handful a match: this many per
+# minute per socket is generous, and stops one socket flooding the room.
+_LIVE_FLAGS_PER_MINUTE = 20
+_LIVE_FLAG_TEAM_RE = re.compile(r"^frc\d{1,5}$")
+_LIVE_FLAG_MATCH_RE = re.compile(r"^[0-9]{4}[a-z0-9]{1,32}_[a-z0-9]{1,16}$")
 
 def _pg_sqlstate(exc: Exception) -> str | None:
     return _pg_sqlstate_shared(exc)
@@ -237,6 +246,13 @@ def _float_or_none(value: Any) -> float | None:
 def _room_ws_path(room_key: str) -> str:
     return f"/scouting/rooms/{room_key}/ws"
 
+def _on_loop(fn, *args, **kwargs):
+    # The HTTP room routes are plain functions, so FastAPI runs their database work (and
+    # the workspace row lock they wait on) in its threadpool instead of stalling every
+    # socket on the worker. The room hub and the Redis bus live on the event loop, so
+    # their calls hop back to it.
+    return anyio.from_thread.run(partial(fn, *args, **kwargs))
+
 async def _broadcast_room_message(room_key: str, payload: dict[str, Any]) -> None:
     try:
         await scouting_room_hub.broadcast(room_key, payload)
@@ -309,6 +325,22 @@ async def _safe_touch_http_presence(
         )
         return list(fallback_presence or [])
 
+def _presence_leader(room_key: str, members: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    with SessionLocal() as db:
+        try:
+            room = db.get(models.ScoutingRoom, room_key)
+            if room is None:
+                return None, None
+            secondary_leaders = _load_room_secondary_leader_profiles(db, room_key)
+            return _resolve_room_leader(room, members, secondary_leader_profiles=secondary_leaders)
+        except Exception as exc:
+            logger.warning(
+                "Failed to compute scouting room leader while broadcasting presence for %s: %s",
+                room_key,
+                exc,
+            )
+            return None, None
+
 async def _broadcast_presence_message(
     room_key: str, presence: list[dict[str, Any]] | None = None
 ) -> None:
@@ -316,27 +348,7 @@ async def _broadcast_presence_message(
         room_key,
         context="presence broadcast",
     )
-    leader_profile = None
-    leader_source = None
-    db = SessionLocal()
-    try:
-        try:
-            room = db.get(models.ScoutingRoom, room_key)
-            if room is not None:
-                secondary_leaders = _load_room_secondary_leader_profiles(db, room_key)
-                leader_profile, leader_source = _resolve_room_leader(
-                    room,
-                    members,
-                    secondary_leader_profiles=secondary_leaders,
-                )
-        except Exception as exc:
-            logger.warning(
-                "Failed to compute scouting room leader while broadcasting presence for %s: %s",
-                room_key,
-                exc,
-            )
-    finally:
-        db.close()
+    leader_profile, leader_source = await asyncio.to_thread(_presence_leader, room_key, members)
     await _broadcast_room_message(
         room_key,
         {
@@ -962,7 +974,7 @@ def _current_actor(db: Session, actor: WorkspaceActor) -> WorkspaceActor:
         raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
     return actor
 
-async def _resolve_room_action_actor_role(
+def _resolve_room_action_actor_role(
     room: models.ScoutingRoom,
     actor_profile: str,
     *,
@@ -1134,7 +1146,24 @@ def _generate_room_key(db: Session) -> str:
             ) from exc
         raise
 
-async def disconnect_member_from_workspace_rooms(db: Session, workspace_id: int, scout_profile: str) -> None:
+async def _disconnect_profile_in_room(room_key: str, profile: str) -> None:
+    with suppress(Exception):
+        _removed, presence = await scouting_room_hub.disconnect_scout_profile(
+            room_key, profile, close_code=4401, reason="Removed from the team workspace."
+        )
+        await scouting_room_bus.publish(
+            room_key,
+            {
+                "type": _ROOM_BUS_CONTROL_DISCONNECT_PROFILE,
+                "room_key": room_key,
+                "scout_profile": profile,
+                "reason": "Removed from the team workspace.",
+                "close_code": 4401,
+            },
+        )
+        await _broadcast_presence_message(room_key, presence)
+
+def disconnect_member_from_workspace_rooms(db: Session, workspace_id: int, scout_profile: str) -> None:
     # Called when a member is removed or leaves: close their sockets in every room
     # of the workspace, on this worker and (through the bus) on the others.
     profile = _normalize_scout_profile(scout_profile)
@@ -1144,21 +1173,7 @@ async def disconnect_member_from_workspace_rooms(db: Session, workspace_id: int,
         select(models.ScoutingRoom.room_key).where(models.ScoutingRoom.workspace_id == workspace_id)
     ).scalars().all()
     for room_key in room_keys:
-        with suppress(Exception):
-            _removed, presence = await scouting_room_hub.disconnect_scout_profile(
-                room_key, profile, close_code=4401, reason="Removed from the team workspace."
-            )
-            await scouting_room_bus.publish(
-                room_key,
-                {
-                    "type": _ROOM_BUS_CONTROL_DISCONNECT_PROFILE,
-                    "room_key": room_key,
-                    "scout_profile": profile,
-                    "reason": "Removed from the team workspace.",
-                    "close_code": 4401,
-                },
-            )
-            await _broadcast_presence_message(room_key, presence)
+        _on_loop(_disconnect_profile_in_room, room_key, profile)
 
 def release_scout_room_roles(db: Session, workspace_id: int, scout_name: str) -> None:
     # Room ownership and leadership are held by name. When a member leaves or is
@@ -1279,7 +1294,7 @@ class TeamAssignmentRequest(BaseModel):
 
 
 @router.post("/team")
-async def create_or_join_team_room(
+def create_or_join_team_room(
     request: TeamRoomRequest, http_request: Request, db: Session = Depends(get_db),
 ):
     require_write_access("Joining your team's scouting room")
@@ -1316,7 +1331,8 @@ async def create_or_join_team_room(
         room_key=room.room_key, scout_profile=actor.member.display_name, role=role,
         workspace_member_id=actor.member.id,
     )
-    await _safe_touch_http_presence(
+    _on_loop(
+        _safe_touch_http_presence,
         room.room_key, scout_profile=actor.member.display_name,
         client_id=request.client_id, context="join team room",
     )
@@ -1338,7 +1354,7 @@ def get_team_room(event_key: str, http_request: Request, db: Session = Depends(g
 
 
 @router.put("/team/{event_key}/assignments")
-async def update_team_assignments(
+def update_team_assignments(
     event_key: str, request: TeamAssignmentRequest, http_request: Request,
     db: Session = Depends(get_db),
 ):
@@ -1349,7 +1365,7 @@ async def update_team_assignments(
     room = load_team_room(db, actor.workspace_id, _normalize_event_key(event_key))
     apply_assignment_changes(db, actor, room, request.changes)
     snapshot = team_snapshot(db, actor, room)
-    await _broadcast_room_message(room.room_key, {
+    _on_loop(_broadcast_room_message, room.room_key, {
         "type": "assignments_replaced", "room_key": room.room_key,
         "event_key": room.event_key,
         "assignments": [_serialize_assignment(row) for row in room_assignments(db, room)],
@@ -1360,7 +1376,7 @@ async def update_team_assignments(
 
 
 @router.post("")
-async def create_or_join_room(
+def create_or_join_room(
     request: RoomCreateRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -1412,7 +1428,7 @@ async def create_or_join_room(
             )
         _touch_room_activity(db, room, commit=True)
         room = _load_room_or_404(db, room_key, actor.workspace_id)
-        presence = await _safe_presence_snapshot(room_key, context="create or join room")
+        presence = _on_loop(_safe_presence_snapshot, room_key, context="create or join room")
         secondary_leaders = _load_room_secondary_leader_profiles(db, room_key)
     except HTTPException:
         raise
@@ -1429,7 +1445,8 @@ async def create_or_join_room(
         ) from exc
     # The room name is the authenticated member's workspace name, so a presence
     # under it is this member (another device or a recent visit), never a rival.
-    presence = await _safe_touch_http_presence(
+    presence = _on_loop(
+        _safe_touch_http_presence,
         room.room_key,
         scout_profile=scout_profile,
         client_id=normalized_client_id,
@@ -1484,7 +1501,7 @@ async def create_or_join_room(
     }
 
 @router.get("/{room_key}")
-async def get_room_state(
+def get_room_state(
     room_key: str,
     http_request: Request,
     history_limit: int = Query(default=200, ge=1, le=500),
@@ -1499,7 +1516,7 @@ async def get_room_state(
         raise HTTPException(status_code=400, detail="Invalid room key")
 
     room = _load_room_or_404(db, normalized, actor.workspace_id)
-    presence = await _safe_presence_snapshot(normalized, context="get room state")
+    presence = _on_loop(_safe_presence_snapshot, normalized, context="get room state")
     try:
         secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
     except (ProgrammingError, OperationalError, DatabaseError, IntegrityError) as exc:
@@ -1528,7 +1545,8 @@ async def get_room_state(
                     require_write=True,
                 )
             ):
-                presence = await _safe_touch_http_presence(
+                presence = _on_loop(
+                    _safe_touch_http_presence,
                     room.room_key,
                     scout_profile=normalized_profile,
                     client_id=normalized_client_id,
@@ -1651,7 +1669,7 @@ def get_room_entries(
     }
 
 @router.post("/{room_key}/leaders")
-async def add_room_secondary_leader(
+def add_room_secondary_leader(
     room_key: str,
     request: RoomLeaderUpdateRequest,
     http_request: Request,
@@ -1678,7 +1696,7 @@ async def add_room_secondary_leader(
 
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
     actor = _current_actor(db, actor)
-    actor_role = await _resolve_room_action_actor_role(
+    actor_role = _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
@@ -1708,9 +1726,10 @@ async def add_room_secondary_leader(
         added_by_scout_profile=actor_profile,
     )
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
-    presence = await _safe_presence_snapshot(normalized, context="leader promote broadcast")
+    presence = _on_loop(_safe_presence_snapshot, normalized, context="leader promote broadcast")
 
-    await _broadcast_room_message(
+    _on_loop(
+        _broadcast_room_message,
         normalized,
         {
             "type": "secondary_leaders_updated",
@@ -1722,7 +1741,7 @@ async def add_room_secondary_leader(
             "server_time": datetime.now(timezone.utc).isoformat(),
         },
     )
-    await _broadcast_presence_message(normalized, presence)
+    _on_loop(_broadcast_presence_message, normalized, presence)
     return {
         "ok": True,
         "room_key": normalized,
@@ -1732,7 +1751,7 @@ async def add_room_secondary_leader(
     }
 
 @router.post("/{room_key}/leaders/remove")
-async def remove_room_secondary_leader(
+def remove_room_secondary_leader(
     room_key: str,
     request: RoomLeaderUpdateRequest,
     http_request: Request,
@@ -1759,7 +1778,7 @@ async def remove_room_secondary_leader(
 
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
     actor = _current_actor(db, actor)
-    actor_role = await _resolve_room_action_actor_role(
+    actor_role = _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
@@ -1781,10 +1800,11 @@ async def remove_room_secondary_leader(
         scout_profile=target_profile,
     )
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
-    presence = await _safe_presence_snapshot(normalized, context="leader demote broadcast")
+    presence = _on_loop(_safe_presence_snapshot, normalized, context="leader demote broadcast")
 
     if removed:
-        await _broadcast_room_message(
+        _on_loop(
+            _broadcast_room_message,
             normalized,
             {
                 "type": "secondary_leaders_updated",
@@ -1796,7 +1816,7 @@ async def remove_room_secondary_leader(
                 "server_time": datetime.now(timezone.utc).isoformat(),
             },
         )
-    await _broadcast_presence_message(normalized, presence)
+    _on_loop(_broadcast_presence_message, normalized, presence)
     return {
         "ok": True,
         "room_key": normalized,
@@ -1806,7 +1826,7 @@ async def remove_room_secondary_leader(
     }
 
 @router.post("/{room_key}/kick")
-async def kick_room_member(
+def kick_room_member(
     room_key: str,
     request: RoomKickRequest,
     http_request: Request,
@@ -1832,7 +1852,7 @@ async def kick_room_member(
         raise HTTPException(status_code=403, detail="Kick member requires a bound scout profile.")
     secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
     actor = _current_actor(db, actor)
-    actor_role = await _resolve_room_action_actor_role(
+    actor_role = _resolve_room_action_actor_role(
         room,
         actor_profile,
         secondary_leader_profiles=secondary_leaders,
@@ -1845,7 +1865,7 @@ async def kick_room_member(
             detail="Only room leaders can kick members.",
         )
 
-    presence_before = await _safe_presence_snapshot(normalized, context="kick member target lookup")
+    presence_before = _on_loop(_safe_presence_snapshot, normalized, context="kick member target lookup")
 
     target_profile = _normalize_scout_profile(request.scout_profile)
     if not target_profile:
@@ -1873,13 +1893,15 @@ async def kick_room_member(
     target_was_present = bool(target_member is not None)
     kick_reason = f"Removed by room leader {actor_profile}."
 
-    removed_connections, presence_after = await scouting_room_hub.disconnect_scout_profile(
+    removed_connections, presence_after = _on_loop(
+        scouting_room_hub.disconnect_scout_profile,
         normalized,
         resolved_target_profile,
         reason=kick_reason,
     )
     if target_was_present:
-        await scouting_room_bus.publish(
+        _on_loop(
+            scouting_room_bus.publish,
             normalized,
             {
                 "type": _ROOM_BUS_CONTROL_DISCONNECT_PROFILE,
@@ -1893,7 +1915,8 @@ async def kick_room_member(
 
     if removed_connections > 0 or target_was_present:
         _touch_room_activity(db, room, commit=True)
-        await _broadcast_room_message(
+        _on_loop(
+            _broadcast_room_message,
             normalized,
             {
                 "type": "member_kicked",
@@ -1904,7 +1927,7 @@ async def kick_room_member(
                 "server_time": datetime.now(timezone.utc).isoformat(),
             },
         )
-    await _broadcast_presence_message(normalized, presence_after)
+    _on_loop(_broadcast_presence_message, normalized, presence_after)
 
     return {
         "ok": True,
@@ -1917,7 +1940,7 @@ async def kick_room_member(
     }
 
 @router.post("/{room_key}/entries")
-async def save_room_entry(
+def save_room_entry(
     room_key: str,
     request: RoomEntryCreateRequest,
     http_request: Request,
@@ -1949,7 +1972,8 @@ async def save_room_entry(
     )
     serialized = _serialize_entry(row)
 
-    await _broadcast_room_message(
+    _on_loop(
+        _broadcast_room_message,
         normalized,
         {
             "type": "entry_saved",
@@ -1967,6 +1991,149 @@ async def save_room_entry(
         "created": created,
         "entry": serialized,
     }
+
+def _ws_db_call(fn, *args, **kwargs):
+    with SessionLocal() as db:
+        return fn(db, *args, **kwargs)
+
+
+async def _ws_db(fn, *args, **kwargs):
+    # A room socket lives for hours. A session held across its awaits pinned one
+    # pooled connection (and any row lock it took) per scout, and ~60 open sockets
+    # starved every request. Each step gets its own short session, run off the
+    # event loop so a slow query can't stall every other socket on the worker.
+    return await asyncio.to_thread(_ws_db_call, fn, *args, **kwargs)
+
+
+def _ws_actor(db: Session, member_id: int) -> WorkspaceActor:
+    member = db.get(models.TeamWorkspaceMember, member_id)
+    workspace = db.get(models.TeamWorkspace, member.workspace_id) if member is not None else None
+    if member is None or member.removed_at is not None or workspace is None:
+        raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
+    return WorkspaceActor(workspace=workspace, member=member)
+
+
+def _ws_open_room(
+    db: Session,
+    websocket: WebSocket,
+    *,
+    room_key: str,
+    scout_profile: str,
+    room_access_payload: dict[str, Any] | None,
+    event_key: str | None,
+    title: str | None,
+) -> tuple[int, int]:
+    actor = require_workspace_actor(websocket, db)
+    if scout_profile != _member_scout_profile(actor) or not _room_access_allows_actor(
+        room_access_payload, actor, room_key=room_key,
+    ):
+        raise HTTPException(status_code=403, detail="Join the room again with your current workspace name.")
+    room = _load_room_or_404(db, room_key, actor.workspace_id)
+    room = _sync_room_metadata_for_join(
+        db,
+        room=room,
+        event_key=event_key,
+        title=title,
+        scout_profile=scout_profile,
+        commit=True,
+        can_claim_owner=actor.is_leader,
+    )
+    _touch_room_activity(db, room, commit=True)
+    return int(actor.member.id), actor.workspace_id
+
+
+def _ws_check_access(
+    db: Session,
+    *,
+    member_id: int,
+    workspace_token: str,
+    room_access_token: str,
+    room_key: str,
+    scout_profile: str,
+) -> None:
+    if parse_workspace_access_token(workspace_token) is None:
+        raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
+    actor = _ws_actor(db, member_id)
+    if scout_profile != _member_scout_profile(actor) or not _room_access_allows_actor(
+        parse_room_access_token(room_access_token), actor, room_key=room_key,
+    ):
+        raise HTTPException(status_code=403, detail="Your room access changed or expired. Join the room again.")
+
+
+def _ws_snapshot(
+    db: Session,
+    *,
+    member_id: int,
+    room_key: str,
+    scout_profile: str,
+    presence: list[dict[str, Any]],
+    history_limit: int,
+) -> dict[str, Any]:
+    actor = _ws_actor(db, member_id)
+    room = _load_room_or_404(db, room_key, actor.workspace_id)
+    secondary_leaders = _load_room_secondary_leader_profiles(db, room_key)
+    room_role = _resolve_room_role_with_presence(
+        room,
+        scout_profile,
+        presence=presence,
+        secondary_leader_profiles=secondary_leaders,
+        workspace_leader=actor.is_leader,
+    )
+    return {
+        "type": "snapshot",
+        "room": _serialize_room(
+            room,
+            presence=presence,
+            room_role=room_role,
+            secondary_leader_scout_profiles=secondary_leaders,
+        ),
+        "entries": [_serialize_entry(row) for row in _load_room_entries(db, room_key, limit=history_limit)],
+        "assignments": [
+            _serialize_assignment(row)
+            for row in _load_room_assignments(db, room_key, event_key=room.event_key, limit=1500)
+        ],
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _ws_save_entry(
+    db: Session,
+    *,
+    member_id: int,
+    workspace_id: int,
+    room_key: str,
+    entry: dict[str, Any],
+    scout_profile: str,
+    client_entry_id: str | None,
+) -> tuple[dict[str, Any], bool]:
+    row, created = _persist_room_entry(
+        db,
+        room=_load_room_or_404(db, room_key, workspace_id),
+        entry_payload=entry,
+        scout_profile=scout_profile,
+        author_member_id=member_id,
+        client_entry_id=client_entry_id,
+    )
+    return _serialize_entry(row), created
+
+
+def _live_flag_message(payload: dict[str, Any], *, room_key: str, scout_profile: str) -> dict[str, Any] | None:
+    tag = str(payload.get("tag") or "").strip().lower()
+    team_key = str(payload.get("team_key") or "").strip().lower()
+    match_key = str(payload.get("match_key") or "").strip().lower()
+    if tag not in SCOUT_NOTE_TAG_SET or not _LIVE_FLAG_TEAM_RE.match(team_key) or not _LIVE_FLAG_MATCH_RE.match(match_key):
+        return None
+    return {
+        "type": "live_flag",
+        "room_key": room_key,
+        # The socket's own identity, never one the client claims.
+        "scout_profile": scout_profile,
+        "team_key": team_key,
+        "match_key": match_key,
+        "tag": tag,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }
+
 
 @router.websocket("/{room_key}/ws")
 async def scouting_room_ws(websocket: WebSocket, room_key: str):
@@ -2006,25 +2173,18 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
     history_limit = int(websocket.query_params.get("history_limit") or 200)
     history_limit = max(1, min(history_limit, 500))
 
-    db = SessionLocal()
+    workspace_token = workspace_access_token_from_request(websocket)
+    member_id: int | None = None
     try:
-        actor = require_workspace_actor(websocket, db)
-        if scout_profile != _member_scout_profile(actor) or not _room_access_allows_actor(
-            room_access_payload, actor, room_key=normalized,
-        ):
-            raise HTTPException(status_code=403, detail="Join the room again with your current workspace name.")
-        room = _load_room_or_404(db, normalized, actor.workspace_id)
-        room = _sync_room_metadata_for_join(
-            db,
-            room=room,
+        member_id, workspace_id = await _ws_db(
+            _ws_open_room,
+            websocket,
+            room_key=normalized,
+            scout_profile=scout_profile,
+            room_access_payload=room_access_payload,
             event_key=event_key,
             title=title,
-            scout_profile=scout_profile,
-            commit=True,
-            can_claim_owner=actor.is_leader,
         )
-        _touch_room_activity(db, room, commit=True)
-        room = _load_room_or_404(db, normalized, actor.workspace_id)
         presence_before = await _safe_clear_http_presence(normalized, scout_profile)
         if _presence_connections_for_profile(presence_before, scout_profile) > 0:
             removed_connections, presence_after_replace = await scouting_room_hub.disconnect_scout_profile(
@@ -2057,41 +2217,24 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                 )
                 return
             await _broadcast_presence_message(normalized, presence_after_replace)
-        entries = [_serialize_entry(row) for row in _load_room_entries(db, normalized, limit=history_limit)]
-        assignments = [
-            _serialize_assignment(row)
-            for row in _load_room_assignments(db, normalized, event_key=room.event_key, limit=1500)
-        ]
-        secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
         presence = await scouting_room_hub.connect(
             normalized,
             websocket,
             scout_profile=scout_profile,
             client_id=client_id,
         )
-        room_role = _resolve_room_role_with_presence(
-            room,
-            scout_profile,
-            presence=presence,
-            secondary_leader_profiles=secondary_leaders,
-            workspace_leader=actor.is_leader,
-        )
-
         await websocket.send_json(
-            {
-                "type": "snapshot",
-                "room": _serialize_room(
-                    room,
-                    presence=presence,
-                    room_role=room_role,
-                    secondary_leader_scout_profiles=secondary_leaders,
-                ),
-                "entries": entries,
-                "assignments": assignments,
-                "server_time": datetime.now(timezone.utc).isoformat(),
-            }
+            await _ws_db(
+                _ws_snapshot,
+                member_id=member_id,
+                room_key=normalized,
+                scout_profile=scout_profile,
+                presence=presence,
+                history_limit=history_limit,
+            )
         )
         await _broadcast_presence_message(normalized, presence)
+        live_flag_times: list[float] = []
 
         while True:
             try:
@@ -2100,15 +2243,14 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                 payload = None
             # On every message and every quiet interval: a removed member's socket
             # closes even if it only listens.
-            db.refresh(actor.member)
-            if actor.member.removed_at is not None or parse_workspace_access_token(
-                workspace_access_token_from_request(websocket)
-            ) is None:
-                raise HTTPException(status_code=401, detail=WORKSPACE_REVOKED_DETAIL)
-            if scout_profile != _member_scout_profile(actor) or not _room_access_allows_actor(
-                parse_room_access_token(room_access_token), actor, room_key=normalized,
-            ):
-                raise HTTPException(status_code=403, detail="Your room access changed or expired. Join the room again.")
+            await _ws_db(
+                _ws_check_access,
+                member_id=member_id,
+                workspace_token=workspace_token,
+                room_access_token=room_access_token,
+                room_key=normalized,
+                scout_profile=scout_profile,
+            )
             if payload is None:
                 continue
             if not isinstance(payload, dict):
@@ -2136,37 +2278,19 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                 continue
 
             if message_type == "request_snapshot":
-                snapshot_rows = _load_room_entries(db, normalized, limit=history_limit)
-                snapshot_assignments = [
-                    _serialize_assignment(row)
-                    for row in _load_room_assignments(db, normalized, event_key=room.event_key, limit=1500)
-                ]
                 snapshot_presence = await _safe_presence_snapshot(
                     normalized,
                     context="websocket snapshot request",
                 )
-                room = _load_room_or_404(db, normalized, actor.workspace_id)
-                secondary_leaders = _load_room_secondary_leader_profiles(db, normalized)
-                room_role = _resolve_room_role_with_presence(
-                    room,
-                    scout_profile,
-                    presence=snapshot_presence,
-                    secondary_leader_profiles=secondary_leaders,
-                    workspace_leader=actor.is_leader,
-                )
                 await websocket.send_json(
-                    {
-                        "type": "snapshot",
-                        "room": _serialize_room(
-                            room,
-                            presence=snapshot_presence,
-                            room_role=room_role,
-                            secondary_leader_scout_profiles=secondary_leaders,
-                        ),
-                        "entries": [_serialize_entry(row) for row in snapshot_rows],
-                        "assignments": snapshot_assignments,
-                        "server_time": datetime.now(timezone.utc).isoformat(),
-                    }
+                    await _ws_db(
+                        _ws_snapshot,
+                        member_id=member_id,
+                        room_key=normalized,
+                        scout_profile=scout_profile,
+                        presence=snapshot_presence,
+                        history_limit=history_limit,
+                    )
                 )
                 continue
 
@@ -2188,15 +2312,15 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                             }
                         )
                         continue
-                row, created = _persist_room_entry(
-                    db,
-                    room=_load_room_or_404(db, normalized, actor.workspace_id),
-                    entry_payload=entry,
+                serialized, created = await _ws_db(
+                    _ws_save_entry,
+                    member_id=member_id,
+                    workspace_id=workspace_id,
+                    room_key=normalized,
+                    entry=entry,
                     scout_profile=scout_profile,
-                    author_member_id=actor.member.id,
                     client_entry_id=(str(payload.get("client_entry_id") or "").strip() or None),
                 )
-                serialized = _serialize_entry(row)
                 message = {
                     "type": "entry_saved",
                     "room_key": normalized,
@@ -2217,6 +2341,20 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                 )
                 continue
 
+            if message_type == "flag":
+                live_flag = _live_flag_message(payload, room_key=normalized, scout_profile=scout_profile)
+                if live_flag is None:
+                    await websocket.send_json({"type": "error", "detail": "flag needs a known tag, team_key and match_key"})
+                    continue
+                now_mono = asyncio.get_running_loop().time()
+                live_flag_times[:] = [stamp for stamp in live_flag_times if now_mono - stamp < 60.0]
+                if len(live_flag_times) >= _LIVE_FLAGS_PER_MINUTE:
+                    await websocket.send_json({"type": "error", "detail": "Too many flags at once. The tags still save with your report."})
+                    continue
+                live_flag_times.append(now_mono)
+                await _broadcast_room_message(normalized, live_flag)
+                continue
+
             await websocket.send_json({"type": "error", "detail": f"Unsupported message type: {message_type}"})
 
     except WebSocketDisconnect:
@@ -2226,12 +2364,13 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
             close_code = {401: 4401, 403: 4403, 404: 4404}.get(int(getattr(exc, "status_code", 0) or 0), 4400)
             reason = str(getattr(exc, "detail", "") or "Room websocket error")
             await websocket.close(code=close_code, reason=reason[:120])
-    except Exception as exc:  # pragma: no cover - defensive websocket close path
+    except Exception:  # pragma: no cover - defensive websocket close path
+        # The exception text can carry SQL or internals; it stays in the server log.
+        logger.exception("Room websocket failed room_key=%s member_id=%s", normalized, member_id)
         with suppress(Exception):
-            await websocket.send_json({"type": "error", "detail": f"Room websocket error: {exc}"})
+            await websocket.send_json({"type": "error", "detail": "Room connection hit a server error. Reconnecting."})
     finally:
         with suppress(Exception):
             disconnected_room, presence = await scouting_room_hub.disconnect(websocket)
             if disconnected_room:
                 await _broadcast_presence_message(disconnected_room, presence)
-        db.close()

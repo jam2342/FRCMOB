@@ -20,11 +20,15 @@ TBA_CACHE_TTL_SEC = 300.0
 # uvicorn worker held its own copy, so refreshes could even go backwards.
 TBA_LIVE_CACHE_TTL_SEC = 15.0
 TBA_CACHE_MAX_ENTRIES = 2048
+# A 404 is remembered briefly, so a script repeating a made-up key costs one TBA
+# lookup per key, not one per request. Short, so a newly listed event appears soon.
+TBA_MISSING_TTL_SEC = 120.0
 TBA_HTTP_POOL_CONNECTIONS = 16
 TBA_HTTP_POOL_MAXSIZE = 32
 
 logger = logging.getLogger(__name__)
 _TBA_CACHE: OrderedDict[str, tuple[float, dict | list]] = OrderedDict()
+_TBA_MISSING: OrderedDict[str, float] = OrderedDict()
 _TBA_THREAD_LOCAL = threading.local()
 # Route handlers run on a thread pool; the shared OrderedDict isn't safe to mutate unguarded.
 _TBA_CACHE_LOCK = threading.Lock()
@@ -78,6 +82,23 @@ def _cached_tba_payload(cache_key: str) -> dict | list | None:
         _TBA_CACHE.pop(cache_key, None)
         return None
 
+def _remember_tba_missing(cache_key: str) -> None:
+    with _TBA_CACHE_LOCK:
+        _TBA_MISSING[cache_key] = time.monotonic() + TBA_MISSING_TTL_SEC
+        _TBA_MISSING.move_to_end(cache_key, last=True)
+        while len(_TBA_MISSING) > TBA_CACHE_MAX_ENTRIES:
+            _TBA_MISSING.popitem(last=False)
+
+def _known_tba_missing(cache_key: str) -> bool:
+    with _TBA_CACHE_LOCK:
+        expires_at = _TBA_MISSING.get(cache_key)
+        if expires_at is None:
+            return False
+        if time.monotonic() < expires_at:
+            return True
+        _TBA_MISSING.pop(cache_key, None)
+        return False
+
 class TBAClientError(Exception):
     # status_code is set when TBA answered with a client error (e.g. 404 for an
     # event or team that doesn't exist).
@@ -96,6 +117,8 @@ class TBAClient:
         cached = _cached_tba_payload(cache_key)
         if cached is not None:
             return cached
+        if _known_tba_missing(cache_key):
+            raise TBAClientError(f"TBA returned 404 for {url}", status_code=404)
 
         backoff = TBA_INITIAL_BACKOFF_SEC
         last_error = None
@@ -122,6 +145,8 @@ class TBAClient:
                     r.raise_for_status()
 
                 # A missing key won't appear on retry: fail at once instead of backing off.
+                if r.status_code == 404:
+                    _remember_tba_missing(cache_key)
                 if 400 <= r.status_code < 500:
                     raise TBAClientError(f"TBA returned {r.status_code} for {url}", status_code=r.status_code)
                 r.raise_for_status()

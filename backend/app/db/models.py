@@ -730,6 +730,27 @@ class PitScoutingEntry(Base):
         UniqueConstraint("workspace_id", "event_key", "team_key", name="uq_pit_scouting_workspace_event_team"),
     )
 
+class StrategyBoard(Base):
+    # A match's plan drawn on the field (Strategy Briefing → Plan on the field), private to the
+    # workspace that drew it. Strokes are in field fractions (0-1), so every screen size draws
+    # the same plan. Writes echo `version`, like picklists.
+    __tablename__ = "strategy_boards"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("team_workspaces.id"), index=True)
+    # Plain strings (no FK), like picklists: a plan can be drawn before ingest has the match.
+    event_key: Mapped[str] = mapped_column(String, index=True)
+    match_key: Mapped[str] = mapped_column(String)
+    strokes: Mapped[list] = mapped_column(JSON, default=lambda: [])
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "match_key", name="uq_strategy_board_workspace_match"),
+    )
+
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
 

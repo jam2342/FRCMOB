@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.websockets import WebSocketDisconnect
 
@@ -443,6 +443,45 @@ class TeamWorkspaceTests(unittest.TestCase):
                 with self.assertRaises(WebSocketDisconnect) as closed:
                     socket.receive_json()
                 self.assertEqual(closed.exception.code, 4401)
+
+    def test_an_open_socket_holds_no_database_session_between_messages(self):
+        lead_session = self._create()
+        scout_session = self._join(lead_session["join_code"], "Busy")
+        scout = self._headers(scout_session)
+        created = self.client.post(
+            "/scouting/rooms",
+            json={"room_key": "room-busy", "event_key": EVENT, "scout_profile": "Busy", "create_if_missing": True},
+            headers=scout,
+        )
+        token = created.json()["access"]["room_access_token"]
+        url = (f"/scouting/rooms/room-busy/ws?scout_profile=Busy&room_access={token}"
+               f"&workspace_access={scout[WORKSPACE_ACCESS_HEADER]}")
+        open_sessions: list[object] = []
+
+        class _TrackedSession(Session):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                open_sessions.append(self)
+
+            def close(self):
+                if self in open_sessions:
+                    open_sessions.remove(self)
+                super().close()
+
+        _Tracked = sessionmaker(bind=self.engine, class_=_TrackedSession, autoflush=False, autocommit=False)
+        entry = {"id": "busy-1", "match_key": f"{EVENT}_qm1", "team_key": "frc118", "saved_at_ms": 1}
+        with mock.patch.object(routes_scouting_rooms, "SessionLocal", _Tracked):
+            with self.client.websocket_connect(url) as socket:
+                self.assertEqual(socket.receive_json()["type"], "snapshot")
+                self.assertEqual(open_sessions, [])
+                socket.send_json({"type": "save_entry", "entry": entry, "client_entry_id": "busy-1"})
+                self.assertEqual(socket.receive_json()["type"], "entry_ack")
+                # A repeat save changes nothing; it must not leave the workspace lock open.
+                socket.send_json({"type": "save_entry", "entry": entry, "client_entry_id": "busy-1"})
+                self.assertEqual(socket.receive_json()["created"], False)
+                socket.send_json({"type": "ping"})
+                self.assertEqual(socket.receive_json()["type"], "pong")
+                self.assertEqual(open_sessions, [])
 
     def test_scout_on_a_new_phone_gets_their_name_back_after_removal(self):
         lead_session = self._create()

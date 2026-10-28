@@ -34,8 +34,19 @@ body {
   transition: background 220ms ease, color 220ms ease;
   overflow-x: hidden;
   text-rendering: optimizeLegibility;
+  /* Every digit the same width: live scores, ratings, ranks and clocks change in place without
+     the text around them jiggling. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Paragraphs don't end on one stray word. */
+p,
+li,
+dd,
+figcaption {
+  text-wrap: pretty;
 }
 
 body.theme-light {

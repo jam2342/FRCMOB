@@ -57,3 +57,26 @@ export function usePhaseFollow({
     return () => window.clearTimeout(timer);
   }, [enabled, running, phase, lastTapAt]);
 }
+
+// The match moving on, felt rather than seen: one long buzz when auto ends and another when the
+// endgame starts, while the clock runs. Unlike the board following the phase, this fires whatever
+// panel or layout the scout is on: a scout with eyes on the field is exactly who it is for.
+export function usePhaseCue({ running, phase, onCue }: { running: boolean; phase: ClockPhase; onCue: () => void }) {
+  const previous = useRef(phase);
+  const wasRunning = useRef(running);
+  const onCueRef = useRef(onCue);
+  useEffect(() => {
+    onCueRef.current = onCue;
+  });
+
+  useEffect(() => {
+    const from = previous.current;
+    const ticking = wasRunning.current;
+    previous.current = phase;
+    wasRunning.current = running;
+    // Only a phase the clock ran into: starting a clock already past auto (a scout joining
+    // mid-match) changes phase in the same step, and that's not the end of auto.
+    if (!running || !ticking) return;
+    if ((from === 'Auto' && phase === 'Teleop') || (from === 'Teleop' && phase === 'Endgame')) onCueRef.current();
+  }, [running, phase]);
+}

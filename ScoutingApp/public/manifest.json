@@ -5,8 +5,8 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#10151b",
-  "theme_color": "#10151b",
+  "background_color": "#151413",
+  "theme_color": "#151413",
   "orientation": "any",
   "icons": [
     {
@@ -37,5 +37,46 @@
   "categories": [
     "sports",
     "utilities"
+  ],
+  "shortcuts": [
+    {
+      "name": "Scout a match",
+      "short_name": "Scout",
+      "description": "Open the scouting form",
+      "url": "./#/scouting",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "My Team",
+      "short_name": "My Team",
+      "description": "Your team's matches and assignments",
+      "url": "./#/my-team",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Match Center",
+      "short_name": "Matches",
+      "description": "Live and upcoming matches",
+      "url": "./#/match-center",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

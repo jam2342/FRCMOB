@@ -236,7 +236,7 @@ def rotate_join_code(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/me/members/{member_id}/remove")
-async def remove_member(member_id: int, body: MemberRemoveRequest, request: Request, db: Session = Depends(get_db)):
+def remove_member(member_id: int, body: MemberRemoveRequest, request: Request, db: Session = Depends(get_db)):
     require_write_access("Removing a member")
     actor = require_workspace_leader(request, db)
     if member_id == actor.member.id:
@@ -251,7 +251,7 @@ async def remove_member(member_id: int, body: MemberRemoveRequest, request: Requ
     join_code = issue_join_code(db, actor.workspace) if body.rotate_join_code else None
     db.commit()
     # Open room sockets stop at once, not at the member's next heartbeat.
-    await disconnect_member_from_workspace_rooms(db, actor.workspace_id, member.display_name)
+    disconnect_member_from_workspace_rooms(db, actor.workspace_id, member.display_name)
     return _session_payload(actor, db, join_code=join_code)
 
 
@@ -272,7 +272,7 @@ def set_member_role(member_id: int, body: MemberRoleRequest, request: Request, d
 
 
 @router.post("/me/leave")
-async def leave_workspace(body: LeaveRequest, request: Request, db: Session = Depends(get_db)):
+def leave_workspace(body: LeaveRequest, request: Request, db: Session = Depends(get_db)):
     require_write_access("Leaving a workspace")
     actor = require_workspace_actor(request, db)
     _lock_workspace(db, actor, require_leader=False)
@@ -293,7 +293,7 @@ async def leave_workspace(body: LeaveRequest, request: Request, db: Session = De
         actor.workspace.is_locked = True
         issue_join_code(db, actor.workspace)
     db.commit()
-    await disconnect_member_from_workspace_rooms(db, actor.workspace_id, actor.member.display_name)
+    disconnect_member_from_workspace_rooms(db, actor.workspace_id, actor.member.display_name)
     return {"ok": True, "left_workspace_id": actor.workspace_id, "locked": not others}
 
 
