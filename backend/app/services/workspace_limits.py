@@ -25,7 +25,12 @@ logger = logging.getLogger(__name__)
 
 _CREATED_KEY = "workspaces:created:"
 _BUDGET_HIT_KEY = "workspaces:budget_hit:"
+_JOIN_FAILURES_KEY = "workspaces:join_failures:"
 _KEY_TTL_SEC = 2 * 86400
+# Wrong join codes are counted, not locked out: a lockout can't be aimed at the
+# guesser (see above), and a site-wide one would stop every team from joining. A
+# 10-character code is ~50 bits, so the count is there to notice someone trying.
+JOIN_FAILURE_ALERT_PER_HOUR = 200
 
 
 def _hour_key(now: datetime) -> str:
@@ -57,6 +62,37 @@ def take_workspace_creation_slot(*, now: datetime | None = None) -> bool:
         if settings.is_production_like:
             raise HTTPException(status_code=503, detail="Team signup is temporarily unavailable. Existing teams can still join.") from None
         return True
+
+
+def record_join_failure(*, now: datetime | None = None) -> None:
+    client = get_cache().redis_client
+    if client is None:
+        return
+    key = _JOIN_FAILURES_KEY + _hour_key(now or datetime.now(timezone.utc))
+    try:
+        count = int(client.incr(key))
+        if count == 1:
+            client.expire(key, _KEY_TTL_SEC)
+        if count == JOIN_FAILURE_ALERT_PER_HOUR:
+            logger.warning("workspaces.join_failures_high key=%s count=%s", key, count)
+    except Exception:
+        logger.warning("workspace join failure count unavailable", exc_info=True)
+
+
+def join_failure_status(*, now: datetime | None = None) -> dict[str, Any]:
+    current = now or datetime.now(timezone.utc)
+    status: dict[str, Any] = {"alert_per_hour": JOIN_FAILURE_ALERT_PER_HOUR, "this_hour": None, "high_hours_24h": []}
+    client = get_cache().redis_client
+    if client is None:
+        return status
+    try:
+        hours = [_hour_key(current - timedelta(hours=offset)) for offset in range(24)]
+        counts = [int(value or 0) for value in client.mget([_JOIN_FAILURES_KEY + hour for hour in hours])]
+        status["this_hour"] = counts[0]
+        status["high_hours_24h"] = [hour for hour, count in zip(hours, counts) if count >= JOIN_FAILURE_ALERT_PER_HOUR]
+    except Exception:
+        logger.warning("workspace join failure status unavailable", exc_info=True)
+    return status
 
 
 def creation_budget_status(*, now: datetime | None = None) -> dict[str, Any]:

@@ -6,6 +6,8 @@
 	# Compression here instead of in the Python workers (RESPONSE_COMPRESSION_ENABLED
 	# can then be false). Responses that arrive already compressed pass through.
 	encode zstd gzip
+	# HTTPS only from here on; the certificate renews itself, so this can't strand anyone.
+	header Strict-Transport-Security "max-age=31536000"
 	# Same cap as MAX_REQUEST_BODY_BYTES in the app (10 MiB); a 6 MB pit photo is the
 	# largest real body. Refused here before the app reads any of it.
 	request_body {

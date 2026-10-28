@@ -26,7 +26,7 @@ from app.services.climb.coverage import (
 )
 from app.services.calibration.fuel_rate import get_fuel_phase_calibration
 from app.services.scheduler import get_scheduler_runtime_metrics
-from app.services.workspace_limits import creation_budget_status
+from app.services.workspace_limits import creation_budget_status, join_failure_status
 from app.services.utils import (
     MEDIA_ROOT,
     automation_redis_key as _automation_redis_key,
@@ -287,6 +287,7 @@ def _security_signals() -> dict[str, Any]:
     return {
         "csp_violations_24h": csp_violation_rows(1),
         "workspace_creation": creation_budget_status(),
+        "workspace_join_failures": join_failure_status(),
     }
 
 
@@ -318,6 +319,17 @@ def _security_alerts(signals: dict[str, Any]) -> list[dict[str, Any]]:
                 "message": "New workspaces hit the hourly limit; someone may be creating them in bulk.",
                 "value": len(hits),
                 "threshold": 0,
+            }
+        )
+    joins = signals.get("workspace_join_failures") or {}
+    if joins.get("high_hours_24h"):
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "workspace_join_failures_high",
+                "message": "Lots of wrong join codes in an hour; someone may be guessing codes.",
+                "value": len(joins["high_hours_24h"]),
+                "threshold": joins.get("alert_per_hour"),
             }
         )
     return alerts
