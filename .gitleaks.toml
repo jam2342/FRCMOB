@@ -1,0 +1,21 @@
+# Secret scan for every push and pull request (.github/workflows/ci.yml) and the local
+# pre-commit hook (.githooks/pre-commit). The default rules stay on; these only drop
+# shapes that look random to the generic rule but are FRC data or our own identifiers.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "FRC keys, snake_case identifiers, published file checksums"
+regexes = [
+  # match, event and team keys: 2026txhou_qm1, 2025cmptx_sf13m1, frc5417
+  '''^\d{4}[a-z][a-z0-9]*(_(qm|ef|qf|sf|f)\d+(m\d+)?)?$''',
+  '''^frc\d+[A-Za-z]?$''',
+  # snake_case identifiers used as keys in UI tables and fixtures
+  # (word or short-number segments only, so a token like sk_live_<random> never matches)
+  '''^[a-z]+(_([a-z]+[0-9]{0,2}|[0-9]{1,3}))+$''',
+]
+paths = [
+  # sha256 of the detector weights and of audited source files
+  '''^ScoutingApp/build/modelChecksums\.json$''',
+  '''^docs/(archive/\d{4}-\d{2}/)?SECURITY_[A-Z_]*(EVIDENCE|SOURCE_BUNDLE)_[\d-]+\.json$''',
+]
