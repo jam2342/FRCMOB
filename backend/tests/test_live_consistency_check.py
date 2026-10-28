@@ -61,6 +61,11 @@ def test_unplayed_match_without_prediction():
     assert _kinds(lc.compare_event("2026x", tba, None, predictions, None)) == [("missing_prediction", "2026x_qm2")]
 
 
+def test_no_prediction_is_expected_before_tba_knows_the_alliances():
+    tba = [_tba("2026x_f1m1", red=(), blue=()), _tba("2026x_f1m2", red=(0, 0, 0), blue=(4, 5, 6)), _tba("2026x_f1m3")]
+    assert _kinds(lc.compare_event("2026x", tba, None, {"matches": []}, None)) == [("missing_prediction", "2026x_f1m3")]
+
+
 def test_frc_events_ahead_counts_per_level():
     tba = [_tba("2026x_sf1m1")]
     schedule = {"matches": [_prod("2026x_sf1m1", comp="sf")]}
