@@ -135,6 +135,8 @@ export function navigateWithTransition(navigate: NavigateFn, to: string, options
       };
       navigate(to);
     }));
+    // A phone aborts it when the viewport changes (URL bar, keyboard); the update still runs.
+    transition.ready?.catch(() => undefined);
     transition.finished.then(cleanup, cleanup);
   } catch {
     cleanup();
@@ -174,6 +176,7 @@ export function switchTabWithTransition(
     const transition = doc.startViewTransition(() => {
       flushSync(update);
     });
+    transition.ready?.catch(() => undefined);
     transition.finished.then(cleanup, cleanup);
   } catch {
     cleanup();

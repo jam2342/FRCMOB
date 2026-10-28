@@ -10,7 +10,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Callable, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 from app.services.ratings.official_points import OFFICIAL_SOURCES, match_points
 from app.services.ratings.strength import MatchPoints, StrengthParams, estimate_strength
@@ -558,7 +558,7 @@ def _with_fouls(row) -> dict:
     return out
 
 
-def load_season(db, year: int) -> Season:
+def load_season(db, year: int, *, evaluation_split: bool = True) -> Season:
     # Read-only. Teams come from the alliance results when stored (they carry
     # surrogates), else from match_teams; scores from the alliance results, else from
     # the official findings' summaries.
@@ -573,19 +573,25 @@ def load_season(db, year: int) -> Season:
         .join(models.Event, models.Event.event_key == models.Match.event_key)
         .filter(models.Event.year == year, match_time.isnot(None))
     }
-    teams: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"red": [], "blue": []})
-    for match_key, team_key, alliance in db.query(models.MatchTeam.match_key, models.MatchTeam.team_key, models.MatchTeam.alliance).filter(
-        models.MatchTeam.event_key.like(f"{year}%")
-    ):
-        if alliance in ("red", "blue"):
-            teams[match_key.lower()][alliance].append(team_key.lower())
-
-    alliance_rows: dict[str, dict[str, models.MatchAllianceResult]] = defaultdict(dict)
-    for row in db.query(models.MatchAllianceResult).filter(models.MatchAllianceResult.season_year == year):
+    # Only the columns used below: whole rows also decode raw_breakdown, the stored TBA
+    # breakdown, and JSON decoding was most of the season's load time.
+    result = models.MatchAllianceResult
+    alliance_rows: dict[str, dict[str, Any]] = defaultdict(dict)
+    for row in db.query(
+        result.match_key, result.alliance, result.team_keys, result.surrogate_team_keys, result.total_score,
+        result.score_without_fouls, result.foul_points_received, result.ranking_points, result.result, result.components,
+    ).filter(result.season_year == year):
         alliance_rows[row.match_key.lower()][row.alliance] = row
 
     robots: dict[str, dict[str, MatchPoints]] = defaultdict(dict)
-    summary_scores: dict[str, tuple[int, int]] = {}
+    # Only the summary fields used here, picked out by the database as text: decoding
+    # each finding's whole summary (per-shift hub tables and more), and then even small
+    # JSON values one by one, dominated load time.
+    summary = models.TeamMatchFinding.summary
+    finding_filter = (
+        models.TeamMatchFinding.event_key.like(f"{year}%"),
+        models.TeamMatchFinding.source.in_(OFFICIAL_SOURCES),
+    )
     rows = (
         db.query(
             func.lower(models.TeamMatchFinding.match_key),
@@ -593,21 +599,62 @@ def load_season(db, year: int) -> Season:
             models.TeamMatchFinding.source,
             models.TeamMatchFinding.fuel_scoring_rate,
             models.TeamMatchFinding.auto_contribution,
-            models.TeamMatchFinding.summary,
+            summary[("status", "auto_allocation")].as_string(),
+            summary[("status", "endgame_tower")].as_string(),
         )
-        .filter(models.TeamMatchFinding.event_key.like(f"{year}%"), models.TeamMatchFinding.source.in_(OFFICIAL_SOURCES))
+        .filter(*finding_filter)
         .all()
     )
     # Ingest rows win over the old backfill rows for the same match.
     rows.sort(key=lambda row: row[2] != "tba_score_breakdown")
-    for match_key, team_key, _source, fuel, auto, summary in rows:
+    for match_key, team_key, _source, fuel, auto, auto_allocation, endgame in rows:
         if match_key not in cards_raw or team_key in robots[match_key]:
             continue
-        robots[match_key][team_key] = match_points(match_key=match_key, time=cards_raw[match_key][1], fuel_rate=fuel, auto=auto, summary=summary)
-        if isinstance(summary, dict) and match_key not in summary_scores:
-            red, blue = summary.get("red_score"), summary.get("blue_score")
-            if isinstance(red, (int, float)) and isinstance(blue, (int, float)) and red >= 0 and blue >= 0:
+        status = {key: value for key, value in (("auto_allocation", auto_allocation), ("endgame_tower", endgame)) if value is not None}
+        robots[match_key][team_key] = match_points(
+            match_key=match_key, time=cards_raw[match_key][1], fuel_rate=fuel, auto=auto, summary={"status": status},
+        )
+
+    def _complete(match_key: str) -> bool:
+        stored = alliance_rows.get(match_key, {})
+        return all(stored.get(side) is not None and stored[side].total_score is not None for side in ("red", "blue"))
+
+    # A match without stored alliance results takes its score from a finding's summary.
+    # Rare (results are stored at ingest), so the scores are read only for those.
+    summary_scores: dict[str, tuple[int, int]] = {}
+    unscored = [key for key in cards_raw if not _complete(key)]
+    for i in range(0, len(unscored), 500):
+        chunk = unscored[i : i + 500]
+        score_rows = (
+            db.query(
+                func.lower(models.TeamMatchFinding.match_key),
+                func.lower(models.TeamMatchFinding.team_key),
+                models.TeamMatchFinding.source,
+                summary["red_score"],
+                summary["blue_score"],
+            )
+            .filter(*finding_filter, func.lower(models.TeamMatchFinding.match_key).in_(chunk))
+            .all()
+        )
+        score_rows.sort(key=lambda row: row[2] != "tba_score_breakdown")
+        seen: set[tuple[str, str]] = set()
+        for match_key, team_key, _source, red, blue in score_rows:
+            if (match_key, team_key) in seen:
+                continue
+            seen.add((match_key, team_key))
+            if match_key not in summary_scores and isinstance(red, (int, float)) and isinstance(blue, (int, float)) and red >= 0 and blue >= 0:
                 summary_scores[match_key] = (int(red), int(blue))
+
+    # Lineups for those same matches (stored results carry their own teams).
+    teams: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"red": [], "blue": []})
+    scored_from_summary = list(summary_scores)
+    for i in range(0, len(scored_from_summary), 500):
+        chunk = scored_from_summary[i : i + 500]
+        for match_key, team_key, alliance in db.query(models.MatchTeam.match_key, models.MatchTeam.team_key, models.MatchTeam.alliance).filter(
+            models.MatchTeam.event_key.like(f"{year}%"), func.lower(models.MatchTeam.match_key).in_(chunk)
+        ):
+            if alliance in ("red", "blue"):
+                teams[match_key.lower()][alliance].append(team_key.lower())
 
     event_start: dict[str, int] = {}
     for event_key, t, _level in cards_raw.values():
@@ -641,6 +688,9 @@ def load_season(db, year: int) -> Season:
             blue_components=_with_fouls(blue_row),
         ))
     results.sort(key=lambda r: (r.card.time, r.card.match_key))
+    if not evaluation_split:
+        # The live team model replays every result and never reads the split.
+        return Season(year=year, results=results, holdout_events=set(), typical={})
     holdout = split_holdout(results)
     training = {r.card.event_key for r in results} - holdout
     return Season(year=year, results=results, holdout_events=holdout, typical=typical_robot(results, training))

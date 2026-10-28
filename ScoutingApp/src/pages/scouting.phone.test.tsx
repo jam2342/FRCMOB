@@ -417,3 +417,32 @@ it('closes the Undo toast when the scout leaves the board, keeping the saved rep
   expect(currentToast()).toBeNull();
   expect(readStoredEntries(1)).toHaveLength(1);
 },20000);
+
+it('flags a robot to the room the moment a scout taps Broke down, and keeps the tag for the report', async () => {
+  room.snapshot = null;
+  const sockets: Array<{ send: ReturnType<typeof vi.fn>; onopen?: () => void }> = [];
+  vi.stubGlobal('WebSocket',class {
+    static OPEN = 1;
+    readyState = 1;
+    send = vi.fn();
+    close = vi.fn();
+    constructor() { sockets.push(this as never); }
+  });
+  mount('/scouting?event=2026week0&match=2026week0_qm1&team=frc254');
+  await waitFor(() => expect(screen.getByRole('region',{name:'Mobile scouting quick context'})).toHaveTextContent('#254'));
+  fireEvent.click(screen.getByText(/Room tools/));
+  fireEvent.change(screen.getByLabelText('Scouting room key'),{target:{value:'room-test'}});
+  fireEvent.click(screen.getByRole('button',{name:'Join Room'}));
+  await waitFor(() => expect(sockets.length).toBeGreaterThan(0));
+  sockets.at(-1)!.onopen?.();
+  fireEvent.click(screen.getByRole('tab',{name:'Scout'}));
+  fireEvent.click(screen.getByRole('tab',{name:'Teleop'}));
+  const flags = screen.getByRole('group',{name:'Flag this robot'});
+  fireEvent.click(within(flags).getByRole('button',{name:'Broke down'}));
+  expect(within(flags).getByRole('button',{name:'Broke down'})).toHaveAttribute('aria-pressed','true');
+  const sent = sockets.at(-1)!.send.mock.calls.map(([body]) => JSON.parse(String(body)));
+  expect(sent).toContainEqual({type:'flag',tag:'broke_down',team_key:'frc254',match_key:'2026week0_qm1'});
+  // Turning a flag off is not news.
+  fireEvent.click(within(flags).getByRole('button',{name:'Broke down'}));
+  expect(sockets.at(-1)!.send.mock.calls.filter(([body]) => String(body).includes('"flag"'))).toHaveLength(1);
+},20000);

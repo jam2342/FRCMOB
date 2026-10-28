@@ -5,7 +5,20 @@ import { isolateRecorderPage } from './build/isolateRecorder'
 import { bootPrefetch } from './build/bootPrefetch'
 import { contentSecurityPolicy } from './build/contentSecurityPolicy'
 
+// VITE_PREACT=1 builds the app on Preact instead of React: the same components, through
+// preact/compat. It cuts the startup JavaScript by about 60 KB gzipped (163 -> 103 KB),
+// most of it React DOM. Tests always run on React (Testing Library needs it).
+const preact = process.env.VITE_PREACT === '1'
+const preactAliases = [
+  { find: /^react-dom\/client$/, replacement: 'preact/compat/client' },
+  { find: /^react-dom$/, replacement: 'preact/compat' },
+  { find: /^react\/jsx-runtime$/, replacement: 'preact/jsx-runtime' },
+  { find: /^react\/jsx-dev-runtime$/, replacement: 'preact/jsx-dev-runtime' },
+  { find: /^react$/, replacement: 'preact/compat' },
+]
+
 export default defineConfig(({ mode }) => ({
+  resolve: { alias: preact && mode !== 'test' ? preactAliases : [] },
   plugins: [react(), validateOnDeviceModel(), isolateRecorderPage(), bootPrefetch(), contentSecurityPolicy(), {
     name: 'native-safe-area-viewport',
     transformIndexHtml: (html) => mode === 'native'

@@ -289,7 +289,7 @@ export function PushNotificationsCard() {
   }
 
   return (
-    <SurfaceCard
+    <SurfaceCard tourId="settings-alerts"
       title="Match Alerts"
       subtitle="Push notifications before your favorite teams play and before your scouting shifts."
     >

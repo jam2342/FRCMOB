@@ -1,4 +1,4 @@
-# Training the FRC robot detector (`frc_robot_detector_v1.pt`)
+# Training the FRC robot detector
 
 The on-device recorder needs an FRC-specific YOLO detector. The generic COCO
 `yolo11n.pt` barely detects competition robots. The server-side broadcast pipeline
@@ -9,8 +9,29 @@ as ONNX (`scripts/export_on_device_model.py`). Install the training dependencies
 Sections below that describe baking the `.pt` into the server image, the worker, or
 `VIDEO_TRACKING_*` settings are history from the broadcast pipeline.
 
-This model is **not** in the repo and was never committed — it must be trained.
+The `.pt` weights are **not** in the repo and were never committed — they must be trained.
 All the tooling exists; this doc is the reproducible workflow.
+
+## Where the data and weights are (since 2026-10-26)
+
+`backend/media/` (datasets, trained `.pt` weights, review folders, one test video) was
+moved off the Mac into the private OCI bucket `frcmob-media-backup` under
+`archive/training-media-2026-10-26/`: 44,494 files plus `MANIFEST.sha256` (4.48 GiB),
+the same layout as `backend/media/`; `rclone check --download` found 0 differences
+after the upload. It is the only copy, including the
+locked holdout. The VM can read it (instance principal; it can't delete or overwrite).
+To restore before retraining:
+
+```bash
+# on the VM
+sudo /usr/local/bin/rclone copy oos:frcmob-media-backup/archive/training-media-2026-10-26 ~/media-restore --transfers 16
+cd ~/media-restore && sha256sum --quiet -c MANIFEST.sha256
+# then from the Mac
+ssh -i ~/.ssh/frcmob_oci ubuntu@141.148.171.128 'tar -cf - -C ~/media-restore .' | tar -xf - -C "Scouting app/backend/media"
+```
+
+Copy only the folders you need (e.g. `datasets/frc_v4_complete5`, `models/`) to save
+time. Ultralytics base weights (`yolo11n/s/m.pt`) aren't stored; they download on first use.
 
 ## v4 — complete frames only (30 September 2026) — DEPLOYED ON PHONES
 
@@ -43,7 +64,8 @@ label is worse than no image"): **train only on frames that are already near-com
   WebGPU at 0.35, v4_n on WASM at 0.25** (82 vs 243 ms/frame in WebKit; 10 MB). Full match:
   33 s in Chrome on the GPU, 55 s in WebKit on the CPU (M2).
 - Weights: `media/models/frc_robot_detector_v4_{s,n}.pt` (not in git); ONNX exports
-  (opset 19, dynamic, 896 base) are the tracked `ScoutingApp/public/models/*_v4_*.onnx`.
+  (opset 19, dynamic, 896 base) are `ScoutingApp/public/models/*_v4_*.onnx`, not in git either:
+  builds download them (`scripts/fetch-models.mjs`, checksums in `build/modelChecksums.json`).
 
 ## Review update — 7 September 2026
 
@@ -52,7 +74,7 @@ A fresh comparison on all 224 locked images measured **v3 mAP@0.5 0.7610 vs v2
 0.7257** at 1280 with square padding, NMS IoU .6 and max_det 50. At confidence .20,
 recall was .6411 vs .5103 and precision .9141 vs .9785. mAP@0.5:.95 was essentially
 unchanged (.5170 vs .5172). This is a detector-only comparison, not a production
-tracking result. See [MODEL_REVIEW_2026-09-07.md](MODEL_REVIEW_2026-09-07.md).
+tracking result. See [MODEL_REVIEW_2026-09-07.md](archive/2026-09/MODEL_REVIEW_2026-09-07.md).
 
 **v3 is experimental, not approved for deployment.** Its labels failed review. The
 experiment also changed the corpus, deduplication, splits and optimization, so it
@@ -155,9 +177,9 @@ orientation provenance and report disabled groups; unknown legacy groups are dis
 
 ---
 
-## Status & honest benchmark (READ THIS)
+## Status & honest benchmark before v4 (READ THIS)
 
-| Model | Status | Honest benchmark (locked Einstein holdout) |
+| Model | Status (until v4) | Honest benchmark (locked Einstein holdout) |
 |---|---|---|
 | `frc_robot_detector_v2.pt` | **Deployed (primary)** | **mAP@0.5 = 0.7172** |
 | `frc_robot_detector_v1.pt` | Shipped in image as rollback | mAP@0.5 = 0.6991 |
@@ -317,7 +339,7 @@ startup log line `worker.model_provisioning {...}`.
 **v2 status: trained, gated, deployed.** v2 beat v1 on the locked Einstein
 holdout (0.7172 vs 0.6991, +0.018) via low-LR fine-tune from v1. The aggressive
 30-epoch candidate failed at 0.6740 and was correctly rejected by the same
-gate. v2 ships as primary; v1 stays in the image for instant rollback.
+gate. v2 shipped as primary, with v1 in the image for instant rollback, until v4.
 
 For v3+, the same recipe applies — must beat the **current** deployed
 benchmark on the **locked** Einstein holdout. The plan:
@@ -333,7 +355,7 @@ benchmark on the **locked** Einstein holdout. The plan:
    but keep the split source-grouped.
 3. **Never touch the locked holdout.** The splitter/importer hard-refuse
    `frc_einstein_2026_holdout_reviewed_yolo`. It stays test-only.
-4. **Retrain on A100** (Step 3 below) on the expanded clean dataset. Use a
+4. **Retrain on A100** (Step 3 above) on the expanded clean dataset. Use a
    key-free bootstrap (do NOT hardcode dataset URLs/API keys in the script —
    the v1 bootstrap leaked a Roboflow key; pass via env var).
 5. **Gate on the honest holdout.** Validate v2 against

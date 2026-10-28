@@ -1,3 +1,4 @@
+import { clearAppBadge } from '../../utils/appBadge';
 import { isNativeApp } from '../../platform/runtime';
 import { SecureStorage } from '../../platform/secureStorage';
 // Browser sessions persist in localStorage; native sessions use the OS vault.
@@ -122,6 +123,8 @@ export function issuedJoinCodeFor(workspaceId: number): string | null {
 export function clearWorkspaceSession(reason: WorkspaceEndReason) {
   issuedJoinCode = null;
   const clearRevision = ++revision;
+  // The badge counted this team's assignments.
+  clearAppBadge();
   if (!isNativeApp() && cached === null && storage()?.getItem(STORAGE_KEY) === null) return;
   cached = null;
   // Pit photos cached for offline belong to the team being left.

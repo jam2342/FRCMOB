@@ -32,6 +32,7 @@ const PAGES: PalettePage[] = [
   { to: '/scouting/pit', label: 'Pit scouting', keywords: 'pits robot specs' },
   { to: '/scouting/assignments', label: 'Scouting assignments', keywords: 'roster schedule scouts' },
   { to: '/scouting/coverage', label: 'Scouting coverage', keywords: 'missing' },
+  { to: '/scouting/practice', label: 'Practice scouting', keywords: 'training learn new scout' },
   { to: '/my-team', label: 'My Team', keywords: 'workspace join code members' },
   { to: '/favorites', label: 'Favorites', keywords: 'saved starred' },
   { to: '/settings', label: 'Settings', keywords: 'theme preferences' },
@@ -53,7 +54,8 @@ type CommandPaletteProps = {
   onClose: () => void;
   recentEvents: readonly string[];
   recentTeams: readonly string[];
-  onStartTour: () => void;
+  // Absent on pages without a tour, and so is the action.
+  onStartTour?: () => void;
 };
 
 export function CommandPalette({ open, onClose, recentEvents, recentTeams, onStartTour }: CommandPaletteProps) {
@@ -95,13 +97,15 @@ export function CommandPalette({ open, onClose, recentEvents, recentTeams, onSta
     const list: PaletteItem[] = [
       { id: 'action-theme', group: 'Actions', label: themeIsLight ? 'Switch to dark theme' : 'Switch to light theme', action: 'theme', keywords: 'theme dark light mode' },
       { id: 'action-copy', group: 'Actions', label: 'Copy link to this page', action: 'copy-link', keywords: 'share url' },
-      { id: 'action-tour', group: 'Actions', label: 'Take the tour of this page', action: 'tour', keywords: 'help tutorial guide' },
     ];
+    if (onStartTour) {
+      list.push({ id: 'action-tour', group: 'Actions', label: 'Take the tour of this page', action: 'tour', keywords: 'help tutorial guide' });
+    }
     if (myTeamKey) {
       list.unshift({ id: 'action-my-team', group: 'Actions', label: `Open my team (${myTeamKey.replace(/^frc/, '')})`, action: 'my-team', keywords: 'my team mine' });
     }
     return list;
-  }, [myTeamKey, themeIsLight]);
+  }, [myTeamKey, onStartTour, themeIsLight]);
 
   const items = useMemo(() => buildPaletteItems({
     query,
@@ -137,7 +141,7 @@ export function CommandPalette({ open, onClose, recentEvents, recentTeams, onSta
       navigateWithTransition(navigate, `/team-center?team=${myTeamKey}`, { direction: 'forward' });
       return;
     }
-    if (action === 'tour') onStartTour();
+    if (action === 'tour') onStartTour?.();
   };
 
   const choose = (item: PaletteItem | undefined) => {

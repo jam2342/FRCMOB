@@ -152,6 +152,40 @@
     padding: 4px 2px;
   }
 
+  /* Both phone switches are one segmented control: a tray with borderless segments and the
+     chosen one raised. The sticky bar around the robot switch only keeps its background. */
+  .phoneNav.phoneNav {
+    padding: 6px 0;
+    border-color: transparent;
+    border-radius: 0;
+    background: var(--color-bg);
+    box-shadow: none;
+  }
+
+  .robotTabs.robotTabs,
+  .phaseTabs.phaseTabs {
+    padding: 3px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+  }
+
+  .robotTabs.robotTabs :global(.segmented-tabs__item),
+  .phaseTabs.phaseTabs :global(.segmented-tabs__item) {
+    border-color: transparent;
+    border-radius: calc(var(--radius-md) - 3px);
+    background: transparent;
+    box-shadow: none;
+    color: var(--color-text-muted);
+  }
+
+  .robotTabs.robotTabs :global(.segmented-tabs__item.active),
+  .phaseTabs.phaseTabs :global(.segmented-tabs__item.active) {
+    border-color: var(--color-border);
+    background: var(--color-surface-raised);
+    color: var(--color-accent-text);
+  }
+
   .phaseTabs.phaseTabs :global(.segmented-tabs__label) {
     font-size: var(--font-size-2xs);
     white-space: normal;

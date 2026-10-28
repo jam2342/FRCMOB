@@ -1,0 +1,77 @@
+.pickers {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-3);
+}
+
+.form {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.checks {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.check {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-left: var(--border-width-2) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-soft);
+}
+
+.right {
+  border-left-color: var(--color-success);
+}
+
+.off {
+  border-left-color: var(--color-warning);
+}
+
+.checkHead {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+}
+
+.verdict {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.right .verdict {
+  color: var(--color-success-text);
+}
+
+.off .verdict {
+  color: var(--color-warning-text);
+}
+
+.plausible .verdict,
+.unknown .verdict {
+  color: var(--color-text-muted);
+}
+
+.compare,
+.note {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

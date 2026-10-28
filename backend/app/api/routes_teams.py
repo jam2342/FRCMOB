@@ -1286,10 +1286,14 @@ async def _build_event_teams_intel_payload(
 from app.api.teams.intel import router as _intel_router  # noqa: E402
 from app.api.teams.media import router as _media_router  # noqa: E402
 from app.api.teams.history import router as _history_router  # noqa: E402
+from app.api.teams.head_to_head import router as _head_to_head_router  # noqa: E402
+from app.api.teams.season_story import router as _season_story_router  # noqa: E402
 
 router.include_router(_intel_router)
 router.include_router(_media_router)
 router.include_router(_history_router)
+router.include_router(_head_to_head_router)
+router.include_router(_season_story_router)
 
 # ── Register intel builders with the service layer ───────────────────────
 # This allows services (like intel_snapshots) to call these builders

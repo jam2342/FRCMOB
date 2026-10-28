@@ -48,6 +48,9 @@ const ScoutingCoveragePage = lazy(() =>
 const FieldCalibrationPage = lazy(() =>
   import('./pages/FieldCalibrationPage').then((mod) => ({ default: mod.FieldCalibrationPage })),
 );
+const PracticeScoutingPage = lazy(() =>
+  import('./pages/PracticeScoutingPage').then((mod) => ({ default: mod.PracticeScoutingPage })),
+);
 const OnDeviceRunPage = lazy(() =>
   import('./pages/OnDeviceRunPage').then((mod) => ({ default: mod.OnDeviceRunPage })),
 );
@@ -74,6 +77,11 @@ function withPageSuspense(content: ReactNode, label?: string) {
 // A crash on one page must not follow you to the next one.
 function PageBoundary({ label, children }: { label?: string; children: ReactNode }) {
   const location = useLocation();
+  // The browser tab, history and the phone's app switcher said "FRCMOB" for every page.
+  const team = /[?&]team=frc(\d+)/i.exec(location.search)?.[1];
+  useEffect(() => {
+    document.title = [team, label, 'FRCMOB'].filter(Boolean).join(' · ');
+  }, [label, team]);
   return (
     <ErrorBoundary label={label} resetKey={location.pathname}>
       <Suspense fallback={<PageSpinner />}>{children}</Suspense>
@@ -128,6 +136,7 @@ export default function RootApp() {
             <Route path="/scouting/auto-paths" element={<RedirectKeepingQuery to="/scouting" />} />
             <Route path="/scouting/pit" element={withPageSuspense(<PitScoutingPage />, 'Pit Scouting')} />
             <Route path="/scouting/coverage" element={withPageSuspense(<ScoutingCoveragePage />, 'Coverage')} />
+            <Route path="/scouting/practice" element={withPageSuspense(<PracticeScoutingPage />, 'Practice')} />
             <Route path="/scouting/calibrate" element={withPageSuspense(<FieldCalibrationPage />, 'Field Calibration')} />
             <Route path="/scouting/record" element={withPageSuspense(<OnDeviceRunPage />, 'On-Device Breakdown')} />
             <Route path="/match-center" element={withPageSuspense(<MatchCenterPage />, 'Match Center')} />

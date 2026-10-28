@@ -244,6 +244,7 @@ def _scheduled_job(
     *,
     lock_ttl_sec: int | None = None,
     use_db: bool = False,
+    quiet_skip: bool = False,
 ) -> Generator[dict[str, Any] | None, None, None]:
     # Context manager that wraps the lock/record/log boilerplate for scheduled jobs.
     #
@@ -262,7 +263,9 @@ def _scheduled_job(
             job_key, started_perf=started_perf, ok=True,
             details={"status": "skipped_distributed_lock"},
         )
-        logger.info("%s skipped due to active distributed lock", job_key)
+        # Jobs that tick every few seconds skip on one worker almost every time; at info
+        # that was thousands of log lines a day.
+        (logger.debug if quiet_skip else logger.info)("%s skipped due to active distributed lock", job_key)
         yield None
         return
 
@@ -334,6 +337,18 @@ def start_scheduler() -> None:
             ),
             minutes=interval_minutes,
             misfire_grace_time=max(120, interval_minutes * 60),
+        )
+
+    if settings.live_results_signal_enabled:
+        interval_sec = max(2, int(settings.live_results_signal_interval_sec))
+        _register_job(
+            job_fn=_scheduled_live_results_signal,
+            trigger="interval",
+            job_id="live_results_signal",
+            job_name="Refresh results of events with open pages",
+            success_log=f"Scheduled live results signal job added (interval: {interval_sec} sec)",
+            seconds=interval_sec,
+            misfire_grace_time=interval_sec,
         )
 
     if settings.push_notifications_enabled and push_configured():
@@ -480,6 +495,16 @@ def _scheduled_cleanup_inactive_scouting_rooms() -> None:
             deleted_leaders=int(result.get("deleted_leaders") or 0),
             cutoff=result.get("cutoff"),
         )
+
+def _scheduled_live_results_signal() -> None:
+    from app.api.routes_matches import refresh_watched_live_results
+
+    interval_sec = max(2, int(settings.live_results_signal_interval_sec))
+    with _scheduled_job("live_results_signal", lock_ttl_sec=max(30, interval_sec * 6), quiet_skip=True) as details:
+        if details is None:
+            return
+        details["events"] = refresh_watched_live_results()
+
 
 def _scheduled_push_match_alerts() -> None:
     interval_sec = max(30, int(settings.push_match_alert_interval_sec))

@@ -58,6 +58,8 @@ type SegmentedTabsProps<T extends string> = {
   swipe?: boolean;
   /** An underline that slides to the active tab (the phone tab bars). */
   ink?: boolean;
+  /** What a page tour points at (`data-tour`). */
+  tourId?: string;
 };
 
 const SWIPE_MIN_PX = 70;
@@ -95,6 +97,7 @@ export function SegmentedTabs<T extends string>({
   motion = false,
   swipe = false,
   ink: inkProp = false,
+  tourId,
 }: SegmentedTabsProps<T>) {
   const phone = useMobileLayout();
   const board = variant === 'board';
@@ -275,6 +278,7 @@ export function SegmentedTabs<T extends string>({
       ref={listRef}
       className={cx('segmented-tabs', listClass, ink && 'segmented-tabs--ink', className)}
       data-more={more || undefined}
+      data-tour={tourId}
       role="tablist"
       aria-label={ariaLabel}
       aria-orientation="horizontal"

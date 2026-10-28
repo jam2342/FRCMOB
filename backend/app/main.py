@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 import logging
 import time
 import uuid
@@ -12,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
 from app.api.routes_automation import router as automation_router
@@ -21,6 +22,7 @@ from app.api.routes_events import router as events_router
 from app.api.routes_maintenance import router as maintenance_router
 from app.api.routes_matches import router as matches_router
 from app.api.routes_picklists import router as picklists_router
+from app.api.routes_strategy_boards import router as strategy_boards_router
 from app.api.routes_pit_scouting import router as pit_scouting_router
 from app.api.routes_push import router as push_router
 from app.api.routes_scouting import router as scouting_router
@@ -40,11 +42,13 @@ from app.core.config import (
 )
 from app.core.security import ADMIN_SESSION_HEADER
 from app.core.security import enforce_write_request_access
-from app.core.security import media_signature_valid
+from app.core.security import media_signature_member
 from app.core.security import request_has_admin_access
 from app.core.security import request_has_explicit_admin_credential
+from app.db.models import TeamWorkspaceMember
 from app.db.session import SessionLocal
 from app.services.utils import pg_sqlstate_code as _pg_sqlstate
+from app.services.events.live_signal import live_results_hub
 from app.services.scouting_rooms.bus import scouting_room_bus
 from app.services.scouting_rooms.realtime import scouting_room_hub
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -147,6 +151,11 @@ async def lifespan(app: FastAPI):
         logger.info("Scouting room redis bus stopped")
     except Exception as e:
         logger.error("Error stopping scouting room redis bus: %s", e)
+
+    try:
+        await live_results_hub.shutdown()
+    except Exception as e:
+        logger.error("Error stopping live results hub: %s", e)
 
     try:
         await scouting_room_hub.shutdown()
@@ -286,31 +295,47 @@ _ALLOWED_BUS_MESSAGE_TYPES = frozenset(
         "leader_added",
         "leader_removed",
         "member_kicked",
+        # A scout's mid-match flag, so the strategist sees it whichever worker they're on.
+        "live_flag",
         "room_control_disconnect_profile",
         "ping",
         "pong",
     }
 )
 
-def _enforce_media_access(request: Request) -> None:
+def _enforce_media_access(request: Request) -> int | None:
     # Block unauthenticated access to /media/* when admin auth is configured.
+    # Returns the member a pit-photo link was issued to; the caller checks they're current.
     request_path = str(getattr(request.url, "path", "") or "").strip()
     if not request_path.startswith("/media"):
-        return
+        return None
     if request_path.startswith("/media/pit_photos/"):
         # Private team data: only the signed links the API gives a workspace's members.
+        if request_has_admin_access(request):
+            return None
         params = request.query_params
-        if request_has_admin_access(request) or media_signature_valid(request_path, params.get("exp"), params.get("sig")):
-            return
-        raise HTTPException(status_code=403, detail="This photo link is invalid or expired. Reopen the pit page.")
+        member_id = media_signature_member(request_path, params.get("exp"), params.get("m"), params.get("sig"))
+        if member_id is not None:
+            return member_id
+        raise HTTPException(status_code=403, detail=_PHOTO_LINK_INVALID)
     if not bool(settings.enforce_admin_auth_for_writes):
-        return
+        return None
     if request_has_admin_access(request):
-        return
+        return None
     raise HTTPException(
         status_code=403,
         detail="Media access requires admin authorization.",
     )
+
+_PHOTO_LINK_INVALID = "This photo link is invalid or expired. Reopen the pit page."
+
+
+def _media_member_active(member_id: int) -> bool:
+    with SessionLocal() as db:
+        removed_at = db.execute(
+            select(TeamWorkspaceMember.removed_at).where(TeamWorkspaceMember.id == member_id)
+        ).first()
+    return removed_at is not None and removed_at[0] is None
 
 def _cors_origins() -> list[str]:
     raw = str(settings.cors_allow_origins or "").strip()
@@ -352,7 +377,9 @@ async def request_access_and_logging_middleware(request: Request, call_next):
     started = time.perf_counter()
     try:
         enforce_write_request_access(request)
-        _enforce_media_access(request)
+        media_member_id = _enforce_media_access(request)
+        if media_member_id is not None and not await asyncio.to_thread(_media_member_active, media_member_id):
+            raise HTTPException(status_code=403, detail=_PHOTO_LINK_INVALID)
     except HTTPException as exc:
         response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         response.headers["X-Request-ID"] = request_id
@@ -434,6 +461,7 @@ app.include_router(automation_router)
 app.include_router(auto_scouting_router)
 app.include_router(maintenance_router)
 app.include_router(picklists_router)
+app.include_router(strategy_boards_router)
 app.include_router(pit_scouting_router)
 app.include_router(push_router)
 app.include_router(scouting_router)

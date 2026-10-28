@@ -344,8 +344,8 @@ season without weights gets none (retrain once a new season has events).
 | 6 event simulation | **done 2026-10-15** | forecasts for fans | rank/captain Brier |
 | 7 learned corrections | **done 2026-10-15** | small accuracy gains | Brier ≥ 0.003, calibration |
 
-Phase 3 comes before 2 because ranges fall straight out of Phase 1, and Phase 2 waits
-on a 7-hour 2025 ingest that can run in the background meanwhile.
+Phase 3 came before 2 because ranges fall straight out of Phase 1, and Phase 2 was
+expected to wait on a 7-hour 2025 ingest (it didn't need one; see Phase 2).
 
 ## Keep it portable to 2027
 

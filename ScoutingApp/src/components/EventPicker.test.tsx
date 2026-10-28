@@ -90,6 +90,31 @@ describe('EventPicker', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('Enter on text that matches nothing loads no event unless it looks like an event key', async () => {
+    const onSubmit = vi.fn();
+    render(<Harness onSelect={vi.fn()} onSubmit={onSubmit} />);
+    const input = screen.getByLabelText('Search events');
+    for (const typed of ['5', '99999', '1678asdf']) {
+      fireEvent.change(input, { target: { value: typed } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      await act(async () => {
+        vi.advanceTimersByTime(250);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/No events match that/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: '2026txhou' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('in add mode, picking adds the event and empties the box', async () => {
     const added: string[] = [];
     function AddHarness() {

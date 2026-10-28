@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createPicklist,
   deletePicklist,
+  getEventForecast,
+  getEventRankings,
   getEventTeamsIntel,
   getPicklist,
   listPicklists,
@@ -30,6 +32,9 @@ import './PicklistPage.css';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 import { usePicklistEditor } from '../features/picklists/usePicklistEditor';
+import { DraftBoard } from '../features/picklists/DraftBoard';
+import { draftFromSlots, pickTeam, rankedTeamKeys, standingsFromForecast } from '../features/picklists/draft';
+import { useNavigate } from 'react-router-dom';
 
 /* ------------------------------------------------------------------ */
 /*  Constants & helpers                                                */
@@ -95,6 +100,10 @@ function PicklistWorkspacePage() {
   // "move to rank N" so a long move is one action.
   const [movingTeam, setMovingTeam] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState('');
+  // Event rankings, best first, for the draft board's captains. Null until loaded. Where TBA
+  // has none yet, the standings worked out from the official results stand in.
+  const [ranked, setRanked] = useState<{ teams: string[]; fromResults: boolean } | null>(null);
+  const navigate = useNavigate();
 
   const loadSequence = useRef(0);
   // Lists deleted with Undo still offered: hidden here, deleted on the server once the toast goes.
@@ -151,6 +160,16 @@ function PicklistWorkspacePage() {
     }
   }, []);
 
+  const fetchRankings = useCallback(async (key: string, sequence: number) => {
+    const official = await getEventRankings(key).then((result) => rankedTeamKeys(result.rankings)).catch(() => []);
+    if (official.length) {
+      if (loadSequence.current === sequence) setRanked({ teams: official, fromResults: false });
+      return;
+    }
+    const fromResults = await getEventForecast(key).then(standingsFromForecast).catch(() => []);
+    if (loadSequence.current === sequence) setRanked(fromResults.length ? { teams: fromResults, fromResults: true } : null);
+  }, []);
+
   const fetchPicklists = useCallback(async (key: string, sequence: number) => {
     setLoading(true);
     setListsError(false);
@@ -185,13 +204,15 @@ function PicklistWorkspacePage() {
     setTeamPool([]);
     setPitPhotoByTeam(new Map());
     setExpandedTeam(null);
+    setRanked(null);
     if (eventKey) {
       void fetchPicklists(eventKey, sequence);
       void fetchTeams(eventKey, sequence);
       void fetchPitPhotos(eventKey, sequence);
+      void fetchRankings(eventKey, sequence);
     }
     return () => { loadSequence.current = sequence + 1; };
-  }, [eventKey, fetchTrigger, fetchPicklists, fetchTeams, fetchPitPhotos, selectDoc]);
+  }, [eventKey, fetchTrigger, fetchPicklists, fetchTeams, fetchPitPhotos, fetchRankings, selectDoc]);
 
   useEffect(() => {
     if (activeId == null) return;
@@ -362,7 +383,22 @@ function PicklistWorkspacePage() {
     });
   }
 
+  // A draft-board edit: applied at once, with Undo for the few seconds a mis-tap is noticed.
+  function applyDraft(next: PicklistSlot[], message: string) {
+    const previous = doc?.slots ?? [];
+    mutateSlots(() => next);
+    hapticTap();
+    showToast({ message, actionLabel: 'Undo', onAction: () => mutateSlots(() => previous.slice()) });
+  }
+
   function markPicked(index: number) {
+    // With captains on the board, "Picked" is the on-the-clock alliance's pick.
+    const board = draftFromSlots(slots);
+    if (board.onClock) {
+      const teamKey = slots[index].team_key;
+      applyDraft(pickTeam(slots, teamKey, ranked?.teams ?? []), `Alliance ${board.onClock.alliance} picked #${teamNumber(teamKey)}`);
+      return;
+    }
     mutateSlots((slots) => {
       slots[index] = { ...slots[index], status: 'picked', picked_by_alliance: null };
       return slots;
@@ -474,7 +510,7 @@ function PicklistWorkspacePage() {
       <PageViewBar items={COMPARE_VIEWS} />
       <div className="center-page-container">
 
-          <SurfaceCard
+          <SurfaceCard tourId="picklist-head"
             title={isMobile && doc ? doc.title : viewTitle(COMPARE_VIEWS, '/compare/picklist')}
             subtitle={isMobile && doc ? "Shared with your team · Saves automatically." : "Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."}
             className="no-print"
@@ -525,8 +561,22 @@ function PicklistWorkspacePage() {
             ) : null}
           </SurfaceCard>
 
+          {doc?.live_mode ? (
+            <DraftBoard
+              eventKey={eventKey}
+              slots={slots}
+              ranked={ranked?.teams ?? null}
+              rankedFromResults={ranked?.fromResults ?? false}
+              eventTeams={teamPool.map((team) => team.team_key)}
+              teamInfo={teamInfoByKey}
+              ourTeamKey={workspace.workspace.frc_team_number ? `frc${workspace.workspace.frc_team_number}` : null}
+              onApply={applyDraft}
+              onOpenTeam={(teamKey) => navigate(`/team-center?team=${encodeURIComponent(teamKey)}&event=${encodeURIComponent(eventKey)}`)}
+            />
+          ) : null}
+
           {doc ? (
-            <SurfaceCard
+            <SurfaceCard tourId="picklist-list"
               title={doc.title}
               subtitle={
                 doc.live_mode
@@ -639,6 +689,9 @@ function PicklistWorkspacePage() {
                         {slot.status === 'declined' ? (
                           <span className="picklist-status declined">Declined</span>
                         ) : null}
+                        {slot.status === 'captain' ? (
+                          <span className="picklist-status picked">{slot.picked_by_alliance ? `Captain A${slot.picked_by_alliance}` : 'Captain'}</span>
+                        ) : null}
 
                         <span className="picklist-actions">
                           {doc.live_mode ? (
@@ -659,7 +712,9 @@ function PicklistWorkspacePage() {
                                   Declined
                                 </button>
                               </>
-                            ) : (
+                            ) : slot.status === 'captain' ? null : (
+                              // Captains are set and moved by the draft board; undoing one here
+                              // would empty a seat and send the board back to the start.
                               <button
                                 type="button"
                                 className="center-btn ghost picklist-mini-btn"
@@ -765,7 +820,7 @@ function PicklistWorkspacePage() {
               )}
             </SurfaceCard>
           ) : eventKey && !loading && !listsError ? (
-            <SurfaceCard
+            <SurfaceCard tourId="picklist-empty"
               title="No picklist yet"
               subtitle="Create one to start ranking teams."
               mobileCollapsible={false}

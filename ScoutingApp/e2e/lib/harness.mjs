@@ -21,6 +21,7 @@ export const ROUTES = [
   '/scouting/coverage',
   '/scouting/calibrate',
   '/scouting/record',
+  '/scouting/practice',
   '/team-center',
   '/match-center',
   '/match-center/predictions',
