@@ -51,6 +51,7 @@ npm run e2e:regression
 ## Rules and traps
 
 **Code style**
+- Commit messages describe the change. Do not add AI names, model credits, co-author trailers or session links to commits or pull requests. Preserve human co-authors. Project settings disable automatic attribution; `git config core.hooksPath .githooks` enables the local checks, and CI checks the full history.
 - No docstrings. Short `#` comments that say why. Match surrounding code.
 - `DATABASE_URL` uses `postgresql+psycopg://`.
 - Season assumptions live in `game_config/`, `services/scoring/breakdown.py`, `ratings/constants.py` (`SEASON_BASELINES`; a season without a row fails closed), `ratings/official_points.py`, `auto_scout/specs.py`, `config/season.ts`.

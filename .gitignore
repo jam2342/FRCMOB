@@ -13,6 +13,7 @@ backend/yolo11n.pt
 !.env.aws.example
 !.env.oci.example
 .DS_Store
+.claude/settings.local.json
 node_modules/
 worker/*.pt
 # FIRST game manuals are copyrighted and must be downloaded from FIRST.

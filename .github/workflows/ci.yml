@@ -21,6 +21,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Commit attribution
+        run: |
+          python3 scripts/check_commit_attribution.py --history
+          python3 -m unittest discover -s scripts -p 'test_commit_attribution.py'
       - name: gitleaks
         env:
           GITLEAKS_VERSION: 8.30.1
