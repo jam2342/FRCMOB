@@ -12,6 +12,8 @@ Thanks for helping improve FRC scouting. Contributions should be focused, testab
 
 Turn on the secret check once per clone with `git config core.hooksPath .githooks` (needs [gitleaks](https://github.com/gitleaks/gitleaks)); CI runs the same scan on every pull request.
 
+The same hook setup rejects AI credits in commit messages and AI author identities. Human co-authors are welcome. The project disables automatic commit and PR attribution; CI also checks the full history, including commits made with hooks skipped. Run `python3 scripts/check_commit_attribution.py --history` to check locally.
+
 Never commit credentials, `.env` files, team member data, database exports, match recordings, model weights, labeled datasets, or copies of FIRST manuals. Use synthetic or explicitly redistributable fixtures in tests.
 
 By contributing, you agree that your contribution is licensed under AGPL-3.0, the repository license. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md) and use [SECURITY.md](SECURITY.md) for vulnerabilities.
