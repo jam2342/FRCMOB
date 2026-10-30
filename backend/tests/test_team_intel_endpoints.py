@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -168,6 +168,51 @@ class TeamIntelEndpointIntegrationTests(unittest.TestCase):
         with patch.object(routes_teams, "TBAClient", _SlowTba), patch.object(routes_teams.settings, "tba_auth_key", "test"):
             ticks = asyncio.run(_run())
         self.assertGreater(ticks, 10)
+
+    def test_intel_routes_never_query_the_database_on_the_event_loop(self):
+        # A query on the loop waits there for a pooled connection while the threads that
+        # hold them wait on the loop (room routes hop back to it): under event-day load
+        # that deadlocked a worker until the pool timed out, /health included.
+        import asyncio
+
+        on_loop = []
+        execute = Session.execute
+
+        def guarded(session, *args, **kwargs):
+            try:
+                asyncio.get_running_loop()
+                on_loop.append(str(args[0])[:80] if args else "?")
+            except RuntimeError:
+                pass
+            return execute(session, *args, **kwargs)
+
+        # The async routes must not use the request's session at all: a connection it
+        # holds across an await waits on threads that wait on connections.
+        request_sessions_used = []
+
+        def _tracked_get_db():
+            db = self.SessionLocal()
+            event.listen(db, "after_begin", lambda *_: request_sessions_used.append(path))
+            try:
+                yield db
+            finally:
+                db.rollback()
+                db.close()
+
+        self.client.app.dependency_overrides[get_db] = _tracked_get_db
+        with patch.object(Session, "execute", guarded):
+            # Twice each: the first builds and stores a snapshot, the second reads it.
+            for _ in range(2):
+                for path, params in (
+                    ("/teams/frc118/intel", {"event_key": "2026txhou", "include_tba": "false"}),
+                    ("/teams/event/2026txhou/intel", {"include_tba": "false"}),
+                    ("/teams/search", {"q": "118"}),
+                ):
+                    response = self.client.get(path, params=params)
+                    self.assertEqual(response.status_code, 200, path)
+        self.assertEqual(on_loop, [])
+        # Team search is a plain def: its session lives in the threadpool like any route.
+        self.assertEqual([p for p in request_sessions_used if p != "/teams/search"], [])
 
     def test_team_intel_analysis_holds_only_official_data(self):
         # Scouting and video no longer feed a team's public page, so nothing may claim a

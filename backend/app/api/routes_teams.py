@@ -17,6 +17,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import func
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -190,6 +191,22 @@ def _media_candidate_years(base_years: list[int], lookback_years: int = 2) -> li
 
 def _now_unix() -> int:
     return int(time.time())
+
+
+def _with_own_session(db: Session, fn, *args, **kwargs):
+    # For the async intel routes: a database step runs in a worker thread on a short
+    # session of its own, closed before the route awaits anything else. The request's
+    # session must never hold a pooled connection across an await: the route would
+    # then wait for a free thread or connection while holding one, and under load every
+    # connection ended up held by routes waiting on threads that waited on connections.
+    # Nothing expires on commit, so returned rows stay readable once it closes.
+    if not hasattr(db, "get_bind"):
+        return fn(db, *args, **kwargs)
+    own = Session(bind=db.get_bind(), autoflush=False, expire_on_commit=False)
+    try:
+        return fn(own, *args, **kwargs)
+    finally:
+        own.close()
 
 async def _aread_cached_payload(cache_key: str) -> tuple[dict[str, Any] | None, int | None]:
     raw = await get_async_cache().get(cache_key)
@@ -756,7 +773,7 @@ async def _build_team_intel_payload(
     normalized_team_key = _normalize_team_key(team_key)
     normalized_event_key = event_key.strip().lower() if isinstance(event_key, str) and event_key.strip() else None
 
-    team = db.get(models.Team, normalized_team_key)
+    team = await run_in_threadpool(_with_own_session, db, lambda own: own.get(models.Team, normalized_team_key))
     resolved_team_key = team.team_key if team is not None else normalized_team_key
     resolved_team_number = int(team.team_number) if team is not None and team.team_number is not None else _team_number_from_team_key(normalized_team_key)
     resolved_nickname = team.nickname if team is not None else None
@@ -914,8 +931,10 @@ async def _build_team_intel_payload(
             or normalized_event_key
         )
         if rank_event_key:
-            rank_context = _event_rating_rank_context(
+            rank_context = await run_in_threadpool(
+                _with_own_session,
                 db,
+                _event_rating_rank_context,
                 event_key=str(rank_event_key),
                 team_key=normalized_team_key,
             )
@@ -932,8 +951,10 @@ async def _build_team_intel_payload(
         )
         rank_value = _as_float(rank_summary.get("rank"))
         if rank_value is None:
-            fallback_rank = _event_rating_rank(
+            fallback_rank = await run_in_threadpool(
+                _with_own_session,
                 db,
+                _event_rating_rank,
                 event_key=normalized_event_key,
                 team_key=normalized_team_key,
             )
@@ -1001,7 +1022,7 @@ async def _build_event_teams_intel_payload(
     # Everything here is blocking (SQLAlchemy, the TBA roster/status calls, an optional
     # ratings recompute). This coroutine runs on the event loop that also serves every
     # other request and the room websockets, so it runs on a worker thread instead.
-    def _prepare_sync() -> tuple[Any, ...]:
+    def _prepare_sync(db: Session) -> tuple[Any, ...]:
         normalized_event_key = event_key.strip().lower()
         event = db.get(models.Event, normalized_event_key)
         source = "local"
@@ -1155,7 +1176,7 @@ async def _build_event_teams_intel_payload(
         season_year,
         tba_statuses,
         tba_warning,
-    ) = await asyncio.get_running_loop().run_in_executor(None, _prepare_sync)
+    ) = await asyncio.get_running_loop().run_in_executor(None, _with_own_session, db, _prepare_sync)
     teams_payload: list[dict[str, Any]] = []
     fallback_count = 0
     stale_data_count = 0

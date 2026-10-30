@@ -1,3 +1,4 @@
+import functools
 import logging
 import time
 
@@ -96,3 +97,23 @@ def get_db():
         raise
     finally:
         db.close()
+
+
+def close_db_before_response(endpoint):
+    # For a plain-def route with a response_model, FastAPI validates the result in the
+    # shared threadpool after the route returns, while get_db's session (closed only
+    # once the response is sent) still holds its connection. Under load every threadpool
+    # thread waited for a connection held by a request waiting for a thread: the whole
+    # worker stalled. Closing here returns the connection first; get_db's close is then
+    # a no-op. The route must return plain data, not ORM objects.
+    @functools.wraps(endpoint)
+    def wrapper(*args, **kwargs):
+        try:
+            return endpoint(*args, **kwargs)
+        finally:
+            db = kwargs.get("db")
+            if db is not None:
+                db.close()
+
+    wrapper.closes_db_before_response = True
+    return wrapper

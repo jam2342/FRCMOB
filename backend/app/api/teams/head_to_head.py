@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, aliased
 
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.services.intel.helpers import _normalize_team_key
 from app.services.utils import COMP_LEVEL_ORDER
 
@@ -22,6 +22,7 @@ def _tally() -> dict[str, int]:
 
 
 @router.get("/{team_key}/head-to-head")
+@close_db_before_response
 def get_team_head_to_head(
     team_key: str,
     other: str = Query(..., max_length=12, pattern=r"^(?i:frc)?\d{1,5}$"),

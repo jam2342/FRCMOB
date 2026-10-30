@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ from app.core.config import settings
 from app.services.season_config import CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR
 from app.core.security import require_admin_access
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.api.schemas import TeamSearchResponse
 from app.services.intel.helpers import (
     EVENT_INTEL_CACHE_TTL_SEC,
@@ -37,12 +38,27 @@ import app.api.routes_teams as _rt
 router = APIRouter(tags=["teams"])
 logger = logging.getLogger(__name__)
 
+
+# The intel handlers are async (Redis cache, parallel builders), so every database step
+# goes to the threadpool on its own short session (_rt._with_own_session). A query run
+# on the event loop waits there for a pooled connection while the threads holding
+# those connections wait on the loop (room routes hop back to it): under event-day
+# load that deadlocked a worker until the pool timed out.
+def _store_snapshot(db: Session, *, label: str, **kwargs) -> None:
+    try:
+        write_snapshot(db, **kwargs)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("teams.%s snapshot write failed key=%s error=%s", label, kwargs.get("snapshot_key"), exc)
+
 # ---------------------------------------------------------------------------
 # Endpoint: search teams
 # ---------------------------------------------------------------------------
 
 @router.get("/search", response_model=TeamSearchResponse)
-async def search_teams(
+@close_db_before_response
+def search_teams(
     q: str,
     limit: int = 25,
     # Off unless asked for: it's one blocking TBA call per result (up to 75).
@@ -183,7 +199,9 @@ async def get_team_intel(
     if refresh or auto_heal_ratings:
         require_admin_access(request, "Team intel refresh/auto-heal")
     if not refresh:
-        snapshot_payload, snapshot_age = read_snapshot(db, snapshot_key=cache_key)
+        snapshot_payload, snapshot_age = await run_in_threadpool(
+            _rt._with_own_session, db, read_snapshot, snapshot_key=cache_key,
+        )
         if snapshot_payload is not None:
             return _rt._with_cache_metadata(
                 snapshot_payload,
@@ -213,20 +231,18 @@ async def get_team_intel(
         auto_heal_ratings=auto_heal_ratings,
     )
     await _rt._awrite_cached_payload(cache_key, payload, TEAM_INTEL_CACHE_TTL_SEC)
-    try:
-        write_snapshot(
-            db,
-            snapshot_key=cache_key,
-            scope="team",
-            payload=payload,
-            ttl_sec=TEAM_INTEL_CACHE_TTL_SEC,
-            event_key=(event_key.strip().lower() if isinstance(event_key, str) and event_key.strip() else None),
-            team_key=normalized_team_key,
-        )
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        logger.warning("teams.team_intel snapshot write failed key=%s error=%s", cache_key, exc)
+    await run_in_threadpool(
+        _rt._with_own_session,
+        db,
+        _store_snapshot,
+        label="team_intel",
+        snapshot_key=cache_key,
+        scope="team",
+        payload=payload,
+        ttl_sec=TEAM_INTEL_CACHE_TTL_SEC,
+        event_key=(event_key.strip().lower() if isinstance(event_key, str) and event_key.strip() else None),
+        team_key=normalized_team_key,
+    )
     return _rt._with_cache_metadata(
         payload,
         cache_key=cache_key,
@@ -264,7 +280,9 @@ async def get_event_teams_intel(
     if refresh or auto_heal_ratings:
         require_admin_access(request, "Event intel refresh/auto-heal")
     if not refresh:
-        snapshot_payload, snapshot_age = read_snapshot(db, snapshot_key=cache_key)
+        snapshot_payload, snapshot_age = await run_in_threadpool(
+            _rt._with_own_session, db, read_snapshot, snapshot_key=cache_key,
+        )
         if snapshot_payload is not None:
             return _rt._with_cache_metadata(
                 snapshot_payload,
@@ -293,20 +311,18 @@ async def get_event_teams_intel(
         include_rating_signals=include_rating_signals,
     )
     await _rt._awrite_cached_payload(cache_key, payload, EVENT_INTEL_CACHE_TTL_SEC)
-    try:
-        write_snapshot(
-            db,
-            snapshot_key=cache_key,
-            scope="event",
-            payload=payload,
-            ttl_sec=EVENT_INTEL_CACHE_TTL_SEC,
-            event_key=normalized_event_key,
-            team_key=None,
-        )
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        logger.warning("teams.event_intel snapshot write failed key=%s error=%s", cache_key, exc)
+    await run_in_threadpool(
+        _rt._with_own_session,
+        db,
+        _store_snapshot,
+        label="event_intel",
+        snapshot_key=cache_key,
+        scope="event",
+        payload=payload,
+        ttl_sec=EVENT_INTEL_CACHE_TTL_SEC,
+        event_key=normalized_event_key,
+        team_key=None,
+    )
     return _rt._with_cache_metadata(
         payload,
         cache_key=cache_key,
