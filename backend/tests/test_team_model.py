@@ -132,6 +132,42 @@ class SeasonRunCacheTests(unittest.TestCase):
         service._refreshing.clear()
 
 
+    def test_requests_during_a_cold_build_wait_for_it_instead_of_replaying(self):
+        # Right after a restart every ratings request found no run; each replayed the
+        # season itself and a dozen parallel replays starved the worker for a minute.
+        import threading
+        import time
+        from unittest.mock import patch
+
+        from app.services.ratings import team_model_service as service
+
+        run, built = object(), []
+
+        def slow_compute(db, season, fp):
+            built.append(fp)
+            time.sleep(0.2)
+            service._cache[season] = (fp, run)
+            return run
+
+        service.clear_cache()
+        got = []
+        with (
+            patch.object(service, "_fingerprint", return_value=("fp",)),
+            patch.object(service, "_compute", side_effect=slow_compute),
+        ):
+            threads = [
+                threading.Thread(target=lambda: got.append(service.season_run(unittest.mock.MagicMock(), 2026, allow_stale=True)))
+                for _ in range(6)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(built, [("fp",)])
+        self.assertEqual(got, [run] * 6)
+        service.clear_cache()
+
+
 # Match noise as in this synthetic data (alliance sd ~15-20); the 2026 settings assume ~63.
 QUIET = ComponentParams(prior_var=4000.0, match_var=10.0, event_var=300.0, noise_var=400.0)
 

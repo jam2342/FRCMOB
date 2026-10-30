@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.services.intel.helpers import _normalize_team_key
 from app.services.ratings.constants import SEASON_BASELINES
 from app.services.seasons import SEASON_GAMES, current_season, is_frozen
@@ -19,6 +19,7 @@ router = APIRouter(tags=["teams"])
 
 
 @router.get("/{team_key}/rating-history")
+@close_db_before_response
 def get_team_rating_history(team_key: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     # routes_teams includes this router, so its helpers are imported when called.
     from app.api.routes_teams import _event_rating_rank_context

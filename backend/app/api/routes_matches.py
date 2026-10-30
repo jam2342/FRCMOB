@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import require_admin_access, require_write_access
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.api.schemas import ScheduleResponse, TeamLiveFormResponse
 from app.services.cache import get_cache
 from app.services.events.first_events_client import FIRSTEventsClient
@@ -1179,6 +1179,7 @@ def get_event_schedules(
 
 
 @router.get("/event/{event_key}/schedule", response_model=ScheduleResponse)
+@close_db_before_response
 def get_event_schedule(
     event_key: str,
     request: Request,
@@ -1572,6 +1573,7 @@ def get_event_schedule(
 
 
 @router.get("/event/{event_key}/team-live-form", response_model=TeamLiveFormResponse)
+@close_db_before_response
 def get_event_team_live_form(
     event_key: str,
     form_window: int = Query(default=FORM_WINDOW_MATCHES, ge=1, le=10),
@@ -1815,6 +1817,7 @@ def _match_video(match_key: str) -> dict[str, str] | None:
 
 
 @router.get("/{match_key}/practice")
+@close_db_before_response
 def get_match_practice(
     match_key: str,
     team: str = Query(..., max_length=12, pattern=r"^(?i:frc)?\d{1,5}$"),

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import require_write_access, sanitize_external_error
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.api.schemas import SchedulePredictionsResponse
 from app.services.cache import get_cache
 from app.services.events.win_probability import match_predictions, red_win_prob as points_red_win_prob
@@ -957,6 +957,7 @@ def ingest_event(
 
 
 @router.get("/{event_key}/forecast")
+@close_db_before_response
 def get_event_forecast(event_key: str, db: Session = Depends(get_db)) -> dict:
     # The rest of the event, simulated: each team's expected rank and its chances of the
     # top 8, captaining, making an alliance and winning (simulation/forecast.py).
@@ -972,6 +973,7 @@ def get_event_forecast(event_key: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{event_key}/pick-values")
+@close_db_before_response
 def get_event_pick_values(
     event_key: str,
     teams: str = Query(default="", description="The alliance so far: 1-2 team keys, comma separated."),
@@ -994,6 +996,7 @@ def get_event_pick_values(
 
 
 @router.get("/{event_key}/what-if")
+@close_db_before_response
 def get_event_what_if(
     event_key: str,
     team: str = Query(..., max_length=12, pattern=r"^(?i:frc)?\d{1,5}$"),
@@ -1025,6 +1028,7 @@ def get_event_what_if(
 
 
 @router.get("/{event_key}/matchup")
+@close_db_before_response
 def get_event_matchup(
     event_key: str,
     red: str = Query(..., max_length=64, description="Three team keys, comma separated."),
@@ -1053,6 +1057,7 @@ def get_event_matchup(
 # The path predates synergy's removal (2026-10-17) and is kept so phones' saved offline
 # copies and the edge-cache rule still match: it is the schedule with predictions.
 @router.get("/{event_key}/schedule-with-synergy", response_model=SchedulePredictionsResponse)
+@close_db_before_response
 def get_event_schedule_with_synergy(
     event_key: str,
     db: Session = Depends(get_db),

@@ -23,7 +23,7 @@ from app.core.security import (
     room_access_payload_from_request,
 )
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.services.analysis.runs import best_on_device_run, visible_sessions
 from app.services.auto_scout.scouting import withdraw_drafts_for_run
 from app.services.analysis.runs import RUN_KIND_ON_DEVICE
@@ -600,6 +600,7 @@ def _stored_shift1_active_alliance(match_key: str) -> tuple[str | None, str | No
 
 
 @router.post("/on-device-session", response_model=OnDeviceSessionSyncResponse)
+@close_db_before_response
 def ingest_on_device_session(
     body: OnDeviceSessionRequest, request: Request, db: Session = Depends(get_db)
 ):
@@ -969,6 +970,7 @@ def ingest_on_device_session(
     "/on-device-session/{session_id}/review",
     response_model=OnDeviceSessionReviewResponse,
 )
+@close_db_before_response
 def review_on_device_session(
     session_id: int,
     body: OnDeviceSessionReviewRequest,

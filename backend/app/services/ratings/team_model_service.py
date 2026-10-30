@@ -87,7 +87,24 @@ def season_run(db: Session, season: int, *, allow_stale: bool = False) -> Season
                 bind = db.get_bind()
                 threading.Thread(target=_refresh, args=(bind, season), daemon=True, name=f"team-model-{season}").start()
             return cached[1]
-    return _compute(db, season, fingerprint)
+    # One build per season at a time. Requests that arrive while it runs (right after a
+    # restart, all of them) wait for it instead of each replaying the season: under
+    # load a dozen parallel replays took ~60 s each and starved every other request.
+    with _build_lock(season):
+        fingerprint = _fingerprint(db, season)
+        with _lock:
+            cached = _cache.get(season)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
+        return _compute(db, season, fingerprint)
+
+
+_build_locks: dict[int, threading.Lock] = {}
+
+
+def _build_lock(season: int) -> threading.Lock:
+    with _lock:
+        return _build_locks.setdefault(season, threading.Lock())
 
 
 def _refresh(bind, season: int) -> None:
@@ -96,7 +113,8 @@ def _refresh(bind, season: int) -> None:
     try:
         db = sessionmaker(bind=bind, autoflush=False)()
         try:
-            _compute(db, season, _fingerprint(db, season))
+            with _build_lock(season):
+                _compute(db, season, _fingerprint(db, season))
         finally:
             db.close()
     except Exception:

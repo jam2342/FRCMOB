@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.services.intel.helpers import _normalize_team_key
 from app.services.seasons import SEASON_GAMES, current_season
 from app.services.simulation.forecast import _ordered, _standings, finals_outcome
@@ -27,6 +27,7 @@ def _best(current: dict[str, Any] | None, candidate: dict[str, Any]) -> dict[str
 
 
 @router.get("/{team_key}/season-story")
+@close_db_before_response
 def get_team_season_story(
     team_key: str,
     season: int | None = Query(default=None, ge=1992, le=2100),

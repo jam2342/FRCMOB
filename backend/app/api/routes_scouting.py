@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import require_admin_access, require_write_access, sanitize_external_error
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.api.schemas import RatingsResponse, TeamsHistoryResponse
 from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH, best_on_device_run
 from app.services.scouting_rooms.helpers import (
@@ -206,6 +206,7 @@ def _upsert_event_roster_if_missing(
 
 
 @router.get("/event/{event_key}/ratings", response_model=RatingsResponse)
+@close_db_before_response
 def get_event_ratings(
     event_key: str,
     request: Request,
@@ -401,6 +402,7 @@ def get_team_breakdown(
 
 
 @router.get("/event/{event_key}/teams/history", response_model=TeamsHistoryResponse)
+@close_db_before_response
 def get_event_team_histories(
     event_key: str,
     history_limit: int = RECENT_STATS_MATCH_WINDOW,
