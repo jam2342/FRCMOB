@@ -25,6 +25,8 @@
 # ...
 from __future__ import annotations
 
+import os
+import re
 import unittest
 
 import pytest
@@ -32,7 +34,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db.base import Base
+# Under pytest-xdist (-n auto) every worker gets its own Redis database and pub/sub
+# prefix, before the app reads its settings: with a real Redis (CI) the workers would
+# otherwise share counters and caches, and pub/sub ignores the database number.
+_XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+if _XDIST_WORKER.startswith("gw") and os.environ.get("REDIS_URL"):
+    _worker_db = int(_XDIST_WORKER[2:]) % 15 + 1
+    os.environ["REDIS_URL"] = re.sub(r"/\d*$", "", os.environ["REDIS_URL"]) + f"/{_worker_db}"
+    os.environ["SCOUTING_ROOMS_CHANNEL_PREFIX"] = f"test{_worker_db}:scouting:rooms:"
+
+from app.db.base import Base  # noqa: E402 - after the per-worker settings above
 
 def _make_test_engine():
     # Create an in-memory SQLite engine suitable for tests.
@@ -155,3 +166,21 @@ class DBTestCase(unittest.TestCase):
             Base.metadata.drop_all(self.engine)
             self.engine.dispose()
         super().tearDown()
+
+
+# These share CI's one Postgres test database (and the multi-instance test binds fixed
+# ports), so under pytest-xdist (--dist loadgroup) they run one after another on a
+# single worker. Everything else uses in-memory SQLite and runs in parallel.
+_SHARED_SERVICE_TESTS = {
+    "test_on_device_sync_postgres_e2e.py",
+    "test_realtime_multi_instance_e2e.py",
+    "test_schedule_refresh_postgres_e2e.py",
+    "test_security_storage_postgres.py",
+    "test_workspace_postgres_e2e.py",
+}
+
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        if item.path.name in _SHARED_SERVICE_TESTS:
+            item.add_marker(pytest.mark.xdist_group("shared-services"))

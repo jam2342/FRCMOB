@@ -48,6 +48,14 @@ jobs:
           cache: npm
           cache-dependency-path: ScoutingApp/package-lock.json
       - run: npm ci
+      # ESLint's cache (content hashes, so a fresh checkout still hits): ~50 s cold,
+      # a few seconds when only a few files changed. Restored after npm ci, which
+      # empties node_modules. ESLint drops entries itself when the config changes.
+      - uses: actions/cache@v6
+        with:
+          path: ScoutingApp/node_modules/.cache/eslint
+          key: eslint-${{ hashFiles('ScoutingApp/package-lock.json', 'ScoutingApp/eslint.config.js') }}-${{ github.sha }}
+          restore-keys: eslint-${{ hashFiles('ScoutingApp/package-lock.json', 'ScoutingApp/eslint.config.js') }}-
       - run: npm run lint
       # The two static style guards; the others drive a browser against live data.
       - run: npm run guard:colours
@@ -103,7 +111,7 @@ jobs:
       - run: pip install -r requirements.txt
       # Pin lint behavior so a new Ruff release cannot turn unrelated style
       # rules into a red build without a reviewed migration.
-      - run: pip install ruff==0.15.4 pytest pip-audit
+      - run: pip install ruff==0.15.4 pytest pytest-xdist==3.8.0 pip-audit
       # The detector label tools' tests need Pillow (requirements-training.txt).
       - run: pip install "$(grep -E '^pillow' requirements-training.txt)"
       - run: pip-audit -r requirements.txt
@@ -111,4 +119,6 @@ jobs:
       - run: alembic upgrade head
       # Fails when the models and the migrations disagree (a model change with no migration).
       - run: alembic check
-      - run: PYTHONPATH=. pytest -q tests
+      # One process per core; conftest.py gives each its own Redis database and keeps the
+      # tests that share the Postgres database together on one worker (loadgroup).
+      - run: PYTHONPATH=. pytest -q -n auto --dist loadgroup tests

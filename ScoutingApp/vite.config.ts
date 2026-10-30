@@ -42,6 +42,10 @@ export default defineConfig(({ mode }) => ({
     // tries to run browser guards inside jsdom.
     include: ['src/**/*.{test,spec}.{ts,tsx}', 'e2e/lib/*.test.mjs', 'build/*.test.ts'],
     environment: 'jsdom',
+    // One jsdom per worker thread, a fresh VM context per test file. The default pool
+    // started a process and loaded jsdom (~2 s) for every one of the 200+ files: about
+    // two thirds of the run was setup. The tests stay isolated per file either way.
+    pool: 'vmThreads',
     setupFiles: './src/test/setup.ts',
     globals: true,
     css: true,
