@@ -57,7 +57,7 @@
     "onnxruntime-web": "^1.30.0",
     "preact": "11.0.0",
     "qrcode": "^1.5.4",
-    "react": "^19.3.0",
+    "react": "^19.3.1",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
     "web-vitals": "6.2.3"
