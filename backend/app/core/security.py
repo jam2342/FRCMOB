@@ -91,12 +91,14 @@ def _safe_compare_secret(provided: str, expected: str) -> bool:
         return False
     return secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
 
-# Every admin-key check counts toward one site-wide failure budget. Per-caller
-# limits don't work behind the Vercel rewrite (every visitor arrives from Vercel's
-# addresses), and the raw key is accepted on every admin route, not just the login.
-# Once the budget is spent, no key is accepted until the window rolls over; signed
-# admin sessions keep working, so an attacker can't lock out a signed-in operator.
+# Every wrong admin key counts toward one site-wide number, and passing the budget in a
+# window raises an ops alert. It used to lock every key out until the window rolled
+# over, but anyone could spend the budget with 20 bad headers on /health and keep the
+# operator locked out (2026-10-30); per-caller limits can't tell the operator apart
+# behind the Vercel rewrite. Guessing is stopped by the key itself instead: production
+# refuses to start with one shorter than ADMIN_KEY_MIN_LENGTH.
 ADMIN_KEY_FAILURE_BUDGET = 20
+ADMIN_KEY_MIN_LENGTH = 32
 ADMIN_KEY_FAILURE_WINDOW_SEC = 900
 _ADMIN_KEY_FAILURE_KEY = "security:admin_key_failures:"
 
@@ -109,17 +111,6 @@ def _admin_key_failure_redis():
 
 def _admin_key_window(now: float | None = None) -> str:
     return _ADMIN_KEY_FAILURE_KEY + str(int((time.time() if now is None else now) // ADMIN_KEY_FAILURE_WINDOW_SEC))
-
-
-def _admin_key_guesses_exhausted() -> bool:
-    client = _admin_key_failure_redis()
-    if client is None:
-        return False
-    try:
-        return int(client.get(_admin_key_window()) or 0) >= ADMIN_KEY_FAILURE_BUDGET
-    except Exception:
-        logger.warning("admin key failure budget unavailable", exc_info=True)
-        return False
 
 
 def _record_admin_key_failure() -> None:
@@ -139,8 +130,6 @@ def _record_admin_key_failure() -> None:
 
 def _admin_key_matches(provided: str, expected: str) -> bool:
     if not provided or not expected:
-        return False
-    if _admin_key_guesses_exhausted():
         return False
     if _safe_compare_secret(provided, expected):
         return True

@@ -39,6 +39,7 @@ from app.services.scouting_rooms.bus import scouting_room_bus
 from app.services.scouting_rooms.note_tags import SCOUT_NOTE_TAG_SET
 from app.services.scouting_rooms.realtime import scouting_room_hub
 from app.services.utils import _clamp, pg_sqlstate_code as _pg_sqlstate_shared
+from app.services.workspace_limits import guard_room_entry_storage
 from app.services.workspaces import (
     WORKSPACE_REVOKED_DETAIL,
     WorkspaceActor,
@@ -1070,6 +1071,7 @@ def _persist_room_entry(
                 return existing, False
             payload = {**dict(entry_payload), "id": (existing.payload or {}).get("id") or normalized_client_id}
             payload["scout_profile"] = scout_profile
+            guard_room_entry_storage(db, room.workspace_id, payload, adding=False)
             existing.payload = payload
             existing.total_points = _entry_metric(payload, "points", "total")
             existing.driver_score_0_100 = _entry_metric(payload, "driver_competency", "score_0_100")
@@ -1086,6 +1088,7 @@ def _persist_room_entry(
     if not payload.get("id"):
         payload["id"] = normalized_client_id or f"{int(now.timestamp() * 1000)}-{secrets.token_hex(3)}"
     payload["scout_profile"] = scout_profile
+    guard_room_entry_storage(db, room.workspace_id, payload, adding=True)
 
     event_key = _normalize_event_key(payload.get("event_key") or room.event_key)
     match_key = _normalize_match_key(payload.get("match_key"))
@@ -2312,15 +2315,24 @@ async def scouting_room_ws(websocket: WebSocket, room_key: str):
                             }
                         )
                         continue
-                serialized, created = await _ws_db(
-                    _ws_save_entry,
-                    member_id=member_id,
-                    workspace_id=workspace_id,
-                    room_key=normalized,
-                    entry=entry,
-                    scout_profile=scout_profile,
-                    client_entry_id=(str(payload.get("client_entry_id") or "").strip() or None),
-                )
+                try:
+                    serialized, created = await _ws_db(
+                        _ws_save_entry,
+                        member_id=member_id,
+                        workspace_id=workspace_id,
+                        room_key=normalized,
+                        entry=entry,
+                        scout_profile=scout_profile,
+                        client_entry_id=(str(payload.get("client_entry_id") or "").strip() or None),
+                    )
+                except HTTPException as exc:
+                    # A report over the storage limits is refused; the socket stays open.
+                    if exc.status_code not in (413, 507):
+                        raise
+                    await websocket.send_json(
+                        {"type": "error", "detail": exc.detail, "client_entry_id": payload.get("client_entry_id")}
+                    )
+                    continue
                 message = {
                     "type": "entry_saved",
                     "room_key": normalized,

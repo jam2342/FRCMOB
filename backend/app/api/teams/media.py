@@ -68,6 +68,14 @@ def _media_image_url(media: dict[str, Any]) -> str | None:
 
     return None
 
+def _web_link(value: Any) -> str | None:
+    # TBA's media links come from teams; the page puts this one in an <a href>, so only
+    # web addresses pass (never javascript: or data:).
+    if isinstance(value, str) and value.strip().lower().startswith(("https://", "http://")):
+        return value.strip()
+    return None
+
+
 def _pick_media(
     media_rows: list[dict[str, Any]],
     url_for: Callable[[dict[str, Any]], str | None],
@@ -85,7 +93,7 @@ def _pick_media(
                 return (
                     url,
                     media_type if isinstance(media_type, str) else default_type,
-                    view_url if isinstance(view_url, str) else None,
+                    _web_link(view_url),
                 )
     return None
 

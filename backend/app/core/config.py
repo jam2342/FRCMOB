@@ -148,6 +148,11 @@ class Settings(BaseSettings):
     pit_photo_minimum_free_bytes: int = 512 * 1024 * 1024
     pit_photo_max_files_per_workspace: int = 2000
     pit_photo_max_files_total: int = 10000
+    # A real scouting report is 2-4 KB; the 10 MiB body limit let one member store junk
+    # reports of 10 MB each and every teammate's room poll download them (2026-10-30).
+    scouting_room_entry_max_bytes: int = 32 * 1024
+    scouting_room_entries_max_per_workspace: int = 15000
+    scouting_room_entries_bytes_total: int = 8 * 1024 * 1024 * 1024
     push_subscriptions_max_total: int = 10000
     push_subscriptions_max_new_per_hour: int = 300
     push_subscription_retention_days: int = 180

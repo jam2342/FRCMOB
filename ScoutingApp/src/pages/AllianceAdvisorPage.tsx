@@ -437,7 +437,7 @@ export function AllianceAdvisorPage() {
                   value={simulations}
                   onValueChange={setSimulations}
                   min={50}
-                  max={5000}
+                  max={1000}
                   step={50}
                 />
                 <FieldStepper

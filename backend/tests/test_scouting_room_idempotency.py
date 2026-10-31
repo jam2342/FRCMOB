@@ -179,6 +179,38 @@ class ScoutingRoomIdempotencyTests(unittest.TestCase):
         self.assertEqual(leader_profile, "ScoutB")
         self.assertEqual(leader_source, "presence_fallback")
 
+    def _persist(self, payload, client_entry_id=None):
+        return routes_scouting_rooms._persist_room_entry(
+            self.db, room=self.room, entry_payload=payload, scout_profile="ScoutA",
+            client_entry_id=client_entry_id, author_member_id=self.author_id,
+        )
+
+    def test_a_junk_sized_report_is_refused_and_a_real_one_is_not(self):
+        # Every saved report goes to every teammate's room poll; 10 MB ones used to be stored.
+        real = {"match_key": "2026txhou_qm1", "team_key": "frc118", "notes": "é" * 600, "form": {f"f{i}": 9 for i in range(200)}}
+        self._persist(real)
+        with self.assertRaises(HTTPException) as refused:
+            self._persist({**real, "notes": "x" * (settings.scouting_room_entry_max_bytes + 1)})
+        self.assertEqual(refused.exception.status_code, 413)
+        # A correction can't grow a saved report past the limit either.
+        self._persist({**real, "saved_at_ms": 1}, client_entry_id="entry-2")
+        with self.assertRaises(HTTPException) as grown:
+            self._persist({**real, "saved_at_ms": 2, "notes": "x" * (settings.scouting_room_entry_max_bytes + 1)}, client_entry_id="entry-2")
+        self.assertEqual(grown.exception.status_code, 413)
+        self.assertEqual(self.db.query(models.ScoutingRoomEntry).count(), 2)
+
+    def test_a_workspace_stops_at_its_report_count(self):
+        previous = settings.scouting_room_entries_max_per_workspace
+        settings.scouting_room_entries_max_per_workspace = 3
+        try:
+            for n in range(3):
+                self._persist({"match_key": "2026txhou_qm1", "team_key": "frc118", "n": n})
+            with self.assertRaises(HTTPException) as full:
+                self._persist({"match_key": "2026txhou_qm1", "team_key": "frc118", "n": 3})
+            self.assertEqual(full.exception.status_code, 413)
+        finally:
+            settings.scouting_room_entries_max_per_workspace = previous
+
     def test_presence_never_promotes_anyone_to_owner(self):
         # Being first into an ownerless room used to make you its leader, which let
         # any teammate take over a room whose owner had left.

@@ -7,6 +7,7 @@
 # anything and nobody has opened in a month.
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -227,3 +228,28 @@ def delete_abandoned_empty_workspaces(db: Session, *, now: datetime | None = Non
         "remaining_workspaces": int(remaining),
         "cutoff": cutoff.isoformat(),
     }
+
+
+def room_entry_bytes(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8"))
+
+
+def guard_room_entry_storage(db: Session, workspace_id: int, payload: dict[str, Any], *, adding: bool) -> None:
+    # Called under the workspace row lock, so a workspace's own count can't race past its cap.
+    if room_entry_bytes(payload) > max(1024, int(settings.scouting_room_entry_max_bytes)):
+        raise HTTPException(status_code=413, detail="This report is too large to save. Shorten the notes and try again.")
+    if not adding:
+        return
+    saved = db.execute(
+        select(func.count(models.ScoutingRoomEntry.id))
+        .join(models.ScoutingRoom, models.ScoutingRoom.room_key == models.ScoutingRoomEntry.room_key)
+        .where(models.ScoutingRoom.workspace_id == workspace_id)
+    ).scalar_one()
+    if int(saved) >= max(1, int(settings.scouting_room_entries_max_per_workspace)):
+        raise HTTPException(status_code=413, detail="Your team has saved as many reports as a workspace can hold.")
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    total = db.execute(text("SELECT pg_total_relation_size('scouting_room_entries')")).scalar_one()
+    if int(total) >= max(1, int(settings.scouting_room_entries_bytes_total)):
+        logger.warning("workspaces.room_entry_storage_full bytes=%s", total)
+        raise HTTPException(status_code=507, detail="Report storage is full right now. Your report is still on this phone.")
