@@ -40,7 +40,7 @@ from app.core.config import (
     assert_no_legacy_texas_settings,
     settings,
 )
-from app.core.security import ADMIN_SESSION_HEADER
+from app.core.security import ADMIN_KEY_MIN_LENGTH, ADMIN_SESSION_HEADER
 from app.core.security import enforce_write_request_access
 from app.core.security import media_signature_member
 from app.core.security import request_has_admin_access
@@ -92,6 +92,24 @@ def _configure_logging() -> None:
 
 _configure_logging()
 logger = logging.getLogger(__name__)
+
+
+def _raise_open_file_limit(target: int = 65536) -> None:
+    # Every socket is an open file. Python keeps the container's soft limit of 1024 (Go
+    # programs like Caddy raise theirs), so a worker ran out at ~1,000 sockets and then
+    # refused everyone. The hard limit is far higher; take what's needed of it.
+    try:
+        import resource
+
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        wanted = target if hard == resource.RLIM_INFINITY else min(target, hard)
+        if soft != resource.RLIM_INFINITY and soft < wanted:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (wanted, hard))
+    except (ImportError, ValueError, OSError):
+        logger.warning("could not raise the open file limit", exc_info=True)
+
+
+_raise_open_file_limit()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -225,6 +243,11 @@ def _startup_env_validation_report() -> dict[str, object]:
             warnings.append(
                 f"{message} Dev/testing will use a process-local ephemeral secret."
             )
+
+    admin_key = str(settings.admin_api_key or "").strip()
+    if production_like and admin_key and len(admin_key) < ADMIN_KEY_MIN_LENGTH:
+        # A wrong key no longer locks anything out, so the key's length is what stops guessing.
+        errors.append(f"ADMIN_API_KEY must be at least {ADMIN_KEY_MIN_LENGTH} characters in production.")
 
     if bool(settings.enforce_admin_auth_for_writes) and not str(settings.admin_api_key or "").strip():
         message = (

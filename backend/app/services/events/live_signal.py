@@ -15,6 +15,8 @@ import hashlib
 import json
 import logging
 import re
+import resource
+from collections import Counter
 from contextlib import suppress
 from typing import Any
 
@@ -32,6 +34,10 @@ _WATCHED_TTL_SEC = 30
 EVENT_KEY_RE = re.compile(r"^\d{4}[a-z0-9]{1,16}$")
 # Bounds on what anonymous sockets can cost: per worker, and events refreshed per tick.
 MAX_SOCKETS_PER_WORKER = 3000
+# One address can't take the whole budget; a page refused here keeps polling as usual.
+MAX_SOCKETS_PER_CLIENT = 50
+# Each socket is an open file, and the worker still needs files for Postgres, Redis and HTTP.
+_FILES_RESERVED = 512
 MAX_WATCHED_EVENTS = 40
 POLL_SEC = 2.0
 _WATCH_REFRESH_SEC = 10.0
@@ -83,11 +89,28 @@ def watched_events() -> list[str]:
     return sorted(events)
 
 
+def socket_cap() -> int:
+    # Under a low open-file limit the worker ran out of files at ~1,000 sockets, well
+    # before the cap, and then refused every request, not just sockets (2026-10-30).
+    soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft == resource.RLIM_INFINITY:
+        return MAX_SOCKETS_PER_WORKER
+    return max(0, min(MAX_SOCKETS_PER_WORKER, soft - _FILES_RESERVED))
+
+
+def client_address(websocket: WebSocket) -> str:
+    # Sockets come straight to Caddy, not through Vercel, and Caddy sets X-Forwarded-For
+    # to the caller's address; the last entry is always the one Caddy wrote.
+    forwarded = str(websocket.headers.get("x-forwarded-for") or "").split(",")[-1].strip()
+    return forwarded or (websocket.client.host if websocket.client else "") or "unknown"
+
+
 class LiveResultsHub:
     # The sockets of one API worker, by event, and one loop telling them about changes.
     def __init__(self) -> None:
         self._sockets: dict[str, set[WebSocket]] = {}
         self._versions: dict[str, str | None] = {}
+        self._per_client: Counter[str] = Counter()
         self._task: asyncio.Task | None = None
 
     @property
@@ -98,12 +121,14 @@ class LiveResultsHub:
         if not EVENT_KEY_RE.fullmatch(event_key):
             await websocket.close(code=4400, reason="Unknown event")
             return
-        if self.socket_count >= MAX_SOCKETS_PER_WORKER:
+        client = client_address(websocket)
+        if self.socket_count >= socket_cap() or self._per_client[client] >= MAX_SOCKETS_PER_CLIENT:
             await websocket.close(code=1013, reason="Busy, try again shortly")
             return
         await websocket.accept()
         sockets = self._sockets.setdefault(event_key, set())
         sockets.add(websocket)
+        self._per_client[client] += 1
         self._ensure_loop()
         try:
             current = (await asyncio.to_thread(_versions, [event_key])).get(event_key)
@@ -118,6 +143,9 @@ class LiveResultsHub:
             logger.debug("live_signal.socket_closed event=%s", event_key, exc_info=True)
         finally:
             sockets.discard(websocket)
+            self._per_client[client] -= 1
+            if self._per_client[client] <= 0:
+                del self._per_client[client]
             if not sockets:
                 self._sockets.pop(event_key, None)
                 self._versions.pop(event_key, None)
@@ -161,6 +189,7 @@ class LiveResultsHub:
                     await socket.close(code=1001)
         self._sockets.clear()
         self._versions.clear()
+        self._per_client.clear()
 
 
 live_results_hub = LiveResultsHub()

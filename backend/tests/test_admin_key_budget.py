@@ -38,21 +38,31 @@ class AdminKeyBudgetTests(unittest.TestCase):
     def tearDown(self):
         settings.enforce_admin_auth_for_writes, settings.admin_api_key = self._prior
 
-    def test_guessing_spends_a_site_wide_budget_then_no_key_is_accepted(self):
+    def test_wrong_keys_are_counted_but_never_lock_the_real_key_out(self):
+        # 20 bad headers on /health used to lock the operator out for 15 minutes.
         self.assertTrue(security.admin_api_key_authorized("the-real-admin-key"))
-        for attempt in range(security.ADMIN_KEY_FAILURE_BUDGET):
+        for attempt in range(security.ADMIN_KEY_FAILURE_BUDGET * 2):
             self.assertFalse(security.admin_api_key_authorized(f"guess-{attempt}"))
-        # Even the right key waits out the window; issued sessions are unaffected.
-        self.assertFalse(security.admin_api_key_authorized("the-real-admin-key"))
-        session = security.issue_admin_session_token(ttl_sec=600)["token"]
-        self.assertIsNotNone(security.parse_admin_session_token(session))
+        self.assertEqual(sum(self.redis.values.values()), security.ADMIN_KEY_FAILURE_BUDGET * 2)
+        self.assertTrue(security.admin_api_key_authorized("the-real-admin-key"))
 
     def test_the_header_path_counts_too(self):
         request = mock.Mock(headers={"X-Admin-Key": "wrong"})
         for _ in range(security.ADMIN_KEY_FAILURE_BUDGET):
             self.assertFalse(security.request_has_explicit_admin_credential(request))
+        self.assertEqual(sum(self.redis.values.values()), security.ADMIN_KEY_FAILURE_BUDGET)
         request.headers = {"X-Admin-Key": "the-real-admin-key"}
-        self.assertFalse(security.request_has_explicit_admin_credential(request))
+        self.assertTrue(security.request_has_explicit_admin_credential(request))
+
+    def test_production_refuses_a_short_admin_key(self):
+        from app import main
+
+        with (
+            mock.patch.object(type(settings), "is_production_like", new_callable=mock.PropertyMock, return_value=True),
+            mock.patch.object(settings, "admin_api_key", "short-key"),
+        ):
+            errors = main._startup_env_validation_report()["errors"]
+        self.assertTrue(any("ADMIN_API_KEY must be at least" in error for error in errors), errors)
 
     def test_without_redis_the_key_still_works(self):
         with mock.patch.object(security, "_admin_key_failure_redis", return_value=None):

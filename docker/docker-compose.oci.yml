@@ -68,6 +68,12 @@ services:
     # working over SSH without exposing plain HTTP.
     ports:
       - "127.0.0.1:8000:8000"
+    # Every socket is an open file; Docker's default soft limit of 1024 ran a worker out
+    # at ~1,000 live-results sockets (the app also raises its own limit at startup).
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     restart: unless-stopped
     volumes:
       - backend_media:/app/media

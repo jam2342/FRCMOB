@@ -27,5 +27,6 @@ COPY backend/ /app/
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # No access log: room sockets carry their credentials in the URL (browsers can't set
 # WebSocket headers), and uvicorn logs the full query string. The app's own
-# request.complete line logs the path only.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --no-access-log"]
+# request.complete line logs the path only. --ws-max-size: socket messages skip the
+# 10 MiB body limit, and uvicorn's own default is 16 MiB; a room message is a few KB.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --no-access-log --ws-max-size 1048576"]

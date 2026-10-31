@@ -6,6 +6,9 @@ from __future__ import annotations
 import logging
 import math
 import random
+import threading
+import time
+from collections import OrderedDict
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import models
 from app.db.session import get_db
+from app.services.cache import get_cache
 from app.services.utils import _as_float
 from app.tba.client import TBAClient
 
@@ -172,44 +176,48 @@ def _simulate_alliance_selection(
     scale: float,
     simulations: int,
 ) -> tuple[dict[str, float], dict[str, float], dict[str, list[str]]]:
-    non_captains = [team_key for team_key in event_team_keys if team_key not in set(captain_team_keys)]
-    if not captain_team_keys or not non_captains or simulations <= 0:
+    # The same draws as _softmax_probabilities + _draw_weighted_team, in the same float
+    # order (results are bit-identical), without building dicts for every pick: 2.7 s
+    # of CPU for 3,000 runs made this public route a cheap way to slow the API.
+    captain_set = set(captain_team_keys)
+    pool = sorted(team_key for team_key in event_team_keys if team_key not in captain_set)
+    if not captain_team_keys or not pool or simulations <= 0:
         return {}, {}, {}
 
-    first_round_counts: dict[str, int] = {team_key: 0 for team_key in event_team_keys}
-    second_round_counts: dict[str, int] = {team_key: 0 for team_key in event_team_keys}
-    rng = random.Random(118)  # deterministic for reproducible UI outputs  # nosec B311
-    captain_set = set(captain_team_keys)
+    safe_scale = max(1e-6, float(scale))
+    desirability = [float(desirability_by_team.get(team_key, 0.0)) for team_key in pool]
+    exp = math.exp
+    first_round_counts: dict[str, int] = dict.fromkeys(event_team_keys, 0)
+    second_round_counts: dict[str, int] = dict.fromkeys(event_team_keys, 0)
+    draw = random.Random(118).random  # deterministic for reproducible UI outputs  # nosec B311
+    # Round 1 picks seed 1 -> seed N, round 2 seed N -> seed 1; only the tally differs.
+    tallies = [first_round_counts] * len(captain_team_keys) + [second_round_counts] * len(captain_team_keys)
 
     for _ in range(simulations):
-        available: set[str] = set(non_captains)
-        alliances: dict[str, list[str]] = {captain: [captain] for captain in captain_team_keys}
-
-        # Round 1 picks: seed 1 -> seed N
-        for captain in captain_team_keys:
+        available = list(range(len(pool)))
+        for counts in tallies:
             if not available:
                 break
-            candidates = sorted(available)
-            probs = _softmax_probabilities(desirability_by_team, candidates, scale)
-            selected = _draw_weighted_team(probs, rng)
-            if not selected or selected not in available:
-                continue
-            alliances[captain].append(selected)
-            first_round_counts[selected] = first_round_counts.get(selected, 0) + 1
-            available.remove(selected)
-
-        # Round 2 picks: seed N -> seed 1
-        for captain in reversed(captain_team_keys):
-            if not available:
-                break
-            candidates = sorted(available)
-            probs = _softmax_probabilities(desirability_by_team, candidates, scale)
-            selected = _draw_weighted_team(probs, rng)
-            if not selected or selected not in available:
-                continue
-            alliances[captain].append(selected)
-            second_round_counts[selected] = second_round_counts.get(selected, 0) + 1
-            available.remove(selected)
+            top = max([desirability[i] for i in available])
+            weights = [exp((desirability[i] - top) / safe_scale) for i in available]
+            total = 0.0
+            for weight in weights:
+                total += weight
+            if total <= 0.0:
+                uniform = 1.0 / float(len(available))
+                rows = sorted([(-uniform, pool[i], i) for i in available])
+            else:
+                rows = sorted([(-(weight / total), pool[i], i) for weight, i in zip(weights, available)])
+            threshold = draw()
+            cumulative = 0.0
+            chosen = rows[-1][2]
+            for negative_probability, _team_key, i in rows:
+                cumulative += -negative_probability
+                if cumulative >= threshold:
+                    chosen = i
+                    break
+            counts[pool[chosen]] += 1
+            available.remove(chosen)
 
     first_round_prob = {
         team_key: (float(count) / float(simulations))
@@ -272,16 +280,106 @@ def get_alliance_outlook(event_key: str, teams: str = Query(...), db: Session = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# The simulation is CPU work anyone can ask for, so it's bounded four ways: at most
+# MAX_SIMULATIONS runs, rounded inputs whose answers are kept for a minute, a site-wide
+# number of fresh simulations a minute, and one at a time per worker (taken before any
+# database connection, so a request waiting here never holds one). With only the last
+# three, a flood still kept both workers simulating and pages ran ~10x slower.
+MAX_SIMULATIONS = 1000
+SIMULATIONS_PER_MINUTE = 30
+_RUNS_KEY = "selection_model:runs:"
+_SELECTION_CACHE_TTL_SEC = 60.0
+_SELECTION_CACHE_MAX = 128
+_SELECTION_GATE_WAIT_SEC = 2.0
+_selection_gate = threading.BoundedSemaphore(1)
+_selection_cache: OrderedDict[tuple, tuple[float, dict[str, Any]]] = OrderedDict()
+_selection_cache_lock = threading.Lock()
+
+
+def _cached_selection_model(key: tuple) -> dict[str, Any] | None:
+    with _selection_cache_lock:
+        hit = _selection_cache.get(key)
+        if hit is None:
+            return None
+        if hit[0] < time.monotonic():
+            _selection_cache.pop(key, None)
+            return None
+        _selection_cache.move_to_end(key)
+        return hit[1]
+
+
+def _fresh_simulation_allowed() -> bool:
+    client = get_cache().redis_client
+    if client is None:
+        return True
+    key = _RUNS_KEY + str(int(time.time() // 60))
+    try:
+        count = int(client.incr(key))
+        if count == 1:
+            client.expire(key, 120)
+        return count <= SIMULATIONS_PER_MINUTE
+    except Exception:
+        logger.warning("selection model run budget unavailable", exc_info=True)
+        return True
+
+
+def _remember_selection_model(key: tuple, payload: dict[str, Any]) -> None:
+    with _selection_cache_lock:
+        _selection_cache[key] = (time.monotonic() + _SELECTION_CACHE_TTL_SEC, payload)
+        _selection_cache.move_to_end(key)
+        while len(_selection_cache) > _SELECTION_CACHE_MAX:
+            _selection_cache.popitem(last=False)
+
+
 @router.get("/{event_key}/selection-model")
 def get_selection_model(
     event_key: str,
     rank_weight: float = Query(default=1.0, ge=0.0, le=10.0),
     scale: float = Query(default=35.0, gt=0.0, le=250.0),
     captains: int = Query(default=8, ge=1, le=8),
-    simulations: int = Query(default=400, ge=50, le=3000),
+    # Up to the app's old stepper maximum, so a saved page isn't refused; runs past
+    # MAX_SIMULATIONS are clamped and the answer says how many ran.
+    simulations: int = Query(default=400, ge=50, le=5000),
     rank_source: str = Query(default="auto", pattern="^(auto|tba|model)$"),
     db: Session = Depends(get_db),
 ):
+    rank_weight = round(float(rank_weight), 1)
+    scale = max(0.1, round(float(scale), 1))
+    simulations = min(MAX_SIMULATIONS, max(50, int(round(simulations / 50.0)) * 50))
+    key = (event_key, rank_weight, scale, int(captains), simulations, rank_source)
+    cached = _cached_selection_model(key)
+    if cached is not None:
+        return cached
+    if not _fresh_simulation_allowed() or not _selection_gate.acquire(timeout=_SELECTION_GATE_WAIT_SEC):
+        raise HTTPException(
+            status_code=503,
+            detail="The selection model is busy. Try again in a few seconds.",
+            headers={"Retry-After": "5"},
+        )
+    try:
+        cached = _cached_selection_model(key)
+        if cached is not None:
+            return cached
+        payload = _selection_model_payload(
+            db, event_key, rank_weight=rank_weight, scale=scale, captains=captains,
+            simulations=simulations, rank_source=rank_source,
+        )
+    finally:
+        _selection_gate.release()
+    _remember_selection_model(key, payload)
+    return payload
+
+
+def _selection_model_payload(
+    db: Session,
+    event_key: str,
+    *,
+    rank_weight: float,
+    scale: float,
+    captains: int,
+    simulations: int,
+    rank_source: str,
+) -> dict[str, Any]:
     if db.get(models.Event, event_key) is None:
         raise HTTPException(status_code=404, detail=f"Event {event_key} not found")
     rank_source_param = rank_source

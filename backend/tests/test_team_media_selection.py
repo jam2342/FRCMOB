@@ -30,6 +30,14 @@ class TeamMediaSelectionTests(unittest.TestCase):
     def test_nothing_usable_is_none(self):
         self.assertIsNone(media._select_robot_image([{"type": "avatar"}, "junk"]))  # type: ignore[list-item]
 
+    def test_only_web_links_reach_the_page(self):
+        # view_url lands in an <a href>; TBA media comes from teams.
+        for bad in ("javascript:alert(1)", " JavaScript:alert(1)", "data:text/html,x", "//evil.example", ""):
+            row = {"type": "imgur", "direct_url": "https://i.imgur.com/x.png", "view_url": bad, "preferred": True}
+            self.assertIsNone(media._select_robot_image([row])[2], bad)
+        row = {"type": "imgur", "direct_url": "https://i.imgur.com/x.png", "view_url": "http://imgur.com/x", "preferred": True}
+        self.assertEqual(media._select_robot_image([row])[2], "http://imgur.com/x")
+
 
 if __name__ == "__main__":
     unittest.main()

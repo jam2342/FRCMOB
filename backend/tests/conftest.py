@@ -101,6 +101,16 @@ def _no_admin_key_failure_budget():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_selection_model_cache():
+    # The selection model keeps answers for a minute per worker; tests reuse event keys.
+    from app.api import routes_alliances
+
+    routes_alliances._selection_cache.clear()
+    yield
+    routes_alliances._selection_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _no_first_live_results():
     # A local .env carries real FRC Events credentials; tests must never call it.
     # The overlay's own tests switch it back on with a fake client.

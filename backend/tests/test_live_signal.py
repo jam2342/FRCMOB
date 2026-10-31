@@ -103,6 +103,49 @@ class LiveSignalTests(unittest.TestCase):
             self.assertEqual(routes_matches.refresh_watched_live_results(), 1)
         self.assertEqual(refresh.call_args.args[1], "2026txhou")
 
+    def _connect(self, client, address):
+        return client.websocket_connect("/matches/event/2026txhou/live", headers={"X-Forwarded-For": f"9.9.9.9, {address}"})
+
+    def test_one_address_cant_take_every_socket(self):
+        app = FastAPI()
+        app.include_router(routes_matches.router)
+        hub = live_signal.LiveResultsHub()
+        with (
+            mock.patch.object(routes_matches, "live_results_hub", hub),
+            mock.patch.object(routes_matches, "_event_known", return_value=True),
+            mock.patch.object(live_signal, "MAX_SOCKETS_PER_CLIENT", 2),
+            TestClient(app) as client,
+        ):
+            with self._connect(client, "1.1.1.1") as a, self._connect(client, "1.1.1.1") as b:
+                a.receive_json(), b.receive_json()
+                with self.assertRaises(Exception), self._connect(client, "1.1.1.1") as third:
+                    third.receive_json()
+                # Caddy's entry (the last one) is the address; another caller still gets in.
+                with self._connect(client, "2.2.2.2") as other:
+                    self.assertEqual(other.receive_json()["type"], "results")
+            # Closed sockets give the address its room back.
+            with self._connect(client, "1.1.1.1") as again:
+                self.assertEqual(again.receive_json()["type"], "results")
+        self.assertEqual(dict(hub._per_client), {})
+
+    def test_the_socket_cap_leaves_files_for_everything_else(self):
+        with mock.patch.object(live_signal.resource, "getrlimit", return_value=(1024, 524288)):
+            self.assertEqual(live_signal.socket_cap(), 1024 - live_signal._FILES_RESERVED)
+        with mock.patch.object(live_signal.resource, "getrlimit", return_value=(65536, 65536)):
+            self.assertEqual(live_signal.socket_cap(), live_signal.MAX_SOCKETS_PER_WORKER)
+
+    def test_the_app_raises_its_open_file_limit(self):
+        import resource
+
+        from app import main
+
+        with (
+            mock.patch.object(resource, "getrlimit", return_value=(1024, 524288)),
+            mock.patch.object(resource, "setrlimit") as setrlimit,
+        ):
+            main._raise_open_file_limit()
+        setrlimit.assert_called_once_with(resource.RLIMIT_NOFILE, (65536, 524288))
+
 
 if __name__ == "__main__":
     unittest.main()
