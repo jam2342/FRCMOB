@@ -1799,7 +1799,7 @@
     text-overflow: ellipsis;
   }
 
-  .fm-team-hero-stat span {
+  .fm-team-hero-stat > span {
     font-size: var(--font-size-legacy-10);  /* was 8.32px */
     color: var(--color-text-dim);
     text-transform: uppercase;
@@ -2162,9 +2162,10 @@
     max-width: 100%;
   }
 
+  /* The date row now holds the 44px Event info button, which sat flush under the day arrows. */
   .home-board-toolbar-left {
     flex-direction: column;
-    gap: 0;
+    gap: var(--space-2);
     align-items: flex-start;
   }
 
@@ -3168,7 +3169,7 @@
     padding-inline: 2px;
   }
 
-  .fm-team-hero-stat span {
+  .fm-team-hero-stat > span {
     letter-spacing: 0;
   }
 }

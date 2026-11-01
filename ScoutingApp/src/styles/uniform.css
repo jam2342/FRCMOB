@@ -43,6 +43,11 @@
   color: var(--color-text-dim);
 }
 
+/* A hint longer than its box ends in "…" instead of stopping mid-word ("toronto regio"). */
+:where(input) {
+  text-overflow: ellipsis;
+}
+
 :where(input, select, textarea):where(:focus-visible) {
   outline: none;
   border-color: var(--color-accent);
@@ -168,4 +173,38 @@ input[type='search']::-webkit-search-decoration {
 .product-shell .home-drawer-event-links {
   padding-block: var(--space-3);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* ================================================================== */
+/*  Nothing paints past a parent that clips                            */
+/* ================================================================== */
+/* These parents scroll or round-clip their contents, so the shell's 2px hover lift lost the
+   control's top edge and the 2px-offset focus ring was shaved on one to four sides (40-odd
+   places). Inside them, controls stay put on hover and draw the ring just inside their edge.
+   A new scrolling list or strip of controls goes on this list (e2e/polish/clip/scan.mjs finds
+   them). */
+:where(
+  .ps-context-quick-row,
+  .center-list-scroll,
+  .center-sort-chip-row,
+  .odr-steps,
+  .home-match-row,
+  .fm-standings-card,
+  .fm-video-card,
+  .center-stream-embed-wrap,
+  .scout-sidebar-overview,
+  .finder-sidebar-sections
+) :focus-visible {
+  outline-offset: -2px;
+}
+
+:where(.ps-context-quick-row, .center-list-scroll, .center-sort-chip-row)
+  :where(.ps-context-quick-chip, .event-picker-item, .center-sort-chip, .center-btn):hover:not(:active) {
+  transform: none;
+}
+
+/* Their hover shadow spread past the list's sides and was cut off straight. */
+:where(.ps-context-quick-row, .center-list-scroll, .center-sort-chip-row)
+  :where(.ps-context-quick-chip, .event-picker-item, .center-sort-chip, .center-btn):not(.active):hover {
+  box-shadow: none;
 }

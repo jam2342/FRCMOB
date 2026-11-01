@@ -1881,7 +1881,7 @@ export function EventsPage() {
             <input
               value={eventQuery}
               onChange={(event) => setEventQuery(event.target.value)}
-              placeholder='Try "houston district 2026" or "toronto regional"'
+              placeholder='Try "houston district" or "toronto"'
               aria-label="Search events"
             />
             <select

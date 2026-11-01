@@ -79,6 +79,24 @@
   }
 }
 
+/* Three columns left the match feed ~250-300px between 1121 and 1300px: "SF 9-1" broke in two,
+   dates took three lines, an alliance's third team dropped to its own row. There the feed keeps
+   the wide column and Today's Events heads the side column. The flexible second row takes the
+   feed's extra height, so the side column's two cards stay together. */
+@media (min-width: 1121px) and (max-width: 1299px) {
+  .home-board-layout:has(> .home-board-left) {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'center left'
+      'center right';
+  }
+
+  .home-board-layout:has(> .home-board-left) > .home-board-left { grid-area: left; }
+  .home-board-layout:has(> .home-board-left) > .home-board-center { grid-area: center; }
+  .home-board-layout:has(> .home-board-left) > .home-board-right { grid-area: right; }
+}
+
 @media (max-width: 1120px) {
   .home-board-layout {
     grid-template-columns: 1fr;

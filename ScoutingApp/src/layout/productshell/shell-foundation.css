@@ -430,7 +430,8 @@
   width: 100%;
   max-width: 520px;
   justify-self: end;
-  overflow: hidden;
+  /* No overflow clip: the box is exactly one control tall, so it cut the top edge and shadow
+     off the Search button whenever hover lifted it. */
   transition:
     max-width 280ms var(--motion-ease),
     width 280ms var(--motion-ease),
@@ -1096,17 +1097,6 @@ select.center-input option,
   background: var(--color-surface);
   color: var(--ui-accent);
   border-color: var(--ui-border);
-}
-
-.page-view-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--ui-accent);
-  border-radius: 2px 2px 0 0;
 }
 
 /* ------------------------------------------------------------------ */
