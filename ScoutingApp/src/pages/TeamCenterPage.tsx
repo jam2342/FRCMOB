@@ -1628,7 +1628,8 @@ export function TeamCenterPage() {
                         {climbCapability.matches_with_level > 0 ? (
                           <small>
                             {climbCapability.matches_with_level}/{climbCapability.matches_considered} matches
-                            {` · L3 ${climbCapability.level_counts.level3} · L2 ${climbCapability.level_counts.level2} · L1 ${climbCapability.level_counts.level1}`}
+                            {/* No-break spaces: a wrap falls after a dot, never before it or inside "L1 6". */}
+                            {`\u00a0· L3\u00a0${climbCapability.level_counts.level3}\u00a0· L2\u00a0${climbCapability.level_counts.level2}\u00a0· L1\u00a0${climbCapability.level_counts.level1}`}
                           </small>
                         ) : null}
                       </article>

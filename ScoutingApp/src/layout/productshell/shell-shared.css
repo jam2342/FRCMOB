@@ -100,9 +100,9 @@
   margin-inline-start: auto;
 }
 
-.product-shell .page-view-bar > :last-child,
-.product-shell .center-tabs > :last-child,
-.product-shell .fm-tab-bar > :last-child {
+/* The last tab, not the last child: on phones the sliding underline (absolutely placed) comes
+   after the tabs, took the margin, and the group sat flush right. */
+.product-shell :is(.page-view-bar, .center-tabs, .fm-tab-bar) > :is(:last-child, :has(+ .segmented-tabs__ink)):not(.segmented-tabs__ink) {
   margin-inline-end: auto;
 }
 
