@@ -22,6 +22,11 @@
     background: var(--color-bg-elevated);
     border-top: 1px solid var(--color-border);
     padding: 0 0 var(--safe-area-bottom);
+    /* Exactly the token: the More sheet, Team Peek, the next-match pill and the page's
+       bottom padding all sit on --bottom-bar-height, and a bar sized by its content
+       (50px against 56) left a strip of page showing under the open sheet. */
+    box-sizing: border-box;
+    height: calc(var(--bottom-bar-height) + var(--safe-area-bottom));
     justify-content: space-around;
     align-items: stretch;
     gap: 0;
@@ -42,7 +47,7 @@
     justify-content: center;
     gap: 1px;
     flex: 1;
-    min-height: 48px;
+    min-height: 0;
     padding: 6px 2px 8px;
     border: 0;
     background: transparent;
@@ -159,8 +164,9 @@
 }
 
 /* ── Light theme ─────────────────────────────────────────────────── */
+/* Opaque here too (see .btb): at 92% the page's text showed through under the tab labels. */
 .product-shell.theme-light .btb {
-  background: color-mix(in srgb, var(--color-surface-soft) 92%, transparent);
+  background: var(--color-surface-soft);
   border-top-color: var(--color-border);
 }
 

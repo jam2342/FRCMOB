@@ -16,5 +16,7 @@ describe('RatingTrendBadge', () => {
   it('calls a move that rounds to 0.0 flat', () => {
     const { container } = render(<RatingTrendBadge trend={trend(0.04, 'up')} />);
     expect(container.querySelector('.rating-trend-badge')).toHaveClass('is-flat');
+    // Not "▬0.0", which read as negative zero.
+    expect(container.textContent).toBe('±0.0');
   });
 });

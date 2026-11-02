@@ -4790,7 +4790,7 @@ export function ScoutingPage() {
                 </button>
               </div>
               <div className="fm-scout-hero-context" role="list" aria-label="Core scouting context">
-                <span className="fm-scout-hero-chip match" role="listitem"><strong>{selectedMatch?.display_name || MISSING}</strong></span>
+                <span className="fm-scout-hero-chip match" role="listitem">{/* A lone "—" first in the bar read as a stray minus. */}{selectedMatch?.display_name ? <strong>{selectedMatch.display_name}</strong> : 'No match'}</span>
                 <span className="fm-scout-hero-chip team" role="listitem"><strong>{selectedTeamKey ? scoutingTeamLabel(selectedTeamKey) : MISSING}</strong></span>
                 {autoScoutEnabled ? <span className="fm-scout-hero-chip mode" role="listitem">Auto Draft</span> : null}
                 <span className="fm-scout-hero-chip points" role="listitem">Pts <strong>{pointsSummary.total}</strong></span>

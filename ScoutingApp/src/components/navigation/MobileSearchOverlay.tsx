@@ -162,7 +162,15 @@ export function MobileSearchOverlay({ open, onClose, onSubmit, busy, jumpRegion 
             disabled={busy || !query.trim()}
             aria-label={busy ? 'Searching…' : 'Search'}
           >
-            {busy ? <Spinner size={16} /> : 'Search'}
+            {busy ? <Spinner size={16} /> : (
+              <>
+                <svg className="mso__submit-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" fill="none" />
+                  <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <span className="mso__submit-label">Search</span>
+              </>
+            )}
           </button>
         </form>
 

@@ -15,7 +15,7 @@ it('allows clearing and replacing lead time, then clamps on blur', async () => {
   support();
   vi.mocked(getPushPublicKey).mockResolvedValue({configured:true,public_key:'abc'} as never);
   render(<PushNotificationsCard />);
-  const input = await screen.findByRole('spinbutton', { name: 'Lead time (minutes before match)' });
+  const input = await screen.findByRole('spinbutton', { name: 'Minutes before the match' });
   fireEvent.change(input, { target: { value: '' } });
   expect(input).toHaveValue(null);
   fireEvent.change(input, { target: { value: '25' } });

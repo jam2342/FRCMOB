@@ -456,7 +456,7 @@ export function MatchPredictionPage() {
           {/* No count here: the Matches card below carries it. */}
 
           {scheduleError ? <p className="center-callout warning">{scheduleError} <button type="button" className="center-btn ghost" onClick={() => void fetchData(eventKey, true)}>Retry schedule</button></p> : null}
-          {errorText ? <p className="center-callout warning">{errorText}</p> : null}
+          {errorText ? <p className="center-callout warning" title={errorText}>Predictions didn't load. Try again in a moment.</p> : null}
         </SurfaceCard>
 
         {/* ---- Filter + Match List ---- */}

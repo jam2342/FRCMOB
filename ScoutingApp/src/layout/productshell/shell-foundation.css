@@ -898,9 +898,12 @@ body.surface-card-modal-open {
   grid-auto-rows: min-content;
 }
 
+/* Two columns only when each card gets 340px. At 1121-1300px the main column is ~620px,
+   and two 300px cards pushed Match Center's W/L pills out of their chips and broke
+   "Red alliance · 141" before the score. */
 .center-content-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: 14px;
   min-width: 0;
 }
@@ -914,18 +917,26 @@ body.surface-card-modal-open {
   gap: 8px;
 }
 
+/* The legacy field label, drawn like Field's label (primitives/Field.module.css) so an
+   EventPicker's "EVENT" and a FieldSelect's "MATCH" on one form read as one kind of thing. */
 .center-label {
-  color: var(--color-text-dim);
+  color: var(--color-text-muted);
   font-size: var(--font-size-2xs);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
 }
 
 .center-input-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+/* A row with only its input (EventPicker without a button) kept an empty column and its
+   gap, so the field ended 8px short of the buttons under it. */
+.center-input-row:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .center-input-row-event-search {
@@ -2486,6 +2497,7 @@ select.center-input option,
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-size: var(--font-size-sm);
   font-weight: 800;
 }
 
@@ -2599,6 +2611,14 @@ select.center-input option,
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-bg-elevated);
+}
+
+/* Team logos are FRC avatars: 40px pixel art. Stretched to the card's width they went soft
+   and jagged; at a fixed height with crisp pixels they look drawn. */
+.center-media-image--logo {
+  height: 160px;
+  padding: 16px;
+  image-rendering: pixelated;
 }
 
 .center-code-block {
@@ -4324,7 +4344,6 @@ select.center-input option,
 
 .product-shell.theme-light .ps-brand small,
 .product-shell.theme-light .ps-topbar-search-hint,
-.product-shell.theme-light .center-label,
 .product-shell.theme-light .home-board-card small,
 .product-shell.theme-light .home-board-note,
 .product-shell.theme-light .center-callout.muted {
@@ -4494,8 +4513,15 @@ select.center-input option,
   background: var(--color-surface-muted);
 }
 
-.product-shell.theme-light .center-alliance-col.winner {
-  background: rgba(85, 138, 219, 0.09);
+/* The winner's own colour: one blue tint for both read as "blue won" when red had. */
+.product-shell.theme-light .center-alliance-col.red.winner,
+.product-shell.theme-light .match-live-alliance.red.winner {
+  background: color-mix(in srgb, var(--color-alliance-red) 9%, transparent);
+}
+
+.product-shell.theme-light .center-alliance-col.blue.winner,
+.product-shell.theme-light .match-live-alliance.blue.winner {
+  background: color-mix(in srgb, var(--color-alliance-blue) 9%, transparent);
 }
 
 .product-shell.theme-light .match-live-alliance span,
@@ -4506,10 +4532,6 @@ select.center-input option,
 .product-shell.theme-light .match-live-alliance strong,
 .product-shell.theme-light .match-live-score {
   color: var(--color-text);
-}
-
-.product-shell.theme-light .match-live-alliance.winner {
-  background: rgba(85, 138, 219, 0.09);
 }
 
 .product-shell.theme-light .center-match-row.winner-red,

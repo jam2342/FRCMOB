@@ -120,6 +120,37 @@
   transition: transform var(--motion-fast) var(--motion-spring), filter var(--motion-fast) ease;
 }
 
+.mso__submit-icon {
+  display: none;
+  width: 20px;
+  height: 20px;
+}
+
+/* At 250px the back, clear and Search buttons left the field 38px: one character.
+   The magnifier keeps the action and gives the field back ~30px. */
+@media (max-width: 359px) {
+  .mso__form {
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+  }
+
+  .mso__submit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+
+  .mso__submit-icon {
+    display: block;
+  }
+
+  .mso__submit-label {
+    display: none;
+  }
+}
+
 .mso__submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;

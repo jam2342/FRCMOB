@@ -344,7 +344,7 @@ export function PushNotificationsCard() {
 
           <div className="push-alerts-form">
             <label className="push-alerts-field push-alerts-field--short">
-              <span>Lead time (minutes before match)</span>
+              <span className="center-label">Minutes before the match</span>
               <input
                 className="center-input"
                 type="number"
@@ -369,7 +369,7 @@ export function PushNotificationsCard() {
             </label>
             {prefs.shift_alerts ? (
               <label className="push-alerts-field push-alerts-field--room">
-                <span>Scouting room key</span>
+                <span className="center-label">Scouting room key</span>
                 <input
                   className="center-input"
                   type="text"

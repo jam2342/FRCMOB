@@ -56,7 +56,7 @@ const MATCH_COUNTER_FIELDS: MatchCounterDef[] = [
   { key: 'teleop_under_defense_scored', label: 'Scored while defended', section: 'teleop', step: 3 },
   { key: 'teleop_under_defense_attempts', label: 'Attempts while defended', section: 'teleop' },
   { key: 'teleop_cycles', label: 'Teleop cycles', section: 'teleop' },
-  { key: 'teleop_drops', label: 'Drops/lost pieces', section: 'teleop' },
+  { key: 'teleop_drops', label: 'Drops / lost pieces', section: 'teleop' },
   { key: 'intake_failures', label: 'Intake failures', section: 'teleop' },
   { key: 'foul_count', label: 'Fouls / penalties', section: 'teleop' },
   // 2026 REBUILT field features

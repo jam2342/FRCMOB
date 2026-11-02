@@ -532,7 +532,6 @@ export function StrategyBriefingPage() {
               value={myTeamInput}
               onChange={(e) => setMyTeamInput(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => e.key === 'Enter' && commitMyTeam()}
-              style={{ flex: 1, maxWidth: 200 }}
             />
             {/* The input already shows the briefed team; the button only matters once it's edited. */}
             <button type="button" className="center-btn" onClick={commitMyTeam} disabled={myTeamInputUnchanged}>

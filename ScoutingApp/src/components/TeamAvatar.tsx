@@ -195,15 +195,17 @@ export function TeamAvatar({
     );
   }
 
-  // No logo available — show a tiny initials circle
-  const initials = String(teamNumber).slice(0, 2);
+  // No logo available: the whole number, shrunk to fit. Its first two digits ("25" for 254,
+  // "16" for 1678) read as a different team.
+  const label = String(teamNumber);
+  const fontSize = size * Math.min(0.45, 1.3 / Math.max(label.length, 1));
   return (
     <span
       className={`${cls} team-avatar--fallback`}
-      style={{ ...sizeStyle, fontSize: size * 0.45 }}
+      style={{ ...sizeStyle, fontSize }}
       aria-hidden="true"
     >
-      {initials}
+      {label}
     </span>
   );
 }

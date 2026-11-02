@@ -6,6 +6,7 @@ import {
   type CenterContextState,
 } from './centerContext';
 import { storageGet, storageSet } from '../platform/safeStorage';
+import { matchLabelFromKey } from '../utils/matchLabel';
 
 const CONTEXT_PINS_STORAGE = 'scouting_context_pins_v1';
 const CONTEXT_RECENTS_STORAGE = 'scouting_context_recents_v1';
@@ -101,12 +102,14 @@ function buildContextSnapshot(search: string): ContextSnapshot {
   };
 }
 
-function formatContextMatch(matchKey: string, eventKey: string): string {
+// "QM 1" as the schedule writes it, never the raw key. A match from another event than the
+// strip's says which ("QM 1 · CASAC"); it used to show "2026CASAC_QM1".
+export function formatContextMatch(matchKey: string, eventKey: string): string {
   if (!matchKey) return 'No match';
-  if (eventKey && matchKey.startsWith(`${eventKey}_`)) {
-    return matchKey.slice(eventKey.length + 1).toUpperCase();
-  }
-  return matchKey.toUpperCase();
+  const label = matchLabelFromKey(matchKey) ?? matchKey.split('_').pop()?.toUpperCase() ?? matchKey;
+  const matchEvent = matchKey.split('_')[0];
+  if (!eventKey || matchEvent === eventKey) return label;
+  return `${label} · ${matchEvent.replace(/^\d{4}/, '').toUpperCase()}`;
 }
 
 // Only name what is actually selected; "Match No match · Team Team 254" read
