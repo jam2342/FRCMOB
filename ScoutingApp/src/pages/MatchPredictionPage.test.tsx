@@ -77,3 +77,11 @@ it.each([
   if (winners.some(winner => winner !== 'tie')) expect(screen.getByText('100.0%')).toBeInTheDocument();
   else expect(screen.queryByText('100.0%')).not.toBeInTheDocument();
 });
+
+it('uses plain copy when predictions fail', async () => {
+  vi.mocked(getEventPredictionSchedule).mockRejectedValue(new Error('internal server detail'));
+  vi.mocked(getEventSchedule).mockResolvedValue({ matches: [] } as never);
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><MatchPredictionPage /></MemoryRouter>);
+  expect(await screen.findByText("Predictions didn't load. Try again in a moment.")).toHaveAttribute('title', 'internal server detail');
+  expect(screen.queryByText('internal server detail')).not.toBeInTheDocument();
+});

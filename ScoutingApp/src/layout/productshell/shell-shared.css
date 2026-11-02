@@ -188,7 +188,6 @@
   color: var(--color-text);
 }
 
-.product-shell .icon-status-live,
 .product-shell .center-status-pill.live,
 .product-shell .center-chip.timer.live,
 .product-shell .home-match-state.live,
@@ -198,7 +197,6 @@
   background: color-mix(in srgb, var(--status-live-soft) 88%, transparent);
 }
 
-.product-shell .icon-status-upcoming,
 .product-shell .center-status-pill.upcoming,
 .product-shell .center-chip.timer.upcoming,
 .product-shell .home-match-state.upcoming,
@@ -208,7 +206,6 @@
   background: color-mix(in srgb, var(--status-upcoming-soft) 88%, transparent);
 }
 
-.product-shell .icon-status-final,
 .product-shell .center-status-pill.ended,
 .product-shell .center-chip.timer.ended,
 .product-shell .home-match-state.ended,
@@ -266,7 +263,7 @@
    EmptyState's own stylesheet gives it no border at all; the rule above adds
    one so a standalone empty state reads as a region. Inside a container that
    is already a region, take it back off. */
-.product-shell :where(.surface-card, .home-board-card, .home-mini-panel, .center-kpi-card) .es {
+.product-shell :where(.surface-card, .home-board-card, .home-mini-panel, .center-kpi-card, .fm-top-card) .es {
   border: 0;
   border-radius: 0;
   background: none;
@@ -384,11 +381,11 @@
   }
 
   .product-shell .mobile-finder-layout .center-actions-row.primary-actions {
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
   }
 
   .product-shell .mobile-finder-layout .center-advanced-panel .center-actions-row {
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
   }
 
   .product-shell .fm-event-header-actions {
@@ -1597,14 +1594,18 @@
     gap: 8px;
   }
 
+  /* Buttons share the row by their labels and stack when they don't fit. Two equal
+     columns broke "This team's matches" over two lines beside a one-line "This event". */
   .mobile-finder-layout .center-actions-row {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
   .mobile-finder-layout .center-actions-row .center-btn{
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
+    white-space: nowrap;
   }
 
   .mobile-finder-layout .center-input,

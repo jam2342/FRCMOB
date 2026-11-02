@@ -9,6 +9,16 @@
   height: 0;
 }
 
+/* The anchor is the first item in Team Center's card grid, so it still cost one grid gap and
+   the team card sat 16px below the Team Finder beside it. A negative margin on a zero-height
+   grid item does nothing (the track can't go below 0), so the next card takes the gap back.
+   Only beside the Finder column: stacked layouts use a smaller gap and have nothing to line up with. */
+@media (min-width: 1121px) {
+  .anchor + * {
+    margin-block-start: calc(-1 * var(--card-stack-gap, 0px));
+  }
+}
+
 .bar {
   position: absolute;
   top: calc(-1 * var(--ps-sticky-gap, 0px));

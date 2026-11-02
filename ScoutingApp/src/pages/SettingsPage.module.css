@@ -91,17 +91,20 @@
   color: var(--color-accent-text);
 }
 
+/* Padded like the cards around it (16px, 11px on phones), so "Advanced" starts where
+   "Appearance" and "About" do. */
 .advanced {
   min-width: 0;
   border: var(--border-width-1) solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  padding: 0 var(--space-3);
+  padding: 0 var(--ui-card-padding-x);
 }
 
-/* Lines up with the other cards' titles. */
-.advancedSummary {
-  padding-inline: var(--space-3);
+@media (max-width: 1120px) {
+  .advanced {
+    padding-inline: 11px;
+  }
 }
 
 .advanced[open] {

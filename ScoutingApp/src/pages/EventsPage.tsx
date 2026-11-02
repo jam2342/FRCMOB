@@ -79,7 +79,8 @@ import {
   regionLabel,
 } from '../utils/regionFilters';
 import { cancelIdleWork, scheduleIdleWork } from '../utils/idle';
-import { resolveEventDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken, compactAllianceLabel } from './eventCalendar';
+import { resolveEventDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken } from './eventCalendar';
+import { CompactAllianceTeams } from '../components/CompactAllianceTeams';
 import { inferMatchCompleted, matchHasScores } from './matchStatus';
 import { TeamFormStrip } from '../components/TeamFormStrip';
 import { resolveTab } from './tabUtils';
@@ -191,9 +192,10 @@ function TopListPlaceholder({ rows, label }: { rows: number; label: string }) {
   );
 }
 
-function RankingsEmpty({ failed, loading }: { failed: boolean; loading: boolean }) {
+function RankingsEmpty({ failed, loading, finished }: { failed: boolean; loading: boolean; finished: boolean }) {
   if (loading) return <EmptyState compact title="Loading rankings" description="Getting the latest standings." />;
   if (failed) return <EmptyState compact type="offline" title="Couldn't load rankings" description="They load again on the next refresh." />;
+  if (finished) return <EmptyState compact title="No qualification rankings" description="This event didn't publish qualification rankings." />;
   return <EmptyState compact title="No rankings yet" description="Rankings appear once qualification matches are played." />;
 }
 
@@ -2185,7 +2187,7 @@ export function EventsPage() {
                   {rankingRows.length === 0 && firstEventLoad && !eventRankings ? (
                     <TopListPlaceholder rows={6} label="Loading rankings" />
                   ) : rankingRows.length === 0 ? (
-                    <RankingsEmpty failed={rankingsFailed} loading={false} />
+                    <RankingsEmpty failed={rankingsFailed} loading={false} finished={eventFinished} />
                   ) : (
                     <ul className="fm-top-list">
                       {rankingRows.slice(0, 6).map((row) => (
@@ -2288,7 +2290,11 @@ export function EventsPage() {
               </div>
             ) : null}
             {!firstEventLoad && eventSchedule.length === 0 ? (
-              <EmptyState compact mascot title="Schedule not posted yet" description="Matches show up here as soon as the event publishes them." />
+              eventError ? (
+                <EmptyState compact type="offline" title="Couldn't load the schedule" description="It retries on its own." />
+              ) : (
+                <EmptyState compact mascot title="Schedule not posted yet" description="Matches show up here as soon as the event publishes them." />
+              )
             ) : null}
             <div className="center-list-stack">
               {visibleScheduleRows.map((match) => {
@@ -2317,8 +2323,6 @@ export function EventsPage() {
                       ? 'Tie'
                       : `${titleizeKey(winner)} wins ${match.winning_score ?? ''}`.trim()
                     : null;
-                const compactRed = compactAllianceLabel(match.red);
-                const compactBlue = compactAllianceLabel(match.blue);
                 const allianceSplit = (
                   <div className={`center-alliance-split ${isMobileLayout ? 'event-schedule-mobile-alliances' : ''}`.trim()}>
                     <div className={`center-alliance-col red ${winner === 'red' ? 'winner' : ''}`.trim()}>
@@ -2397,9 +2401,9 @@ export function EventsPage() {
                             <span className={`home-match-compact-state ${effectiveState}`}>{compactStateLabel(effectiveState)}</span>
                           </div>
                           <div className="home-match-compact-line">
-                            <span className="home-match-compact-side red" title={match.red.map(team => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactRed}</span>
+                            <CompactAllianceTeams teams={match.red} side="red" />
                             <span className="home-match-compact-score">{scoreboard}</span>
-                            <span className="home-match-compact-side blue" title={match.blue.map(team => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactBlue}</span>
+                            <CompactAllianceTeams teams={match.blue} side="blue" />
                           </div>
                         </div>
                       </Link>
@@ -2803,7 +2807,7 @@ export function EventsPage() {
               </div>
             ) : null}
             {!firstEventLoad && rankingRows.length === 0 ? (
-              <RankingsEmpty failed={rankingsFailed} loading={false} />
+              <RankingsEmpty failed={rankingsFailed} loading={false} finished={eventFinished} />
             ) : null}
             {rankingRows.length > 0 ? (
               <>
@@ -2835,13 +2839,13 @@ export function EventsPage() {
                       key: 'sort0',
                       label: rankingSortLabels[0] || 'S1',
                       numeric: true,
-                      render: (row) => row.sort_orders[0] ?? MISSING,
+                      render: (row) => metric(row.sort_orders[0], 1),
                     },
                     {
                       key: 'sort1',
                       label: rankingSortLabels[1] || 'S2',
                       numeric: true,
-                      render: (row) => row.sort_orders[1] ?? MISSING,
+                      render: (row) => metric(row.sort_orders[1], 1),
                     },
                   ]}
                   rows={visibleRankingRows}
@@ -2872,8 +2876,8 @@ export function EventsPage() {
                             <small title={row.nickname}>{row.nickname}</small>
                           </div>
                           <span className="fm-standings-stat">{row.record}</span>
-                          <span className="fm-standings-pts">{row.sort_orders[0] != null ? metric(row.sort_orders[0], 1) : '-'}</span>
-                          <span className="fm-standings-stat">{row.sort_orders[1] != null ? metric(row.sort_orders[1], 1) : '-'}</span>
+                          <span className="fm-standings-pts">{metric(row.sort_orders[0], 1)}</span>
+                          <span className="fm-standings-stat">{metric(row.sort_orders[1], 1)}</span>
                         </button>
                       ))}
                     </div>

@@ -68,3 +68,37 @@ it("never shows another event's numbers after returning to an event whose stale 
   await screen.findAllByText('From A');
   expect(screen.queryByText('From B')).toBeNull();
 });
+
+it('uses plain copy when the event team pool fails', async () => {
+  vi.mocked(getEventTeamsIntel).mockRejectedValue(new Error('internal server detail'));
+  renderCompare('/compare?event=2026aaa');
+  expect(await screen.findByText("Couldn't load this event's teams. Try again in a moment.")).toHaveAttribute('title', 'internal server detail');
+  expect(screen.queryByText('internal server detail')).not.toBeInTheDocument();
+});
+
+it('shows loading instead of summary results until every team has loaded', async () => {
+  let finish: (value: never) => void = () => {};
+  vi.mocked(getTeamIntel).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const { container } = renderCompare('/compare?event=2026aaa&teams=frc254,frc1678');
+  await waitFor(() => expect(getTeamIntel).toHaveBeenCalledTimes(2));
+  const summary = container.querySelector('[data-tour="compare-summary"]')!;
+  expect(summary.querySelector('.skeleton-stack')).not.toBeNull();
+  expect(summary.querySelector('table')).toBeNull();
+  expect(screen.queryByText('No differences to highlight between these teams yet.')).not.toBeInTheDocument();
+  await act(async () => { finish(intelFor('Loaded') as never); });
+  expect(summary.querySelector('table')).toBeNull();
+});
+
+it('shows a failed summary instead of a table or no-differences result', async () => {
+  vi.mocked(getTeamIntel).mockRejectedValue(new Error('offline'));
+  const { container } = renderCompare('/compare?event=2026aaa&teams=frc254,frc1678');
+  await screen.findByText("Couldn't load the comparison");
+  expect(container.querySelector('[data-tour="compare-summary"] table')).toBeNull();
+  expect(screen.queryByText('No differences to highlight between these teams yet.')).not.toBeInTheDocument();
+});
+
+it('shows summary results and no differences after both teams load', async () => {
+  vi.mocked(getTeamIntel).mockResolvedValue(intelFor('Loaded') as never);
+  renderCompare('/compare?event=2026aaa&teams=frc254,frc1678');
+  await screen.findByText('No differences to highlight between these teams yet.');
+});

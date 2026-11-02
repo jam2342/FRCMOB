@@ -253,7 +253,7 @@ function summarizeClimbCapability(
     ? CLIMB_LEVEL_LABELS[bestLevel]
     : matchesWithSuccessNoLevel > 0
       ? 'Success (Level Unknown)'
-      : 'No Level Data';
+      : MISSING;
   const bestLevelScore = bestLevel
     ? bestLevel === 'level3'
       ? 100
@@ -1101,7 +1101,7 @@ export function TeamCenterPage() {
       if (fromPayload) {
         return {
           best_level: fromPayload.best_level,
-          best_level_label: fromPayload.best_level_label || 'No Level Data',
+          best_level_label: fromPayload.best_level_label === 'No Level Data' ? MISSING : fromPayload.best_level_label || MISSING,
           best_level_score_0_100:
             typeof fromPayload.best_level_score_0_100 === 'number' ? fromPayload.best_level_score_0_100 : null,
           level_counts: {
@@ -1122,6 +1122,8 @@ export function TeamCenterPage() {
     [teamBreakdown?.climb_sources?.level_capability, teamBreakdown?.recent_matches],
   );
 
+  // A previous team's climb label is not a result for the team still loading.
+  const bestClimbLabel = loadingTeamData ? MISSING : climbCapability.best_level_label;
 
   const robotProfileRows = useMemo<ProfileRow[]>(() => {
     if (!autoScoutProfile?.available) return [];
@@ -1154,7 +1156,7 @@ export function TeamCenterPage() {
       {
         label: 'Best Climb Level',
         value: climbCapability.best_level_score_0_100,
-        display: climbCapability.best_level_label,
+        display: bestClimbLabel,
         score: climbCapability.best_level_score_0_100,
       },
       {
@@ -1170,7 +1172,7 @@ export function TeamCenterPage() {
         score: teamRating?.subscores.consistency ?? null,
       },
     ];
-  }, [climbCapability, teamBreakdown, teamRating]);
+  }, [bestClimbLabel, climbCapability, teamBreakdown, teamRating]);
 
   const ratingBasisLabel = useMemo(() => {
     if (teamRating?.basis === 'earlier_events') return 'From earlier events (not played here yet)';
@@ -1427,13 +1429,13 @@ export function TeamCenterPage() {
                         decoding="async"
                         fallback={(
                           <span className="fm-team-hero-logo-fallback" aria-hidden="true">
-                        {String(teamNumber).slice(0, 2)}
+                        {teamNumber}
                       </span>
                         )}
                       />
                     ) : (
                       <span className="fm-team-hero-logo-fallback" aria-hidden="true">
-                        {String(teamNumber).slice(0, 2)}
+                        {teamNumber}
                       </span>
                     )}
                     <div className="fm-team-hero-info">
@@ -1441,7 +1443,8 @@ export function TeamCenterPage() {
                         Team {teamNumber}
                         {selectedTeamLiveForm?.is_live ? <i className="center-live-dot" aria-hidden="true" /> : null}
                       </h2>
-                      <span className="fm-team-hero-name">{teamNickname}</span>
+                      {/* Without a nickname the fallback "Team 254" only repeated the heading. */}
+                      {teamBreakdown?.team.nickname ? <span className="fm-team-hero-name">{teamNickname}</span> : null}
                       {selectedEventKey ? (
                         <span className="fm-team-hero-event">{eventNameFor(selectedEventKey)}</span>
                       ) : skippedEventKey ? (
@@ -1516,13 +1519,13 @@ export function TeamCenterPage() {
                       decoding="async"
                       fallback={(
                         <span className="center-team-logo-fallback" aria-hidden="true">
-                      {String(teamNumber).slice(0, 2)}
+                      {teamNumber}
                     </span>
                       )}
                     />
                   ) : (
                     <span className="center-team-logo-fallback" aria-hidden="true">
-                      {String(teamNumber).slice(0, 2)}
+                      {teamNumber}
                     </span>
                   )}
                   <div>
@@ -1623,7 +1626,7 @@ export function TeamCenterPage() {
                       </article>
                       <article className="center-kpi-card">
                         <span><TrophyIcon className="icon-inline icon-muted" /> Best Climb Level</span>
-                        <strong>{climbCapability.best_level_label}</strong>
+                        <strong>{bestClimbLabel}</strong>
                         {/* With no climbs, "0/69 matches" only repeats the Climb Success tile. */}
                         {climbCapability.matches_with_level > 0 ? (
                           <small>
@@ -2031,7 +2034,7 @@ export function TeamCenterPage() {
                       <MediaImage
                         src={teamLogo.image_url}
                         alt={`Team logo for ${selectedTeamKey}`}
-                        className="center-media-image"
+                        className="center-media-image center-media-image--logo"
                         loading="lazy"
                         decoding="async"
                         fetchPriority="low"

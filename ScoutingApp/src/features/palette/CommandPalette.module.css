@@ -59,6 +59,10 @@
   font: inherit;
   font-size: var(--font-size-lg);
   outline: none;
+  /* The row is the field: uniform.css's focus ring drew a second box around the input,
+     flush with the dialog's top edge. */
+  box-shadow: none;
+  border-radius: 0;
 }
 
 .input::placeholder {

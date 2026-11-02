@@ -71,7 +71,7 @@ it('groups Auto, Teleop, Endgame and Review fields in their phone phases', async
   expect(screen.queryByRole('link',{name:/Draw auto path/})).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Bump crossings')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab',{name:'Teleop'}));
-  for (const name of ['Teleop fuel scored','Teleop misses','Scored while defended','Attempts while defended','Teleop cycles','Drops/lost pieces','Intake failures','Fouls / penalties','Bump crossings','Trench crossings']) expect(screen.getByLabelText(name)).toBeInTheDocument();
+  for (const name of ['Teleop fuel scored','Teleop misses','Scored while defended','Attempts while defended','Teleop cycles','Drops / lost pieces','Intake failures','Fouls / penalties','Bump crossings','Trench crossings']) expect(screen.getByLabelText(name)).toBeInTheDocument();
   expect(screen.getByLabelText('Teleop fuel scored').compareDocumentPosition(screen.getByLabelText('Bump crossings')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole('group',{name:'Anti-defense level'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab',{name:'Endgame'}));

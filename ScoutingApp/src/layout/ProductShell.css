@@ -977,7 +977,7 @@ button.ps-context-chip:disabled {
 @media (max-width: 1120px) {
   .product-shell .home-day-switcher {
     width: 100%;
-    justify-content: space-between;
+    justify-content: center;
     gap: 7px;
   }
 
@@ -988,10 +988,12 @@ button.ps-context-chip:disabled {
     min-height: var(--touch-target-min);
   }
 
+  /* Fills a phone's row, but stops at 320px: at 1024 it was an 870px pill with the
+     arrows at the far edges. */
   .product-shell .home-day-picker-btn {
     flex: 1 1 auto;
     min-width: 0;
-    max-width: none;
+    max-width: 320px;
     justify-content: center;
     font-size: var(--font-size-md);
     padding: 5px 10px;

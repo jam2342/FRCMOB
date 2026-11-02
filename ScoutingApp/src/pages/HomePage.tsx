@@ -70,7 +70,8 @@ import { AwayBanner } from '../features/awaySummary/AwayBanner';
 import { markSeen, readLastSeen, summarizeAway, type AwaySummary } from '../features/awaySummary/awaySummary';
 import awayStyles from '../features/awaySummary/Away.module.css';
 import { readMyTeamKey } from '../features/workspace/myTeam';
-import { type EventDateRange, normalizeDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken, compactAllianceLabel } from './eventCalendar';
+import { type EventDateRange, normalizeDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken } from './eventCalendar';
+import { CompactAllianceTeams } from '../components/CompactAllianceTeams';
 import { storageGet, storageSet } from '../platform/safeStorage';
 import { MISSING } from '../utils/formatValue';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
@@ -1930,8 +1931,6 @@ export function HomePage() {
                                 : winner === 'tie'
                                   ? 'winner-tie'
                                   : '';
-                          const compactRed = compactAllianceLabel(match.red);
-                          const compactBlue = compactAllianceLabel(match.blue);
                           return (
                             <article
                               key={`home-match-${section.event_key}-${match.match_key}-${awayNewKeys.has(match.match_key) ? awayFlash : 0}`}
@@ -1962,9 +1961,9 @@ export function HomePage() {
                                         </span>
                                       </div>
                                       <div className="home-match-compact-line">
-                                        <span className="home-match-compact-side red" title={match.red.map((team) => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactRed}</span>
+                                        <CompactAllianceTeams teams={match.red} side="red" />
                                         <span className="home-match-compact-score">{headerValue}</span>
-                                        <span className="home-match-compact-side blue" title={match.blue.map((team) => `#${teamDisplayNumber(team)}`).join(' · ')}>{compactBlue}</span>
+                                        <CompactAllianceTeams teams={match.blue} side="blue" />
                                       </div>
                                     </div>
                                   ) : (

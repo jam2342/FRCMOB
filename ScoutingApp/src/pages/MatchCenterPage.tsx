@@ -904,7 +904,9 @@ export function MatchCenterPage() {
               </div>
             ) : null}
             {!firstEventLoad && filteredMatches.length === 0 ? (
-              matchFilter.trim() ? (
+              eventError ? (
+                <EmptyState compact type="offline" title="Couldn't load the schedule" description="It retries on its own." />
+              ) : matchFilter.trim() ? (
                 <EmptyState compact title="Nothing fits this filter" description="Try another filter, or clear the search." />
               ) : (
                 <EmptyState compact title="No match schedule yet" description="Matches show here once the event publishes its schedule." />

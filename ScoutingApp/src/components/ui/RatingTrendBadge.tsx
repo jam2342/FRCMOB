@@ -18,7 +18,8 @@ export function RatingTrendBadge({ trend, className }: RatingTrendBadgeProps) {
   // they disagreed into "▬ −0.1". A move that rounds to 0.0 is flat. The arrow carries the sign.
   const change = signedChange(trend.delta ?? 0, 1);
   const direction = change === '0.0' ? 'flat' : change.startsWith('+') ? 'up' : 'down';
-  const arrow = direction === 'up' ? '▲' : direction === 'down' ? '▼' : '▬';
+  // Flat is "±": a "▬" bar in front of "0.0" read as "-0.0".
+  const arrow = direction === 'up' ? '▲' : direction === 'down' ? '▼' : '±';
   const magnitude = change.replace(/^[+−]/, '');
 
   return (

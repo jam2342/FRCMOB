@@ -17,6 +17,8 @@ import type {
   TeamCompetitionsResponse,
 } from '../api';
 import { MobileViewActions } from '../components/ui/MobileViewActions';
+import { EmptyState } from '../components/ui/EmptyState';
+import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { HeadToHeadCard } from '../features/headToHead/HeadToHeadCard';
 import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
@@ -185,6 +187,7 @@ export function ComparePage() {
 
   const [eventTeams, setEventTeams] = useState<EventTeamsIntelResponse | null>(null);
   const [loadingEventTeams, setLoadingEventTeams] = useState(false);
+  const [eventTeamsError, setEventTeamsError] = useState('');
 
   const [refreshingCompare, setRefreshingCompare] = useState(false);
 
@@ -266,6 +269,7 @@ export function ComparePage() {
   useEffect(() => {
     if (selectedEventKey) return;
     setEventTeams(null);
+    setEventTeamsError('');
     setLoadingEventTeams(false);
   }, [selectedEventKey]);
 
@@ -275,6 +279,7 @@ export function ComparePage() {
   const refreshEventTeams = useCallback(async (): Promise<boolean> => {
     if (!selectedEventKey) return true;
     setLoadingEventTeams(true);
+    setEventTeamsError('');
     try {
       const payload = await getEventTeamsIntel(selectedEventKey, {
         include_tba: true,
@@ -290,7 +295,7 @@ export function ComparePage() {
     } catch (error) {
       if (currentEventKeyRef.current !== selectedEventKey) return true;
       setEventTeams(null);
-      setErrorText((error as Error).message || 'Unable to load event teams for compare.');
+      setEventTeamsError((error as Error).message || 'Unable to load event teams for compare.');
       return false;
     } finally {
       setLoadingEventTeams(false);
@@ -514,7 +519,8 @@ export function ComparePage() {
 
   const compareRows = useMemo(() => {
     return compareTeamKeys.map((teamKey) => {
-      const bundle = teamBundles[teamKey] || emptyBundle(teamKey, selectedEventKey || '');
+      const stored = teamBundles[teamKey];
+      const bundle = stored?.event_key === selectedEventKey ? stored : emptyBundle(teamKey, selectedEventKey || '');
       return {
         team_key: teamKey,
         loading: bundle.loading,
@@ -896,6 +902,7 @@ export function ComparePage() {
             {lastUpdatedAt ? <span className="center-chip">Updated {relativeFromTimestamp(lastUpdatedAt)}</span> : null}
           </div>
 
+          {eventTeamsError ? <p className="center-callout danger" title={eventTeamsError}>Couldn't load this event's teams. Try again in a moment.</p> : null}
           {errorText ? <p className="center-callout danger">{errorText}</p> : null}
           {statusText ? <p className="center-callout muted">{statusText}</p> : null}
         </SurfaceCard>
@@ -1025,36 +1032,45 @@ export function ComparePage() {
             <SurfaceCard tourId="compare-summary" expandable hideTitleOnPhone title="Summary" className="compare-summary-card" compactable>
             {/* Highlights below the teams: they need every team's data, and arriving
                 above the list they pushed it ~300 px down on a phone. */}
-            <Table
-              columns={summaryColumns}
-              rows={compareRows}
-              rowKey={(row) => `compare-summary-row-${row.team_key}`}
-              cardBreakpoint={COMPARE_CARD_BREAKPOINT}
-              renderCards={renderSummaryCards}
-              empty="Pick teams to compare."
-            />
-            {isMobileLayout ? null : metricHighlights.length > 0 ? (
-              <div className="compare-highlights-grid">
-                {metricHighlights.map((highlight) => (
-                  <article
-                    key={`compare-highlight-${highlight.id}`}
-                    className={`compare-highlight-card tone-${highlight.id}`.trim()}
-                  >
-                    <h4>{highlight.label}</h4>
-                    <p>
-                      <strong>{highlight.best_team}</strong> ({highlight.best_value})
-                    </p>
-                    <p>
-                      <strong>{highlight.worst_team}</strong> ({highlight.worst_value})
-                    </p>
-                    <small>Spread: {highlight.spread}</small>
-                  </article>
-                ))}
-              </div>
-            ) : compareRows.length < 2 ? (
-              <p className="center-callout muted">Add at least 2 teams for highlights.</p>
-            ) : compareRows.some((row) => row.loading) ? null : (
-              <p className="center-callout muted">No differences to highlight between these teams yet.</p>
+            {/* Every team must load before missing metrics can count as a comparison. */}
+            {compareRows.some((row) => row.error) ? (
+              <EmptyState compact type="offline" title="Couldn't load the comparison" description="Try again in a moment." />
+            ) : compareRows.some((row) => row.loading || !row.last_updated_at) ? (
+              <SkeletonBlock rows={3} compact />
+            ) : (
+              <>
+                <Table
+                  columns={summaryColumns}
+                  rows={compareRows}
+                  rowKey={(row) => `compare-summary-row-${row.team_key}`}
+                  cardBreakpoint={COMPARE_CARD_BREAKPOINT}
+                  renderCards={renderSummaryCards}
+                  empty="Pick teams to compare."
+                />
+                {isMobileLayout ? null : metricHighlights.length > 0 ? (
+                  <div className="compare-highlights-grid">
+                    {metricHighlights.map((highlight) => (
+                      <article
+                        key={`compare-highlight-${highlight.id}`}
+                        className={`compare-highlight-card tone-${highlight.id}`.trim()}
+                      >
+                        <h4>{highlight.label}</h4>
+                        <p>
+                          <strong>{highlight.best_team}</strong> ({highlight.best_value})
+                        </p>
+                        <p>
+                          <strong>{highlight.worst_team}</strong> ({highlight.worst_value})
+                        </p>
+                        <small>Spread: {highlight.spread}</small>
+                      </article>
+                    ))}
+                  </div>
+                ) : compareRows.length < 2 ? (
+                  <p className="center-callout muted">Add at least 2 teams for highlights.</p>
+                ) : (
+                  <p className="center-callout muted">No differences to highlight between these teams yet.</p>
+                )}
+              </>
             )}
             </SurfaceCard>
 
