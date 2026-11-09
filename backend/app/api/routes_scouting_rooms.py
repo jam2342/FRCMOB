@@ -850,6 +850,9 @@ def _upsert_room(
             db.refresh(room)
             return room
 
+        # Same rule as joining: create_if_missing on an existing code must not move a team room.
+        if room.team_event_key and event_key and event_key != room.team_event_key:
+            raise HTTPException(status_code=422, detail="A team room stays with its event.")
         changed = False
         if event_key and room.event_key != event_key:
             room.event_key = event_key
