@@ -41,9 +41,11 @@ if [[ -z "$listing" ]] || grep -qvE '^(backend/|docker/|\.dockerignore$)' <<<"$l
   exit 2
 fi
 
-caddy_before=$(sha256sum "$APP/docker/Caddyfile" 2>/dev/null | cut -d' ' -f1 || true)
+# The TLS container is redone when its config or its compose definition changes.
+tls_config() { cat "$APP/docker/Caddyfile" "$APP/docker/docker-compose.oci.yml" 2>/dev/null | sha256sum | cut -d' ' -f1; }
+caddy_before=$(tls_config)
 tar -xf "$bundle" -C "$APP"
-caddy_after=$(sha256sum "$APP/docker/Caddyfile" | cut -d' ' -f1)
+caddy_after=$(tls_config)
 
 # tar -x only adds and overwrites, so a file deleted from the repo stayed on disk and
 # in every image built after it (five removed modules were still there on 2026-10-17).
@@ -67,10 +69,12 @@ echo "== migrate"
 echo "== restart"
 "${COMPOSE[@]}" up -d backend
 if [[ "$caddy_before" != "$caddy_after" ]]; then
-  # The Caddyfile is a single-file bind mount: a replaced file needs a restart to be seen.
-  echo "== Caddyfile changed: validate and restart TLS"
-  sudo docker run --rm -e BACKEND_TLS_HOST=141-148-171-128.sslip.io -v "$APP/docker/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-  sudo docker restart scouting-tls
+  # Validate with the service's own mounts and env (certificates included), then
+  # recreate it: a restart would keep the old mounts, and the Caddyfile is a
+  # single-file bind mount that a replaced file only reaches through a new container.
+  echo "== TLS config changed: validate and recreate"
+  "${COMPOSE[@]}" run --rm --no-deps tls caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  "${COMPOSE[@]}" up -d --no-deps --force-recreate tls
 fi
 
 echo "== health"

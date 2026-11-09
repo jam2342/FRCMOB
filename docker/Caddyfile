@@ -1,8 +1,20 @@
-# TLS in front of the API on the OCI VM. Caddy obtains and renews the Let's Encrypt
-# certificate itself over TLS-ALPN on 443, so port 80 never has to be open. The
-# default host is an sslip.io name, which resolves to the IP spelled inside it, so
-# no domain is needed; moving to a real domain is a BACKEND_TLS_HOST change.
-{$BACKEND_TLS_HOST} {
+# TLS in front of the API on the OCI VM.
+# - api.frcmob.com sits behind Cloudflare's proxy and uses a Cloudflare Origin CA
+#   certificate (valid to 2041) from TLS_CERTS_DIR on the VM, never in git. Cloudflare
+#   checks it in "Full (strict)" mode.
+# - The sslip.io name resolves straight to the VM's IP; Caddy gets and renews its
+#   Let's Encrypt certificate over TLS-ALPN on 443, so port 80 never has to be open.
+#   Vercel's /api rewrite and the deploy health check still use it.
+{
+	servers {
+		# Only Cloudflare's edge (https://www.cloudflare.com/ips/) may name the client,
+		# so a direct caller can't spoof CF-Connecting-IP.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+(api) {
 	# Compression here instead of in the Python workers (RESPONSE_COMPRESSION_ENABLED
 	# can then be false). Responses that arrive already compressed pass through.
 	encode zstd gzip
@@ -21,6 +33,19 @@
 		file_server
 	}
 	handle {
-		reverse_proxy backend:8000
+		# The app reads the caller from the last X-Forwarded-For entry (live_signal.py).
+		# Behind Cloudflare that is the visitor, not the edge; elsewhere it is the peer, as before.
+		reverse_proxy backend:8000 {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
+}
+
+{$BACKEND_TLS_HOST} {
+	import api
+}
+
+api.frcmob.com {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	import api
 }
