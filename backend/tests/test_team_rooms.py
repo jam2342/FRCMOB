@@ -279,3 +279,15 @@ def test_existing_entries_and_keyed_rooms_work_with_team_access(team):
         "room_key": payload["room_key"], "event_key": "2026other",
     })
     assert wrong_event.status_code == 422
+
+
+def test_create_if_missing_cannot_move_a_team_room(team):
+    payload = create(team).json()
+    moved = team[0].post("/scouting/rooms", headers=team[4], json={
+        "room_key": payload["room_key"], "event_key": "2026other", "create_if_missing": True,
+    })
+    assert moved.status_code == 422, moved.text
+    with team[1]() as db:
+        room = db.get(models.ScoutingRoom, payload["room_key"])
+        assert room.event_key == EVENT and room.team_event_key == EVENT
+    assert save(team, [change(team[2]["scout"])]).status_code == 200

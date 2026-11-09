@@ -1,4 +1,4 @@
-# Root context is used by docker-compose.prod.yml / aws / oci builds.
+# Root context is used by the docker-compose.oci.yml build.
 # Ignore everything by default, then include only what those Dockerfiles copy.
 *
 

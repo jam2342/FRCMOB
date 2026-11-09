@@ -291,6 +291,15 @@ class TeamIntelEndpointIntegrationTests(unittest.TestCase):
         full_bytes = len(json.dumps(full.json()))
         self.assertLess(compact_bytes, full_bytes)
 
+    def test_team_intel_rejects_junk_event_keys(self):
+        # "-" is the cache token for "no event"; accepting it would let anyone overwrite that slot.
+        for junk in ("-", "../x", "2026 txhou"):
+            response = self.client.get("/teams/frc118/intel", params={"event_key": junk, "include_tba": "false"})
+            self.assertEqual(response.status_code, 422, junk)
+        response = self.client.get("/teams/frc118/intel", params={"event_key": " 2026TXHOU ", "include_tba": "false"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("event_key"), "2026txhou")
+
 
 if __name__ == "__main__":
     unittest.main()

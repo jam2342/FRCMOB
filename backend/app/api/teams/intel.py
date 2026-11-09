@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
@@ -26,6 +26,7 @@ from app.services.intel.helpers import (
     _normalize_team_key,
     _team_intel_cache_token,
 )
+from app.services.events.live_signal import EVENT_KEY_RE
 from app.services.intel.snapshots import read_snapshot, write_snapshot
 from app.tba.client import TBAClient
 
@@ -186,6 +187,11 @@ async def get_team_intel(
     db: Session = Depends(get_db),
 ):
     normalized_team_key = _normalize_team_key(team_key)
+    # A junk key like "-" would share the no-event cache slot and blank the public page.
+    if isinstance(event_key, str):
+        event_key = event_key.strip().lower() or None
+    if event_key is not None and not EVENT_KEY_RE.fullmatch(event_key):
+        raise HTTPException(status_code=422, detail="Invalid event key.")
     cache_token = _team_intel_cache_token(
         team_key=normalized_team_key,
         event_key=event_key,
