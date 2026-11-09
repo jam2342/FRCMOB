@@ -101,6 +101,8 @@ services:
       - caddy_data:/data
       # detector weights for the frontend build (Caddyfile /model-files/)
       - ${MODEL_FILES_DIR:-/home/ubuntu/frcmob-model-files}:/srv/model-files:ro
+      # Cloudflare Origin CA certificate + key for api.frcmob.com (root-only, never in git)
+      - ${TLS_CERTS_DIR:-/home/ubuntu/frcmob-tls}:/etc/caddy/certs:ro
 
 volumes:
   backend_media:

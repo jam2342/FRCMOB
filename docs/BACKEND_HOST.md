@@ -32,6 +32,17 @@ it and proxies to `backend:8000`. sslip.io resolves that name to the IP inside i
 so no domain is needed. Caddy gets and renews the Let's Encrypt certificate over
 TLS-ALPN on 443 (port 80 stays closed) and keeps it in the `caddy_data` volume.
 
+Since 2026-11-09 the API is also at `https://api.frcmob.com`, behind Cloudflare's
+proxy (SSL mode Full (strict)). Caddy serves that name with a Cloudflare Origin CA
+certificate valid to 2041, kept root-only in `/home/ubuntu/frcmob-tls/`
+(`TLS_CERTS_DIR`, mounted at `/etc/caddy/certs`) and never in git. Caddy takes the
+visitor's address from `CF-Connecting-IP` only when the peer is a Cloudflare edge
+range (the `trusted_proxies` list in the Caddyfile; refresh it from
+cloudflare.com/ips if Cloudflare adds ranges) and passes it on as `X-Forwarded-For`.
+
+When the Caddyfile or `docker-compose.oci.yml` changes, `ci-deploy.sh` validates the
+`tls` service with its own mounts and recreates it.
+
 Every compose command on the VM needs `--profile tls`, or compose leaves Caddy out.
 If the public IP changes, the sslip name changes with it: set `BACKEND_TLS_HOST` in
 `.env` and update `vercel.json`.
