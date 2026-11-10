@@ -308,7 +308,7 @@
 .product-shell .tut-guide-kicker {
   margin: 0;
   font-size: var(--font-size-legacy-10);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: #52dfa0;
@@ -344,7 +344,7 @@
   margin: 0;
   color: color-mix(in srgb, var(--ui-text) 96%, transparent);
   font-size: var(--font-size-sm);
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.35;
 }
 
@@ -457,7 +457,7 @@
 .product-shell .tut-counter {
   text-align: center;
   font-size: var(--font-size-2xs);
-  font-weight: 500;
+  font-weight: 400;
   color: color-mix(in srgb, var(--color-text-muted) 80%, transparent);
   font-variant-numeric: tabular-nums;
 }
@@ -1163,7 +1163,7 @@
   border: none;
   border-radius: 4px;
   padding: 1px 6px;
-  font-weight: 500;
+  font-weight: 400;
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
 }
@@ -1660,7 +1660,7 @@
 .dviz-hbar-value {
   fill: rgba(255, 255, 255, 0.7);
   font-size: var(--font-size-legacy-11);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 /* ── sparklines ──────────────────────────────── */
@@ -1680,7 +1680,7 @@
 .dviz-sparkline-label {
   display: block;
   font-size: var(--font-size-2xs);
-  font-weight: 500;
+  font-weight: 400;
   /* token instead of hardcoded white — this label had no .theme-light override,
      so it was white-on-white in light mode. */
   color: var(--color-text-muted);
@@ -1795,7 +1795,7 @@
 .dviz-proscons-val {
   color: rgba(255, 255, 255, 0.5);
   font-size: var(--font-size-legacy-11);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 /* ── light theme overrides ───────────────────── */

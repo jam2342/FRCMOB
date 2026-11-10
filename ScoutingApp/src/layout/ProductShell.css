@@ -652,6 +652,8 @@ button.ps-context-chip:disabled {
 
 .ps-context-chip strong {
   font-size: var(--font-size-sm);
+  /* Not the browser's "bolder", which inside a bold chip came out at 900. */
+  font-weight: 700;
   /* Event names can run to sixty characters ("… presented by …"). */
   max-width: 26ch;
   overflow: hidden;
@@ -723,7 +725,7 @@ button.ps-context-chip:disabled {
   color: var(--color-text-muted);
   padding: 4px 10px;
   font-size: var(--font-size-2xs);
-  font-weight: 650;
+  font-weight: 700;
   letter-spacing: 0.01em;
   white-space: nowrap;
   cursor: pointer;
@@ -980,7 +982,7 @@ button.ps-context-chip:disabled {
   align-items: center;
   gap: 7px;
   font-size: var(--font-size-base);
-  font-weight: 760;
+  font-weight: 700;
   cursor: pointer;
   max-width: min(100%, 240px);
   transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease;
@@ -1213,7 +1215,7 @@ button.ps-context-chip:disabled {
   background: color-mix(in srgb, var(--color-surface) 78%, transparent);
   color: var(--color-text-muted);
   font-size: var(--font-size-legacy-11);
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.2;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1462,7 +1464,7 @@ button.ps-context-chip:disabled {
   padding: 2px 4px;
   border: 0;
   background: transparent;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
 

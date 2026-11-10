@@ -65,11 +65,19 @@ import {
   titleizeKey,
 } from './centerUtils';
 import {
-  GridIcon, BarChartIcon, CalendarIcon, ImageIcon, CodeIcon,
-  FlameIcon, StopwatchIcon, RobotIcon, MountainIcon, GaugeIcon,
-  TrophyIcon, HashIcon,
-  ClockIcon, CheckCircleIcon, ExternalLinkIcon, ChevronDownIcon, ChevronRightIcon,
-  SearchIcon, ScoreboardIcon, EyeIcon, AwardIcon,
+  GridIcon,
+  BarChartIcon,
+  CalendarIcon,
+  ImageIcon,
+  CodeIcon,
+  FlameIcon,
+  ClockIcon,
+  ExternalLinkIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  SearchIcon,
+  ScoreboardIcon,
+  EyeIcon,
 } from '../components/ui/Icons';
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { ordinal } from '../utils/ordinal';
@@ -1642,7 +1650,7 @@ export function TeamCenterPage() {
                   >
                     <div className="center-kpi-grid team-stats-grid">
                       <article className="center-kpi-card">
-                        <span><FlameIcon className="icon-inline icon-muted" /> Fuel / active min</span>
+                        <span>Fuel / active min</span>
                         <strong>{metric(teamBreakdown?.averages?.fuel_scoring_rate ?? null, 1)}</strong>
                         {estimateChip('fuel_scoring_rate')}
                         {isEstimatedMetric('fuel_scoring_rate') && typeof officialStats?.fuel_per_match === 'number' ? (
@@ -1650,13 +1658,13 @@ export function TeamCenterPage() {
                         ) : null}
                       </article>
                       <article className="center-kpi-card">
-                        <span><RobotIcon className="icon-inline icon-muted" /> Auto Contribution</span>
+                        <span>Auto Contribution</span>
                         <strong>{metric(teamBreakdown?.averages?.auto_contribution ?? null, 1)}</strong>
                         {estimateChip('auto_contribution')}
                         {isEstimatedMetric('auto_contribution') ? <small>points per match</small> : null}
                       </article>
                       <article className="center-kpi-card">
-                        <span><MountainIcon className="icon-inline icon-muted" /> Climb Success</span>
+                        <span>Climb Success</span>
                         <strong>{pct(teamBreakdown?.averages?.climb_success_prob ?? null, 1)}</strong>
                         {climbRecord ? (
                           <>
@@ -1668,7 +1676,7 @@ export function TeamCenterPage() {
                         ) : null}
                       </article>
                       <article className="center-kpi-card">
-                        <span><TrophyIcon className="icon-inline icon-muted" /> Best Climb Level</span>
+                        <span>Best Climb Level</span>
                         <strong>{bestClimbLabel}</strong>
                         {/* With no climbs, "0/69 matches" only repeats the Climb Success tile. */}
                         {climbCapability.matches_with_level > 0 ? (
@@ -1687,25 +1695,25 @@ export function TeamCenterPage() {
                         scale: the typical 2026 robot is 50. */}
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Points / match</span>
+                        <span>Points / match</span>
                         <strong>{metric(teamRating?.expected_points?.total ?? null, 0)}</strong>
                         {ratingBasisLabel ? <small>{ratingBasisLabel}</small> : null}
                       </article>
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Likely rating</span>
+                        <span>Likely rating</span>
                         <strong>{ratingRange ?? MISSING}</strong>
                         <small>80% range: narrows as matches come in</small>
                       </article>
                       <article className="center-kpi-card">
-                        <span><FlameIcon className="icon-inline icon-muted" /> Teleop</span>
+                        <span>Teleop</span>
                         <strong>{metric(teamRating?.expected_points?.teleop ?? null, 0)}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><StopwatchIcon className="icon-inline icon-muted" /> Auto</span>
+                        <span>Auto</span>
                         <strong>{metric(teamRating?.expected_points?.auto ?? null, 0)}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><MountainIcon className="icon-inline icon-muted" /> Climb</span>
+                        <span>Climb</span>
                         <strong>{metric(teamRating?.expected_points?.climb ?? null, 0)}</strong>
                       </article>
                     </div>
@@ -1769,15 +1777,15 @@ export function TeamCenterPage() {
                     </p>
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Matches here</span>
+                        <span>Matches here</span>
                         <strong>{metric(teamRating?.matches_here ?? null, 0)}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><GaugeIcon className="icon-inline icon-muted" /> Earlier matches</span>
+                        <span>Earlier matches</span>
                         <strong>{metric(teamRating?.matches_before ?? null, 0)}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><ClockIcon className="icon-inline icon-muted" /> Updated</span>
+                        <span>Updated</span>
                         <strong>
                           {relativeFromTimestamp(
                             teamRating?.updated_at && Number.isFinite(Date.parse(teamRating.updated_at))
@@ -1799,22 +1807,22 @@ export function TeamCenterPage() {
                           {/* The phone header already shows the rank. */}
                           {!isMobileLayout ? (
                           <article className="center-kpi-card">
-                            <span><HashIcon className="icon-inline icon-muted" /> Event Rank</span>
+                            <span>Event Rank</span>
                             <strong>{tbaRank !== null ? `#${tbaRank}` : MISSING}</strong>
                           </article>
                           ) : null}
                           <article className="center-kpi-card">
-                            <span><CheckCircleIcon className="icon-inline icon-muted" /> Event Record</span>
+                            <span>Event Record</span>
                             <strong>{tbaRecord}</strong>
                           </article>
                           <article className="center-kpi-card">
-                            <span><AwardIcon className="icon-inline icon-muted" /> Event Awards</span>
+                            <span>Event Awards</span>
                             <strong>{tbaEventAwardsCount !== null ? tbaEventAwardsCount : MISSING}</strong>
                           </article>
                         </>
                       ) : null}
                       <article className="center-kpi-card">
-                        <span><AwardIcon className="icon-inline icon-muted" /> Season Awards</span>
+                        <span>Season Awards</span>
                         <strong>{tbaSeasonAwardsCount}</strong>
                       </article>
                     </div>

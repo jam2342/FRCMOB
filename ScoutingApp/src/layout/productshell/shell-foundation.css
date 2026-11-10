@@ -291,7 +291,7 @@
   color: var(--color-text-muted);
   text-decoration: none;
   background: var(--color-bg-elevated);
-  font-weight: 650;
+  font-weight: 700;
   font-size: var(--font-size-sm);
   transition:
     border-color 160ms ease,
@@ -2164,7 +2164,7 @@ select.center-input option,
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: var(--font-size-2xs);
-  font-weight: 800;
+  font-weight: 700;
   padding: 0 12px;
 }
 
@@ -2495,7 +2495,7 @@ select.center-input option,
   align-items: center;
   justify-content: center;
   font-size: var(--font-size-sm);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 /* ------------------------------------------------------------------ */
@@ -3919,7 +3919,7 @@ select.center-input option,
 
 .scout-timer-value {
   font-size: var(--font-size-display);  /* Scouting hero: the match clock */
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--color-text);
 }
@@ -4027,7 +4027,7 @@ select.center-input option,
   background: color-mix(in srgb, var(--ui-surface-soft) 92%, transparent);
   color: var(--color-text);
   font-size: var(--font-size-legacy-10);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -5044,7 +5044,7 @@ select.center-input option,
    dimmer than that fails AA. 500 against 600 reads as a step down without
    touching contrast. */
 .page-view-tab--secondary:not(.active) {
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-normal);
 }
 
 .page-view-menu-divider {
@@ -5055,7 +5055,7 @@ select.center-input option,
 }
 
 .page-view-menu-item--secondary:not(.active) {
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-normal);
 }
 
 /* ── Live phase emphasis ────────────────────────────────────────────

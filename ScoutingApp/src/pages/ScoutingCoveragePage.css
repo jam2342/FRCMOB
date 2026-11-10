@@ -88,7 +88,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
   background: var(--color-surface-soft);
   color: var(--color-text-muted);
-  font-weight: 800;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -112,7 +112,7 @@
   background: var(--color-warning-soft);
   color: var(--color-warning-text);
   font-size: var(--font-size-legacy-11);
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide);
 }
@@ -142,7 +142,7 @@
 
 .coverage-outlier-kind {
   font-size: var(--font-size-legacy-11);
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.12rem 0.45rem;

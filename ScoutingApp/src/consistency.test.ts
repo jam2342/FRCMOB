@@ -148,3 +148,27 @@ describe('one look per kind of thing', () => {
     expect(plain, 'drop `expandable`: nothing in this card outgrows it').toEqual([]);
   });
 });
+
+// Pages rendered nine weights: 400 to 900, with 620, 760 and 820 among them, each picked for one
+// label. Three carry the hierarchy: 400 for reading, 600 for labels and headings, 700 for what
+// should stand out. @font-face ranges ("100 700") describe the font file, not text.
+describe('three font weights', () => {
+  function cssFiles(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) return cssFiles(path);
+      return name.endsWith('.css') ? [path] : [];
+    });
+  }
+
+  it('sets text at 400, 600 or 700', () => {
+    const allowed = /^(400|600|700|normal|bold|inherit|var\(--(font-weight-(normal|semibold|bold)|type-[a-z-]+-weight)\))$/;
+    const odd = cssFiles(SRC).flatMap((path) =>
+      readFileSync(path, 'utf8').split('\n').flatMap((line, i) => {
+        const value = line.match(/font-weight:\s*([^;]+);/)?.[1].trim();
+        return value && !allowed.test(value) && !/^\d+ \d+$/.test(value) ? [`${relative(SRC, path)}:${i + 1}  ${value}`] : [];
+      }),
+    );
+    expect(odd, 'use 400, 600 or 700 (or a --font-weight token)').toEqual([]);
+  });
+});

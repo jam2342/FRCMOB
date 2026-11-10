@@ -64,12 +64,25 @@ import {
 import { readStoredCenterContext, writeCenterContext } from '../layout/centerContext';
 import { type QuickJumpRegion } from '../layout/userSettings';
 import {
-  BarChartIcon, GridIcon, ListIcon, PieChartIcon, TrophyIcon, UsersIcon,
-  LiveDotIcon, ClockIcon, CheckCircleIcon, TagIcon, RefreshIcon, CloudSyncIcon,
-  CopyIcon, DownloadIcon,
-  ScoreboardIcon, BracketIcon,
-  TargetIcon, DeltaIcon,
-  CalendarIcon, ChevronLeftIcon, ChevronRightIcon,
+  BarChartIcon,
+  GridIcon,
+  ListIcon,
+  PieChartIcon,
+  TrophyIcon,
+  UsersIcon,
+  LiveDotIcon,
+  ClockIcon,
+  CheckCircleIcon,
+  TagIcon,
+  RefreshIcon,
+  CloudSyncIcon,
+  CopyIcon,
+  DownloadIcon,
+  ScoreboardIcon,
+  BracketIcon,
+  CalendarIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '../components/ui/Icons';
 import { smartSearchEvents } from '../utils/eventSearch';
 import {
@@ -2239,19 +2252,19 @@ export function EventsPage() {
               ) : null}
               <div className="center-kpi-grid">
                 <article className="center-kpi-card">
-                  <span><LiveDotIcon className="icon-inline icon-muted" /> Status</span>
+                  <span>Status</span>
                   <strong>{eventStatusShown}</strong>
                 </article>
                 <article className="center-kpi-card">
-                  <span><ScoreboardIcon className="icon-inline icon-muted" /> Matches Published</span>
+                  <span>Matches Published</span>
                   <strong>{matchCountLabel}</strong>
                 </article>
                 <article className="center-kpi-card">
-                  <span><UsersIcon className="icon-inline icon-muted" /> Teams Registered</span>
+                  <span>Teams Registered</span>
                   <strong>{teamCountLabel}</strong>
                 </article>
                 <article className="center-kpi-card">
-                  <span><CheckCircleIcon className="icon-inline icon-muted" /> Matches Played</span>
+                  <span>Matches Played</span>
                   <strong>{countsUnknown ? '—' : playedMatchCount}</strong>
                 </article>
               </div>
@@ -2486,11 +2499,11 @@ export function EventsPage() {
                   <>
                     <div className="center-kpi-grid">
                       <article className="center-kpi-card">
-                        <span><ScoreboardIcon className="icon-inline icon-muted" /> Total Qual Matches</span>
+                        <span>Total Qual Matches</span>
                         <strong>{qualificationSummary.total}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><CheckCircleIcon className="icon-inline icon-muted" /> Completed</span>
+                        <span>Completed</span>
                         <strong>{qualificationSummary.completed}</strong>
                       </article>
                       <article className="center-kpi-card">
@@ -2502,11 +2515,11 @@ export function EventsPage() {
                         <strong>{qualificationSummary.upcoming}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><TargetIcon className="icon-inline icon-muted" /> Avg Combined Score</span>
+                        <span>Avg Combined Score</span>
                         <strong>{metric(qualificationSummary.avgCombinedScore, 1)}</strong>
                       </article>
                       <article className="center-kpi-card">
-                        <span><DeltaIcon className="icon-inline icon-muted" /> Avg Margin</span>
+                        <span>Avg Margin</span>
                         <strong>{metric(qualificationSummary.avgMargin, 1)}</strong>
                       </article>
                     </div>

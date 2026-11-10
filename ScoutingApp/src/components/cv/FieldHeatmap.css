@@ -72,5 +72,5 @@
 .field-heatmap__empty-title {
   font-size: var(--font-size-md);
   color: var(--color-text-muted);
-  font-weight: 500;
+  font-weight: 400;
 }
