@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getMyWorkspace, joinWorkspace } from '../api';
+import { ensureTeamRoom, getMyWorkspace, getScoutingCoverage, getTeamSeasonStory, joinWorkspace } from '../api';
 import { MyTeamPage } from './MyTeamPage';
 import { pitProgress } from '../features/workspace/pitProgress';
 import { clearWorkspaceSession, rememberIssuedJoinCode } from '../features/workspace/workspaceSession';
@@ -58,6 +58,8 @@ describe('My Team hub', () => {
     localStorage.clear();
     localStorage.setItem('scouting_center_event_key', '2026arc');
     signOutTestWorkspace();
+    vi.mocked(getTeamSeasonStory).mockResolvedValue({ ok: true, team_key: '', nickname: null, season: 2026, game: null, events: [], totals: { wins: 0, losses: 0, ties: 0, events: 0, event_wins: 0, best_match: null } });
+    vi.mocked(getScoutingCoverage).mockResolvedValue({ ok: true, event_key: '', summary: { total_slots: 0, covered_slots: 0, coverage_pct: 0, total_entries: 0, scout_count: 0, outlier_count: 0 }, grid: [], leaderboard: [], outliers: [] });
   });
   afterEach(() => {
     clearWorkspaceSession('left');
@@ -82,15 +84,24 @@ describe('My Team hub', () => {
   it("puts a leader's tools before the season recap", async () => {
     signInTestWorkspace('leader');
     mockRole('leader');
+    // The recap hides itself for a team with no events, so give this one a season.
+    vi.mocked(getTeamSeasonStory).mockResolvedValue({
+      ok: true, team_key: 'frc5417', nickname: null, season: 2026, game: null,
+      events: [{ event_key: '2026arc', event_name: 'Archimedes', start: null, qual_rank: 3, field_size: 75, record: { wins: 5, losses: 3, ties: 0 }, best_match: null, finish: 'quals', rating_0_100: 50, points_per_match: 40 }],
+      totals: { wins: 5, losses: 3, ties: 0, events: 1, event_wins: 0, best_match: null },
+    } as never);
     renderAt();
+    // The workspace card is titled from the cached session until the server's copy lands.
+    await screen.findByRole('heading', { name: 'Eagle Robotics' });
     await screen.findByRole('heading', { name: 'Invite scouts' });
-    await screen.findByRole('heading', { name: /Our season/ });
+    const at = (order: string[], text: RegExp) => order.findIndex((h) => text.test(h));
+    // The season recap loads on its own clock, so wait for it to be in the list.
+    await waitFor(() => expect(at(headings(), /Our season/)).toBeGreaterThan(-1));
     const order = headings();
-    const at = (text: RegExp) => order.findIndex((h) => text.test(h));
-    expect(at(/Scouting at|Team scouting/)).toBeLessThan(at(/Eagle Robotics/));
-    expect(at(/Eagle Robotics/)).toBeLessThan(at(/Invite scouts/));
-    expect(at(/Invite scouts/)).toBeLessThan(at(/Members/));
-    expect(at(/Members/)).toBeLessThan(at(/Our season/));
+    expect(at(order, /Scouting at|Team scouting/)).toBeLessThan(at(order, /Eagle Robotics/));
+    expect(at(order, /Eagle Robotics/)).toBeLessThan(at(order, /Invite scouts/));
+    expect(at(order, /Invite scouts/)).toBeLessThan(at(order, /Members/));
+    expect(at(order, /Members/)).toBeLessThan(at(order, /Our season/));
   });
 
   it('shows a member only what they can use', async () => {
@@ -132,5 +143,22 @@ describe('My Team hub', () => {
     renderAt('/my-team?code=ABCDE12345');
     expect((screen.getByLabelText(/Join code/) as HTMLInputElement).value).toBe('ABCDE12345');
     expect(joinWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('still renders when the coverage response is partial', async () => {
+    signInTestWorkspace('member');
+    mockRole('member');
+    vi.mocked(ensureTeamRoom).mockResolvedValue({
+      ok: true, created: false, room_key: 'r1', event_key: '2026arc',
+      me: { member_id: 1, display_name: 'Test Scout', role: 'member' },
+      members: [{ member_id: 1, display_name: 'Test Scout', role: 'member' }],
+      assignments: [],
+    } as never);
+    vi.mocked(getScoutingCoverage).mockResolvedValue({ ok: true } as never);
+    renderAt();
+    expect(await screen.findByRole('link', { name: /Pit scouting/ })).toBeTruthy();
+    await waitFor(() => expect(getScoutingCoverage).toHaveBeenCalled());
+    expect(await screen.findByRole('heading', { name: /Members/ })).toBeTruthy();
+    expect(screen.queryByText(/failed to load/i)).toBeNull();
   });
 });
