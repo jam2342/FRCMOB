@@ -35,7 +35,9 @@ that step a Neon restore brings back the rows that point at them, and the images
    git archive main backend docker .dockerignore | ssh -i ~/.ssh/frcmob_oci ubuntu@<new-ip> 'cd ~/frcmob && tar -x'
    scp -i ~/.ssh/frcmob_oci ~/.config/frcmob/backend.env ubuntu@<new-ip>:frcmob/.env
    ```
-   If the IP changed, update `BACKEND_TLS_HOST` in `.env` (`<a-b-c-d>.sslip.io`).
+   Copy the Cloudflare origin certificate and key (`~/.config/frcmob/cf-origin/`) to
+   `/home/ubuntu/frcmob-tls/` (root, mode 600), and the model files folder to
+   `/home/ubuntu/frcmob-model-files/`.
 4. **Database:** start Postgres and Redis, then fill Postgres from Neon:
    ```bash
    cd ~/frcmob && sudo docker compose --env-file .env -f docker/docker-compose.oci.yml --profile tls up -d postgres redis
@@ -51,11 +53,10 @@ that step a Neon restore brings back the rows that point at them, and the images
    ```
 6. **Cron:** reinstall root's hourly backup: `17 * * * * /home/ubuntu/frcmob/docker/backup_database.sh`
    (see `BACKEND_HOST.md`).
-7. **If the IP changed:** point everything at the new host. That means the Vercel rewrite in
-   `ScoutingApp/vercel.json`, `NATIVE_WS_URL`/`NATIVE_API_URL` in `src/platform/runtime.ts`
-   (also the CSP's socket origin), the deploy workflow's host and `DEPLOY_KNOWN_HOSTS`
-   secret, and the deploy key's line in `~/.ssh/authorized_keys`. A real domain makes
-   this one DNS change.
+7. **If the IP changed:** point the `frcmob.com`, `www` and `api` A records in Cloudflare
+   at it (proxied). The deploy workflow's SSH host, its `DEPLOY_KNOWN_HOSTS` secret and
+   the deploy key's line in `~/.ssh/authorized_keys` name the VM too. Nothing in the
+   app does.
 
 ## Rehearsal (no new VM, production untouched)
 

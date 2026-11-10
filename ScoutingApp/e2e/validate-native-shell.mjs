@@ -79,7 +79,7 @@ try {
   await page.waitForFunction(() => Boolean(window.__nativeListeners.backButton));
   assert.ok(await page.evaluate(() => document.documentElement.classList.contains('native-app')));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2));
-  assert.ok(apiRequests.some(url => url.startsWith('https://scouting-app-iryg.vercel.app/api/')), 'Native API uses the app-local origin');
+  assert.ok(apiRequests.some(url => url.startsWith('https://frcmob.com/api/')), 'Native API uses the app-local origin');
   await page.screenshot({ path: '/tmp/frcmob-native-recorder-fixture.png', fullPage: true });
   await page.evaluate(() => window.__nativeListeners.backButton({ canGoBack: false }));
   await page.waitForURL('**/#/');

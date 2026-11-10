@@ -7,7 +7,7 @@
 import { defineConfig, mergeConfig } from 'vite'
 import base from './vite.config'
 
-const target = process.env.REGRESSION_API_TARGET || 'https://141-148-171-128.sslip.io'
+const target = process.env.REGRESSION_API_TARGET || 'https://api.frcmob.com'
 
 const proxy = {
   '/api': {

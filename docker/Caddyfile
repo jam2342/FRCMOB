@@ -1,18 +1,24 @@
-# TLS in front of the API on the OCI VM.
-# - frcmob.com, www and api sit behind Cloudflare's proxy and use one Cloudflare Origin
-#   CA certificate (valid to 2041) from TLS_CERTS_DIR on the VM, never in git.
-#   Cloudflare checks it in "Full (strict)" mode. Cloudflare serves the web app's files
-#   itself (a static-assets Worker); only /api/* and /models/* on frcmob.com reach here.
-# - The sslip.io name resolves straight to the VM's IP; Caddy gets and renews its
-#   Let's Encrypt certificate over TLS-ALPN on 443, so port 80 never has to be open.
-#   Vercel's /api rewrite and the deploy health check still use it.
+# TLS in front of the API on the OCI VM. Everything arrives through Cloudflare's proxy
+# (SSL mode Full (strict)): frcmob.com, www and api use one Cloudflare Origin CA
+# certificate (valid to 2041) from TLS_CERTS_DIR on the VM, never in git. Cloudflare
+# serves the web app's files itself (a static-assets Worker); only /api/*, /models/*
+# and the onnxruntime engine on frcmob.com reach here (docs/FRONTEND_HOST.md).
+#
+# Cloudflare's edge ranges (https://www.cloudflare.com/ips/) appear twice below:
+# trusted_proxies and the cloudflare_only snippet. Keep them the same.
 {
 	servers {
-		# Only Cloudflare's edge (https://www.cloudflare.com/ips/) may name the client,
-		# so a direct caller can't spoof CF-Connecting-IP.
+		# Only Cloudflare's edge may name the client, so nobody can spoof CF-Connecting-IP.
 		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
 		client_ip_headers CF-Connecting-IP
 	}
+}
+
+# Anything not from Cloudflare's edge is cut off before it reaches the app, so
+# Cloudflare's rate limiting and caching can't be gone around by calling the VM's IP.
+(cloudflare_only) {
+	@not_cloudflare not remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	abort @not_cloudflare
 }
 
 (headers) {
@@ -21,83 +27,86 @@
 }
 
 (backend) {
-	# The app reads the caller from the last X-Forwarded-For entry (live_signal.py).
-	# Behind Cloudflare that is the visitor, not the edge; elsewhere it is the peer, as before.
+	# The app reads the caller from the last X-Forwarded-For entry (live_signal.py):
+	# the visitor Cloudflare names, never the edge server.
 	reverse_proxy backend:8000 {
 		header_up X-Forwarded-For {client_ip}
 	}
 }
 
-(api) {
+(api_limits) {
 	# Compression here instead of in the Python workers (RESPONSE_COMPRESSION_ENABLED
 	# can then be false). Responses that arrive already compressed pass through.
 	encode zstd gzip
-	import headers
 	# Same cap as MAX_REQUEST_BODY_BYTES in the app (10 MiB); a 6 MB pit photo is the
 	# largest real body. Refused here before the app reads any of it.
 	request_body {
 		max_size 10MiB
 	}
-	# Detector weights aren't in git; the frontend build downloads them from here
-	# (ScoutingApp/scripts/fetch-models.mjs). They sit in a folder with an unguessable
-	# name that only the build's ONDEVICE_MODEL_SOURCE knows, and nothing is listed.
-	handle_path /model-files/* {
-		root * /srv/model-files
-		file_server
-	}
-	handle {
-		import backend
-	}
 }
 
-{$BACKEND_TLS_HOST} {
-	import api
-}
-
+# The API on its own name: deploy health checks and the CI regression job.
+# route keeps the order as written, so the Cloudflare check always runs first.
 api.frcmob.com {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
-	import api
+	route {
+		import cloudflare_only
+		import headers
+		import api_limits
+		# Detector weights for the frontend build (ScoutingApp/scripts/fetch-models.mjs),
+		# in a folder with an unguessable name that only ONDEVICE_MODEL_SOURCE knows.
+		handle_path /model-files/* {
+			root * /srv/model-files
+			file_server
+		}
+		handle {
+			import backend
+		}
+	}
 }
 
-# The web app. Cloudflare answers everything else from its static assets; these two
-# Worker routes are excluded so they come here.
+# The web app. Cloudflare answers everything else from its static assets; these paths
+# are Worker routes with no Worker, so they come here.
 frcmob.com {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
-	import headers
-	# Same-origin API, like Vercel's /api rewrite: the app, its service worker and the
-	# boot prefetch all call /api/..., and room sockets work through it too.
-	handle_path /api/* {
-		encode zstd gzip
-		request_body {
-			max_size 10MiB
+	route {
+		import cloudflare_only
+		import headers
+		# Same-origin API, like Vercel's /api rewrite: the app, its service worker and the
+		# boot prefetch all call /api/..., and room sockets work through it too.
+		handle_path /api/* {
+			import api_limits
+			import backend
 		}
-		import backend
-	}
-	# Detector weights: over 25 MiB, too big for Cloudflare's static assets. The folder
-	# name stays in the VM's .env. Cloudflare caches them (cache rule on /models/*).
-	handle_path /models/* {
-		root * /srv/model-files/{$MODEL_FILES_TOKEN:unset}
-		header Cache-Control "public, max-age=604800"
-		header Content-Type application/octet-stream
-		file_server
-	}
-	# onnxruntime's WebGPU engine (28 MiB) is over the limit too. Its name carries a
-	# content hash, so a stale copy can't be served; web-deploy.yml refuses to publish
-	# a build until this file is in the folder (docs/FRONTEND_HOST.md).
-	@ort_wasm path_regexp ^/assets/ort-wasm-simd-threaded\.jsep-[A-Za-z0-9_-]+\.wasm$
-	handle @ort_wasm {
-		root * /srv/model-files/{$MODEL_FILES_TOKEN:unset}
-		uri strip_prefix /assets
-		header Cache-Control "public, max-age=31536000, immutable"
-		header Cross-Origin-Embedder-Policy require-corp
-		file_server
-	}
-	handle {
-		respond 404
+		# Detector weights: over 25 MiB, too big for Cloudflare's static assets. The folder
+		# name stays in the VM's .env. Cloudflare caches them (cache rule on /models/*).
+		handle_path /models/* {
+			root * /srv/model-files/{$MODEL_FILES_TOKEN:unset}
+			header Cache-Control "public, max-age=604800"
+			header Content-Type application/octet-stream
+			file_server
+		}
+		# onnxruntime's WebGPU engine (28 MiB) is over the limit too. Its name carries a
+		# content hash, so a stale copy can't be served; web-deploy.yml refuses to publish
+		# a build until this file is in the folder (docs/FRONTEND_HOST.md).
+		@ort_wasm path_regexp ^/assets/ort-wasm-simd-threaded\.jsep-[A-Za-z0-9_-]+\.wasm$
+		handle @ort_wasm {
+			root * /srv/model-files/{$MODEL_FILES_TOKEN:unset}
+			uri strip_prefix /assets
+			header Cache-Control "public, max-age=31536000, immutable"
+			header Cross-Origin-Embedder-Policy require-corp
+			file_server
+		}
+		handle {
+			respond 404
+		}
 	}
 }
 
 www.frcmob.com {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
-	redir https://frcmob.com{uri} permanent
+	route {
+		import cloudflare_only
+		redir https://frcmob.com{uri} permanent
+	}
 }

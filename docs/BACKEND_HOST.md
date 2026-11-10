@@ -25,27 +25,29 @@ host's INPUT REJECT rule doesn't block them.
 
 ## TLS
 
-Since 2026-09-26 everything reaches the API over HTTPS at
-`https://141-148-171-128.sslip.io`: the Vercel `/api` rewrite and the uptime check
-through Vercel. Caddy (`tls` service, profile `tls`) terminates
-it and proxies to `backend:8000`. sslip.io resolves that name to the IP inside it,
-so no domain is needed. Caddy gets and renews the Let's Encrypt certificate over
-TLS-ALPN on 443 (port 80 stays closed) and keeps it in the `caddy_data` volume.
+Since 2026-11-10 everything reaches the VM through Cloudflare's proxy (SSL mode
+Full (strict)): `frcmob.com/api/*` from the web and native apps, `api.frcmob.com` for
+deploy health checks, CI's regression job and Vercel's old `/api` rewrite. Caddy
+(`tls` service, profile `tls`) terminates TLS with one Cloudflare Origin CA
+certificate for `frcmob.com`, `www` and `api`, valid to 2041, kept root-only in
+`/home/ubuntu/frcmob-tls/` (`TLS_CERTS_DIR`, mounted at `/etc/caddy/certs`) and never
+in git, and proxies to `backend:8000`. Port 80 stays closed.
 
-Since 2026-11-09 the API is also at `https://api.frcmob.com`, behind Cloudflare's
-proxy (SSL mode Full (strict)). Caddy serves that name with a Cloudflare Origin CA
-certificate valid to 2041, kept root-only in `/home/ubuntu/frcmob-tls/`
-(`TLS_CERTS_DIR`, mounted at `/etc/caddy/certs`) and never in git. Caddy takes the
-visitor's address from `CF-Connecting-IP` only when the peer is a Cloudflare edge
-range (the `trusted_proxies` list in the Caddyfile; refresh it from
-cloudflare.com/ips if Cloudflare adds ranges) and passes it on as `X-Forwarded-For`.
+**Only Cloudflare gets in.** Every site starts with `cloudflare_only`, which drops any
+connection whose peer isn't a Cloudflare edge range, so Cloudflare's rate limiting and
+cache can't be bypassed by calling the IP. Caddy takes the visitor's address from
+`CF-Connecting-IP` only from those ranges (`trusted_proxies`) and passes it on as
+`X-Forwarded-For`. Both lists are in the Caddyfile; refresh them from
+cloudflare.com/ips if Cloudflare adds ranges. Checks from the VM itself use
+`http://127.0.0.1:8000`. The old `141-148-171-128.sslip.io` name was retired the same
+day.
 
 When the Caddyfile or `docker-compose.oci.yml` changes, `ci-deploy.sh` validates the
 `tls` service with its own mounts and recreates it.
 
 Every compose command on the VM needs `--profile tls`, or compose leaves Caddy out.
-If the public IP changes, the sslip name changes with it: set `BACKEND_TLS_HOST` in
-`.env` and update `vercel.json`.
+If the public IP changes, update the three proxied A records in Cloudflare (and the
+deploy workflow's SSH host); nothing in the app names the IP.
 
 ## Layout on the VM
 
@@ -108,7 +110,7 @@ dump from `/home/ubuntu/backups`) before touching production.
 
 ## Monitoring and backups
 
-- **Uptime:** `.github/workflows/uptime.yml` checks `https://scouting-app-iryg.vercel.app/api/health/deep`
+- **Uptime:** `.github/workflows/uptime.yml` checks `https://frcmob.com/api/health/deep`
   every 2 hours (Vercel rewrite → VM → Postgres/Redis) and fails, emailing whoever last
   edited the cron, if the API, database or Redis is down. Run it by hand from the Actions
   tab (`workflow_dispatch`).
@@ -146,7 +148,7 @@ To move back later, repeat the 2026-09-27 cutover: stop the backend, dump Neon
 ## Checks
 
 ```bash
-curl -s https://scouting-app-iryg.vercel.app/api/health/deep   # api, database, redis, env validation
+curl -s https://frcmob.com/api/health/deep   # api, database, redis, env validation
 ssh -i ~/.ssh/frcmob_oci ubuntu@<ip> 'sudo docker ps; sudo docker logs --tail 50 scouting-backend'
 ```
 

@@ -22,7 +22,7 @@ jobs:
       - name: Check the live API, database and Redis
         run: |
           body=$(curl -fsS --max-time 60 --retry 2 --retry-delay 20 \
-            https://scouting-app-iryg.vercel.app/api/health/deep) || {
+            https://frcmob.com/api/health/deep) || {
             echo "::error::Live API unreachable through the Vercel rewrite (backend VM down or IP changed?)"
             exit 1
           }

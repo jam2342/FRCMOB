@@ -33,7 +33,7 @@ let mode = 'normal';
 async function publicResponse(url) {
   // Ignore cache-busting values so stress navigation does not load the public service repeatedly.
   const key = new URL(url); for (const k of ['refresh','auto_heal_ratings','_','t','cache_bust']) key.searchParams.delete(k);
-  const target = 'https://scouting-app-iryg.vercel.app'+key.pathname+key.search;
+  const target = 'https://frcmob.com'+key.pathname+key.search;
   if (!publicCache.has(target)) publicCache.set(target,(async()=>{
     const response = await fetch(target,{signal:AbortSignal.timeout(20_000)});
     const body = await response.text(); upstream.push({path:key.pathname,status:response.status});

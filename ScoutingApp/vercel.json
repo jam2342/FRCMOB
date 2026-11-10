@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://141-148-171-128.sslip.io/$1"
+      "destination": "https://api.frcmob.com/$1"
     },
     {
       "source": "/(.*)",
