@@ -26,10 +26,7 @@ body,
 body {
   margin: 0;
   font-family: var(--font-family);
-  background:
-    radial-gradient(circle at 12% 14%, rgba(74, 144, 196, 0.14), transparent 44%),
-    radial-gradient(circle at 84% 82%, rgba(63, 139, 119, 0.12), transparent 48%),
-    linear-gradient(132deg, var(--color-bg) 0%, var(--color-bg) 45%, var(--color-bg) 100%);
+  background: var(--color-bg);
   color: var(--color-text);
   transition: background 220ms ease, color 220ms ease;
   overflow-x: hidden;
@@ -50,9 +47,6 @@ figcaption {
 }
 
 body.theme-light {
-  background:
-    radial-gradient(circle at 12% 16%, rgba(180, 215, 249, 0.56), transparent 46%),
-    radial-gradient(circle at 86% 82%, rgba(188, 225, 214, 0.52), transparent 48%),
-    linear-gradient(135deg, var(--color-surface-muted) 0%, var(--color-surface) 48%, #eef8f4 100%);
+  background: var(--color-surface-muted);
   color: #201a1d;
 }

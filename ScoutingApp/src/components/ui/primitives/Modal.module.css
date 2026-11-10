@@ -92,9 +92,11 @@
   cursor: pointer;
 }
 
-.close:hover {
-  background: var(--color-surface-muted);
-  color: var(--color-text);
+@media (hover: hover) {
+  .close:hover {
+    background: var(--control-bg-hover);
+    color: var(--color-text);
+  }
 }
 
 .close:focus-visible {

@@ -169,11 +169,6 @@
   transition: background 140ms ease, color 140ms ease;
 }
 
-.product-shell .tut-close:hover {
-  background: color-mix(in srgb, var(--ui-surface-soft) 90%, transparent);
-  color: var(--color-text);
-}
-
 .product-shell .tut-close:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, #3abf7a 45%, transparent);
@@ -231,10 +226,6 @@
   background: color-mix(in srgb, var(--ui-border) 70%, transparent);
   cursor: pointer;
   transition: background 180ms ease, transform 180ms ease;
-}
-
-.product-shell .tut-dot:hover {
-  background: color-mix(in srgb, var(--ui-border) 90%, transparent);
 }
 
 .product-shell .tut-dot.is-done {
@@ -361,18 +352,13 @@
   }
 }
 
+/* The bubble bobs while the guide talks; it used to pulse a green ring too. */
 @keyframes tut-guide-bubble-talk {
   0%, 100% {
-    border-color: color-mix(in srgb, #3ac988 24%, var(--ui-border));
     transform: translateY(0);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   45% {
-    border-color: color-mix(in srgb, #52dfa0 46%, var(--ui-border));
     transform: translateY(-1px);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      0 0 0 2px rgba(58, 201, 136, 0.08);
   }
 }
 
@@ -482,10 +468,6 @@
   cursor: pointer;
 }
 
-.product-shell .tut-skip-all:hover {
-  color: color-mix(in srgb, var(--ui-text) 88%, transparent);
-}
-
 .product-shell .tut-skip-all:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, #3abf7a 45%, transparent);
@@ -518,20 +500,11 @@
   color: color-mix(in srgb, var(--color-text-muted) 90%, transparent);
 }
 
-.product-shell .tut-btn-ghost:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--ui-border) 80%, transparent);
-  color: var(--color-text);
-}
-
+/* The same flat accent as every other primary button (Button's primary). */
 .product-shell .tut-btn-primary {
-  border: 1px solid color-mix(in srgb, var(--color-accent-strong) 70%, transparent);
-  background: linear-gradient(180deg, var(--color-accent-text) 0%, #2ea869 100%);
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
   color: var(--color-on-accent);
-}
-
-.product-shell .tut-btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: linear-gradient(180deg, #3ecc8a 0%, var(--color-accent-strong) 100%);
 }
 
 /* --- Mobile coach card --------------------------------------------------- */
@@ -876,10 +849,6 @@
   box-shadow: var(--ui-shadow-soft);
 }
 
-.product-shell .surface-card:hover {
-  box-shadow: var(--ui-shadow);
-}
-
 .product-shell .surface-card--expanded {
   box-shadow: 0 24px 54px rgba(4, 8, 14, 0.38);
 }
@@ -927,11 +896,6 @@
   transition: color 140ms ease, text-decoration-color 140ms ease;
 }
 
-.product-shell a:not([class]):hover {
-  color: var(--color-accent-hover);
-  text-decoration-color: var(--color-accent-text);
-}
-
 /* ── Global Selection Color ──────────────────────────────────────────────── */
 
 .product-shell ::selection {
@@ -951,11 +915,6 @@
     transform var(--motion-fast) ease,
     background-color var(--motion-fast) ease,
     border-color var(--motion-fast) ease;
-}
-
-.product-shell .surface-card-expand-btn:hover,
-.product-shell .surface-card-collapse-btn:hover {
-  transform: scale(1.06);
 }
 
 .product-shell .surface-card-expand-btn:active,
@@ -1101,12 +1060,6 @@
   transition: background 140ms ease;
 }
 
-.event-picker-dropdown-item:hover,
-.event-picker-dropdown-item:focus-visible {
-  background: var(--color-surface-muted);
-  outline: none;
-}
-
 .event-picker-dropdown-item.active {
   background: var(--color-accent-soft);
 }
@@ -1221,10 +1174,6 @@
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
-}
-
-.ps-pwa-dismiss:hover {
-  color: var(--color-text);
 }
 
 

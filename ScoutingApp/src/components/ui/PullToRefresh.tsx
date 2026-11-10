@@ -14,6 +14,8 @@ const MAX_PULL_PX = 110;
 const RESISTANCE = 0.5;
 const MIN_SPIN_MS = 500;
 const DONE_MS = 900;
+// How far a finger moves before the gesture is read as down (a pull) or sideways (not ours).
+const AXIS_LOCK_PX = 10;
 // Pages where a pull is too easy to set off by accident mid-task.
 const EXCLUDED_PATHS = ['/scouting', '/scouting/record', '/scouting/calibrate'];
 // Lets a test browser (not installed) try the gesture.
@@ -56,6 +58,11 @@ export function PullToRefresh({ areaRef, pathname }: { areaRef: { current: HTMLE
     const area = areaRef.current;
     if (!enabled || excluded || !area) return undefined;
     let startY: number | null = null;
+    let startX = 0;
+    // Undecided until the finger has moved AXIS_LOCK_PX; then the gesture is a pull for good, or
+    // let go for good. A sideways swipe on a tab strip that drifted a few pixels down used to start
+    // a pull at its first pixel, and the pull then blocked the strip's own scrolling.
+    let pulling = false;
     let distance = 0;
 
     const onStart = (event: TouchEvent) => {
@@ -64,11 +71,22 @@ export function PullToRefresh({ areaRef, pathname }: { areaRef: { current: HTMLE
         return;
       }
       startY = startsAtTop(event.target, area) ? event.touches[0].clientY : null;
+      startX = event.touches[0].clientX;
+      pulling = false;
       distance = 0;
     };
     const onMove = (event: TouchEvent) => {
       if (startY === null) return;
       const dy = event.touches[0].clientY - startY;
+      if (!pulling) {
+        const dx = event.touches[0].clientX - startX;
+        if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
+        if (dy <= 0 || Math.abs(dx) >= dy) {
+          startY = null;
+          return;
+        }
+        pulling = true;
+      }
       if (dy <= 0) {
         if (distance > 0) {
           distance = 0;

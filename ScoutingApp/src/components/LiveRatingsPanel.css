@@ -36,14 +36,6 @@
   height: 8px;
   border-radius: 999px;
   background: var(--color-success);
-  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.6);
-  animation: live-ratings-pulse 1.8s ease-out infinite;
-}
-
-@keyframes live-ratings-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5); }
-  70% { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
 }
 
 .live-ratings-panel__meta {

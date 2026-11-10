@@ -1,9 +1,95 @@
-/* The reconnect moment. Shares .offline-banner's placement (the shell measures that class to keep
-   sticky bars clear of it); only the tint, progress and the fold-away are here. */
+/* The connection notice. One line of text (icon, short status, quiet detail) with any buttons
+   after it, sitting in the card stack like the cards under it. It was a full-bleed strip with a
+   green tint whose status and detail were two flex columns, so a phone squeezed "You are offline"
+   onto two lines beside a second wrapped column, and it touched the card below.
+   The shell's .offline-banner (shell-mobile.css) keeps only the sticky placement it measures. */
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--card-stack-gap);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width-1) solid var(--edge-card);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.45;
+}
+
+/* A text block, not a flex row, so status and detail wrap together as one sentence. The
+   negative indent hangs the icon, keeping wrapped lines aligned with the words. */
+.text {
+  flex: 1 1 15rem;
+  min-width: 0;
+  margin: 0;
+  padding-block: var(--space-1);
+  padding-inline-start: calc(var(--icon-size-md) + var(--space-2));
+  text-indent: calc(-1 * (var(--icon-size-md) + var(--space-2)));
+}
+
+.icon {
+  display: inline-flex;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  margin-inline-end: var(--space-2);
+  text-indent: 0;
+  vertical-align: -0.2em;
+  color: var(--color-text-muted);
+}
+
+.icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.sep,
+.hint {
+  color: var(--color-text-muted);
+}
+
+/* Beside the text when it fits, under it (to the right) when it doesn't. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+
+/* Tones tint the surface only a little; the icon carries the state. */
+.warning {
+  background: color-mix(in srgb, var(--color-warning) 6%, var(--color-surface-soft));
+  border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+
+.warning .icon {
+  color: var(--color-warning-text);
+}
+
+/* The one genuine failure: queued entries were rejected or dropped. role="alert". */
+.danger {
+  background: color-mix(in srgb, var(--color-danger) 9%, var(--color-surface-soft));
+  border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+}
+
+.danger .icon {
+  color: var(--color-danger-text);
+}
+
+/* The reconnect moment: neutral surface, the check or spinner says what happened. */
 .success {
-  background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface-raised));
-  border-bottom-color: color-mix(in srgb, var(--color-success) 40%, transparent);
   animation: bannerSettle 320ms var(--motion-ease) both;
+}
+
+.success:not(.leaving) {
+  max-height: 6rem;
 }
 
 .check {
@@ -18,13 +104,19 @@
   animation: bannerSpin 800ms linear infinite;
 }
 
+/* Clips the progress line to the notice's corners. */
+.syncing {
+  overflow: hidden;
+}
+
 .progress {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -1px;
+  bottom: 0;
   height: 2px;
   overflow: hidden;
+  text-indent: 0;
 }
 
 .progress span {
@@ -37,17 +129,18 @@
 
 /* Folds up instead of vanishing, so the page under it slides rather than jumps. */
 .leaving {
-  max-height: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  border-bottom-width: 0 !important;
+  max-height: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
   opacity: 0;
   overflow: hidden;
-  transition: max-height 240ms var(--motion-ease), padding 240ms var(--motion-ease), opacity 180ms ease;
-}
-
-.success:not(.leaving) {
-  max-height: 60px;
+  transition:
+    max-height 240ms var(--motion-ease),
+    margin 240ms var(--motion-ease),
+    padding 240ms var(--motion-ease),
+    opacity 180ms ease;
 }
 
 @keyframes checkDraw {
@@ -64,7 +157,7 @@
 
 @keyframes bannerSettle {
   from {
-    filter: brightness(1.25);
+    opacity: 0.4;
   }
 }
 

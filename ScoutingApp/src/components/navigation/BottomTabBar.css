@@ -135,11 +135,6 @@
     transform: translateY(-1px);
   }
 
-  @media (hover: hover) and (pointer: fine) {
-    .btb__tab:hover {
-      transform: translateY(-1px);
-    }
-  }
 
   /* ── More button ───────────────────────────────────────────────── */
   .btb__tab--more {

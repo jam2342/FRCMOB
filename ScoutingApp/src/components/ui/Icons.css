@@ -11,16 +11,6 @@
   vertical-align: -0.125em; /* optically align with text baseline */
 }
 
-/* Pulsing live dot animation */
-.icon-live-pulse svg circle:first-child {
-  animation: icon-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes icon-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 /* Status-colored icon wrappers */
 .icon-status-live { color: var(--status-live-color); }
 .icon-status-upcoming { color: var(--status-upcoming-color); }

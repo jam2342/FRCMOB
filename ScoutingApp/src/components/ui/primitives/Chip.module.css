@@ -114,9 +114,11 @@
   opacity: 0.75;
 }
 
-.remove:hover {
-  opacity: 1;
-  background: color-mix(in srgb, currentColor 18%, transparent);
+@media (hover: hover) {
+  .remove:hover {
+    opacity: 1;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+  }
 }
 
 .remove:focus-visible {

@@ -70,7 +70,6 @@
 
 .soon .dot {
   background: var(--color-accent-strong);
-  animation: pillPulse 1.5s ease-out infinite;
 }
 
 .headline {
@@ -167,9 +166,11 @@
   cursor: pointer;
 }
 
-.iconButton:hover {
-  background: var(--color-surface-muted);
-  color: var(--color-text);
+@media (hover: hover) {
+  .iconButton:hover {
+    background: var(--control-bg-hover);
+    color: var(--color-text);
+  }
 }
 
 .clockRow {
@@ -238,18 +239,20 @@
   color: var(--color-on-accent);
 }
 
-.primary:hover {
-  background: var(--color-accent-hover);
-}
-
 .secondary {
   border: 1px solid var(--color-border-strong);
   background: transparent;
   color: var(--color-text);
 }
 
-.secondary:hover {
-  background: var(--color-surface-muted);
+@media (hover: hover) {
+  .primary:hover {
+    background: var(--color-accent-hover);
+  }
+
+  .secondary:hover {
+    background: var(--control-bg-hover);
+  }
 }
 
 .primary:focus-visible,
@@ -265,15 +268,8 @@
   }
 }
 
-@keyframes pillPulse {
-  0% { box-shadow: 0 0 0 0 var(--color-accent-soft); }
-  70% { box-shadow: 0 0 0 8px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .pill,
-  .soon .dot {
+  .pill {
     animation: none;
   }
 

@@ -66,8 +66,12 @@
   border-bottom: 0;
 }
 
-.table tbody tr:hover .td {
-  background: var(--color-surface-soft);
+/* A reading aid in a wide table: the row under the pointer is tinted, the same tint every row
+   gets (uniform.css "One hover"). */
+@media (hover: hover) {
+  .table tbody tr:hover .td {
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover));
+  }
 }
 
 /* ── Alignment ────────────────────────────────────────────────────── */
@@ -116,8 +120,10 @@
   justify-content: center;
 }
 
-.sortButton:hover {
-  color: var(--color-text);
+@media (hover: hover) {
+  .sortButton:hover {
+    color: var(--color-text);
+  }
 }
 
 .sortButton:focus-visible {
@@ -164,10 +170,6 @@
 .stickyFirstCol .th:first-child {
   z-index: var(--z-dropdown);
   background: var(--color-surface-muted);
-}
-
-.stickyFirstCol tbody tr:hover .td:first-child {
-  background: var(--color-surface-soft);
 }
 
 /* ── Empty ────────────────────────────────────────────────────────── */

@@ -39,7 +39,6 @@
 .robot-mascot-antenna-light,
 .robot-mascot-core {
   fill: var(--rm-led);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--rm-led) 60%, transparent));
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -157,17 +156,8 @@
   animation: robot-mascot-shadow-breathe 3.4s ease-in-out infinite;
 }
 
-.robot-mascot.is-animated .robot-mascot-antenna-light {
-  animation: robot-mascot-glow 1.8s ease-in-out infinite;
-}
-
 .robot-mascot.is-animated .robot-mascot-eye {
   animation: robot-mascot-blink 5.2s ease-in-out infinite;
-}
-
-
-.robot-mascot.is-animated .robot-mascot-core {
-  animation: robot-mascot-core-pulse 1.9s ease-in-out infinite;
 }
 
 
@@ -194,9 +184,7 @@
 }
 
 .robot-mascot.is-animated.is-talking .robot-mascot-eye {
-  animation:
-    robot-mascot-blink 5.2s ease-in-out infinite,
-    robot-mascot-eye-pop 0.78s steps(2, end) infinite;
+  animation: robot-mascot-blink 5.2s ease-in-out infinite;
 }
 
 .robot-mascot.is-animated.is-talking .robot-mascot-talk-marks {
@@ -249,34 +237,9 @@
   }
 }
 
-@keyframes robot-mascot-glow {
-  0%, 100% {
-    opacity: 0.78;
-    transform: scale(0.92);
-    filter: drop-shadow(0 0 6px rgba(57, 217, 138, 0.44));
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.16);
-    filter: drop-shadow(0 0 12px rgba(57, 217, 138, 0.82));
-  }
-}
-
 @keyframes robot-mascot-blink {
   0%, 46%, 50%, 100% { transform: scaleY(1); }
   48% { transform: scaleY(0.14); }
-}
-
-
-@keyframes robot-mascot-core-pulse {
-  0%, 100% {
-    opacity: 0.78;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.2);
-  }
 }
 
 
@@ -344,11 +307,6 @@
 @keyframes robot-mascot-body-talk {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(1px) scale(1.02, 0.98); }
-}
-
-@keyframes robot-mascot-eye-pop {
-  0%, 100% { filter: none; }
-  50% { filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.78)); }
 }
 
 @keyframes robot-mascot-talk-marks {

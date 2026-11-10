@@ -42,6 +42,9 @@ async function census(page) {
     const MIN_W = 140;
     const MIN_H = 56;
     const boxes = [...document.querySelectorAll('body *')].filter((el) => {
+      // The shell's connection notice shows on every route here because the guard runs with no
+      // backend; it says nothing about the page's own composition.
+      if (el.closest('.offline-banner')) return false;
       const s = getComputedStyle(el);
       if (s.display === 'none' || s.visibility === 'hidden') return false;
       if (parseFloat(s.borderTopWidth) < 1) return false;

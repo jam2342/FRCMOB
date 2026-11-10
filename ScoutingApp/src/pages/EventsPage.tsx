@@ -2149,7 +2149,7 @@ export function EventsPage() {
             <span className="center-chip"><ClockIcon className="icon-inline icon-muted" /> Updated {relativeFromTimestamp(lastUpdatedAt)}</span>
             <span className="center-chip"><ScoreboardIcon className="icon-inline icon-muted" /> {countsUnknown ? 'Matches —' : `${eventSchedule.length} match${eventSchedule.length === 1 ? '' : 'es'} · ${effectiveTeamCount} team${effectiveTeamCount === 1 ? '' : 's'}`}</span>
             {liveMatchCount > 0 ? (
-              <span className="center-chip"><LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> {liveMatchCount} live</span>
+              <span className="center-chip"><LiveDotIcon className="icon-inline icon-status-live" /> {liveMatchCount} live</span>
             ) : null}
             {/* Sync is an operator tool: fans and scouts saw "Writes: client admin key
                 missing" and an admin-session notice here. Only admins see it now. */}
@@ -2442,7 +2442,7 @@ export function EventsPage() {
                               {isCompleted
                                 ? <><CheckCircleIcon className="icon-inline" /> Final</>
                                 : effectiveState === 'live'
-                                  ? <><LiveDotIcon className="icon-inline icon-live-pulse" /> {timer.label}</>
+                                  ? <><LiveDotIcon className="icon-inline" /> {timer.label}</>
                                   : <><ClockIcon className="icon-inline" /> {timer.label}</>}
                             </span>
                             <strong>{scoreboard}</strong>

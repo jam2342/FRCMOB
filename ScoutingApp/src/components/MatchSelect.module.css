@@ -24,11 +24,7 @@
   margin: 0;
 }
 
-/* The list scrolls, so it clips: no hover lift, and the focus ring sits inside the button. */
-.choices button:hover:not(:active) {
-  transform: none;
-}
-
+/* The list scrolls, so it clips: the focus ring sits inside the button. */
 .choices button:focus-visible {
   outline-offset: -2px;
 }

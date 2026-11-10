@@ -22,20 +22,6 @@
   animation-delay: 1000ms;
 }
 
-.wonRed,
-.wonBlue {
-  border-radius: var(--radius-md);
-  animation: resultGlow 2.4s ease 900ms both;
-}
-
-.wonRed {
-  --result-glow: var(--color-alliance-red-soft);
-}
-
-.wonBlue {
-  --result-glow: var(--color-alliance-blue-soft);
-}
-
 .lost {
   animation: resultStepBack 2.4s ease 900ms both;
 }
@@ -54,20 +40,6 @@
   }
 }
 
-/* A spread shadow in the same colour pads the glow out past the text without moving layout. */
-@keyframes resultGlow {
-  0%,
-  100% {
-    background: transparent;
-    box-shadow: 0 0 0 0 transparent;
-  }
-  20%,
-  70% {
-    background: var(--result-glow);
-    box-shadow: 0 0 0 8px var(--result-glow);
-  }
-}
-
 @keyframes resultStepBack {
   0%,
   100% {
@@ -83,8 +55,6 @@
   .reveal :global(.fm-winner-badge),
   .reveal :global(.match-live-score),
   .reveal :global(.fm-score-value),
-  .wonRed,
-  .wonBlue,
   .lost {
     animation: none;
   }

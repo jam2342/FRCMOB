@@ -27,6 +27,10 @@
  *                into cards when the columns don't fit. Four did on a 1366px desktop.
  *   values       A missing value reads "—" and a change never reads "-0.0". Pages said "N/A"
  *                in one place and "—" in the next, and Live Ratings showed "▼ -0.0".
+ *   hover        Under the pointer a thing changes its fill, text or underline and nothing else,
+ *                and a card that isn't a link doesn't change at all (desktop only; a phone has
+ *                no hover). There were 27 hover looks: 1px and 2px lifts, shadows, brightness
+ *                filters, a shine sweep, a 6% grow, every plain card lifting.
  *
  * The source-side laws (fullscreen only on wide content, "—" for missing values, signedChange,
  * one decimal, SegmentedTabs, EventPicker, EmptyState, MobileViewActions) are in
@@ -201,6 +205,7 @@ async function main() {
       for (const box of m.clipped) failures.push(['box-cut', `${at}  "${box.text}" is sliced by its box  ${box.at}`]);
       for (const table of m.tables) failures.push(['table-fits', `${at}  table needs ${table.need}px in ${table.have}px  ${table.at}`]);
       for (const value of m.values) failures.push(['values', `${at}  "${value.text.trim()}"`]);
+      if (viewport.name === 'desktop') await checkHover(page, at, failures);
     }
     await context.close();
   }
@@ -230,6 +235,54 @@ async function main() {
   }
   console.log('');
   process.exitCode = 1;
+}
+
+// Tag one element of each kind of clickable thing (by class), plus one plain card, for hovering.
+function tagHoverTargets() {
+  const seen = new Set();
+  const out = [];
+  const SEL = 'button, a[href], [role="button"], [role="tab"], summary, .surface-card:not(a, button)';
+  for (const el of document.querySelectorAll(SEL)) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4 || r.top < 0 || r.bottom > innerHeight || el.disabled) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.pointerEvents === 'none') continue;
+    const cls = (el.getAttribute('class') || '').split(/\s+/).filter((c) => c && !/^(active|selected|collapsed|open)$/.test(c)).sort().join('.');
+    const key = `${el.tagName}.${cls}`;
+    if (seen.has(key) || out.length >= 40) continue;
+    seen.add(key);
+    el.setAttribute('data-hover-probe', String(out.length));
+    out.push({ id: String(out.length), card: el.matches('.surface-card'), label: `${el.tagName.toLowerCase()}${cls ? `.${cls.slice(0, 60)}` : ''} "${(el.textContent || '').trim().slice(0, 24)}"` });
+  }
+  return out;
+}
+
+function hoverLook(id) {
+  const el = document.querySelector(`[data-hover-probe="${id}"]`);
+  if (!el) return null;
+  const cs = getComputedStyle(el);
+  return { transform: cs.transform, translate: cs.translate, scale: cs.scale, shadow: cs.boxShadow, filter: cs.filter, border: cs.borderTopColor, edge: parseFloat(cs.borderTopWidth), bg: cs.backgroundColor, image: cs.backgroundImage, color: cs.color };
+}
+
+async function checkHover(page, at, failures) {
+  const targets = await page.evaluate(tagHoverTargets);
+  for (const target of targets) {
+    await page.mouse.move(0, 0);
+    const before = await page.evaluate(hoverLook, target.id);
+    try {
+      await page.hover(`[data-hover-probe="${target.id}"]`, { timeout: 800, force: true });
+    } catch {
+      continue;
+    }
+    const after = await page.evaluate(hoverLook, target.id);
+    if (!before || !after) continue;
+    const moved = ['transform', 'translate', 'scale', 'shadow', 'filter'].filter((k) => before[k] !== after[k]);
+    // An edge that steps with the fill is part of the fill (a solid primary button's border). With
+    // no edge drawn, the colour only follows the text (currentColor) and nothing visible changes.
+    if (after.edge > 0 && before.border !== after.border && after.border !== after.bg) moved.push('border');
+    if (target.card && (before.bg !== after.bg || before.image !== after.image)) moved.push('fill on a card that is not a link');
+    if (moved.length) failures.push(['hover', `${at}  ${target.label} changes ${moved.join(', ')}`]);
+  }
 }
 
 main().catch((error) => {

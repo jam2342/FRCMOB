@@ -121,6 +121,12 @@
   list-style: none;
 }
 
+@media (hover: hover) {
+  .advancedSummary:hover {
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover));
+  }
+}
+
 .advancedSummary::-webkit-details-marker {
   display: none;
 }

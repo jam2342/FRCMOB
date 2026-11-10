@@ -131,12 +131,6 @@
   transform: scale(0.97);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .ms__link:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 7px 14px color-mix(in srgb, var(--color-bg) 20%, transparent);
-  }
-}
 
 .ms__link--active {
   border-color: var(--color-accent);

@@ -203,7 +203,7 @@ function eventLocationLabel(event: EventSearchItem): string {
 }
 
 function stateLabel(state: ReturnType<typeof liveTimerLabel>['state']): React.ReactNode {
-  if (state === 'live') return <><LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> Live</>;
+  if (state === 'live') return <><LiveDotIcon className="icon-inline icon-status-live" /> Live</>;
   if (state === 'upcoming') return <><ClockIcon className="icon-inline icon-status-upcoming" /> Upcoming</>;
   if (state === 'ended') return <><CheckCircleIcon className="icon-inline icon-status-final" /> Final</>;
   return 'Pending';
@@ -1814,7 +1814,7 @@ export function HomePage() {
             items={(
               [
                 { key: 'all', label: 'All', icon: null },
-                { key: 'live', label: 'Live', icon: <LiveDotIcon className="icon-inline icon-status-live icon-live-pulse" /> },
+                { key: 'live', label: 'Live', icon: <LiveDotIcon className="icon-inline icon-status-live" /> },
                 { key: 'upcoming', label: 'Upcoming', icon: <ClockIcon className="icon-inline icon-status-upcoming" /> },
                 { key: 'completed', label: 'Final', icon: <CheckCircleIcon className="icon-inline icon-status-final" /> },
               ] as Array<{ key: HomeFilter; label: string; icon: React.ReactNode }>
