@@ -29,7 +29,7 @@ PUBLIC_ROUTES = {
 }
 PRIVATE_ROUTES = {
     "/", "/health", "/health/deep", "/automation/regional/season/{season}/status", "/maintenance/ops/dashboard",
-    "/picklists", "/picklists/{picklist_id}", "/strategy-boards/{match_key}", "/pit-scouting", "/push/public-key",
+    "/picklists", "/picklists/{picklist_id}", "/strategy-boards/{match_key}", "/pit-scouting", "/pit-scouting/assignments", "/push/public-key",
     "/scouting/auto-drafts/{event_key}/{match_key}/{team_key}", "/scouting/insights/coverage",
     "/scouting/insights/entries-export", "/scouting/insights/team-notes", "/scouting/rooms/team/{event_key}", "/scouting/rooms/{room_key}",
     "/scouting/rooms/{room_key}/entries", "/telemetry/vitals/summary", "/telemetry/csp/summary",
