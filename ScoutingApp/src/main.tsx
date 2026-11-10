@@ -16,6 +16,7 @@ import { startOnDeviceSyncAutoFlush } from './features/onDevice/sync';
 import { preloadEventSearchIndex } from './utils/eventSearchIndex';
 import { scheduleIdleWork } from './utils/idle';
 import { startRum, trackingAllowed } from './perf/rum';
+import { onVercelHost, startWebAnalytics } from './perf/webAnalytics';
 import { startCspReports } from './perf/cspReports';
 import { startIntentPrefetch } from './features/prefetch/intentPrefetch';
 import { startMatchPreload } from './features/prefetch/matchPreload';
@@ -78,12 +79,13 @@ async function bootstrap() {
     <StrictMode>
       <RootApp />
       {/* Same opt-out as our own timings (DNT/GPC), so the Privacy Policy holds for both. */}
-      {!isNativeApp() ? <Analytics beforeSend={(event) => (trackingAllowed() ? event : null)} /> : null}
+      {!isNativeApp() && onVercelHost() ? <Analytics beforeSend={(event) => (trackingAllowed() ? event : null)} /> : null}
     </StrictMode>,
   );
 
   void startNativeLifecycle().catch(() => { console.warn('Native navigation could not initialize.'); });
   startRum(resolveApiBaseUrl());
+  startWebAnalytics();
   startIntentPrefetch();
   startMatchPreload();
 }

@@ -1,7 +1,8 @@
 # TLS in front of the API on the OCI VM.
-# - api.frcmob.com sits behind Cloudflare's proxy and uses a Cloudflare Origin CA
-#   certificate (valid to 2041) from TLS_CERTS_DIR on the VM, never in git. Cloudflare
-#   checks it in "Full (strict)" mode.
+# - frcmob.com, www and api sit behind Cloudflare's proxy and use one Cloudflare Origin
+#   CA certificate (valid to 2041) from TLS_CERTS_DIR on the VM, never in git.
+#   Cloudflare checks it in "Full (strict)" mode. Cloudflare serves the web app's files
+#   itself (a static-assets Worker); only /api/* and /models/* on frcmob.com reach here.
 # - The sslip.io name resolves straight to the VM's IP; Caddy gets and renews its
 #   Let's Encrypt certificate over TLS-ALPN on 443, so port 80 never has to be open.
 #   Vercel's /api rewrite and the deploy health check still use it.
@@ -14,12 +15,24 @@
 	}
 }
 
+(headers) {
+	# HTTPS only from here on; the certificate renews itself, so this can't strand anyone.
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(backend) {
+	# The app reads the caller from the last X-Forwarded-For entry (live_signal.py).
+	# Behind Cloudflare that is the visitor, not the edge; elsewhere it is the peer, as before.
+	reverse_proxy backend:8000 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}
+
 (api) {
 	# Compression here instead of in the Python workers (RESPONSE_COMPRESSION_ENABLED
 	# can then be false). Responses that arrive already compressed pass through.
 	encode zstd gzip
-	# HTTPS only from here on; the certificate renews itself, so this can't strand anyone.
-	header Strict-Transport-Security "max-age=31536000"
+	import headers
 	# Same cap as MAX_REQUEST_BODY_BYTES in the app (10 MiB); a 6 MB pit photo is the
 	# largest real body. Refused here before the app reads any of it.
 	request_body {
@@ -33,11 +46,7 @@
 		file_server
 	}
 	handle {
-		# The app reads the caller from the last X-Forwarded-For entry (live_signal.py).
-		# Behind Cloudflare that is the visitor, not the edge; elsewhere it is the peer, as before.
-		reverse_proxy backend:8000 {
-			header_up X-Forwarded-For {client_ip}
-		}
+		import backend
 	}
 }
 
@@ -48,4 +57,47 @@
 api.frcmob.com {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
 	import api
+}
+
+# The web app. Cloudflare answers everything else from its static assets; these two
+# Worker routes are excluded so they come here.
+frcmob.com {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	import headers
+	# Same-origin API, like Vercel's /api rewrite: the app, its service worker and the
+	# boot prefetch all call /api/..., and room sockets work through it too.
+	handle_path /api/* {
+		encode zstd gzip
+		request_body {
+			max_size 10MiB
+		}
+		import backend
+	}
+	# Detector weights: over 25 MiB, too big for Cloudflare's static assets. The folder
+	# name stays in the VM's .env. Cloudflare caches them (cache rule on /models/*).
+	handle_path /models/* {
+		root * /srv/model-files/{$MODEL_FILES_TOKEN:unset}
+		header Cache-Control "public, max-age=604800"
+		header Content-Type application/octet-stream
+		file_server
+	}
+	# onnxruntime's WebGPU engine (28 MiB) is over the limit too. Its name carries a
+	# content hash, so a stale copy can't be served; web-deploy.yml refuses to publish
+	# a build until this file is in the folder (docs/FRONTEND_HOST.md).
+	@ort_wasm path_regexp ^/assets/ort-wasm-simd-threaded\.jsep-[A-Za-z0-9_-]+\.wasm$
+	handle @ort_wasm {
+		root * /srv/model-files/{$MODEL_FILES_TOKEN:unset}
+		uri strip_prefix /assets
+		header Cache-Control "public, max-age=31536000, immutable"
+		header Cross-Origin-Embedder-Policy require-corp
+		file_server
+	}
+	handle {
+		respond 404
+	}
+}
+
+www.frcmob.com {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	redir https://frcmob.com{uri} permanent
 }

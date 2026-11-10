@@ -90,6 +90,8 @@ services:
     profiles: ["tls"]
     environment:
       BACKEND_TLS_HOST: ${BACKEND_TLS_HOST:-141-148-171-128.sslip.io}
+      # folder under MODEL_FILES_DIR served at frcmob.com/models/ (kept in .env, not git)
+      MODEL_FILES_TOKEN: ${MODEL_FILES_TOKEN:-}
     ports:
       - "443:443"
     depends_on:

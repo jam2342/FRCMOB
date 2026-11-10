@@ -271,7 +271,7 @@ export function PrimitivesPage() {
       >
         <CardBody>
           <p>Anyone with the link can view this event's scouting data. They cannot edit it.</p>
-          <FieldText label="Link" defaultValue="https://scouting-app-iryg.vercel.app/#/events" readOnly />
+          <FieldText label="Link" defaultValue="https://frcmob.com/#/events" readOnly />
         </CardBody>
       </Modal>
 

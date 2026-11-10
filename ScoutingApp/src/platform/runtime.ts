@@ -3,9 +3,10 @@ import { Capacitor } from '@capacitor/core';
 export const isNativeApp = () => Capacitor.isNativePlatform();
 
 // These are public service addresses, never credentials. The native app has no /api proxy.
-export const NATIVE_API_URL = 'https://scouting-app-iryg.vercel.app/api';
-export const NATIVE_WS_URL = 'wss://141-148-171-128.sslip.io';
-const PUBLIC_SITE_URL = 'https://scouting-app-iryg.vercel.app/';
+export const NATIVE_API_URL = 'https://frcmob.com/api';
+// Sockets go through Cloudflare to the API like everything else under /api.
+export const NATIVE_WS_URL = 'wss://frcmob.com/api';
+const PUBLIC_SITE_URL = 'https://frcmob.com/';
 
 // A link someone else can open. The app routes on the hash (HashRouter), so a bare
 // "/match-center?..." path lands on Home; the native app's own origin isn't reachable by anyone else.

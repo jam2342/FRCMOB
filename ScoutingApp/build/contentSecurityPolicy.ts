@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadEnv, type Plugin } from 'vite'
 import { EMBED_FRAME_ORIGINS } from '../src/config/embedHosts'
+import { WEB_ANALYTICS_REPORT_ORIGIN, WEB_ANALYTICS_SCRIPT_ORIGIN } from '../src/config/analyticsHosts'
 
 // The site's Content-Security-Policy, as a <meta> tag the build writes into each page.
 // A meta tag rather than a host header because the boot script inlined by
@@ -41,7 +42,7 @@ export function buildPolicy(scriptHashes: string[], connectUrls: string[]): stri
   const directives: Array<[string, string[]]> = [
     ['default-src', ["'self'"]],
     // wasm-unsafe-eval: the recorder's detector (onnxruntime) compiles WebAssembly.
-    ['script-src', ["'self'", "'wasm-unsafe-eval'", ...scriptHashes, 'https://challenges.cloudflare.com']],
+    ['script-src', ["'self'", "'wasm-unsafe-eval'", ...scriptHashes, 'https://challenges.cloudflare.com', WEB_ANALYTICS_SCRIPT_ORIGIN]],
     ['worker-src', ["'self'", 'blob:']],
     // React style props and a few printed reports set inline styles.
     ['style-src', ["'self'", "'unsafe-inline'"]],
@@ -49,7 +50,7 @@ export function buildPolicy(scriptHashes: string[], connectUrls: string[]): stri
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['font-src', ["'self'", 'data:']],
     ['media-src', ["'self'", 'blob:']],
-    ['connect-src', ["'self'", 'blob:', 'data:', ...connect, 'https://challenges.cloudflare.com']],
+    ['connect-src', ["'self'", 'blob:', 'data:', ...connect, 'https://challenges.cloudflare.com', WEB_ANALYTICS_REPORT_ORIGIN]],
     ['frame-src', [...EMBED_FRAME_ORIGINS, 'https://challenges.cloudflare.com']],
     ['manifest-src', ["'self'"]],
     ['object-src', ["'none'"]],
