@@ -18,6 +18,7 @@ import {
   StarIcon,
   UsersIcon,
   DownloadIcon,
+  InfoIcon,
 } from '../components/ui/Icons';
 import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 import { ToastHost } from '../components/ui/ToastHost';
@@ -648,7 +649,7 @@ export function ProductShell() {
 
   // The page's event, match and team, in the desktop header row.
   const contextChips = (
-      <div className="ps-context-current">
+      <div className="ps-context-current" data-tour="context">
         <div className={cx('ps-context-chip-group', hasContextEvent && 'active')}>
           <button
             type="button"
@@ -771,6 +772,19 @@ export function ProductShell() {
             </NavLink>
           ))}
         </nav>
+        {/* The first-visit prompt shows once in the whole app, so this is how to reach any
+            other page's tour (⌘K has it too). Quiet, at the foot of the menu. */}
+        {activeScope ? (
+          <button
+            type="button"
+            className="ps-nav-link ps-sidebar-tour"
+            onClick={() => openTutorial(activeScope)}
+            title={sidebarCollapsed ? 'Page tour' : undefined}
+          >
+            <InfoIcon className="ps-nav-link-icon" />
+            <span className="ps-nav-link-label">Page tour</span>
+          </button>
+        ) : null}
       </aside>
 
       <div className="ps-main-area">
@@ -1001,6 +1015,7 @@ export function ProductShell() {
       <MoreSheet
         open={mobileMoreOpen}
         onClose={() => setMobileMoreOpen(false)}
+        onStartTour={activeScope ? () => openTutorial(activeScope) : undefined}
       />
 
       <MobileSearchOverlay

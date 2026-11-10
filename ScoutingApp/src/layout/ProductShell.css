@@ -2198,3 +2198,10 @@ button.ps-context-chip:disabled {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Page tour, at the foot of the desktop sidebar: a nav row in looks, pushed to the bottom. */
+.product-shell .ps-sidebar-tour {
+  margin-top: auto;
+  font-family: inherit;
+  cursor: pointer;
+}
