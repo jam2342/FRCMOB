@@ -49,3 +49,26 @@ export function placeDesktopPanel(
   left = clamp(left, margin, Math.max(margin, viewport.width - width - margin));
   return { width: `${width}px`, top: `${top}px`, left: `${left}px`, maxHeight: `${viewport.height - top - margin}px` };
 }
+
+const MOBILE_MARGIN_PX = 8;
+const HEADING_BAND_PX = 56;
+
+// Which edge the phone coach card docks to. A card's heading sits at the top of its spotlight, so
+// the card goes where that heading stays visible; with no such edge, where more of the target
+// shows. The bottom edge wins ties: the thumb is already there.
+export function pickMobileDock(
+  spot: { top: number; height: number },
+  panelHeight: number,
+  viewportHeight: number,
+): 'top' | 'bottom' {
+  const band = Math.min(spot.height, HEADING_BAND_PX);
+  const bottomEdge = viewportHeight - MOBILE_MARGIN_PX - panelHeight;
+  const topEdge = MOBILE_MARGIN_PX + panelHeight;
+  const bottomClear = spot.top + band <= bottomEdge;
+  const topClear = spot.top >= topEdge;
+  if (bottomClear) return 'bottom';
+  if (topClear) return 'top';
+  const shownBottom = Math.max(0, Math.min(spot.top + spot.height, bottomEdge) - Math.max(spot.top, 0));
+  const shownTop = Math.max(0, Math.min(spot.top + spot.height, viewportHeight) - Math.max(spot.top, topEdge));
+  return shownTop > shownBottom ? 'top' : 'bottom';
+}

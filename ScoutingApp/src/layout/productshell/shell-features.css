@@ -705,6 +705,34 @@
   }
 }
 
+/* Short or narrow screens (250x450, phone landscape): the card was 44% of the height, so the
+   step text got a 0px row and the close button sat clipped. Drop the mascot (its bubble keeps the
+   step title), give the card more room, and let the text scroll inside it. */
+@media (max-width: 320px), (max-height: 500px) {
+  .product-shell .tut-panel.is-mobile {
+    max-height: min(66vh, 360px);
+    max-height: min(66svh, 360px);
+    grid-template-rows: auto auto auto minmax(48px, 1fr) auto;
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-robot-stage {
+    display: none;
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-guide-bubble::before {
+    display: none;
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   .product-shell .tut-spotlight,

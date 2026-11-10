@@ -7,7 +7,7 @@ import {
 } from '../../tutorial/tutorialBlueprints';
 import { markTutorialSeen } from '../../tutorial/tutorialState';
 import { RobotMascot } from '../ui/RobotMascot';
-import { placeDesktopPanel } from './panelPlacement';
+import { pickMobileDock, placeDesktopPanel } from './panelPlacement';
 import './TabTutorialOverlay.css';
 
 type SpotlightRect = { top: number; left: number; width: number; height: number };
@@ -20,7 +20,6 @@ type TabTutorialOverlayProps = {
 const MOBILE_BREAKPOINT_PX = 900;
 // Only until the panel has been measured once.
 const DESKTOP_PANEL_FALLBACK_HEIGHT_PX = 320;
-const MOBILE_DOCK_SWITCH_RATIO = 0.5;
 
 
 
@@ -117,6 +116,7 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
   const [stepIndex, setStepIndex] = useState(0);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [targetFound, setTargetFound] = useState(false);
+  const [mobileDock, setMobileDock] = useState<'top' | 'bottom'>('bottom');
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const panelRef = useRef<HTMLElement | null>(null);
 
@@ -131,10 +131,7 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
   const step = totalSteps ? walkthrough[safeIndex] : null;
   const atStart = safeIndex === 0;
   const atEnd = safeIndex >= totalSteps - 1;
-  const mobileDockClass =
-    spotlight && spotlight.top + spotlight.height / 2 > window.innerHeight * MOBILE_DOCK_SWITCH_RATIO
-      ? 'is-mobile-top'
-      : 'is-mobile-bottom';
+  const mobileDockClass = mobileDock === 'top' ? 'is-mobile-top' : 'is-mobile-bottom';
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT_PX);
@@ -174,6 +171,10 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
       const visible = rect.width > 2 && rect.height > 2;
       setTargetFound(visible);
       setSpotlight(visible ? buildSpotlightRect(rect) : null);
+      if (isMobile && visible) {
+        const panelHeight = panelRef.current?.offsetHeight || 0;
+        setMobileDock(pickMobileDock(buildSpotlightRect(rect), panelHeight, window.innerHeight));
+      }
       if (!isMobile && visible) {
         const panelHeight = panelRef.current?.offsetHeight || DESKTOP_PANEL_FALLBACK_HEIGHT_PX;
         setPanelStyle(placeDesktopPanel(rect, step.placement || 'auto', panelHeight, { width: window.innerWidth, height: window.innerHeight }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeDesktopPanel } from './panelPlacement';
+import { pickMobileDock, placeDesktopPanel } from './panelPlacement';
 
 const viewport = { width: 1440, height: 900 };
 const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, height, right: left + width, bottom: top + height });
@@ -42,5 +42,20 @@ describe('tour panel placement on desktop', () => {
     expect(px(style.left) + px(style.width)).toBeLessThanOrEqual(viewport.width - 12);
     expect(px(style.top)).toBeGreaterThanOrEqual(12);
     expect(style.height).toBeUndefined();
+  });
+});
+
+describe('tour card dock on phones', () => {
+  it('docks at the bottom when the target heading stays above the card', () => {
+    expect(pickMobileDock({ top: 80, height: 300 }, 220, 844)).toBe('bottom');
+  });
+
+  it('docks at the top when the bottom card would cover the heading', () => {
+    // My Team's members card, low on the screen: the old rule covered its heading.
+    expect(pickMobileDock({ top: 640, height: 160 }, 217, 844)).toBe('top');
+  });
+
+  it('picks the edge that shows more of the target when neither keeps the heading clear', () => {
+    expect(pickMobileDock({ top: 100, height: 600 }, 300, 450)).toBe('top');
   });
 });
