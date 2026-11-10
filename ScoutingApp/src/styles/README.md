@@ -69,6 +69,13 @@ many boxes as it has events.
 Nested boxes are the clearest violation — an empty state inside a card is a box
 inside a box.
 
+**Edges come from two tokens.** `--edge-card` and `--edge-control` (tokens.css) are
+transparent in the dark theme, where a card's fill and a control's fill already set
+them apart, and a hairline in the light theme. Navigation and desktop tabs mark the
+current one with a fill, never a border. `uniform.css` ("Outlines mark things, not
+groups") applies this across the shell; the 2026-11 design review measured 42-61
+outlined boxes per desktop screen before it, against 12-13 on FotMob, ESPN and Linear.
+
 ---
 
 ## 2b. Subtitles

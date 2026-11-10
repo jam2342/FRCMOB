@@ -208,3 +208,95 @@ input[type='search']::-webkit-search-decoration {
   :where(.ps-context-quick-chip, .event-picker-item, .center-sort-chip, .center-btn):not(.active):hover {
   box-shadow: none;
 }
+
+/* ================================================================== */
+/*  Outlines mark things, not groups                                   */
+/* ================================================================== */
+/* Desktop screens drew 42-61 outlined boxes each (Match Center 59) against 12-13 on FotMob,
+   ESPN and Linear: every nav link, tab, chip, toggle and card had its own edge, so nothing
+   stood out (docs: the 2026-11 design review). A card already sits a step lighter than the
+   page, and a control has a fill, so in the dark theme neither needs an edge; the light
+   theme keeps a hairline (--edge-card, --edge-control in tokens.css). Navigation and tabs
+   show where you are with a fill and full-strength text instead of a border.
+   Unlayered, so it outranks the shell layers and their light-theme overrides. */
+.product-shell .surface-card,
+.product-shell .home-board-card {
+  border-color: var(--edge-card);
+}
+
+/* The sidebar: plain rows, a soft fill under the pointer, a firmer one (and the accent dash
+   from shell-features) on the page you are on. */
+.product-shell .ps-nav-link,
+.product-shell .ps-nav-link:hover,
+.product-shell .ps-nav-link.active {
+  border-color: transparent;
+}
+
+.product-shell .ps-nav-link:not(.active) {
+  background: transparent;
+}
+
+.product-shell .ps-nav-link:not(.active):hover {
+  background: var(--control-bg-hover);
+  color: var(--control-text);
+}
+
+.product-shell .ps-nav-link.active {
+  background: var(--control-bg-active);
+  color: var(--control-text);
+}
+
+/* Desktop tab groups (SegmentedTabs on a wide screen, the page view bar): the active tab is
+   filled, the rest are text. Phones keep their underline strip (.fm-tab), which is a border
+   on purpose. */
+.product-shell .center-tabs .center-tab-btn,
+.product-shell .page-view-tab {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.product-shell .center-tabs .center-tab-btn:where(:hover, :focus-visible),
+.product-shell .page-view-tab:where(:hover, :focus-visible) {
+  border-color: transparent;
+  background: var(--control-bg-hover);
+}
+
+.product-shell .center-tabs .center-tab-btn:where(.active, [aria-selected='true']),
+.product-shell .page-view-tab:where(.active, [aria-selected='true'], [aria-current='page']) {
+  border-color: transparent;
+  background: var(--control-bg-active);
+  color: var(--control-text);
+  box-shadow: none;
+}
+
+/* Secondary buttons keep a fill, so they still read as buttons; only the edge goes. */
+.product-shell .center-btn.ghost,
+.product-shell .center-team-chip,
+.product-shell :where(.ps-context-chip, .ps-context-quick-chip, .ps-context-pin-btn, .ps-context-toggle-btn, .ps-sidebar-toggle, .ps-finder-toggle) {
+  border-color: var(--edge-control);
+}
+
+/* Inside a card, stats are grouped by space, not boxed (README rule 2: a box inside a box says
+   "related", which is what space is for): the phone's KPI tiles and team hero numbers, and an
+   empty state sitting in a card. */
+.product-shell .center-kpi-card,
+.product-shell .fm-team-hero-stat,
+.product-shell .surface-card .es {
+  border-color: transparent;
+}
+
+.product-shell :where(.home-day-nav-btn, .home-day-picker-btn, .home-mini-tab-btn) {
+  border-color: var(--edge-control);
+}
+
+.product-shell .home-board-toolbar {
+  border-color: var(--edge-card);
+}
+
+/* Read-only chips (status, "Updated 7s ago") are labels, not controls: no edge at all. */
+.product-shell .center-chip,
+.product-shell .center-status-pill,
+.product-shell .ps-network-pill {
+  border-color: transparent;
+}
