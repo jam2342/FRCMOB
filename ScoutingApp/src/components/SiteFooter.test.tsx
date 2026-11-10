@@ -14,8 +14,8 @@ describe('SiteFooter', () => {
     expect(href(/^YouTube Terms$/)).toBe('https://www.youtube.com/t/terms');
     expect(href(/^Source code$/)).toBe('https://github.com/jam2342/FRCMOB');
     expect(href(/^Licenses$/)).toBe('/third-party-licenses.txt');
-    expect(href(/^Privacy$/)).toBe('/privacy');
-    expect(href(/^Terms$/)).toBe('/terms');
+    expect(href(/^Privacy Policy$/)).toBe('/privacy');
+    expect(href(/^Terms of Service$/)).toBe('/terms');
     expect(screen.getByText(/which is not overseeing, involved with, or responsible for this activity, product, or service/)).toBeInTheDocument();
     expect(document.body.textContent).toContain('For Inspiration and Recognition of Science and Technology (FIRST®)');
     expect(document.body.textContent).toContain('FRC®');
