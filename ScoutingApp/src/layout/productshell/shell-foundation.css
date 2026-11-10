@@ -2122,13 +2122,15 @@ select.center-input option,
   padding-bottom: 2px;
 }
 
+/* The list for playoff formats without a bracket tree (KnockoutBracket draws the 8-alliance
+   double elimination). Rounds stack: side by side, each column took the width of its longest
+   unwrapped line, about 560px, so a phone showed the red alliance and cut off the blue. */
 .event-knockout-round-columns {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(290px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   align-items: start;
-  min-width: max-content;
+  min-width: 0;
 }
 
 .event-knockout-round-column {
@@ -2365,12 +2367,6 @@ select.center-input option,
 }
 
 /* ── foundation-teams-insights ────────────────────────── */
-
-@media (max-width: 1200px) {
-  .event-knockout-round-columns {
-    grid-auto-columns: minmax(250px, 1fr);
-  }
-}
 
 .center-team-card-grid {
   display: grid;
