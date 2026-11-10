@@ -538,7 +538,8 @@
 }
 
 .product-shell .ps-topbar {
-  padding: 13px 18px;
+  /* ~55px with the header's control row (was 65px): the header is a way out, not a band. */
+  padding: 8px 16px;
   border-bottom-color: var(--ui-border);
   background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
   backdrop-filter: blur(8px);
@@ -1747,7 +1748,7 @@
   }
 
   .product-shell .ps-topbar {
-    padding: calc(env(safe-area-inset-top, 0px) + 10px) 10px 10px;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 10px 6px;
   }
 
   .product-shell .ps-content {
@@ -1988,11 +1989,11 @@
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   max-height: min(60vh, 420px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 6px;
+  padding: 4px;
   border: 1px solid var(--color-border);
   border-radius: 14px;
   background: var(--color-bg-elevated);
@@ -2002,9 +2003,9 @@
 .page-view-menu-item {
   display: flex;
   align-items: center;
-  min-height: 42px;
-  padding: 0 14px;
-  border-radius: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
   font-family: inherit;
   font-size: var(--type-caption-size);
   font-weight: 700;
