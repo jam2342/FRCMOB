@@ -19,7 +19,12 @@ from app.db import models
 from app.db.session import close_db_before_response, get_db
 from app.api.schemas import SchedulePredictionsResponse
 from app.services.cache import get_cache
-from app.services.events.win_probability import match_predictions, red_win_prob as points_red_win_prob
+from app.services.events.win_probability import (
+    match_predictions,
+    red_win_prob as points_red_win_prob,
+    season_alliance_points,
+    strength_percentile,
+)
 from app.services.ratings.win_correction import active as correction_active, corrected as corrected_win_prob
 from app.services.season_config import CURRENT_SEASON_YEAR, PREVIOUS_SEASON_YEAR
 from app.services.utils import COMP_LEVEL_ORDER, _as_float
@@ -1056,6 +1061,19 @@ def get_event_matchup(
 
 # The path predates synergy's removal (2026-10-17) and is kept so phones' saved offline
 # copies and the edge-cache rule still match: it is the schedule with predictions.
+def _alliance_strength_payload(detail, scale: list[float]) -> dict:
+    # Each alliance's expected points (before fouls) and where that ranks this season.
+    if detail is None:
+        return {}
+    prediction = detail[3]
+    return {
+        "red_points": round(prediction.red_mean, 1),
+        "blue_points": round(prediction.blue_mean, 1),
+        "red_strength_pct": strength_percentile(scale, prediction.red_mean),
+        "blue_strength_pct": strength_percentile(scale, prediction.blue_mean),
+    }
+
+
 @router.get("/{event_key}/schedule-with-synergy", response_model=SchedulePredictionsResponse)
 @close_db_before_response
 def get_event_schedule_with_synergy(
@@ -1136,6 +1154,7 @@ def get_event_schedule_with_synergy(
     )
     uncorrected_prob_by_match: dict[str, float] = {}
     points_margin_by_match = {key: margin for key, (margin, _sd, _seen, _prediction, _features) in points_details.items()}
+    strength_scale = season_alliance_points(db, season_year) if points_details else []
     # Bonus RP chances per alliance (quals), with each event's own thresholds.
     from app.services.ratings.ranking_points import BONUS_RP_CALIBRATION, bonus_chances, event_thresholds
 
@@ -1234,6 +1253,7 @@ def get_event_schedule_with_synergy(
             "points_margin": (
                 round(points_margin_by_match[match_key], 2) if match_key in points_margin_by_match else None
             ),
+            **_alliance_strength_payload(points_details.get(match_key), strength_scale),
             "bonus_rp_chances": _bonus_rp_payload(
                 points_details.get(match_key), row, season_year, rp_thresholds, rp_calibration, final_prob, bonus_chances
             ),

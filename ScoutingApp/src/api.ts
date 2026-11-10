@@ -734,6 +734,11 @@ type MatchPredictionPayload = {
   blue_win_prob: number | null;
   favored_alliance: 'red' | 'blue' | null;
   edge_confidence_0_1: number | null;
+  /* Expected points per alliance and their rank among every alliance this season (0-100). */
+  red_points?: number | null;
+  blue_points?: number | null;
+  red_strength_pct?: number | null;
+  blue_strength_pct?: number | null;
   /* Quals: each alliance's chance of each bonus RP, and its expected RP (3 for a win plus bonuses). */
   bonus_rp_chances?: {
     red: Record<string, number>;

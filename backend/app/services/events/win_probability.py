@@ -8,7 +8,9 @@
 # (scripts/evaluate_rating_replay.py).
 from __future__ import annotations
 
+import bisect
 import math
+import threading
 from typing import Iterable
 
 from sqlalchemy import func
@@ -78,6 +80,40 @@ def match_predictions(
         variance = (prediction.red_var or 0.0) + (prediction.blue_var or 0.0) + prediction.red_fouls_var + prediction.blue_fouls_var
         out[key] = (margin, math.sqrt(max(variance, 1e-6)), seen, prediction, feature_row)
     return out
+
+
+# Where an alliance's expected points rank among every alliance the season has seen:
+# both sides of every played match, as the model expected them just before it. 0-100,
+# the same scale at a week-1 district event and on Einstein, so "how strong are these
+# opponents" means the same thing everywhere (Team Center's schedule difficulty).
+_strength_scales: dict[int, tuple[object, list[float]]] = {}
+_strength_lock = threading.Lock()
+
+
+def season_alliance_points(db: Session, season: int) -> list[float]:
+    run = season_run(db, season, allow_stale=True)
+    with _strength_lock:
+        cached = _strength_scales.get(season)
+        if cached is not None and cached[0] is run:
+            return cached[1]
+    points = sorted(
+        value
+        for prediction, _seen, _features in run.before_match.values()
+        for value in (prediction.red_mean, prediction.blue_mean)
+        if math.isfinite(value)
+    )
+    with _strength_lock:
+        _strength_scales[season] = (run, points)
+    return points
+
+
+def strength_percentile(scale: list[float], points: float) -> float | None:
+    # Mid-rank, so the season's single strongest alliance reads just under 100.
+    if not scale or not math.isfinite(points):
+        return None
+    below = bisect.bisect_left(scale, points)
+    at_or_below = bisect.bisect_right(scale, points)
+    return round(100.0 * (below + at_or_below) / (2 * len(scale)), 1)
 
 
 def custom_matchup(db: Session, event_key: str, red: list[str], blue: list[str], *, playoff: bool = False) -> dict:

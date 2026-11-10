@@ -115,6 +115,29 @@ class TeamModelWinProbabilityTests(unittest.TestCase):
         self.assertEqual(second["red_win_prob_rating"], 0.5)
         self.assertEqual(payload["points_prediction_count"], 3)
 
+    def test_schedule_ranks_each_alliance_against_the_season(self):
+        add_result(self.db, "2026prior_qm1", "2026prior", 320, 90)
+        add_result(self.db, "2026prior_qm2", "2026prior", 310, 100)
+        add_result(self.db, "2026here_qm1", "2026here", 300, 100)
+        payload = routes_events.get_event_schedule_with_synergy(event_key="2026here", db=self.db)
+        second = {row["match_key"]: row["prediction"] for row in payload["matches"]}["2026here_qm2"]
+        _margin, _sd, _seen, prediction, _features = self._predictions()["2026here_qm2"]
+        self.assertEqual(second["red_points"], round(prediction.red_mean, 1))
+        self.assertEqual(second["blue_points"], round(prediction.blue_mean, 1))
+        # Red has outscored blue all season, so its expected points rank higher.
+        self.assertGreater(second["red_strength_pct"], second["blue_strength_pct"])
+        for key in ("red_strength_pct", "blue_strength_pct"):
+            self.assertTrue(0.0 <= second[key] <= 100.0)
+
+    def test_strength_percentile_is_a_mid_rank(self):
+        scale = [10.0, 20.0, 30.0, 40.0]
+        self.assertEqual(wp.strength_percentile(scale, 5.0), 0.0)
+        self.assertEqual(wp.strength_percentile(scale, 25.0), 50.0)
+        self.assertEqual(wp.strength_percentile(scale, 40.0), 87.5)
+        self.assertEqual(wp.strength_percentile(scale, 99.0), 100.0)
+        self.assertIsNone(wp.strength_percentile([], 25.0))
+        self.assertIsNone(wp.strength_percentile(scale, float("nan")))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -195,6 +195,11 @@ class MatchOutcomePrediction(BaseModel):
     # The rating formula's number, kept for comparison when the fuel formula decides.
     red_win_prob_rating: float | None = None
     points_margin: float | None = None
+    # Expected points per alliance and their rank among every alliance this season (0-100).
+    red_points: float | None = None
+    blue_points: float | None = None
+    red_strength_pct: float | None = None
+    blue_strength_pct: float | None = None
     favored_alliance: str | None = None
     edge_confidence_0_1: float | None = None
 
