@@ -1,0 +1,77 @@
+name: Deploy web app
+
+# After CI passes on main, publishes the web app to Cloudflare (frcmob.com) as static
+# assets (ScoutingApp/wrangler.jsonc). The token can only edit Workers scripts; the
+# zone's routes, DNS and cache rules are set once by hand (docs/FRONTEND_HOST.md).
+# Vercel still builds the old address from main on its own until it is retired.
+permissions:
+  contents: read
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    defaults:
+      run:
+        working-directory: ScoutingApp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ScoutingApp/package-lock.json
+      - run: npm ci
+      # Same-origin API through Cloudflare. No ONDEVICE_MODEL_SOURCE: the detector
+      # weights are served by the API server at /models/, not uploaded.
+      - run: npm run build:cloudflare
+        env:
+          VITE_API_URL: /api
+          ONDEVICE_MODEL_REQUIRED: "false"
+      # Files over Cloudflare's 25 MiB asset limit come from the server. Publishing a
+      # build whose engine file isn't there would break the recorder on WebGPU phones.
+      - name: Server has the large assets this build needs
+        run: |
+          while read -r path; do
+            [ -z "$path" ] && continue
+            if ! curl -fsSI --max-time 30 "https://frcmob.com$path" >/dev/null; then
+              echo "::error::https://frcmob.com$path is missing. Copy ScoutingApp/dist${path} into the VM's model-files folder (docs/FRONTEND_HOST.md), then re-run this workflow."
+              exit 1
+            fi
+            echo "ok $path"
+          done < dist/.server-assets
+      - name: Publish to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::No CLOUDFLARE_WORKERS_TOKEN in the production environment; nothing published."
+            exit 0
+          fi
+          npx --yes wrangler@4.159.0 deploy
+      - name: Live check
+        run: |
+          sha=$(git rev-parse --short HEAD)
+          for _ in $(seq 1 12); do
+            if curl -fsS --max-time 15 https://frcmob.com/ | grep -q 'Content-Security-Policy' && \
+               curl -fsS --max-time 15 https://frcmob.com/api/health | grep -q '"ok"'; then
+              echo "frcmob.com serves the app and its API ($sha)"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::frcmob.com did not answer as expected after the deploy"; exit 1

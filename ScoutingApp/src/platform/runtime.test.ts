@@ -43,6 +43,6 @@ describe('shareable links', () => {
   });
   it('points native-app shares at the public site', () => {
     platform.native = true;
-    expect(shareableAppUrl('/team-center?team=frc254')).toBe('https://scouting-app-iryg.vercel.app/#/team-center?team=frc254');
+    expect(shareableAppUrl('/team-center?team=frc254')).toBe('https://frcmob.com/#/team-center?team=frc254');
   });
 });

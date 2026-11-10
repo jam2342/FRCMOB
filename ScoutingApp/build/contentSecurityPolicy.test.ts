@@ -16,9 +16,9 @@ describe('content security policy', () => {
     expect(inlineScriptHashes(html)).toEqual([expected])
   })
 
-  it('allows own scripts, hashed scripts and the signup challenge, and no plugins or base changes', () => {
+  it('allows own scripts, hashed scripts, the signup challenge and the analytics beacon, and no plugins or base changes', () => {
     const policy = buildPolicy(["'sha256-abc'"], [])
-    expect(directive(policy, 'script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", "'sha256-abc'", 'https://challenges.cloudflare.com'])
+    expect(directive(policy, 'script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", "'sha256-abc'", 'https://challenges.cloudflare.com', 'https://static.cloudflareinsights.com'])
     expect(directive(policy, 'script-src')).not.toContain("'unsafe-inline'")
     expect(directive(policy, 'object-src')).toEqual(["'none'"])
     expect(directive(policy, 'base-uri')).toEqual(["'self'"])
@@ -26,7 +26,7 @@ describe('content security policy', () => {
 
   it('reaches the API and room socket origins it is given, and nothing else', () => {
     const policy = buildPolicy([], ['/api', 'https://api.example.test/api', 'wss://ws.example.test', 'javascript:alert(1)'])
-    expect(directive(policy, 'connect-src')).toEqual(["'self'", 'blob:', 'data:', 'https://api.example.test', 'wss://ws.example.test', 'https://challenges.cloudflare.com'])
+    expect(directive(policy, 'connect-src')).toEqual(["'self'", 'blob:', 'data:', 'https://api.example.test', 'wss://ws.example.test', 'https://challenges.cloudflare.com', 'https://cloudflareinsights.com'])
   })
 
   it('frames only the stream players and signup challenge', () => {
@@ -63,6 +63,8 @@ describe('content security policy', () => {
     }
     const allowed = new Set([
       'challenges.cloudflare.com',
+      'static.cloudflareinsights.com',
+      'cloudflareinsights.com',
       ...EMBED_FRAME_ORIGINS.map((origin) => new URL(origin).host),
       ...backendOrigins(resolve(process.cwd(), 'src/platform/runtime.ts')).map((url) => new URL(url).host),
       ...Object.keys(LINK_OR_IMAGE_ONLY),

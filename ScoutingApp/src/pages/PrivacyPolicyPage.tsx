@@ -193,13 +193,14 @@ export function PrivacyPolicyPage() {
               advertising in FRCMOB and no advertising or cross-site trackers.
             </p>
             <p>
-              The website counts page views with{' '}
+              The website at frcmob.com counts page views with Cloudflare Web Analytics (under{' '}
+              <a href={CLOUDFLARE_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Cloudflare&apos;s privacy policy</a>
+              ). It uses no cookies or local storage and does not fingerprint you or keep your IP
+              address; each page view records the page, the referring site, country, browser and
+              device type, and page-load timings. The old scouting-app-iryg.vercel.app address used{' '}
               <a href={VERCEL_ANALYTICS_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Vercel Web Analytics</a>
-              . It uses no cookies and does not store your IP address; each page view records the page,
-              the referring site, approximate location (country, region, city), device type, and
-              operating system and browser versions, and a visit is recognised for at most 24 hours by
-              a hash of the request. It is turned off if your browser sends Do Not Track or Global
-              Privacy Control, and it is not used in the mobile app.
+              , which works the same way, until it closes. Both are turned off if your browser sends
+              Do Not Track or Global Privacy Control, and neither is used in the mobile app.
             </p>
           </section>
 
@@ -207,7 +208,8 @@ export function PrivacyPolicyPage() {
             <h4>Infrastructure providers</h4>
             <p>
               The app runs on third-party infrastructure that necessarily processes data in order to
-              host it: Vercel hosts the website, an Oracle Cloud server in the United States runs the
+              host it: Cloudflare hosts the website and carries its traffic (Vercel did until the move to
+              frcmob.com), an Oracle Cloud server in the United States runs the
               API with its Postgres database and Redis cache, Neon keeps an off-site database backup,
               and your browser vendor&apos;s push service delivers notifications. These providers act
               as processors for storage and delivery; they are not permitted to use the data for their

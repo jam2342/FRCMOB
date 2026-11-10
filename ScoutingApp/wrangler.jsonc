@@ -1,0 +1,23 @@
+// frcmob.com: the web app as Cloudflare static assets (no Worker code, so requests
+// are free and unmetered). Deployed by .github/workflows/web-deploy.yml after
+// `npm run build:cloudflare`.
+//
+// Routes are set on the zone, not here, so the deploy token only needs Workers Scripts:
+//   frcmob.com/*         -> frcmob-web
+//   frcmob.com/api/*     -> no Worker (Cloudflare proxies to the API server; Caddy strips /api)
+//   frcmob.com/models/*  -> no Worker (detector weights from the server; over the 25 MiB asset limit)
+{
+  "$schema": "https://unpkg.com/wrangler@4.159.0/config-schema.json",
+  "name": "frcmob-web",
+  "account_id": "ff68fd03c18e5f3ed722b57d4f51d412",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    // Like Vercel's /(.*) -> /index.html: the app routes on the hash.
+    "not_found_handling": "single-page-application",
+    // Serve /record.html as itself; its isolation headers are set on that path.
+    "html_handling": "none"
+  }
+}

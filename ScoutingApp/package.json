@@ -24,6 +24,7 @@
     "validate:on-device-browser": "node e2e/validate-on-device.mjs",
     "test:changed": "vitest run --changed",
     "test:watch": "vitest",
+    "build:cloudflare": "tsc -b && vite build && node scripts/cloudflare-assets.mjs",
     "build:native": "node scripts/fetch-models.mjs && tsc -b && vite build --mode native && node scripts/validate-native-bundle.mjs",
     "native:sync": "npm run build:native && cap sync",
     "native:ios": "npm run native:sync && cap open ios",

@@ -1,4 +1,20 @@
-# Frontend host (Vercel today, probably replaced later)
+# Frontend host (Cloudflare at frcmob.com; Vercel until the old address is retired)
+
+## Cloudflare (frcmob.com, since 2026-11-10)
+
+- **Site:** the Worker `frcmob-web` (`ScoutingApp/wrangler.jsonc`) is static assets only, no Worker code, so requests aren't metered. `npm run build:cloudflare` builds `dist/` and writes `_headers` from `vercel.json` (`scripts/cloudflare-assets.mjs`), so both hosts send the same headers. `.github/workflows/web-deploy.yml` publishes after CI passes on `main`, with the `CLOUDFLARE_WORKERS_TOKEN` secret (Workers Scripts: Edit only) in the `production` environment.
+- **Routes on the zone** (set once, not by the deploy):
+  - `frcmob.com/*` goes to `frcmob-web`.
+  - `frcmob.com/api/*`, `frcmob.com/models/*` and `frcmob.com/assets/ort-wasm-simd-threaded.jsep-*` have no Worker, so Cloudflare proxies them to the VM. Caddy strips `/api` and proxies to the backend, so the API is same-origin as it was behind Vercel's rewrite, and room sockets work through it too.
+- **DNS:** `frcmob.com`, `www` and `api` are proxied A records to the VM. Caddy redirects `www` to the apex. SSL mode is Full (strict), with a Cloudflare Origin CA certificate on the VM ([BACKEND_HOST.md](BACKEND_HOST.md)).
+- **Cache rules:** `/api/*` follows the origin's headers (`CDN-Cache-Control` from `edge_cache.py`) and bypasses the cache when there are none. `/models/*` and the engine file are cached as the origin says (a week, a year).
+- **Files over Cloudflare's 25 MiB per-file limit** come from the VM's model-files folder (`MODEL_FILES_TOKEN` in the VM's `.env`):
+  - the detector weights
+  - onnxruntime's WebGPU engine `ort-wasm-simd-threaded.jsep-<hash>.wasm` (28 MiB)
+
+  The engine's name changes whenever `onnxruntime-web` changes. When it does, copy `ScoutingApp/dist/assets/<that file>` into the folder; `web-deploy.yml` refuses to publish until `https://frcmob.com/assets/<that file>` answers. The build fails if anything else crosses 25 MiB.
+- **Analytics:** Cloudflare Web Analytics (`src/perf/webAnalytics.ts`), only on frcmob.com, off under DNT/GPC. Vercel Web Analytics stays only on `*.vercel.app`.
+
 
 Moved here from the [speed plan](archive/2026-10/SPEED_PLAN_2026-10-12.md); "#N" below are that plan's items.
 
