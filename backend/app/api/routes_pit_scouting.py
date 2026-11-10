@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import sign_media_path
@@ -450,34 +451,44 @@ def claim_pit_team(payload: PitClaimRequest, request: Request, db: Session = Dep
     if payload.force:
         _require_leader(actor)
 
-    row = _load_assignment(db, actor.workspace_id, normalized_event, normalized_team)
-    holder = None
-    if row is not None and row.member_id is not None and row.member_id != actor.member.id:
-        holder = db.get(models.TeamWorkspaceMember, row.member_id)
-        if holder is not None and holder.removed_at is not None:
-            holder = None
-    if holder is not None and not payload.force:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{normalized_team} is already taken by {holder.display_name}.",
-        )
-    if row is None:
-        row = models.PitAssignment(
-            workspace_id=actor.workspace_id,
-            event_key=normalized_event,
-            team_key=normalized_team,
-            member_id=actor.member.id,
-            assigned_by_member_id=actor.member.id,
-            source=SOURCE_CLAIM,
-        )
-        db.add(row)
-    elif row.member_id != actor.member.id:
-        row.member_id = actor.member.id
-        row.assigned_by_member_id = actor.member.id
-        row.source = SOURCE_CLAIM
-    db.commit()
-    db.refresh(row)
-    return {"ok": True, "assignment": _serialize_assignment(row, _member_names(db, actor.workspace_id))}
+    workspace_id, member_id = actor.workspace_id, actor.member.id
+    # Two scouts tapping the same free team at once both see no row and both insert; the
+    # unique index lets one win. The loser rolls back and runs the normal rules again.
+    for attempt in (1, 2):
+        row = _load_assignment(db, workspace_id, normalized_event, normalized_team)
+        holder = None
+        if row is not None and row.member_id is not None and row.member_id != member_id:
+            holder = db.get(models.TeamWorkspaceMember, row.member_id)
+            if holder is not None and holder.removed_at is not None:
+                holder = None
+        if holder is not None and not payload.force:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{normalized_team} is already taken by {holder.display_name}.",
+            )
+        if row is None:
+            row = models.PitAssignment(
+                workspace_id=workspace_id,
+                event_key=normalized_event,
+                team_key=normalized_team,
+                member_id=member_id,
+                assigned_by_member_id=member_id,
+                source=SOURCE_CLAIM,
+            )
+            db.add(row)
+        elif row.member_id != member_id:
+            row.member_id = member_id
+            row.assigned_by_member_id = member_id
+            row.source = SOURCE_CLAIM
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if attempt == 2:
+                raise HTTPException(status_code=409, detail=f"{normalized_team} was just taken. Try again.") from None
+            continue
+        db.refresh(row)
+        return {"ok": True, "assignment": _serialize_assignment(row, _member_names(db, workspace_id))}
 
 
 @router.post("/assignments/release")
@@ -504,25 +515,34 @@ def set_pit_assignment(payload: PitAssignmentSetRequest, request: Request, db: S
     if payload.member_id is not None:
         _active_member(db, actor.workspace_id, payload.member_id)
 
-    row = _load_assignment(db, actor.workspace_id, normalized_event, normalized_team)
-    if payload.member_id is None:
-        if row is not None:
-            db.delete(row)
+    workspace_id, leader_id = actor.workspace_id, actor.member.id
+    for attempt in (1, 2):
+        row = _load_assignment(db, workspace_id, normalized_event, normalized_team)
+        if payload.member_id is None:
+            if row is not None:
+                db.delete(row)
+                db.commit()
+            return {"ok": True, "assignment": None}
+        if row is None:
+            row = models.PitAssignment(
+                workspace_id=workspace_id,
+                event_key=normalized_event,
+                team_key=normalized_team,
+            )
+            db.add(row)
+        row.member_id = payload.member_id
+        row.assigned_by_member_id = leader_id
+        row.source = SOURCE_LEADER
+        try:
             db.commit()
-        return {"ok": True, "assignment": None}
-    if row is None:
-        row = models.PitAssignment(
-            workspace_id=actor.workspace_id,
-            event_key=normalized_event,
-            team_key=normalized_team,
-        )
-        db.add(row)
-    row.member_id = payload.member_id
-    row.assigned_by_member_id = actor.member.id
-    row.source = SOURCE_LEADER
-    db.commit()
-    db.refresh(row)
-    return {"ok": True, "assignment": _serialize_assignment(row, _member_names(db, actor.workspace_id))}
+        except IntegrityError:
+            # A competing insert won; the retry reloads that row and updates it.
+            db.rollback()
+            if attempt == 2:
+                raise HTTPException(status_code=409, detail="That team was just changed. Try again.") from None
+            continue
+        db.refresh(row)
+        return {"ok": True, "assignment": _serialize_assignment(row, _member_names(db, workspace_id))}
 
 
 @router.post("/assignments/auto-split")
@@ -536,55 +556,64 @@ def auto_split_pit_teams(payload: PitAutoSplitRequest, request: Request, db: Ses
     for member_id in member_ids:
         _active_member(db, actor.workspace_id, member_id)
 
-    existing = {
-        row.team_key: row
-        for row in db.execute(
-            select(models.PitAssignment).where(
-                models.PitAssignment.workspace_id == actor.workspace_id,
-                models.PitAssignment.event_key == normalized_event,
-            )
-        ).scalars()
-    }
-    scouted: set[str] = set()
-    if payload.only_unscouted:
-        scouted = set(
-            db.execute(
-                select(models.PitScoutingEntry.team_key).where(
-                    models.PitScoutingEntry.workspace_id == actor.workspace_id,
-                    models.PitScoutingEntry.event_key == normalized_event,
+    workspace_id, leader_id = actor.workspace_id, actor.member.id
+    for attempt in (1, 2):
+        existing = {
+            row.team_key: row
+            for row in db.execute(
+                select(models.PitAssignment).where(
+                    models.PitAssignment.workspace_id == workspace_id,
+                    models.PitAssignment.event_key == normalized_event,
                 )
             ).scalars()
-        )
-
-    eligible = []
-    for team_key in team_keys:
-        if team_key in scouted:
-            continue
-        current = existing.get(team_key)
-        if current is not None and current.member_id is not None and not payload.replace_existing:
-            continue
-        eligible.append(team_key)
-
-    # Count what the chosen scouts already hold, so the split ends up balanced overall.
-    eligible_set = set(eligible)
-    load = {member_id: 0 for member_id in member_ids}
-    for team_key, row in existing.items():
-        if row.member_id in load and team_key not in eligible_set:
-            load[row.member_id] += 1
-
-    for team_key in eligible:
-        member_id = min(member_ids, key=lambda candidate: (load[candidate], candidate))
-        load[member_id] += 1
-        row = existing.get(team_key)
-        if row is None:
-            row = models.PitAssignment(
-                workspace_id=actor.workspace_id,
-                event_key=normalized_event,
-                team_key=team_key,
+        }
+        scouted: set[str] = set()
+        if payload.only_unscouted:
+            scouted = set(
+                db.execute(
+                    select(models.PitScoutingEntry.team_key).where(
+                        models.PitScoutingEntry.workspace_id == workspace_id,
+                        models.PitScoutingEntry.event_key == normalized_event,
+                    )
+                ).scalars()
             )
-            db.add(row)
-        row.member_id = member_id
-        row.assigned_by_member_id = actor.member.id
-        row.source = SOURCE_AUTO
-    db.commit()
-    return {"ok": True, "assignments": _list_assignments(db, actor.workspace_id, normalized_event)}
+
+        eligible = []
+        for team_key in team_keys:
+            if team_key in scouted:
+                continue
+            current = existing.get(team_key)
+            if current is not None and current.member_id is not None and not payload.replace_existing:
+                continue
+            eligible.append(team_key)
+
+        # Count what the chosen scouts already hold, so the split ends up balanced overall.
+        eligible_set = set(eligible)
+        load = {member_id: 0 for member_id in member_ids}
+        for team_key, row in existing.items():
+            if row.member_id in load and team_key not in eligible_set:
+                load[row.member_id] += 1
+
+        for team_key in eligible:
+            member_id = min(member_ids, key=lambda candidate: (load[candidate], candidate))
+            load[member_id] += 1
+            row = existing.get(team_key)
+            if row is None:
+                row = models.PitAssignment(
+                    workspace_id=workspace_id,
+                    event_key=normalized_event,
+                    team_key=team_key,
+                )
+                db.add(row)
+            row.member_id = member_id
+            row.assigned_by_member_id = leader_id
+            row.source = SOURCE_AUTO
+        try:
+            db.commit()
+        except IntegrityError:
+            # A competing insert won; the retry reloads and updates that row.
+            db.rollback()
+            if attempt == 2:
+                raise HTTPException(status_code=409, detail="Those teams were just changed. Try again.") from None
+            continue
+        return {"ok": True, "assignments": _list_assignments(db, workspace_id, normalized_event)}

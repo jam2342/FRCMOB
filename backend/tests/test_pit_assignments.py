@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import routes_pit_scouting
 from app.api.routes_pit_scouting import router as pit_scouting_router
 from app.api.routes_workspaces import router as workspaces_router
 from app.db import models
@@ -224,6 +226,65 @@ class PitAssignmentTests(unittest.TestCase):
         with self.SessionLocal() as db:
             rows = db.execute(select(models.PitAssignment)).scalars().all()
             self.assertEqual([(row.workspace_id, row.member_id) for row in rows], [(self.workspace_id, self.alex_id)])
+
+    def _seed_row(self, member_id: int, team_key: str = "frc254") -> None:
+        with self.SessionLocal() as db:
+            db.add(models.PitAssignment(
+                workspace_id=self.workspace_id, event_key=EVENT, team_key=team_key,
+                member_id=member_id, assigned_by_member_id=member_id, source="claim",
+            ))
+            db.commit()
+
+    def _blind_first_load(self):
+        # The first lookup sees no row, as if a competing insert landed right after it.
+        real = routes_pit_scouting._load_assignment
+        calls = {"n": 0}
+
+        def load(*args, **kwargs):
+            calls["n"] += 1
+            return None if calls["n"] == 1 else real(*args, **kwargs)
+
+        return mock.patch.object(routes_pit_scouting, "_load_assignment", load)
+
+    def test_claim_race_loser_gets_409_naming_the_winner(self):
+        self._seed_row(self.alex_id)
+        with self._blind_first_load():
+            response = self._post("/claim", self.sam_h, team_key="frc254")
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn("frc254 is already taken by Alex.", response.json()["detail"])
+        self.assertEqual(self._by_team(self.sam_h), {"frc254": self.alex_id})
+
+    def test_claim_race_where_the_winner_is_the_caller_returns_200(self):
+        self._seed_row(self.alex_id)
+        with self._blind_first_load():
+            response = self._post("/claim", self.alex_h, team_key="frc254")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["assignment"]["member_id"], self.alex_id)
+        self.assertEqual(len(self._list(self.alex_h)), 1)
+
+    def test_leader_force_claim_retries_the_takeover_after_a_race(self):
+        self._seed_row(self.alex_id)
+        with self._blind_first_load():
+            response = self._post("/claim", self.lead_h, team_key="frc254", force=True)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self._by_team(self.alex_h), {"frc254": self.lead_id})
+
+    def test_set_retries_after_losing_a_race(self):
+        self._seed_row(self.alex_id)
+        with self._blind_first_load():
+            response = self._post("/set", self.lead_h, team_key="frc254", member_id=self.sam_id)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["assignment"]["source"], "leader")
+        self.assertEqual(self._by_team(self.alex_h), {"frc254": self.sam_id})
+
+    def test_a_persistent_conflict_is_a_409_not_a_500(self):
+        self._seed_row(self.alex_id)
+        with mock.patch.object(routes_pit_scouting, "_load_assignment", lambda *a, **k: None):
+            claim = self._post("/claim", self.sam_h, team_key="frc254")
+            set_ = self._post("/set", self.lead_h, team_key="frc254", member_id=self.sam_id)
+        self.assertEqual(claim.status_code, 409, claim.text)
+        self.assertEqual(set_.status_code, 409, set_.text)
+
 
     def test_events_are_separate(self):
         self._post("/claim", self.alex_h, team_key="frc254")

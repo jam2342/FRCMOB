@@ -3987,14 +3987,14 @@ export interface PitAssignment {
   updated_at: string | null;
 }
 
-async function postPitAssignment<T>(action: string, body: Record<string, unknown>): Promise<T> {
-  const res = await apiFetch(`${API}/pit-scouting/assignments/${action}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+// Literal URLs at each call site: the frontend/backend route contract test reads them.
+async function readPitAssignmentResponse<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as T;
+}
+
+function pitAssignmentPost(body: Record<string, unknown>): RequestInit {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
 export async function getPitAssignments(eventKey: string): Promise<PitAssignment[]> {
@@ -4014,15 +4014,19 @@ export async function claimPitTeam(
   teamKey: string,
   opts?: { force?: boolean },
 ): Promise<{ ok: boolean; assignment: PitAssignment }> {
-  return postPitAssignment("claim", {
-    event_key: eventKey,
-    team_key: teamKey,
-    ...(opts?.force ? { force: true } : {}),
-  });
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/claim`,
+    pitAssignmentPost({ event_key: eventKey, team_key: teamKey, ...(opts?.force ? { force: true } : {}) }),
+  );
+  return readPitAssignmentResponse(res);
 }
 
 export async function releasePitTeam(eventKey: string, teamKey: string): Promise<{ ok: boolean; released: boolean }> {
-  return postPitAssignment("release", { event_key: eventKey, team_key: teamKey });
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/release`,
+    pitAssignmentPost({ event_key: eventKey, team_key: teamKey }),
+  );
+  return readPitAssignmentResponse(res);
 }
 
 export async function setPitAssignment(
@@ -4030,20 +4034,28 @@ export async function setPitAssignment(
   teamKey: string,
   memberId: number | null,
 ): Promise<{ ok: boolean; assignment: PitAssignment | null }> {
-  return postPitAssignment("set", { event_key: eventKey, team_key: teamKey, member_id: memberId });
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/set`,
+    pitAssignmentPost({ event_key: eventKey, team_key: teamKey, member_id: memberId }),
+  );
+  return readPitAssignmentResponse(res);
 }
 
 export async function autoSplitPitTeams(
   eventKey: string,
   opts: { teamKeys: string[]; memberIds: number[]; onlyUnscouted?: boolean; replaceExisting?: boolean },
 ): Promise<PitAssignment[]> {
-  const data = await postPitAssignment<{ ok: boolean; assignments: PitAssignment[] }>("auto-split", {
-    event_key: eventKey,
-    team_keys: opts.teamKeys,
-    member_ids: opts.memberIds,
-    only_unscouted: opts.onlyUnscouted ?? true,
-    replace_existing: opts.replaceExisting ?? false,
-  });
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/auto-split`,
+    pitAssignmentPost({
+      event_key: eventKey,
+      team_keys: opts.teamKeys,
+      member_ids: opts.memberIds,
+      only_unscouted: opts.onlyUnscouted ?? true,
+      replace_existing: opts.replaceExisting ?? false,
+    }),
+  );
+  const data = await readPitAssignmentResponse<{ ok: boolean; assignments: PitAssignment[] }>(res);
   return data.assignments ?? [];
 }
 
