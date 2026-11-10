@@ -60,7 +60,7 @@ import { embeddableUrl } from '../config/embedHosts';
 import { loadSeasonEventCatalog, loadSeasonSearchFallback } from '../features/events/eventCatalog';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { useMobileLayout } from '../hooks/useMobileLayout';
-import { Stat } from '../components/ui/primitives';
+import { Button, Stat } from '../components/ui/primitives';
 import { usePageClock } from '../hooks/usePageClock';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { useSingleFlightPolling, type SingleFlightPollReason } from '../hooks/useSingleFlightPolling';
@@ -69,6 +69,7 @@ import { navigateWithTransition } from '../utils/viewTransition';
 import { AwayBanner } from '../features/awaySummary/AwayBanner';
 import { markSeen, readLastSeen, summarizeAway, type AwaySummary } from '../features/awaySummary/awaySummary';
 import awayStyles from '../features/awaySummary/Away.module.css';
+import homeStyles from './HomePage.module.css';
 import { readMyTeamKey } from '../features/workspace/myTeam';
 import { type EventDateRange, normalizeDateRange, matchesCalendarDisplayYear, monthTokenFromMs, shiftMonthToken } from './eventCalendar';
 import { CompactAllianceTeams } from '../components/CompactAllianceTeams';
@@ -253,6 +254,9 @@ function eventRunsOnDateToken(event: EventSearchItem | undefined, targetToken: s
 
 
 
+// How long Home waits for a nearby day's matches before showing today as empty.
+const AUTO_DAY_WAIT_MS = 4000;
+
 function startOfLocalDay(ms: number): number {
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
@@ -338,14 +342,24 @@ export function HomePage() {
   // again; the Home tab (plain /home) is today.
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedDayMs, setSelectedDayMs] = useState(() => dayFromParam(searchParams.get('day')) ?? startOfLocalDay(Date.now()));
+  // On a day with no matches (most of the year) Home opens on the closest day that has some, so
+  // the first screen is results rather than an empty state. Once, from today, and only when the
+  // link didn't name a day. `to` is the day it moved to, kept out of the URL so a reload looks
+  // at today again.
+  const [autoDay, setAutoDay] = useState<{ settled: boolean; to: number | null }>(() => ({
+    settled: dayFromParam(searchParams.get('day')) !== null,
+    to: null,
+  }));
   useEffect(() => {
-    const token = selectedDayMs === startOfLocalDay(Date.now()) ? null : localDateTokenFromMs(selectedDayMs);
+    const token = selectedDayMs === startOfLocalDay(Date.now()) || selectedDayMs === autoDay.to
+      ? null
+      : localDateTokenFromMs(selectedDayMs);
     if ((searchParams.get('day') || null) === token) return;
     const next = new URLSearchParams(searchParams);
     if (token) next.set('day', token);
     else next.delete('day');
     setSearchParams(next, { replace: true });
-  }, [searchParams, selectedDayMs, setSearchParams]);
+  }, [autoDay.to, searchParams, selectedDayMs, setSearchParams]);
   const [mobileCollapsedCards, setMobileCollapsedCards] = useState<Record<string, boolean>>({});
   const [desktopCollapsedFeedCards, setDesktopCollapsedFeedCards] = useState<Record<string, boolean>>({});
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -1190,6 +1204,30 @@ export function HomePage() {
     return closerDay(loadedMatchDay, token ? fromDateTokenToLocalDayMs(token) : null, selectedDayMs);
   }, [calendarSeasonEvents, scheduleByEvent, selectedDayMs, suggestedEvents]);
 
+  useEffect(() => {
+    if (autoDay.settled) return;
+    if (selectedDayMs !== startOfLocalDay(Date.now())) {
+      setAutoDay({ settled: true, to: null });
+      return;
+    }
+    if (errorText || selectedDaySchedulesPending || selectedDayFailedKeys.length > 0) return;
+    if (hasAnySelectedDayMatches) {
+      setAutoDay({ settled: true, to: null });
+      return;
+    }
+    // The nearest day is first known from the event calendar, before its schedule loads; wait
+    // for a day with actual matches rather than settling on that.
+    if (!nearestEventDay?.hasMatches) return;
+    setAutoDay({ settled: true, to: nearestEventDay.ms });
+    setSelectedDayMs(nearestEventDay.ms);
+  }, [autoDay.settled, errorText, hasAnySelectedDayMatches, nearestEventDay, selectedDayFailedKeys.length, selectedDayMs, selectedDaySchedulesPending]);
+  // ...but not forever: with no matched day in sight, today's empty state stands.
+  useEffect(() => {
+    if (autoDay.settled || selectedDaySchedulesPending) return undefined;
+    const timer = window.setTimeout(() => setAutoDay((current) => (current.settled ? current : { settled: true, to: null })), AUTO_DAY_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoDay.settled, selectedDaySchedulesPending]);
+
   const selectedDayDateLabel = useMemo(
     () => new Date(selectedDayMs).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }),
     [selectedDayMs],
@@ -1828,7 +1866,7 @@ export function HomePage() {
               </button>
             )}
           />
-        ) : !hasAnySelectedDayMatches && selectedDaySchedulesPending ? (
+        ) : !hasAnySelectedDayMatches && (selectedDaySchedulesPending || !autoDay.settled) ? (
           <EmptyState className="home-feed-state es--top" title="Loading matches" description={`Getting ${selectedDayDateLabel}'s schedules…`} />
         ) : !hasAnySelectedDayMatches && selectedDayFailedKeys.length > 0 ? (
           <EmptyState
@@ -1844,7 +1882,6 @@ export function HomePage() {
           />
         ) : !hasAnySelectedDayMatches ? (
           <EmptyState
-            mascot
             className="home-feed-state es--top"
             title="No matches on this day"
             description={
@@ -1858,6 +1895,14 @@ export function HomePage() {
               </button>
             ) : undefined}
           />
+        ) : null}
+        {autoDay.to !== null && selectedDayMs === autoDay.to && hasAnySelectedDayMatches ? (
+          <div className={`center-callout muted ${homeStyles.autoDay}`} role="status">
+            <span>Nothing is on today, so this is {homeDayHeading(selectedDayMs, nowMs)}, the closest day with matches.</span>
+            <Button size="sm" variant="quiet" onClick={() => setSelectedDayMs(startOfLocalDay(Date.now()))}>
+              Back to today
+            </Button>
+          </div>
         ) : null}
         {hasAnySelectedDayMatches && filterCounts[activeFilter] === 0 ? (
           <p className="center-callout muted">

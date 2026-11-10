@@ -42,7 +42,7 @@ import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
-import { Chip, Stat, Table, type TableColumn } from '../components/ui/primitives';
+import { Button, Chip, Stat, Table, type TableColumn } from '../components/ui/primitives';
 import { SEASON_BENCHMARKS } from '../config/season';
 import { isRobotSignal, officialMetricsNote, plainSignalLabel, ratingRangeLabel, scoreAgainst, signalRankLabel, signedChange } from './teamCenterOfficial';
 import { usePageVisibility } from '../hooks/usePageVisibility';
@@ -450,6 +450,10 @@ export function TeamCenterPage() {
   const [scheduleVisibleCount, setScheduleVisibleCount] = useState(TEAM_SCHEDULE_INITIAL_VISIBLE_COUNT);
   const [scheduleSortMode, setScheduleSortMode] = useState<TeamScheduleSortMode>('time');
   const [mobileFinderOpen, setMobileFinderOpen] = useState(() => !defaultTeamKey);
+  // On a desktop the finder only holds a team box and an event picker, and the top bar's search
+  // already finds teams, so once a team is open the column gives its width to the team. Change
+  // brings it back, as on a phone.
+  const [desktopFinderOpen, setDesktopFinderOpen] = useState(false);
   const lastContextRef = useRef('');
   const staticFailedRef = useRef(false);
   const currentSelectionRef = useRef('');
@@ -1311,6 +1315,7 @@ export function TeamCenterPage() {
       triggerTeamReload('manual');
     }
     if (isMobileLayout) setMobileFinderOpen(false);
+    setDesktopFinderOpen(false);
   }
 
   // A past event from the rating history: this team at that event, here.
@@ -1344,8 +1349,10 @@ export function TeamCenterPage() {
   }
 
 
+  const showFinder = isMobileLayout || desktopFinderOpen || !selectedTeamKey;
+
   return (
-    <div className={`center-layout center-layout-team mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''}`.trim()}>
+    <div className={`center-layout center-layout-team mobile-finder-layout ${isMobileLayout && mobileFinderOpen ? 'mobile-finder-open' : ''} ${showFinder ? '' : 'is-finderless'}`.trim()}>
       {isMobileLayout && (mobileFinderOpen || !selectedTeamKey) ? (
         <MobileViewActions
           label="Team views"
@@ -1358,7 +1365,7 @@ export function TeamCenterPage() {
           }
         />
       ) : null}
-      <aside className="center-sidebar">
+      {showFinder ? (<aside className="center-sidebar">
         <SurfaceCard tourId="team-finder" title="Team Finder">
           <form className="center-stack-form" onSubmit={submitTeamAndEvent}>
             <label className="center-label" htmlFor="team-center-team-input">
@@ -1428,14 +1435,13 @@ export function TeamCenterPage() {
             </button>
           </div>
         </SurfaceCard>
-      </aside>
+      </aside>) : null}
 
       <section className="center-main">
         {!selectedTeamKey ? (
           <SurfaceCard title="No Team Selected" subtitle="Enter a team in the Finder.">
             <EmptyState
               compact
-              mascot
               title="Which team?"
               description="Type a number or a name to see its rating, fuel rate, matches and scouting."
               action={(
@@ -1559,6 +1565,18 @@ export function TeamCenterPage() {
             ) : (
             <SurfaceCard tourId="team-hero"
               title={`Team ${teamNumber}`}
+              right={isMobileLayout ? undefined : (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  data-tour="team-change"
+                  aria-expanded={desktopFinderOpen}
+                  aria-label={desktopFinderOpen ? 'Hide the team finder' : 'Change team'}
+                  onClick={() => setDesktopFinderOpen((open) => !open)}
+                >
+                  {desktopFinderOpen ? 'Done' : 'Change'}
+                </Button>
+              )}
               subtitle={`${teamNickname}${selectedEventKey ? ` · ${eventNameFor(selectedEventKey)}` : skippedEventKey ? ` · Whole season (not at ${eventDisplayName(skippedEventKey)})` : ''}`}
             >
               <div className="center-team-hero">

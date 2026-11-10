@@ -2207,3 +2207,8 @@ button.ps-context-chip:disabled {
   font-family: inherit;
   cursor: pointer;
 }
+
+/* Team Center on a desktop with no finder open: the team takes the full width (TeamCenterPage). */
+.product-shell .center-layout.center-layout-team.is-finderless {
+  grid-template-columns: minmax(0, 1fr);
+}

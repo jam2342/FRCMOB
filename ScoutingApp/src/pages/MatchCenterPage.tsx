@@ -1115,7 +1115,6 @@ export function MatchCenterPage() {
           <SurfaceCard title="No Match Selected" subtitle="Choose a match from the Finder.">
             <EmptyState
               compact
-              mascot
               title="No match selected"
               description={isMobileLayout
                 ? 'Pick a match to see its score, stream, teams and forecast.'

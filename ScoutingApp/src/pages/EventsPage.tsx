@@ -2304,7 +2304,7 @@ export function EventsPage() {
               eventError ? (
                 <EmptyState compact type="offline" title="Couldn't load the schedule" description="It retries on its own." />
               ) : (
-                <EmptyState compact mascot title="Schedule not posted yet" description="Matches show up here as soon as the event publishes them." />
+                <EmptyState compact title="Schedule not posted yet" description="Matches show up here as soon as the event publishes them." />
               )
             ) : null}
             <div className="center-list-stack">
@@ -2931,7 +2931,7 @@ export function EventsPage() {
               </div>
             ) : null}
             {!firstEventLoad && eventTeamRows.length === 0 ? (
-              <EmptyState compact mascot title="Teams not listed yet" description="They show up once the event publishes its team list." />
+              <EmptyState compact title="Teams not listed yet" description="They show up once the event publishes its team list." />
             ) : null}
             {eventTeamRows.length > 0 ? (
               <>
