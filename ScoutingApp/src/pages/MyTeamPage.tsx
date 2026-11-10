@@ -1,3 +1,5 @@
+import QRCode from 'qrcode';
+import { useSearchParams } from 'react-router-dom';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { copyTextToClipboard } from './centerUtils';
 import {
@@ -54,7 +56,10 @@ function SetUpTeam() {
   const revoked = workspaceEndReason() === 'revoked';
   const isMobileLayout = useMobileLayout();
   const [showCreate, setShowCreate] = useState(false);
-  const [joinCode, setJoinCode] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // A shared invite link carries the code; it fills the field but never submits. The code is
+  // dropped from the address right away so it doesn't linger in history or a screenshot.
+  const [joinCode, setJoinCode] = useState(() => (searchParams.get('code') ?? '').slice(0, 24));
   const [joinName, setJoinName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
   const [teamNumber, setTeamNumber] = useState('');
@@ -67,6 +72,15 @@ function SetUpTeam() {
   const [challengeAttempt, setChallengeAttempt] = useState(0);
   const nativeChallenge = isNativeApp() && signupPolicy?.required;
   const canCreate = Boolean(signupPolicy && (!signupPolicy.required || (signupPolicy.site_key && challengeToken && !nativeChallenge)));
+
+  useEffect(() => {
+    if (!searchParams.has('code')) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('code');
+      return next;
+    }, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     let active = true;
@@ -236,6 +250,30 @@ function JoinCodePanel({ code, isLeader, onRotate, busy }: {
   busy: boolean;
 }) {
   const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [linkCopied, setLinkCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const qrRef = useRef<HTMLCanvasElement>(null);
+  const inviteLink = code ? shareableAppUrl(`/my-team?code=${encodeURIComponent(code)}`) : '';
+
+  useEffect(() => {
+    if (!code || !qrRef.current) return;
+    // jsdom has no canvas; the code and link are still on screen without it.
+    QRCode.toCanvas(qrRef.current, inviteLink, { width: 192, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#0f172a', light: '#ffffff' } }).catch(() => {});
+  }, [code, inviteLink]);
+
+  const share = async () => {
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Join our scouting team', text: 'Join our FRC scouting workspace:', url: inviteLink });
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+      }
+    }
+    const ok = await copyTextToClipboard(inviteLink);
+    setLinkCopied(ok ? 'copied' : 'failed');
+    if (ok) window.setTimeout(() => setLinkCopied('idle'), 2000);
+  };
+
   const copy = async () => {
     if (!code) return;
     const ok = await copyTextToClipboard(code);
@@ -249,7 +287,15 @@ function JoinCodePanel({ code, isLeader, onRotate, busy }: {
         <p className="my-team__code" aria-label={`Join code ${code.split('').join(' ')}`}>{code}</p>
         <div className="my-team__code-actions">
           <Button variant="primary" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy code'}</Button>
+          <Button onClick={share}>{linkCopied === 'copied' ? 'Link copied' : 'Share invite link'}</Button>
         </div>
+        <div className="my-team__qr">
+          <canvas ref={qrRef} width={192} height={192} role="img" aria-label="QR code that opens the invite link" />
+          <p className="my-team__note">Or have a teammate scan this with their camera.</p>
+        </div>
+        {linkCopied === 'failed' ? (
+          <p className="my-team__note" role="alert">This browser blocked sharing and copying. Send the code above instead.</p>
+        ) : null}
         {copied === 'failed' ? (
           <p className="my-team__note" role="alert">This browser blocked copying. Write the code down or select it above.</p>
         ) : null}
@@ -380,8 +426,6 @@ function TeamWorkspaceView() {
       {/* What a scout opens this page for: where they're scouting and what's next. */}
       <TeamScoutingCard />
 
-      {workspace.frc_team_number ? <SeasonStoryCard teamKey={`frc${workspace.frc_team_number}`} title="Our season" /> : null}
-
       <SurfaceCard tourId="myteam-workspace"
         title={workspace.name}
         subtitle={
@@ -458,6 +502,7 @@ function TeamWorkspaceView() {
         ) : null}
       </SurfaceCard>
 
+      {isLeader ? (
       <SurfaceCard tourId="myteam-invite" title="Invite scouts" subtitle="Anyone with the code can join this workspace." mobileCollapsible={false}>
         <JoinCodePanel
           code={freshCode}
@@ -466,6 +511,7 @@ function TeamWorkspaceView() {
           onRotate={() => void run('rotate', rotateWorkspaceJoinCode)}
         />
       </SurfaceCard>
+      ) : null}
 
       <SurfaceCard tourId="myteam-members"
         title={state ? `Members (${members.length})` : 'Members'}
@@ -512,6 +558,9 @@ function TeamWorkspaceView() {
           })}
         </ul>
       </SurfaceCard>
+
+      {/* Leaders reach their tools first; the season recap is reading, so it follows them. */}
+{workspace.frc_team_number ? <SeasonStoryCard teamKey={`frc${workspace.frc_team_number}`} title="Our season" /> : null}
 
       <SurfaceCard title="Leave workspace" mobileCollapsible={false}>
         <p className="my-team__note">

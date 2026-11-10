@@ -185,7 +185,7 @@ describe('My Team page', () => {
     // Sam is both "You're Sam" and a row in the member list.
     expect((await screen.findAllByText('Sam')).length).toBe(2);
     expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
-    expect(screen.getByText(/Ask a team leader for the code/)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Invite scouts' })).toBeNull();
   });
 
   it('deduplicates refresh triggers while a workspace request is in flight', async () => {
