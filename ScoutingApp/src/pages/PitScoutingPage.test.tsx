@@ -25,7 +25,7 @@ it('keeps a rejected specific save and its draft after pending count reaches zer
   fireEvent.click(await screen.findByRole('button', {name: /254/}));
   const input = screen.getAllByRole('spinbutton')[0];
   fireEvent.change(input, {target:{value:'5'}});
-  fireEvent.click(screen.getAllByRole('button', {name:'Save entry'})[0]);
+  fireEvent.click(screen.getByRole('button', {name:'Save'}));
   await screen.findByText(/Saved #254 on this phone/);
   expect(readPitDraft(1,'2026old','frc254')).not.toBeNull();
   await act(async () => { queue.rows[0].failure = {reason:'conflict'}; window.dispatchEvent(new CustomEvent('offlinequeue:dropped')); window.dispatchEvent(new CustomEvent('offlinequeue:change',{detail:{count:0}})); });
@@ -42,7 +42,7 @@ it('confirms only the specific save even with unrelated items pending', async ()
   render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button',{name:/254/}));
   fireEvent.change(screen.getAllByRole('spinbutton')[0],{target:{value:'5'}});
-  fireEvent.click(screen.getAllByRole('button',{name:'Save entry'})[0]);
+  fireEvent.click(screen.getByRole('button',{name:'Save'}));
   await screen.findByText(/Saved #254 on this phone/);
   await act(async () => { queue.rows = [{id:'other',url:'/other',body:'{}',queuedAt:new Date().toISOString()}]; window.dispatchEvent(new CustomEvent('offlinequeue:change',{detail:{count:1}})); });
   await screen.findByText('Synced with your team.');
@@ -57,6 +57,10 @@ it('collapses the phone team grid and reopens its completion, photo and unscoute
   fireEvent.click(await screen.findByRole('button', {name:'Team 254'}));
   expect(screen.queryByRole('button', {name:/Team 118, completed, has photos/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name:'Change team'}));
+  // Unscouted only starts on, so the finished team is hidden until it is turned off.
+  expect(screen.getByLabelText('Unscouted only')).toBeChecked();
+  expect(screen.queryByRole('button', {name:/Team 118/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('Unscouted only'));
   expect(screen.getByRole('button', {name:'Team 118, completed, has photos'})).toBeInTheDocument();
   fireEvent.click(screen.getByLabelText('Unscouted only'));
   expect(screen.queryByRole('button', {name:/Team 118, completed/})).not.toBeInTheDocument();
