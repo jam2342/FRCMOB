@@ -87,7 +87,7 @@ export function RobotMascot({
       </g>
       <g className="robot-mascot-body-group">
         <rect className="robot-mascot-body" x="10" y="80" width="100" height="19" rx="7" />
-        <text className="robot-mascot-number" x="60" y="93.3" textAnchor="middle">FRCMOB</text>
+        <text className="robot-mascot-number" x="60" y="93.3" textAnchor="middle" fontSize="8.5" fontWeight="800">FRCMOB</text>
         <circle className="robot-mascot-core" cx="101" cy="75" r="2.6" />
       </g>
       <rect className="robot-mascot-antenna" x="58.5" y="7" width="3" height="9" />

@@ -107,11 +107,11 @@
   fill: var(--rm-bumper);
 }
 
+/* Its size and weight are drawing units, on the <text> itself: it is part of the picture,
+   not text on the type ladder. */
 .robot-mascot-number {
   fill: #fff;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  font-size: 8.5px;
-  font-weight: 800;
   letter-spacing: 0.5px;
 }
 
