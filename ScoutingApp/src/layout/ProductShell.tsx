@@ -24,8 +24,6 @@ import { PullToRefresh } from '../components/ui/PullToRefresh';
 import { PastSeasonBanner } from '../features/seasons/PastSeasonBanner';
 import { SiteFooter } from '../components/SiteFooter';
 import paletteStyles from './PaletteTrigger.module.css';
-import { ThemeToggle } from './ThemeToggle';
-import themeToggleStyles from './ThemeToggle.module.css';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { TourPrompt } from '../components/tutorial/TourPrompt';
@@ -40,7 +38,7 @@ import { smartSearchEvents } from '../utils/eventSearch';
 import { CURRENT_SEASON_YEAR } from '../pages/centerUtils';
 import { matchesRegionFilter } from '../utils/regionFilters';
 import { resolveScopeFromPath } from './appUx';
-import { buildContextSummary, useContextStrip } from './useContextStrip';
+import { useContextStrip } from './useContextStrip';
 import { typedTeamName } from './quickJump';
 import { eventDisplayName } from '../utils/eventSearchIndex';
 import { useEventNames } from '../hooks/useEventNames';
@@ -305,10 +303,11 @@ export function ProductShell() {
       className="ps-context-toggle-btn"
       onClick={() => setContextStripCollapsed((current) => !current)}
       aria-expanded={!contextStripCollapsed}
-      aria-label={contextStripCollapsed ? 'Expand context bar' : 'Collapse context bar'}
-      title={contextStripCollapsed ? 'Expand context bar' : 'Collapse context bar'}
+      aria-controls="ps-context-quick-picks"
+      aria-label={contextStripCollapsed ? 'Show pinned and recent' : 'Hide pinned and recent'}
+      title={contextStripCollapsed ? 'Show pinned and recent' : 'Hide pinned and recent'}
     >
-      <span>Context</span>
+      <span>Recent</span>
       <ChevronIcon expanded={!contextStripCollapsed} />
     </button>
   );
@@ -323,13 +322,6 @@ export function ProductShell() {
   const hasContextTeam = Boolean(contextSnapshot.teamKey);
   const contextEventLabel = formatEventDisplay(contextSnapshot.eventKey);
   const contextTeamLabel = useMemo(() => formatTeamDisplay(contextSnapshot.teamKey), [contextSnapshot.teamKey]);
-  const contextStripSummary = useMemo(() => {
-    return buildContextSummary(
-      hasContextEvent ? contextEventLabel : '',
-      contextSnapshot.matchKey ? contextMatchLabel : '',
-      hasContextTeam ? contextTeamLabel : '',
-    );
-  }, [contextEventLabel, contextMatchLabel, contextSnapshot.matchKey, contextTeamLabel, hasContextEvent, hasContextTeam]);
 
   useEffect(() => {
     storageSet(FINDER_COLLAPSED_STORAGE, desktopFinderCollapsed ? '1' : '0');
@@ -653,6 +645,70 @@ export function ProductShell() {
     setTourPromptHidden(true);
   }, []);
 
+  // The page's event, match and team, in the desktop header row.
+  const contextChips = (
+      <div className="ps-context-current">
+        <div className={cx('ps-context-chip-group', hasContextEvent && 'active')}>
+          <button
+            type="button"
+            className={cx('ps-context-chip', 'event', hasContextEvent && 'active')}
+            onClick={() => {
+              if (contextSnapshot.eventKey) {
+                openEventQuickPick(contextSnapshot.eventKey);
+                return;
+              }
+              navigate('/events');
+            }}
+            title={hasContextEvent ? `Open event ${contextEventLabel}` : 'Choose an event'}
+          >
+            Event: <strong>{contextEventLabel}</strong>
+          </button>
+          {contextSnapshot.eventKey ? (
+            <button
+              type="button"
+              className={cx('ps-context-pin-btn', eventPinned && 'active')}
+              onClick={() => toggleContextPin('event', contextSnapshot.eventKey)}
+              aria-label={eventPinned ? 'Unpin current event' : 'Pin current event'}
+              title={eventPinned ? 'Unpin' : 'Pin'}
+            >
+              <PinIcon filled={eventPinned} />
+            </button>
+          ) : null}
+        </div>
+        <span className={cx('ps-context-chip', 'match', contextSnapshot.matchKey && 'active')}>
+          Match: <strong>{contextMatchLabel}</strong>
+        </span>
+        <div className={cx('ps-context-chip-group', hasContextTeam && 'active')}>
+          <button
+            type="button"
+            className={cx('ps-context-chip', 'team', hasContextTeam && 'active')}
+            onClick={() => {
+              if (contextSnapshot.teamKey) {
+                openTeamQuickPick(contextSnapshot.teamKey);
+                return;
+              }
+              navigate('/team-center');
+            }}
+            title={hasContextTeam ? `Open ${contextTeamLabel}` : 'Choose a team'}
+          >
+            Team: <strong>{contextTeamLabel}</strong>
+          </button>
+          {contextSnapshot.teamKey ? (
+            <button
+              type="button"
+              className={cx('ps-context-pin-btn', teamPinned && 'active')}
+              onClick={() => toggleContextPin('team', contextSnapshot.teamKey)}
+              aria-label={teamPinned ? 'Unpin current team' : 'Pin current team'}
+              title={teamPinned ? 'Unpin' : 'Pin'}
+            >
+              <PinIcon filled={teamPinned} />
+            </button>
+          ) : null}
+        </div>
+        {contextToggleButton}
+      </div>
+  );
+
   return (
     <div
       className={cx(
@@ -739,6 +795,9 @@ export function ProductShell() {
                 <span className="ps-topbar-brand-name">FRCMOB</span>
               </span>
             ) : null}
+            {/* Only when there is something to say: offline, or edits waiting to sync. An
+                "Online" badge on every screen was chrome that never changed. */}
+            {!isOnline || queueSize > 0 ? (
             <span
               className={cx('ps-network-pill', isOnline ? 'online' : 'offline', queueSize > 0 && 'has-queue')}
               title={
@@ -752,6 +811,11 @@ export function ProductShell() {
               {isOnline ? 'Online' : 'Offline'}
               {queueSize > 0 ? <span className="ps-network-queue-badge">{queueSize}</span> : null}
             </span>
+            ) : null}
+            {/* Desktop: the page's event, match and team sit in the header row itself. They
+                used to fill a second bar under it, with a "Recent" row below that: ~160px of
+                chrome before any content (design review, 2026-11). */}
+            {isDesktopSidebarViewport ? contextChips : null}
             {/* No theme button on phones: it's set once, in Settings, and it was the loudest
                 thing in a 64px bar that should hold the page's way out (search). */}
             <button
@@ -765,7 +829,6 @@ export function ProductShell() {
           </div>
           {showTopbarTools ? (
           <div className="ps-topbar-tools">
-            <ThemeToggle theme={themeMode} className={themeToggleStyles.desktopOnly} />
             {finderCollapseAvailable ? (
               <button
                 type="button"
@@ -798,7 +861,6 @@ export function ProductShell() {
                     disabled={jumpBusy}
                   >
                     {jumpBusy ? <Spinner size={14} /> : <SearchIcon />}
-                    <span className="ps-topbar-search-btn-label">{jumpBusy ? '' : 'Search'}</span>
                   </button>
                   <button
                     type="button"
@@ -822,9 +884,9 @@ export function ProductShell() {
             phone before any content. Search and each page's own picker cover switching there. */}
         {/* Always there on desktop, even before an event is chosen ("Choose event"):
             appearing once Home picked one moved every page down after it had painted. */}
-        {isDesktopSidebarViewport ? (
+        {isDesktopSidebarViewport && !contextStripCollapsed ? (
         <section
-          className={cx('ps-context-strip', contextStripCollapsed && 'collapsed')}
+          className="ps-context-strip"
           aria-label="Active context and quick picks"
           data-onboard="shell-context"
         >
@@ -834,74 +896,7 @@ export function ProductShell() {
               label named a region nobody needed named, and the toggle now sits
               at the end of the row it collapses. One line instead of two, on
               every screen in the app. */}
-          {contextStripCollapsed ? (
-            <div className="ps-context-current">
-              <p className="ps-context-summary">{contextStripSummary}</p>
-              {contextToggleButton}
-            </div>
-          ) : (
-          <>
-          <div className="ps-context-current">
-            <div className={cx('ps-context-chip-group', hasContextEvent && 'active')}>
-              <button
-                type="button"
-                className={cx('ps-context-chip', 'event', hasContextEvent && 'active')}
-                onClick={() => {
-                  if (contextSnapshot.eventKey) {
-                    openEventQuickPick(contextSnapshot.eventKey);
-                    return;
-                  }
-                  navigate('/events');
-                }}
-                title={hasContextEvent ? `Open event ${contextEventLabel}` : 'Choose an event'}
-              >
-                Event: <strong>{contextEventLabel}</strong>
-              </button>
-              {contextSnapshot.eventKey ? (
-                <button
-                  type="button"
-                  className={cx('ps-context-pin-btn', eventPinned && 'active')}
-                  onClick={() => toggleContextPin('event', contextSnapshot.eventKey)}
-                  aria-label={eventPinned ? 'Unpin current event' : 'Pin current event'}
-                  title={eventPinned ? 'Unpin' : 'Pin'}
-                >
-                  <PinIcon filled={eventPinned} />
-                </button>
-              ) : null}
-            </div>
-            <span className={cx('ps-context-chip', 'match', contextSnapshot.matchKey && 'active')}>
-              Match: <strong>{contextMatchLabel}</strong>
-            </span>
-            <div className={cx('ps-context-chip-group', hasContextTeam && 'active')}>
-              <button
-                type="button"
-                className={cx('ps-context-chip', 'team', hasContextTeam && 'active')}
-                onClick={() => {
-                  if (contextSnapshot.teamKey) {
-                    openTeamQuickPick(contextSnapshot.teamKey);
-                    return;
-                  }
-                  navigate('/team-center');
-                }}
-                title={hasContextTeam ? `Open ${contextTeamLabel}` : 'Choose a team'}
-              >
-                Team: <strong>{contextTeamLabel}</strong>
-              </button>
-              {contextSnapshot.teamKey ? (
-                <button
-                  type="button"
-                  className={cx('ps-context-pin-btn', teamPinned && 'active')}
-                  onClick={() => toggleContextPin('team', contextSnapshot.teamKey)}
-                  aria-label={teamPinned ? 'Unpin current team' : 'Pin current team'}
-                  title={teamPinned ? 'Unpin' : 'Pin'}
-                >
-                  <PinIcon filled={teamPinned} />
-                </button>
-              ) : null}
-            </div>
-            {contextToggleButton}
-          </div>
-          <div className="ps-context-quick-picks">
+          <div className="ps-context-quick-picks" id="ps-context-quick-picks">
             {(contextPins.event.length > 0 || contextPins.team.length > 0) ? (
               <div className="ps-context-quick-row">
                 <span className="ps-context-quick-label">Pinned</span>
@@ -962,8 +957,7 @@ export function ProductShell() {
               </div>
             ) : null}
           </div>
-          </>
-          )}
+
         </section>
         ) : null}
 

@@ -17,6 +17,57 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
+/* The field is the search and Enter runs it. The button stays for pointer users and for the
+   spinner, as a quiet icon: a green "Search" button was the loudest thing in the header. */
+.product-shell .ps-topbar-search-btn {
+  min-width: var(--control-min-height);
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  box-shadow: none;
+}
+
+.product-shell .ps-topbar-search-btn:hover:not(:disabled),
+.product-shell .ps-topbar-search-btn:focus-visible {
+  border-color: transparent;
+  background: var(--control-bg-hover);
+  color: var(--color-text);
+}
+
+/* Desktop header row: the context chips take the free space on the left and give way to the
+   search when the window narrows. */
+.product-shell .ps-topbar-title {
+  min-width: 0;
+}
+
+.product-shell .ps-topbar-title > .ps-context-current {
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+/* Header controls are filled, not outlined (uniform.css "Outlines mark things, not groups"),
+   and the chips keep sentence case: the top bar's uppercase brand style isn't theirs. */
+.product-shell .ps-topbar :is(.ps-context-chip, .ps-context-pin-btn, .ps-context-toggle-btn, .ps-finder-toggle) {
+  border-color: var(--edge-control);
+}
+
+/* Without an edge the chips need the controls' fill, or they read as plain text. The match
+   chip is a label (not a button), so it stays unfilled. */
+.product-shell .ps-topbar :is(button.ps-context-chip, .ps-context-pin-btn, .ps-context-toggle-btn) {
+  background: var(--control-bg);
+}
+
+.product-shell .ps-topbar :is(button.ps-context-chip, .ps-context-pin-btn, .ps-context-toggle-btn):hover {
+  background: var(--control-bg-hover);
+}
+
+.product-shell .ps-topbar .ps-context-chip {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 /* The toolbar sizes to its contents; with the Auto/Team/Event switch gone the box shrank to
    ~180px, so it gets a width of its own. */
 .ps-topbar-search {

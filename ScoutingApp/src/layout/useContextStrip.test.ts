@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildContextSummary, formatContextMatch } from './useContextStrip';
-
-describe('buildContextSummary', () => {
-  it('names only what is selected', () => {
-    expect(buildContextSummary('2026 ARC', '', 'Team 254')).toBe('2026 ARC · Team 254');
-    expect(buildContextSummary('2026 ARC', 'QM 12', 'Team 254')).toBe('2026 ARC · QM 12 · Team 254');
-  });
-
-  it('says so when nothing is selected', () => {
-    expect(buildContextSummary('', '', '')).toBe('Nothing selected yet');
-  });
-});
+import { formatContextMatch } from './useContextStrip';
 
 describe('formatContextMatch', () => {
   it('writes the match the way the schedule does, not as a key', () => {
