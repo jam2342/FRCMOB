@@ -215,11 +215,7 @@ export function TermsOfServicePage() {
             <p>
               Every other trademark belongs to its owner. Their use here is descriptive only and does
               not imply any affiliation or endorsement. If you own content or a mark shown in FRCMOB and
-              want it corrected or removed,{' '}
-              <a href={LEGAL_CONTACT_URL} target="_blank" rel="noopener noreferrer">
-                {LEGAL_CONTACT_LABEL}
-              </a>{' '}
-              and we will act promptly.
+              want it corrected or removed, contact us (section 14) and we will act promptly.
             </p>
           </section>
 
@@ -235,8 +231,8 @@ export function TermsOfServicePage() {
             </p>
             <p>
               FRCMOB includes open-source packages that remain under their own licenses; their notices
-              are listed in the{' '}
-              <a href={THIRD_PARTY_LICENSES_PATH} target="_blank" rel="noopener">third-party licenses</a>.
+              are listed under{' '}
+              <a href={THIRD_PARTY_LICENSES_PATH} target="_blank" rel="noopener">Licenses</a>.
               The IBM Plex Sans typeface is used under the{' '}
               <a href={FONT_LICENSE_PATH} target="_blank" rel="noopener">SIL Open Font License 1.1</a>.
             </p>

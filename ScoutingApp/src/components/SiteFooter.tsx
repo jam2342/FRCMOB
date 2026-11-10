@@ -30,8 +30,8 @@ export function SiteFooter() {
       </p>
       <p className="site-footer__notice">{italicFirst(FIRST_TRADEMARK_NOTICE)}</p>
       <nav className="site-footer__links" aria-label="Legal">
-        <Link to="/privacy">Privacy</Link>
-        <Link to="/terms">Terms</Link>
+        <Link to="/privacy">Privacy Policy</Link>
+        <Link to="/terms">Terms of Service</Link>
         <External href={YOUTUBE_TERMS_URL}>YouTube Terms</External>
         <External href={SOURCE_CODE_URL}>Source code</External>
         <a href={THIRD_PARTY_LICENSES_PATH} target="_blank" rel="noopener">Licenses</a>

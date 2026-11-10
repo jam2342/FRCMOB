@@ -124,7 +124,7 @@ export function PrimitivesPage() {
               <Button pressed>Pressed</Button>
               <Button icon={<ClockIcon />}>With icon</Button>
               <Button iconOnly icon={<ClockIcon />} aria-label="Match timer" />
-              <Button as="a" href="#/settings" variant="quiet">Link button</Button>
+              <Button as="a" href="#/primitives" variant="quiet">Link button</Button>
             </div>
             <Button variant="primary" fullWidth>Full width</Button>
           </CardBody>
