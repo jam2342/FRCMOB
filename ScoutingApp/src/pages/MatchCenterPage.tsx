@@ -1031,7 +1031,6 @@ export function MatchCenterPage() {
               ) : null}
             </div>
             <SegmentedTabs tourId="match-tabs"
-              motion
               swipe
               ariaLabel="Match center tabs"
               value={activeTab}
@@ -1069,7 +1068,6 @@ export function MatchCenterPage() {
         >
           <div className="center-tabs-header">
             <SegmentedTabs tourId="match-tabs"
-              motion
               ariaLabel="Match center tabs"
               value={activeTab}
               onChange={setActiveTab}

@@ -186,44 +186,13 @@ export function navigateWithTransition(navigate: NavigateFn, to: string, options
   }
 }
 
-// A tab switch inside one page: the content slides toward the tab you picked while the page's
-// header and tab bar stay put (they are named while it runs, see view-transitions.css).
-export function switchTabWithTransition(
-  update: () => void,
-  direction: TransitionDirection,
-  pinned: readonly Element[] = [],
-): void {
-  const doc = document as DocumentWithTransitions;
-  if (!viewTransitionsAvailable() || activeTransition || !doc.startViewTransition) {
-    update();
-    return;
-  }
-  const root = document.documentElement;
-  const pins = pinned.filter((el): el is HTMLElement => el instanceof HTMLElement);
-  activeTransition = true;
-  root.dataset.vt = direction;
-  root.dataset.vtTabs = '';
-  pins.forEach((el, index) => {
-    el.style.viewTransitionName = `tab-pin-${index}`;
-  });
-  const cleanup = () => {
-    activeTransition = false;
-    delete root.dataset.vt;
-    delete root.dataset.vtTabs;
-    pins.forEach((el) => {
-      el.style.viewTransitionName = '';
-    });
-  };
-  try {
-    const transition = doc.startViewTransition(() => {
-      flushSync(update);
-    });
-    transition.ready?.catch(() => undefined);
-    transition.finished.then(cleanup, cleanup);
-  } catch {
-    cleanup();
-    update();
-  }
+// A tab switch inside a page shows the new tab as it is. It used to be a view transition that slid
+// and cross-faded a picture of the whole page, so for a moment both tabs, and two copies of the
+// pinned header, were on screen at part strength. Marking the page as arrived first keeps the new
+// tab's cards from each fading in as they mount.
+export function switchTabInstantly(update: () => void): void {
+  if (typeof document !== 'undefined') markArrived();
+  update();
 }
 
 // A theme change that spreads out in a circle from where it was asked for (the toggle, the

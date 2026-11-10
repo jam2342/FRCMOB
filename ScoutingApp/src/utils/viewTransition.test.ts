@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isPlainClick, markNextPageArrived, navigateInstantly, navigateWithTransition, notifyRouteCommitted, sectionDirection, switchTabWithTransition } from './viewTransition';
+import { isPlainClick, markNextPageArrived, navigateInstantly, navigateWithTransition, notifyRouteCommitted, sectionDirection, switchTabInstantly } from './viewTransition';
 
 type TransitionDoc = { startViewTransition?: unknown };
 const transitionDoc = () => document as unknown as TransitionDoc;
@@ -39,7 +39,6 @@ describe('view transitions', () => {
     const navigate = vi.fn();
     navigateWithTransition(navigate, '/events');
     notifyRouteCommitted();
-    switchTabWithTransition(vi.fn(), 'forward');
     await new Promise((resolve) => setTimeout(resolve, 20));
     process.off('unhandledRejection', unhandled);
     expect(navigate).toHaveBeenCalledWith('/events');
@@ -109,15 +108,21 @@ describe('view transitions', () => {
     content.remove();
   });
 
-  it('runs a tab switch synchronously inside the transition and unpins afterwards', async () => {
-    fakeTransitions();
-    const header = document.createElement('div');
-    const update = vi.fn();
-    switchTabWithTransition(update, 'back', [header]);
-    expect(update).toHaveBeenCalledTimes(1);
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(header.style.viewTransitionName).toBe('');
+  it('switches a tab in place: no transition, and the page is marked arrived before the new tab mounts', () => {
+    const start = vi.fn();
+    transitionDoc().startViewTransition = start;
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    const content = document.createElement('div');
+    content.className = 'ps-content';
+    const pageRoot = document.createElement('div');
+    content.appendChild(pageRoot);
+    document.body.appendChild(content);
+    let arrivedWhenUpdated = false;
+    switchTabInstantly(() => { arrivedWhenUpdated = pageRoot.hasAttribute('data-arrived'); });
+    expect(arrivedWhenUpdated).toBe(true);
+    expect(start).not.toHaveBeenCalled();
+    expect(document.documentElement.dataset.vt).toBeUndefined();
+    content.remove();
   });
 
   it('picks a direction from the navigation order', () => {

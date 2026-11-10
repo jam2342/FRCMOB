@@ -312,6 +312,9 @@ input[type='search']::-webkit-search-decoration {
   background: transparent;
   box-shadow: none;
   color: var(--color-text-muted);
+  /* The content under a tab bar changes at once, so the marked tab does too. A 150 ms colour
+     fade left the old tab lit for a few frames after its content had gone. */
+  transition: none;
 }
 
 .product-shell .segmented-tabs .segmented-tabs__item:where(:hover, :focus-visible):not(.active, [aria-selected='true'], [aria-current='page']) {

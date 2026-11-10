@@ -1,6 +1,6 @@
 import { cx } from './primitives/cx';
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { switchTabWithTransition, type TransitionDirection } from '../../utils/viewTransition';
+import { switchTabInstantly } from '../../utils/viewTransition';
 import { useMobileLayout } from '../../hooks/useMobileLayout';
 import './SegmentedTabs.css';
 
@@ -51,9 +51,6 @@ type SegmentedTabsProps<T extends string> = {
    *  strip on one phone page and boxed pills on the next. 'board' is the scouting board's
    *  large gloves-on segments, styled by the board itself. */
   variant?: 'tabs' | 'board';
-  /** Page-level tabs: the content slides toward the picked tab while this tab bar and its
-   *  header hold still. */
-  motion?: boolean;
   /** Phones: a sideways swipe across the page moves to the next or previous tab. */
   swipe?: boolean;
   /** An underline that slides to the active tab (the phone tab bars). */
@@ -81,11 +78,6 @@ function swipeAllowedFrom(target: EventTarget | null, area: Element): boolean {
   return true;
 }
 
-function directionBetween(from: number, to: number): TransitionDirection {
-  if (from < 0 || to < 0 || from === to) return 'fade';
-  return to > from ? 'forward' : 'back';
-}
-
 export function SegmentedTabs<T extends string>({
   items,
   value,
@@ -94,7 +86,6 @@ export function SegmentedTabs<T extends string>({
   className = '',
   itemClassName = '',
   variant = 'tabs',
-  motion = false,
   swipe = false,
   ink: inkProp = false,
   tourId,
@@ -112,24 +103,7 @@ export function SegmentedTabs<T extends string>({
 
   const change = (next: T) => {
     if (next === value) return;
-    if (!motion) {
-      onChange(next);
-      return;
-    }
-    const from = items.findIndex((item) => item.value === value);
-    const to = items.findIndex((item) => item.value === next);
-    const list = listRef.current;
-    const pins: Element[] = [];
-    if (list) {
-      const header = list.closest('.fm-team-hero, .fm-event-hero, .surface-card');
-      pins.push(header ?? list);
-      const before = list.previousElementSibling;
-      if (!header && before && /\bfm-[a-z-]*hero\b/.test(before.className)) pins.push(before);
-      // The section switcher above the page (Match · Predictions · Strategy) doesn't change either.
-      const sectionBar = list.closest('.ps-content')?.querySelector('.page-view-bar, .page-view-menu');
-      if (sectionBar && !pins.includes(sectionBar)) pins.push(sectionBar);
-    }
-    switchTabWithTransition(() => onChange(next), directionBetween(from, to), pins);
+    switchTabInstantly(() => onChange(next));
   };
   const changeRef = useRef(change);
   changeRef.current = change;

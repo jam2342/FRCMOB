@@ -1536,7 +1536,6 @@ export function TeamCenterPage() {
                       all the tabs and push the page sideways on a narrow phone. */}
                   <div ref={heroTabsRef} style={{ minWidth: 0, maxWidth: '100%' }}>
                   <SegmentedTabs tourId="team-tabs"
-                    motion
                     swipe
                     ariaLabel="Team center tabs"
                     value={activeTab}
@@ -1607,7 +1606,6 @@ export function TeamCenterPage() {
 
               <div className="center-tabs-header" ref={heroTabsRef}>
                 <SegmentedTabs tourId="team-tabs"
-                  motion
                   ariaLabel="Team center tabs"
                   value={activeTab}
                   onChange={setActiveTab}

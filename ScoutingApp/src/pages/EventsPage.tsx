@@ -2084,7 +2084,6 @@ export function EventsPage() {
                 <p className="fm-event-header-notice">Using roster from published match schedule.</p>
               ) : null}
               <SegmentedTabs tourId="events-tabs"
-                motion
                 swipe
                 ariaLabel="Event center tabs"
                 value={activeTab}
@@ -2145,7 +2144,6 @@ export function EventsPage() {
           ) : null}
           <div className="center-tabs-header">
             <SegmentedTabs tourId="events-tabs"
-              motion
               ariaLabel="Event center tabs"
               value={activeTab}
               onChange={setActiveTab}
