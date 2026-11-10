@@ -110,7 +110,7 @@ input[type='search']::-webkit-search-decoration {
   .fm-team-hero-info h2 {
     margin: 0;
     font-size: var(--font-size-xl);
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1.15;
     color: var(--color-text);
     text-wrap: balance;

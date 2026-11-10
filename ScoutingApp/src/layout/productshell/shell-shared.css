@@ -805,7 +805,7 @@
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   font-size: var(--font-size-legacy-11);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--ui-text-muted) 86%, var(--ui-text));

@@ -277,7 +277,7 @@
 
 .scout-sidebar-overview-kicker {
   font-size: var(--font-size-legacy-11);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.12em;
   line-height: 1.2;
   text-transform: uppercase;
@@ -324,7 +324,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
   background: color-mix(in srgb, var(--color-bg-elevated) 95%, transparent);
   font-size: var(--font-size-legacy-11);
-  font-weight: 760;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -388,7 +388,7 @@
 
 .scout-sidebar-nav-pill .segmented-tabs__label {
   font-size: var(--font-size-2xs);
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .scout-sidebar-collapse-btn {
@@ -403,7 +403,7 @@
   background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
   color: var(--color-text-muted);
   font-size: var(--font-size-legacy-11);
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
@@ -519,7 +519,7 @@
   display: block;
   width: 100%;
   font-size: var(--font-size-legacy-11);
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--color-text-dim);
@@ -682,7 +682,7 @@
     background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
     color: var(--color-text-muted);
     font-size: var(--font-size-legacy-11);
-    font-weight: 820;
+    font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     cursor: pointer;

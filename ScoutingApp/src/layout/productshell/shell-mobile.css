@@ -495,7 +495,7 @@
   gap: 0.75rem;
   padding: 0.4rem 1rem;
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: 400;
   /* --text-on-danger / --surface-danger / --surface-warning are defined
      nowhere, so this banner always rendered its hardcoded fallbacks: white on
      #5c0000, in both themes, with no light override at all. Tinting a token
@@ -965,7 +965,7 @@
     font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    font-weight: 800;
+    font-weight: 700;
   }
 
   .fm-alliance span {
@@ -990,7 +990,7 @@
 
   .fm-score-value {
     font-size: var(--font-size-display);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text);
     line-height: 1;
     letter-spacing: 0.01em;
@@ -1557,7 +1557,7 @@
 
   .fm-standings-pts {
     font-size: var(--font-size-2xs);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text);
     text-align: center;
   }
@@ -1738,7 +1738,7 @@
     justify-content: center;
     /* The whole team number (five digits fit); its first two read as another team. */
     font-size: var(--font-size-sm);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-info-text);
     flex-shrink: 0;
   }
@@ -1801,7 +1801,7 @@
 
   .fm-team-hero-stat strong {
     font-size: var(--font-size-sm);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text);
     line-height: 1;
     white-space: nowrap;
@@ -2040,7 +2040,7 @@
 
   .fm-scout-hero-chip strong {
     color: var(--color-text);
-    font-weight: 800;
+    font-weight: 700;
   }
 
   .fm-scout-hero-chip.timer {
@@ -2181,7 +2181,7 @@
 
   .home-board-toolbar-left h2 {
     font-size: var(--font-size-xl);  /* section title */
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text);
     letter-spacing: -0.01em;
     line-height: 1.15;
@@ -2494,7 +2494,7 @@
     padding: 2px 8px;
     text-align: center;
     font-size: var(--font-size-2xs);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text);
     letter-spacing: 0.01em;
   }
@@ -2619,7 +2619,7 @@
 
   .home-match-alliances .alliance-score {
     font-size: var(--font-size-base);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text);
     min-width: 32px;
   }
