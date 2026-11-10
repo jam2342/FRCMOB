@@ -858,7 +858,7 @@ export function ComparePage() {
                 </option>
               ))}
             </select>
-            <button type="button" className="center-btn" onClick={openEventContext}>
+            <button type="button" className="center-btn ghost" onClick={openEventContext}>
               Open
             </button>
           </div>

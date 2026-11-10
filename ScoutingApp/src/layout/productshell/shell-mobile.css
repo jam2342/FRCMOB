@@ -1010,14 +1010,16 @@
     color: var(--color-text-muted);
   }
 
+  /* The same status colours as everywhere else: live was red here and final
+     was green, the reverse of the desktop. */
   .fm-status-badge.live {
-    background: color-mix(in srgb, var(--color-danger) 20%, transparent);
-    color: var(--color-danger-text);
+    background: var(--status-live-soft);
+    color: var(--status-live-text);
   }
 
   .fm-status-badge.ended {
-    background: color-mix(in srgb, var(--color-success) 15%, transparent);
-    color: var(--color-success-text);
+    background: var(--status-final-soft);
+    color: var(--status-final-text);
   }
 
   /* ── Tab Bar ─────────────────────────────────────────────────────────────
@@ -2542,9 +2544,9 @@
   }
 
   .fm-match-status-right .home-match-state.live {
-    border-color: color-mix(in srgb, var(--color-danger-text) 50%, transparent);
-    color: var(--color-danger-text);
-    background: color-mix(in srgb, var(--color-danger-text) 8%, transparent);
+    border-color: color-mix(in srgb, var(--status-live-color) 50%, transparent);
+    color: var(--status-live-text);
+    background: var(--status-live-soft);
   }
 
   .fm-match-status-right .home-match-state.upcoming {
@@ -2554,9 +2556,9 @@
   }
 
   .fm-match-status-right .home-match-state.ended {
-    border-color: rgba(74, 222, 128, 0.35);
-    color: var(--color-success-text);
-    background: rgba(74, 222, 128, 0.06);
+    border-color: var(--status-final-color);
+    color: var(--status-final-text);
+    background: var(--status-final-soft);
   }
 
   .fm-match-score-timer {

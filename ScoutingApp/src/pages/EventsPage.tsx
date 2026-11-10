@@ -2018,7 +2018,7 @@ export function EventsPage() {
             <>
               <button
                 type="button"
-                className="center-btn events-calendar-open-btn"
+                className="center-btn ghost events-calendar-open-btn"
                 onClick={() => setCalendarModalOpen(true)}
                 title="Open full calendar"
               >

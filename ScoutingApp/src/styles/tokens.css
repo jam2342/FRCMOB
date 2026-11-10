@@ -355,13 +355,12 @@
   --status-upcoming-color:             #4f96ea;
   --status-upcoming-soft:             rgba(79, 150, 234, 0.18);
   --status-upcoming-text:             #7fb6f4;
-  --status-final-color:             #d0a84e;
-  --status-final-soft:             rgba(208, 168, 78, 0.18);
-  /* Brightened from #d0a84e. A finished-match score pill used to sit on an
-     outlined card with a dark fill; now it sits on a tinted list row, and on a
-     tie the row's warning wash lifts the ground enough to drop the old value to
-     4.40:1. The pill's border and dot keep --status-final-color. */
-  --status-final-text:             #e3c176;
+  /* Finished is the ordinary state of a match, so it gets no colour: a final
+     score reads as a plain number. Gold here made every finished row look
+     flagged; colour is kept for live. */
+  --status-final-color:             var(--color-border-strong);
+  --status-final-soft:             var(--color-surface-soft);
+  --status-final-text:             var(--color-text);
   --status-warning-color:             #e7b13c;
   --status-warning-soft:             rgba(231, 177, 60, 0.18);
   --motion-page:             280ms;
@@ -459,9 +458,9 @@
   --status-upcoming-color:             #2d6fb8;
   --status-upcoming-soft:             rgba(45, 111, 184, 0.14);
   --status-upcoming-text:             #1e4f86;
-  --status-final-color:             #8a6115;
-  --status-final-soft:             rgba(138, 97, 21, 0.16);
-  --status-final-text:             #66470f;
+  --status-final-color:             var(--color-border-strong);
+  --status-final-soft:             var(--color-surface-soft);
+  --status-final-text:             var(--color-text);
   --status-warning-color:             #995400;
   --status-warning-soft:             rgba(153, 84, 0, 0.16);
 }
