@@ -10,10 +10,11 @@ import { matchLabelFromKey } from '../utils/matchLabel';
 
 const CONTEXT_PINS_STORAGE = 'scouting_context_pins_v1';
 const CONTEXT_RECENTS_STORAGE = 'scouting_context_recents_v1';
-const CONTEXT_STRIP_COLLAPSED_STORAGE = 'scouting_context_strip_collapsed_v1';
+// v2: "collapsed" now hides only the Pinned/Recent row (the chips live in the header), and it
+// starts hidden for everyone, including people who had opened the old strip.
+const CONTEXT_STRIP_COLLAPSED_STORAGE = 'scouting_context_recents_hidden_v2';
 const CONTEXT_RECENTS_LIMIT = 8;
 const CONTEXT_PIN_LIMIT = 10;
-const DESKTOP_SIDEBAR_BREAKPOINT_PX = 1120;
 
 type ContextQuickPickKind = 'event' | 'team';
 
@@ -112,13 +113,6 @@ export function formatContextMatch(matchKey: string, eventKey: string): string {
   return `${label} · ${matchEvent.replace(/^\d{4}/, '').toUpperCase()}`;
 }
 
-// Only name what is actually selected; "Match No match · Team Team 254" read
-// like a template that forgot to fill itself in.
-export function buildContextSummary(eventLabel: string, matchLabel: string, teamLabel: string): string {
-  const parts = [eventLabel, matchLabel, teamLabel].map((part) => part.trim()).filter(Boolean);
-  return parts.length > 0 ? parts.join(' · ') : 'Nothing selected yet';
-}
-
 function pushRecent(
   current: ContextQuickPickState,
   kind: ContextQuickPickKind,
@@ -153,9 +147,8 @@ export function useContextStrip(locationSearch: string) {
   });
   const [contextStripCollapsed, setContextStripCollapsed] = useState<boolean>(() => {
     const stored = storageGet(CONTEXT_STRIP_COLLAPSED_STORAGE);
-    if (stored === '1') return true;
     if (stored === '0') return false;
-    return window.innerWidth <= DESKTOP_SIDEBAR_BREAKPOINT_PX;
+    return true;
   });
 
   useEffect(() => {
