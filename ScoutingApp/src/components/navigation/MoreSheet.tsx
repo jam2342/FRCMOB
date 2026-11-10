@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { markNextPageArrived } from '../../utils/viewTransition';
+import { InfoIcon } from '../ui/Icons';
 import { NavLink } from 'react-router-dom';
 import './MoreSheet.css';
 
@@ -110,9 +111,12 @@ const CLOSE_ANIMATION_MS = 200;
 interface MoreSheetProps {
   open: boolean;
   onClose: () => void;
+  // Starts this page's tour. The first-visit prompt shows once in the whole app and never on
+  // Live Scouting, so on a phone this is the way to any other page's tour.
+  onStartTour?: () => void;
 }
 
-export function MoreSheet({ open, onClose }: MoreSheetProps) {
+export function MoreSheet({ open, onClose, onStartTour }: MoreSheetProps) {
   const [closing, setClosing] = useState(false);
   const touchStartY = useRef(0);
   const startedAtTop = useRef(true);
@@ -273,6 +277,20 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
                 <span className="ms__link-label">{item.label}</span>
               </NavLink>
             ))}
+            {onStartTour ? (
+              <button
+                type="button"
+                className="ms__link"
+                onClick={() => {
+                  setClosing(false);
+                  onClose();
+                  onStartTour();
+                }}
+              >
+                <span className="ms__link-icon"><InfoIcon /></span>
+                <span className="ms__link-label">Page tour</span>
+              </button>
+            ) : null}
           </div>
         </div>
 

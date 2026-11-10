@@ -97,9 +97,11 @@
   }
 }
 
+/* As tall as the step needs: a fixed 560px left a large empty area under every description and
+   made the panel cover what it was pointing at. TabTutorialOverlay places it beside its target. */
 .product-shell .tut-panel.is-desktop {
   width: min(400px, calc(100vw - 24px));
-  height: min(560px, calc(100vh - 24px));
+  height: auto;
   max-height: calc(100vh - 24px);
 }
 
@@ -107,7 +109,7 @@
   left: 50%;
   top: 50%;
   width: min(440px, calc(100vw - 32px));
-  height: min(560px, calc(100vh - 32px));
+  height: auto;
   max-height: calc(100vh - 32px);
   transform: translate(-50%, -50%);
   animation: tut-panel-in-centered 220ms cubic-bezier(0.2, 0.78, 0.24, 1);

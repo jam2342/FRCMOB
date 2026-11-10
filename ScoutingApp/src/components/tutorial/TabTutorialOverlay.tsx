@@ -1,13 +1,13 @@
 import { cx } from '../ui/primitives/cx';
-import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { TutorialScope } from '../../layout/userSettings';
 import {
   getTutorialBlueprint,
-  type TutorialStepPlacement,
   type TutorialWalkthroughStep,
 } from '../../tutorial/tutorialBlueprints';
 import { markTutorialSeen } from '../../tutorial/tutorialState';
 import { RobotMascot } from '../ui/RobotMascot';
+import { placeDesktopPanel } from './panelPlacement';
 import './TabTutorialOverlay.css';
 
 type SpotlightRect = { top: number; left: number; width: number; height: number };
@@ -18,15 +18,10 @@ type TabTutorialOverlayProps = {
 };
 
 const MOBILE_BREAKPOINT_PX = 900;
-const DESKTOP_PANEL_WIDTH_PX = 400;
-const DESKTOP_PANEL_HEIGHT_PX = 560;
-const DESKTOP_VIEWPORT_MARGIN_PX = 12;
-const TARGET_GAP_PX = 16;
+// Only until the panel has been measured once.
+const DESKTOP_PANEL_FALLBACK_HEIGHT_PX = 320;
 const MOBILE_DOCK_SWITCH_RATIO = 0.5;
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 
 function resolveSelector(step: TutorialWalkthroughStep, isMobile: boolean): string | undefined {
@@ -71,48 +66,6 @@ function buildSpotlightRect(rect: DOMRect): SpotlightRect {
     width: Math.max(18, rect.width + padding * 2),
     height: Math.max(18, rect.height + padding * 2),
   };
-}
-
-function resolvePlacement(preferred: TutorialStepPlacement, rect: DOMRect): Exclude<TutorialStepPlacement, 'auto'> {
-  if (preferred !== 'auto') return preferred;
-  const spaceRight = window.innerWidth - rect.right;
-  const spaceLeft = rect.left;
-  const spaceBottom = window.innerHeight - rect.bottom;
-  if (spaceRight >= DESKTOP_PANEL_WIDTH_PX + TARGET_GAP_PX + 32) return 'right';
-  if (spaceLeft >= DESKTOP_PANEL_WIDTH_PX + TARGET_GAP_PX + 32) return 'left';
-  if (spaceBottom >= DESKTOP_PANEL_HEIGHT_PX * 0.6) return 'bottom';
-  return 'top';
-}
-
-function computeDesktopPanelStyle(rect: DOMRect, placement: Exclude<TutorialStepPlacement, 'auto'>): CSSProperties {
-  const width = Math.min(DESKTOP_PANEL_WIDTH_PX, window.innerWidth - DESKTOP_VIEWPORT_MARGIN_PX * 2);
-  const fallbackHeight = Math.min(DESKTOP_PANEL_HEIGHT_PX, window.innerHeight - DESKTOP_VIEWPORT_MARGIN_PX * 2);
-  const maxTop = window.innerHeight - fallbackHeight - DESKTOP_VIEWPORT_MARGIN_PX;
-  let top: number;
-  let left: number;
-
-  if (placement === 'right') {
-    left = rect.right + TARGET_GAP_PX;
-    top = rect.top + rect.height / 2 - fallbackHeight / 2;
-  } else if (placement === 'left') {
-    left = rect.left - width - TARGET_GAP_PX;
-    top = rect.top + rect.height / 2 - fallbackHeight / 2;
-  } else if (placement === 'bottom') {
-    left = rect.left + rect.width / 2 - width / 2;
-    top = rect.bottom + TARGET_GAP_PX;
-  } else {
-    left = rect.left + rect.width / 2 - width / 2;
-    top = rect.top - fallbackHeight - TARGET_GAP_PX;
-  }
-
-  top = clamp(top, DESKTOP_VIEWPORT_MARGIN_PX, Math.max(DESKTOP_VIEWPORT_MARGIN_PX, maxTop));
-  left = clamp(
-    left,
-    DESKTOP_VIEWPORT_MARGIN_PX,
-    Math.max(DESKTOP_VIEWPORT_MARGIN_PX, window.innerWidth - width - DESKTOP_VIEWPORT_MARGIN_PX),
-  );
-  const height = Math.max(320, Math.min(DESKTOP_PANEL_HEIGHT_PX, window.innerHeight - top - DESKTOP_VIEWPORT_MARGIN_PX));
-  return { width: `${width}px`, height: `${height}px`, maxHeight: `${height}px`, top: `${top}px`, left: `${left}px` };
 }
 
 function resolveRobotPose(stepNumber: number): 'wave' | 'point-left' | 'point-right' {
@@ -165,6 +118,7 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [targetFound, setTargetFound] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
+  const panelRef = useRef<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
     // Panels mounted beside the overlay are available after the DOM commits.
@@ -221,7 +175,8 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
       setTargetFound(visible);
       setSpotlight(visible ? buildSpotlightRect(rect) : null);
       if (!isMobile && visible) {
-        setPanelStyle(computeDesktopPanelStyle(rect, resolvePlacement(step.placement || 'auto', rect)));
+        const panelHeight = panelRef.current?.offsetHeight || DESKTOP_PANEL_FALLBACK_HEIGHT_PX;
+        setPanelStyle(placeDesktopPanel(rect, step.placement || 'auto', panelHeight, { width: window.innerWidth, height: window.innerHeight }));
       } else if (!isMobile) {
         setPanelStyle({});
       }
@@ -284,6 +239,7 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
         />
       ) : null}
       <article
+        ref={panelRef}
         className={cx(
           'tut-panel',
           isMobile ? 'is-mobile' : 'is-desktop',
