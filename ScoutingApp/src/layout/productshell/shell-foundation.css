@@ -1368,8 +1368,8 @@ select.center-input option,
 }
 
 .center-chip.timer.ended {
-  border-color: rgba(189, 153, 62, 0.75);
-  color: #fff5d8;
+  border-color: var(--status-final-color);
+  color: var(--status-final-text);
 }
 
 .center-callout {
@@ -1727,23 +1727,25 @@ select.center-input option,
   text-align: right;
 }
 
+/* Team names and other links inside data are text first: the underline says it opens, and
+   green is kept for what's live or selected. A table of green names read as all highlighted. */
 .center-inline-link {
   border: none;
   background: transparent;
-  color: var(--color-accent-text);
+  color: var(--color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
-  text-decoration-color: rgba(194, 230, 214, 0.3);
+  text-decoration-color: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
   text-underline-offset: 2px;
   transition: color 140ms ease, text-decoration-color 140ms ease;
 }
 
 .center-inline-link:hover {
-  color: #e0f5eb;
-  text-decoration-color: rgba(224, 245, 235, 0.6);
+  color: var(--color-accent-text);
+  text-decoration-color: currentColor;
 }
 
 .center-match-row {
@@ -1824,8 +1826,8 @@ select.center-input option,
 }
 
 .center-status-pill.ended {
-  border-color: rgba(188, 150, 58, 0.75);
-  color: #f8ebc3;
+  border-color: var(--status-final-color);
+  color: var(--status-final-text);
 }
 
 .center-status-pill.unknown {
@@ -2003,36 +2005,29 @@ select.center-input option,
   gap: 4px;
 }
 
+/* W/L without colour: next to red and blue alliances, a blue win and a red loss read as
+   alliance colours (a red-alliance team's wins showed blue). A win is filled, a loss is an
+   outline, and the letter says which. */
 .center-form-pill {
-  min-width: 18px;
-  min-height: 18px;
-  border-radius: 7px;
-  font-size: var(--font-size-legacy-11);
+  min-width: 16px;
+  min-height: 16px;
+  border-radius: 4px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
+  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid transparent;
   color: var(--color-text);
-  background: var(--color-surface-soft);
+  background: color-mix(in srgb, var(--color-text) 16%, transparent);
 }
 
-.center-form-pill.win {
-  border-color: rgba(75, 130, 215, 0.82);
-  background: rgba(42, 80, 148, 0.5);
-  color: var(--color-text);
-}
-
-.center-form-pill.loss {
-  border-color: rgba(204, 92, 92, 0.82);
-  background: rgba(128, 45, 45, 0.54);
-  color: #ffdcdc;
-}
-
+.center-form-pill.loss,
 .center-form-pill.tie {
-  border-color: rgba(160, 160, 160, 0.78);
-  background: color-mix(in srgb, var(--color-surface-muted) 52%, transparent);
-  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-muted);
 }
 
 .center-form-empty {
@@ -3323,8 +3318,8 @@ select.center-input option,
 }
 
 .home-match-state.ended {
-  border-color: rgba(190, 154, 65, 0.8);
-  color: #ffeecc;
+  border-color: var(--status-final-color);
+  color: var(--status-final-text);
 }
 
 .home-match-state.unknown {
@@ -4649,30 +4644,6 @@ select.center-input option,
 .product-shell.theme-light .center-chip.freshness.unknown {
   border-color: rgba(116, 138, 162, 0.72);
   color: #415b75;
-}
-
-.product-shell.theme-light .center-form-pill {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-muted);
-  color: #435b74;
-}
-
-.product-shell.theme-light .center-form-pill.win {
-  border-color: rgba(70, 128, 211, 0.8);
-  background: rgba(192, 220, 255, 0.8);
-  color: #245087;
-}
-
-.product-shell.theme-light .center-form-pill.loss {
-  border-color: rgba(199, 96, 96, 0.84);
-  background: rgba(252, 215, 215, 0.86);
-  color: #7f2d2d;
-}
-
-.product-shell.theme-light .center-form-pill.tie {
-  border-color: rgba(130, 147, 163, 0.78);
-  background: rgba(226, 234, 243, 0.86);
-  color: #4b5f73;
 }
 
 .product-shell.theme-light .center-live-chip {

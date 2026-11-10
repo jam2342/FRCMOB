@@ -1283,11 +1283,11 @@
 }
 
 .product-shell.theme-light .center-inline-link {
-  color: #2f5e88;
+  color: var(--color-text);
 }
 
 .product-shell.theme-light .center-inline-link:hover {
-  color: #254d72;
+  color: var(--color-accent-text);
 }
 
 .product-shell.theme-light .center-tab-btn.active,
@@ -1331,8 +1331,8 @@
 }
 
 .product-shell.theme-light .center-status-pill.ended {
-  border-color: rgba(182, 159, 106, 0.72);
-  color: #6a5726;
+  border-color: var(--status-final-color);
+  color: var(--status-final-text);
 }
 
 .product-shell.theme-light .center-status-pill.unknown {
