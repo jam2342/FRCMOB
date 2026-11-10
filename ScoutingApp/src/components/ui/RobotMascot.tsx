@@ -9,9 +9,15 @@ type RobotMascotProps = {
   talking?: boolean;
 };
 
-// The one FRCMOB robot: the page tours' guide (waving, pointing, talking) and the quiet
-// face of "nothing here yet" screens (EmptyState). Decorative, so screen readers skip it;
-// still with reduced motion (RobotMascot.css).
+// Each arm's resting angle per pose, around its shoulder (the intake pivot on the elevator).
+// The CSS animates the outer arm group on top of this, so a pose and a wave combine.
+const LEFT_ARM = { wave: -35, 'point-left': 2, 'point-right': -35 } as const;
+const RIGHT_ARM = { wave: -62, 'point-left': 35, 'point-right': -12 } as const;
+
+// The one FRCMOB robot, Swerve Scout: an FRC robot with a screen face on its shooter hood, an
+// elevator, bumpers and swerve modules. It guides the page tours (waving, pointing, talking)
+// and is the quiet face of "nothing here yet" screens (EmptyState). Decorative, so screen
+// readers skip it; still with reduced motion (RobotMascot.css).
 export function RobotMascot({
   size,
   className,
@@ -26,76 +32,73 @@ export function RobotMascot({
     `is-${pose}`,
     className,
   ].filter(Boolean).join(' ');
-  const pointingLeft = pose === 'point-left';
-  const pointingRight = pose === 'point-right';
   const leftArmClass = [
     'robot-mascot-arm-group',
     'robot-mascot-arm-group-left',
-    pointingLeft && 'is-pointing',
+    pose === 'point-left' && 'is-pointing',
   ].filter(Boolean).join(' ');
   const rightArmClass = [
     'robot-mascot-arm-group',
     'robot-mascot-arm-group-right',
     pose === 'wave' && 'is-waving',
-    pointingRight && 'is-pointing',
+    pose === 'point-right' && 'is-pointing',
   ].filter(Boolean).join(' ');
 
   return (
-    <svg className={classes} viewBox="0 0 96 112" width={size} style={size ? { width: size } : undefined} aria-hidden="true" focusable="false">
-      <path className="robot-mascot-shadow" d="M25 101c8 5 38 5 46 0 3-2 3-5 0-7-8-5-38-5-46 0-3 2-3 5 0 7z" />
+    <svg className={classes} viewBox="0 0 120 120" width={size} style={size ? { width: size } : undefined} aria-hidden="true" focusable="false">
+      <ellipse className="robot-mascot-shadow" cx="60" cy="111" rx="42" ry="4" />
       <g className="robot-mascot-talk-marks robot-mascot-talk-marks-left">
-        <path d="M15 35l-8-4" />
-        <path d="M18 25l-5-8" />
+        <path d="M17 26l-8-4" />
+        <path d="M20 17l-5-7" />
       </g>
       <g className="robot-mascot-talk-marks robot-mascot-talk-marks-right">
-        <path d="M81 35l8-4" />
-        <path d="M78 25l5-8" />
-      </g>
-      <path className="robot-mascot-antenna" d="M48 22V11" />
-      <circle className="robot-mascot-antenna-light" cx="48" cy="8" r="5" />
-      <g className="robot-mascot-head-group">
-        <rect className="robot-mascot-head" x="21" y="20" width="54" height="46" rx="18" />
-        <rect className="robot-mascot-face" x="28" y="29" width="40" height="26" rx="13" />
-        <circle className="robot-mascot-eye" cx="40" cy="42" r="5" />
-        <circle className="robot-mascot-eye" cx="56" cy="42" r="5" />
-        <circle className="robot-mascot-cheek" cx="33" cy="49" r="3" />
-        <circle className="robot-mascot-cheek" cx="63" cy="49" r="3" />
+        <path d="M103 26l8-4" />
+        <path d="M100 17l5-7" />
       </g>
       <g className="robot-mascot-body-group">
-        <rect className="robot-mascot-body" x="29" y="64" width="38" height="29" rx="12" />
-        <path className="robot-mascot-panel-line" d="M39 75h18" />
-        <circle className="robot-mascot-core" cx="48" cy="84" r="4" />
+        <rect className="robot-mascot-wheel" x="16" y="96" width="18" height="11" rx="3" />
+        <rect className="robot-mascot-wheel" x="86" y="96" width="18" height="11" rx="3" />
+        <rect className="robot-mascot-frame" x="22" y="70" width="76" height="12" rx="2" />
+        <rect className="robot-mascot-tube" x="32" y="42" width="6" height="32" />
+        <rect className="robot-mascot-tube" x="82" y="42" width="6" height="32" />
+        <rect className="robot-mascot-crossbar" x="32" y="58" width="56" height="4" />
       </g>
       <g className={leftArmClass}>
-        <path
-          className="robot-mascot-arm robot-mascot-arm-left"
-          d={pointingLeft ? 'M30 73c-9-2-16-8-22-15' : 'M29 73c-8 3-12 9-11 16'}
-        />
-        <path
-          className="robot-mascot-hand robot-mascot-hand-left"
-          d={pointingLeft ? 'M8 58l-6-4' : 'M16 89h8'}
-        />
+        <g transform={`rotate(${LEFT_ARM[pose]} 30 62)`}>
+          <rect className="robot-mascot-arm" x="8" y="59" width="24" height="6" rx="3" />
+          <circle className="robot-mascot-wheel" cx="9" cy="62" r="6" />
+          <circle className="robot-mascot-hub" cx="9" cy="62" r="2.2" />
+        </g>
       </g>
       <g className={rightArmClass}>
-        <path
-          className="robot-mascot-arm robot-mascot-arm-right"
-          d={pointingRight ? 'M67 73c9-2 16-8 22-15' : pose === 'wave' ? 'M67 73c9-6 15-4 18 3' : 'M67 73c8 3 12 9 11 16'}
-        />
-        <path
-          className="robot-mascot-hand robot-mascot-hand-right"
-          d={pointingRight ? 'M89 58l6-4' : pose === 'wave' ? 'M82 75l7-5' : 'M74 89h8'}
-        />
+        <g transform={`rotate(${RIGHT_ARM[pose]} 90 62)`}>
+          <rect className="robot-mascot-arm" x="88" y="59" width="24" height="6" rx="3" />
+          <circle className="robot-mascot-wheel" cx="111" cy="62" r="6" />
+          <circle className="robot-mascot-hub" cx="111" cy="62" r="2.2" />
+        </g>
       </g>
       <g className="robot-mascot-arm-swoosh robot-mascot-arm-swoosh-left">
-        <path d="M12 48l-7-3" />
-        <path d="M16 42l-5-6" />
+        <path d="M10 44l-6-3" />
+        <path d="M14 38l-4-5" />
       </g>
       <g className="robot-mascot-arm-swoosh robot-mascot-arm-swoosh-right">
-        <path d="M84 48l7-3" />
-        <path d="M80 42l5-6" />
+        <path d="M110 30l6-3" />
+        <path d="M106 24l4-5" />
       </g>
-      <path className="robot-mascot-leg" d="M39 93v9" />
-      <path className="robot-mascot-leg" d="M57 93v9" />
+      <g className="robot-mascot-body-group">
+        <rect className="robot-mascot-body" x="10" y="80" width="100" height="19" rx="7" />
+        <text className="robot-mascot-number" x="60" y="93.3" textAnchor="middle">FRCMOB</text>
+        <circle className="robot-mascot-core" cx="101" cy="75" r="2.6" />
+      </g>
+      <rect className="robot-mascot-antenna" x="58.5" y="7" width="3" height="9" />
+      <circle className="robot-mascot-antenna-light" cx="60" cy="7" r="4" />
+      <g className="robot-mascot-head-group">
+        <rect className="robot-mascot-head" x="24" y="15" width="72" height="34" rx="11" />
+        <rect className="robot-mascot-face" x="31" y="21" width="58" height="22" rx="7" />
+        <rect className="robot-mascot-eye" x="42" y="25.5" width="9" height="11" rx="4.5" />
+        <rect className="robot-mascot-eye" x="69" y="25.5" width="9" height="11" rx="4.5" />
+        <path className="robot-mascot-mouth" d="M54 39q6 3 12 0" />
+      </g>
     </svg>
   );
 }

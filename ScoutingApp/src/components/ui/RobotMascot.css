@@ -1,8 +1,20 @@
+/* Swerve Scout (2026-11): FRCMOB's robot is an FRC robot. A screen with LED eyes on the shooter
+   hood, an elevator, bumpers and swerve modules; the intake arms wave and point. The robot keeps
+   its own colours in both themes (it is a machine, not a UI surface); every one is set here. */
 .robot-mascot {
+  --rm-frame: #26323d;
+  --rm-edge: #3b4a57;
+  --rm-alum: #aab5bf;
+  --rm-alum-dark: #7d8a96;
+  --rm-screen: #0e171f;
+  --rm-led: #45d494;
+  --rm-wheel: #15191d;
+  --rm-hub: #5d6975;
+  --rm-bumper: #2f5fbf;
   width: 76px;
   height: auto;
   overflow: visible;
-  filter: drop-shadow(0 18px 18px rgba(0, 0, 0, 0.34));
+  filter: drop-shadow(0 14px 14px rgba(0, 0, 0, 0.3));
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -13,42 +25,33 @@
   transform-origin: center;
 }
 
-.robot-mascot-antenna,
-.robot-mascot-arm,
-.robot-mascot-hand,
-.robot-mascot-leg,
 .robot-mascot-arm-swoosh,
-.robot-mascot-talk-marks,
-.robot-mascot-panel-line {
+.robot-mascot-talk-marks {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.robot-mascot-antenna,
-.robot-mascot-arm,
-.robot-mascot-hand,
-.robot-mascot-leg {
-  stroke: var(--color-text-muted);
-  stroke-width: 6;
+.robot-mascot-antenna {
+  fill: var(--rm-alum-dark);
 }
 
 .robot-mascot-antenna-light,
 .robot-mascot-core {
-  fill: #39d98a;
-  filter: drop-shadow(0 0 8px rgba(57, 217, 138, 0.58));
+  fill: var(--rm-led);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--rm-led) 60%, transparent));
   transform-box: fill-box;
   transform-origin: center;
 }
 
 .robot-mascot-head {
-  fill: var(--color-text);
-  stroke: #8ea3ba;
+  fill: var(--rm-frame);
+  stroke: var(--rm-edge);
   stroke-width: 2;
 }
 
 .robot-mascot-face {
-  fill: #101b25;
+  fill: var(--rm-screen);
 }
 
 .robot-mascot-head-group,
@@ -58,25 +61,58 @@
 }
 
 .robot-mascot-eye {
-  fill: #f8fbff;
+  fill: var(--rm-led);
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.robot-mascot-panel-line {
-  stroke: #6f8295;
-  stroke-width: 3;
+.robot-mascot-mouth {
+  fill: none;
+  stroke: var(--rm-led);
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
-.robot-mascot-cheek {
-  fill: #5ce2a0;
-  opacity: 0.72;
+/* Frame, wheels and the dark parts keep a thin edge: on the dark theme's near-black they
+   vanished. */
+.robot-mascot-frame {
+  fill: var(--rm-frame);
+  stroke: var(--rm-edge);
+  stroke-width: 1.5;
+}
+
+.robot-mascot-tube {
+  fill: var(--rm-alum);
+}
+
+.robot-mascot-crossbar {
+  fill: var(--rm-alum-dark);
+}
+
+.robot-mascot-wheel {
+  fill: var(--rm-wheel);
+  stroke: var(--rm-edge);
+  stroke-width: 1.5;
+}
+
+.robot-mascot-hub {
+  fill: var(--rm-hub);
+}
+
+.robot-mascot-arm {
+  fill: var(--rm-alum);
 }
 
 .robot-mascot-body {
-  fill: #cbd8e6;
-  stroke: #8296ad;
-  stroke-width: 2;
+  fill: var(--rm-bumper);
+}
+
+.robot-mascot-number {
+  fill: #fff;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
 }
 
 .robot-mascot-arm-group {
@@ -94,7 +130,7 @@
 
 .robot-mascot-arm-swoosh {
   opacity: 0;
-  stroke: #52dfa0;
+  stroke: var(--rm-led);
   stroke-width: 2.5;
   transform-box: fill-box;
   transform-origin: center;
@@ -107,7 +143,7 @@
 
 .robot-mascot-talk-marks {
   opacity: 0;
-  stroke: #52dfa0;
+  stroke: var(--rm-led);
   stroke-width: 3;
   transform-box: fill-box;
   transform-origin: center;
@@ -129,18 +165,11 @@
   animation: robot-mascot-blink 5.2s ease-in-out infinite;
 }
 
-.robot-mascot.is-animated .robot-mascot-cheek {
-  animation: robot-mascot-cheek-pulse 2.6s ease-in-out infinite;
-}
 
 .robot-mascot.is-animated .robot-mascot-core {
   animation: robot-mascot-core-pulse 1.9s ease-in-out infinite;
 }
 
-.robot-mascot.is-animated .robot-mascot-panel-line {
-  stroke-dasharray: 18;
-  animation: robot-mascot-panel-scan 2.2s linear infinite;
-}
 
 .robot-mascot.is-animated .robot-mascot-arm-group-right.is-waving {
   animation: robot-mascot-wave 1.45s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
@@ -238,10 +267,6 @@
   48% { transform: scaleY(0.14); }
 }
 
-@keyframes robot-mascot-cheek-pulse {
-  0%, 100% { opacity: 0.58; }
-  50% { opacity: 0.95; }
-}
 
 @keyframes robot-mascot-core-pulse {
   0%, 100% {
@@ -254,10 +279,6 @@
   }
 }
 
-@keyframes robot-mascot-panel-scan {
-  from { stroke-dashoffset: 18; }
-  to { stroke-dashoffset: 0; }
-}
 
 @keyframes robot-mascot-wave {
   0%, 100% { transform: rotate(0deg) translate(0, 0); }
