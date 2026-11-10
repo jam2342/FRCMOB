@@ -22,6 +22,11 @@
   --color-surface-muted:  #33322e;
   --color-surface-raised: #312f2c;
   --color-border:         #474541;
+  /* Outlines mark things, not groups (uniform.css). In the dark theme a card or a
+     control is told apart by its fill, so neither draws an edge; the light theme's
+     white-on-near-white needs a hairline. */
+  --edge-card:            transparent;
+  --edge-control:         transparent;
   --color-border-strong:  #5e5b55;
   --color-text:           #ececeb;
   --color-text-muted:     #afaeaa;
@@ -370,8 +375,6 @@
   --dviz-accent:             #3b82f6;
   --dviz-highlight:             #f59e0b;
   --home-polish-ring:             color-mix(in srgb, var(--ui-accent) 18%, var(--ui-border));
-  --home-polish-shadow:             0 14px 30px rgba(6, 10, 16, 0.18);
-  --home-polish-shadow-strong:             0 20px 42px rgba(6, 10, 16, 0.24);
 }
 
 /* Native parts (scrollbars, select menus, date pickers, autofill) follow the app's theme,
@@ -407,6 +410,8 @@
   --color-surface-muted:  #f2f1f0;
   --color-surface-raised: #f3f3f2;
   --color-border:         #e0dfdd;
+  --edge-card:            #e0dfdd;
+  --edge-control:         #e0dfdd;
   --color-border-strong:  #ceccc9;
   --color-text:           #343331;
   /* Both muted steps are set so they still clear WCAG AA (4.5:1) for small text
@@ -459,8 +464,6 @@
   --status-final-text:             #66470f;
   --status-warning-color:             #995400;
   --status-warning-soft:             rgba(153, 84, 0, 0.16);
-  --home-polish-shadow:             0 14px 30px rgba(35, 58, 86, 0.1);
-  --home-polish-shadow-strong:             0 20px 42px rgba(35, 58, 86, 0.14);
 }
 
 /* ── Controls grow on touch ────────────────────────────────────────
