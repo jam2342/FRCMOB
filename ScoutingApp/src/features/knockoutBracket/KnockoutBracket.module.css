@@ -1,0 +1,283 @@
+/* The double-elimination tree (KnockoutBracket.tsx). Positions are computed in the component;
+   this file owns the look. */
+
+.bracket {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.champion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.championText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.championLabel {
+  composes: eyebrow;
+  color: var(--color-accent-text);
+}
+
+.championName {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.championMeta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 84px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.gameScore {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.gameMeta {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+/* The tree scrolls sideways when it can't fit: always on a phone, on a narrow desktop column. */
+.scroller {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.scrollFrame {
+  position: relative;
+}
+
+.scrollFrame.moreEnd::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  pointer-events: none;
+  background: linear-gradient(to left, var(--color-surface) 18px, transparent);
+}
+
+.tree {
+  position: relative;
+}
+
+.section {
+  position: absolute;
+  left: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sectionNote {
+  position: absolute;
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+.head {
+  composes: eyebrow;
+  position: absolute;
+  scroll-snap-align: start;
+}
+
+.line {
+  position: absolute;
+  border-color: var(--color-border-strong);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+
+.hline {
+  composes: line;
+  height: 0;
+  border-top-width: 1.5px;
+}
+
+.vline {
+  composes: line;
+  width: 0;
+  border-left-width: 1.5px;
+}
+
+.join {
+  composes: line;
+  border-width: 1.5px 1.5px 1.5px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.slot {
+  position: absolute;
+}
+
+.matchId {
+  position: absolute;
+  top: -17px;
+  left: 0;
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-soft);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+}
+
+button.card {
+  cursor: pointer;
+}
+
+button.card:hover {
+  background: var(--color-surface-muted);
+}
+
+button.card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.finalsCard {
+  composes: card;
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.finalsHead {
+  composes: eyebrow;
+  white-space: nowrap;
+  padding: var(--space-2) var(--space-2) 0 var(--space-3);
+  height: 24px;
+  box-sizing: border-box;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding-right: var(--space-2);
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-border);
+}
+
+.finalsCard .row {
+  height: 36px;
+}
+
+.bar {
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  background: transparent;
+}
+
+.barRed {
+  composes: bar;
+  background: var(--color-alliance-red);
+}
+
+.barBlue {
+  composes: bar;
+  background: var(--color-alliance-blue);
+}
+
+.seed {
+  flex: none;
+  width: 12px;
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.score {
+  flex: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.won .name,
+.won .score {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.finalsCard .won .score {
+  color: var(--color-accent-text);
+}
+
+.placeholder .name {
+  font-style: italic;
+}
+
+.hint {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-muted);
+}

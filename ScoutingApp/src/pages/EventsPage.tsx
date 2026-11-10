@@ -102,6 +102,8 @@ import { PageViewBar } from '../components/PageViewBar';
 import { EVENTS_VIEWS } from '../components/pageViewBarConfig';
 import { MISSING } from '../utils/formatValue';
 import { useEventNames } from '../hooks/useEventNames';
+import { KnockoutBracket } from '../features/knockoutBracket/KnockoutBracket';
+import { buildDoubleElimBracket, isEightAllianceDoubleElim } from '../features/knockoutBracket/bracketModel';
 
 const EVENT_TABS = ['overview', 'schedule', 'breakdown', 'rankings', 'forecast', 'teams'] as const;
 type EventTab = (typeof EVENT_TABS)[number];
@@ -1359,6 +1361,17 @@ export function EventsPage() {
       .filter((row): row is { key: string; number: number; name: string; teams: Array<{ slot: string; teamNumber: number; name: string }> } => Boolean(row))
       .sort((a, b) => a.number - b.number);
   }, [eventAlliances]);
+
+  // The 8-alliance double-elimination playoffs get the bracket tree; other formats keep the list.
+  const doubleElimBracket = useMemo(() => {
+    if (!isEightAllianceDoubleElim(knockoutMatches, allianceSelectionRows.length)) return null;
+    const alliances = allianceSelectionRows.map((row) => ({
+      number: row.number,
+      name: row.name,
+      teams: row.teams.map((team) => team.teamNumber),
+    }));
+    return buildDoubleElimBracket(knockoutMatches, alliances, nowMs);
+  }, [allianceSelectionRows, knockoutMatches, nowMs]);
 
   const allianceSelectionExportText = useMemo(() => {
     if (allianceSelectionRows.length === 0) return '';
@@ -2630,6 +2643,9 @@ export function EventsPage() {
                       </article>
                     </div>
 
+                    {doubleElimBracket ? (
+                      <KnockoutBracket bracket={doubleElimBracket} onOpenMatch={openMatchCenter} />
+                    ) : (<>
                     <div className="center-actions-row">
                       <button
                         type="button"
@@ -2697,6 +2713,7 @@ export function EventsPage() {
                         </div>
                       </div>
                     </div>
+                    </>)}
                   </>
                 )}
               </>
