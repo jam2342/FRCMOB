@@ -566,8 +566,9 @@
     /* Default: the pill is a sibling before a .center-page-container, whose
        content sits 8px in (its mobile gutter) from the ps-content edge — so
        inset the pill 8px to line its left edge up with the cards below it.
-       Bottom 10px gives a real gap before the next bar/content (was 0). */
-    padding: 8px 8px 10px;
+       The gap below is the view bar's own margin, as on every page; the extra 8px above
+       and 10px below made Scouting's menu sit lower than every other section's bar. */
+    padding: 0 8px;
     scroll-padding-inline: 8px;
   }
 

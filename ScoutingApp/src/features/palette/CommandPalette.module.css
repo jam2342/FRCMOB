@@ -103,9 +103,9 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 46px;
-  padding: 0 16px;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 14px;
   font-size: var(--font-size-base);
   cursor: pointer;
 }
@@ -119,8 +119,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
   color: var(--color-text-muted);

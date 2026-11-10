@@ -1074,7 +1074,9 @@ select.center-input option,
   display: flex;
   justify-content: center;
   gap: 4px;
-  padding: 10px 16px 0;
+  /* No top padding: the content's own padding is the gap under the header, and the 16px
+     margin below is the gap to the page. A menu used to sit 10px lower than a tab tray. */
+  padding: 0 16px;
   max-width: 1200px;
   margin: 0 auto var(--space-4);
 }
