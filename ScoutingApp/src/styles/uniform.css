@@ -246,30 +246,6 @@ input[type='search']::-webkit-search-decoration {
   color: var(--control-text);
 }
 
-/* Desktop tab groups (SegmentedTabs on a wide screen, the page view bar): the active tab is
-   filled, the rest are text. Phones keep their underline strip (.fm-tab), which is a border
-   on purpose. */
-.product-shell .center-tabs .center-tab-btn,
-.product-shell .page-view-tab {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-
-.product-shell .center-tabs .center-tab-btn:where(:hover, :focus-visible),
-.product-shell .page-view-tab:where(:hover, :focus-visible) {
-  border-color: transparent;
-  background: var(--control-bg-hover);
-}
-
-.product-shell .center-tabs .center-tab-btn:where(.active, [aria-selected='true']),
-.product-shell .page-view-tab:where(.active, [aria-selected='true'], [aria-current='page']) {
-  border-color: transparent;
-  background: var(--control-bg-active);
-  color: var(--control-text);
-  box-shadow: none;
-}
-
 /* Secondary buttons keep a fill, so they still read as buttons; only the edge goes. */
 .product-shell .center-btn.ghost,
 .product-shell .center-team-chip,
@@ -299,4 +275,90 @@ input[type='search']::-webkit-search-decoration {
 .product-shell .center-status-pill,
 .product-shell .ps-network-pill {
   border-color: transparent;
+}
+
+/* ================================================================== */
+/*  One tab look: the segmented tray                                   */
+/* ================================================================== */
+/* Every SegmentedTabs (page view bars, a page's own tabs on desktop and phone, the scouting
+   board) is the scouting board's segmented control: a tray, borderless segments, the chosen
+   one raised with accent text. There were three looks (filled pills on a bare background, a
+   blue underline strip on phones, the board's tray), and side by side they read as three
+   different apps. A tray with more tabs than fit scrolls inside itself (the strip's faded
+   edges still say so). Sizes stay with each owner: the board's 44px gloves-on segments live in
+   ScoutingPage.module.css. */
+.product-shell .segmented-tabs {
+  gap: 2px;
+  padding: 3px;
+  /* The tray's padding and gap, so a strip snapped to its first tab sits at scrollLeft 0 and
+     doesn't fade that tab as if more were past it. */
+  scroll-padding-inline: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+/* View bars and desktop tab rows hug their tabs, centred where they were. */
+.product-shell .segmented-tabs:is(.page-view-bar, .center-tabs) {
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.product-shell .segmented-tabs .segmented-tabs__item {
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) - 3px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text-muted);
+}
+
+.product-shell .segmented-tabs .segmented-tabs__item:where(:hover, :focus-visible):not(.active, [aria-selected='true'], [aria-current='page']) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.product-shell .segmented-tabs .segmented-tabs__item:where(.active, [aria-selected='true'], [aria-current='page']) {
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-accent-text);
+  box-shadow: none;
+}
+
+/* The raised segment marks the tab; the phone strip's sliding underline would be a second
+   marker. */
+.product-shell .segmented-tabs .segmented-tabs__ink {
+  display: none;
+}
+
+/* A tray with tabs past an edge fades them at that edge (SegmentedTabs sets data-more). The
+   strip's mask faded the whole element, tray border and fill included, so the tray looked
+   broken at both ends; sticky edges in the tray's own colour fade only the tabs under them. */
+.product-shell .segmented-tabs[data-more] {
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+.product-shell .segmented-tabs:is([data-more='start'], [data-more='both'])::before,
+.product-shell .segmented-tabs:is([data-more='end'], [data-more='both'])::after {
+  content: '';
+  position: sticky;
+  z-index: 1;
+  flex: 0 0 28px;
+  align-self: stretch;
+  pointer-events: none;
+}
+
+.product-shell .segmented-tabs:is([data-more='start'], [data-more='both'])::before {
+  left: 0;
+  margin-right: -28px;
+  background: linear-gradient(to right, var(--color-surface-muted), transparent);
+}
+
+.product-shell .segmented-tabs:is([data-more='end'], [data-more='both'])::after {
+  right: 0;
+  margin-left: -28px;
+  background: linear-gradient(to left, var(--color-surface-muted), transparent);
 }
