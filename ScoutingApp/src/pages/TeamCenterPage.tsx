@@ -7,6 +7,7 @@ import { TeamStickyBar } from '../features/teamHeader/TeamStickyBar';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  getEventPredictionSchedule,
   getEventSchedule,
   getEventTeamLiveForm,
   getEventTeamsIntel,
@@ -21,6 +22,7 @@ import type {
   ClimbLevelCapability,
   EventTeamsIntelResponse,
   EventScheduleItem,
+  EventPredictionScheduleResponse,
   EventTeamLiveFormResponse,
   EventTeamRatingItem,
   TeamCompetitionsResponse,
@@ -30,6 +32,7 @@ import type {
   TeamRobotImageResponse,
 } from '../api';
 import { FieldHeatmap } from '../components/cv/FieldHeatmap';
+import { opponentRankLabel, scheduleDifficulty, type DifficultyTier } from './scheduleDifficulty';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { MediaImage } from '../components/ui/MediaImage';
 import { eventDisplayName } from '../utils/eventSearchIndex';
@@ -100,7 +103,7 @@ const TEAM_TAB_ICONS: Record<TeamTab, React.ReactNode> = {
   advanced: <CodeIcon className="icon-inline" />,
 };
 
-type DifficultyTier = 'very-hard' | 'hard' | 'medium' | 'favorable';
+type MatchPrediction = NonNullable<EventPredictionScheduleResponse['matches'][number]['prediction']>;
 type TeamScheduleSortMode = 'time' | 'hardest' | 'easiest';
 
 type TeamScheduleDifficultyRow = {
@@ -118,6 +121,10 @@ type TeamScheduleDifficultyRow = {
   opponent_epa_max: number;
   schedule_difficulty_0_10: number;
   difficulty_tier: DifficultyTier;
+  // Opponents' expected points ranked against every alliance this season (0-100).
+  opponent_strength_pct: number | null;
+  // This team's alliance's chance to win, from the same model.
+  win_chance: number | null;
 };
 
 type ClimbCapabilityLevel = 'level1' | 'level2' | 'level3';
@@ -406,6 +413,8 @@ export function TeamCenterPage() {
   const [teamTbaAwards, setTeamTbaAwards] = useState<Array<Record<string, unknown>>>([]);
   const [eventLiveForm, setEventLiveForm] = useState<EventTeamLiveFormResponse | null>(null);
   const [eventScheduleRows, setEventScheduleRows] = useState<EventScheduleItem[]>([]);
+  // Per-match model predictions for schedule difficulty and win chance (keyed by match).
+  const [schedulePredictions, setSchedulePredictions] = useState<{ eventKey: string; byMatch: Record<string, MatchPrediction> } | null>(null);
   const [eventTeams, setEventTeams] = useState<EventTeamsIntelResponse | null>(null);
 
   const [teamHeatmap, setTeamHeatmap] = useState<TeamHeatmapResponse | null>(null);
@@ -914,10 +923,34 @@ export function TeamCenterPage() {
     return Math.max(6, Math.sqrt(variance));
   }, [eventTeamEpaByKey]);
 
+  // The model's per-match predictions, only while the Events tab (where the schedule
+  // difficulty card lives) is open. Without them the card keeps the rating-based score.
+  useEffect(() => {
+    if (activeTab !== 'events' || !selectedEventKey || schedulePredictions?.eventKey === selectedEventKey) return;
+    let cancelled = false;
+    const eventKey = selectedEventKey;
+    getEventPredictionSchedule(eventKey)
+      .then((payload) => {
+        if (cancelled) return;
+        const byMatch: Record<string, MatchPrediction> = {};
+        for (const match of payload?.matches || []) {
+          if (match.prediction) byMatch[match.match_key.toLowerCase()] = match.prediction;
+        }
+        setSchedulePredictions({ eventKey, byMatch });
+      })
+      .catch(() => {
+        // Difficulty falls back to the event-relative rating score.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, schedulePredictions?.eventKey, selectedEventKey]);
+
   const scheduleRowsWithDifficulty = useMemo(() => {
     if (!selectedTeamKey || eventScheduleRows.length === 0) return [];
 
     const normalizedTeamKey = selectedTeamKey.toLowerCase();
+    const predictionsHere = schedulePredictions?.eventKey === selectedEventKey ? schedulePredictions.byMatch : {};
 
     const baseRows = eventScheduleRows
       .map((match) => {
@@ -939,22 +972,21 @@ export function TeamCenterPage() {
         const opponentEpaMin = opponentEpas.length > 0 ? Math.min(...opponentEpas) : defaultEventEpa;
         const opponentEpaMax = opponentEpas.length > 0 ? Math.max(...opponentEpas) : defaultEventEpa;
 
-        // Schedule difficulty is intentionally simple + fast: opponents' average rating
-        // only, normalized against this event's rating spread so the 1-10 scale
-        // remains meaningful across different events.
-        const difficultyRaw = clampNumber(
-          5 + ((opponentEpaAvg - defaultEventEpa) / Math.max(1, eventEpaSpread)) * 1.75,
-          1,
-          10,
-        );
-        const difficultyTier: DifficultyTier =
-          difficultyRaw >= 8.5
-            ? 'very-hard'
-            : difficultyRaw >= 7
-              ? 'hard'
-              : difficultyRaw >= 5
-                ? 'medium'
-                : 'favorable';
+        // Season-wide strength of the opponents when the model has predicted the match
+        // (scheduleDifficulty.ts); the event-relative rating score otherwise.
+        const prediction = predictionsHere[match.match_key.toLowerCase()];
+        const opponentStrengthPct = prediction?.available
+          ? (inRed ? prediction.blue_strength_pct : prediction.red_strength_pct) ?? null
+          : null;
+        const ownWinProb = prediction?.available ? (inRed ? prediction.red_win_prob : prediction.blue_win_prob) : null;
+        const difficulty = scheduleDifficulty({
+          opponentStrengthPct,
+          opponentRatingAvg: opponentEpaAvg,
+          eventRatingMean: defaultEventEpa,
+          eventRatingSd: eventEpaSpread,
+        });
+        const difficultyRaw = difficulty.score;
+        const difficultyTier = difficulty.tier;
 
         return {
           match_key: match.match_key,
@@ -971,6 +1003,8 @@ export function TeamCenterPage() {
           opponent_epa_max: Number(opponentEpaMax.toFixed(1)),
           schedule_difficulty_0_10: Number(difficultyRaw.toFixed(1)),
           difficulty_tier: difficultyTier,
+          opponent_strength_pct: opponentStrengthPct,
+          win_chance: typeof ownWinProb === 'number' && Number.isFinite(ownWinProb) ? ownWinProb : null,
         } satisfies TeamScheduleDifficultyRow;
       })
       .filter((row): row is TeamScheduleDifficultyRow => Boolean(row));
@@ -981,7 +1015,7 @@ export function TeamCenterPage() {
       if (!b.scheduled_time) return -1;
       return a.scheduled_time - b.scheduled_time;
     });
-  }, [defaultEventEpa, eventEpaSpread, eventScheduleRows, eventTeamEpaByKey, selectedTeamKey]);
+  }, [defaultEventEpa, eventEpaSpread, eventScheduleRows, eventTeamEpaByKey, schedulePredictions, selectedEventKey, selectedTeamKey]);
 
   // Prepared for future display metrics; compute eagerly for warm cache paths.
   useMemo(() => {
@@ -1056,10 +1090,21 @@ export function TeamCenterPage() {
       key: 'difficulty',
       label: 'Difficulty',
       render: (row) => (
-        <span className={`center-difficulty-pill ${row.difficulty_tier}`}>
+        <span className={`center-difficulty-pill ${row.difficulty_tier}`} title={opponentRankLabel(row.opponent_strength_pct) ?? undefined}>
           {metric(row.schedule_difficulty_0_10, 1)} / 10
         </span>
       ),
+    },
+    {
+      key: 'opponent_rank',
+      label: 'Opponents this season',
+      render: (row) => opponentRankLabel(row.opponent_strength_pct) ?? '—',
+    },
+    {
+      key: 'win_chance',
+      label: 'Win chance',
+      numeric: true,
+      render: (row) => (row.win_chance === null ? '—' : `${Math.round(row.win_chance * 100)}%`),
     },
     {
       key: 'opponent_epa',
@@ -1943,7 +1988,7 @@ export function TeamCenterPage() {
                   <SurfaceCard
                     expandable
                     title="Event Schedule Difficulty"
-                    subtitle="How strong each match's opponents are, by rating."
+                    subtitle="How strong each match's opponents are, against every alliance this season."
                     compactable
                   >
                     {!selectedEventKey ? (
@@ -2004,6 +2049,14 @@ export function TeamCenterPage() {
                                     vs {row.opponents.join(', ') || 'TBD'}
                                     {row.partners.length ? ` · with ${row.partners.join(', ')}` : ''}
                                   </small>
+                                  {row.opponent_strength_pct !== null || row.win_chance !== null ? (
+                                    <small>
+                                      {[
+                                        opponentRankLabel(row.opponent_strength_pct),
+                                        row.win_chance === null ? null : `${Math.round(row.win_chance * 100)}% to win`,
+                                      ].filter(Boolean).join(' · ')}
+                                    </small>
+                                  ) : null}
                                 </button>
                               ))}
                             </div>
