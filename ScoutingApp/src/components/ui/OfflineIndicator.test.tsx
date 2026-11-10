@@ -24,6 +24,16 @@ describe('OfflineIndicator', () => {
     expect(screen.getByText('Anything you save stays on this phone')).toBeInTheDocument();
   });
 
+  // It used to lay status and detail out as two flex columns, which a phone squeezed into two
+  // cramped, separately wrapping halves.
+  it('reads as one sentence: status and detail share a line of text', () => {
+    status = { online: false, queueSize: 0, serverTrouble: true } as typeof status;
+    render(<OfflineIndicator />);
+    const title = screen.getByText("Can't reach FRCMOB's server right now");
+    expect(title.parentElement).toBe(screen.getByText('Anything you save stays on this phone').parentElement);
+    expect(title.parentElement?.tagName).toBe('P');
+  });
+
   it('online with a backlog, offers to sync now', () => {
     status = { online: true, queueSize: 1 };
     render(<OfflineIndicator />);

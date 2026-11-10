@@ -20,7 +20,7 @@ import {
   DownloadIcon,
   InfoIcon,
 } from '../components/ui/Icons';
-import { OfflineIndicator } from '../components/ui/OfflineIndicator';
+import { OfflineIndicator, StaleDataNotice } from '../components/ui/OfflineIndicator';
 import { ToastHost } from '../components/ui/ToastHost';
 import { PullToRefresh } from '../components/ui/PullToRefresh';
 import { PastSeasonBanner } from '../features/seasons/PastSeasonBanner';
@@ -981,18 +981,7 @@ export function ProductShell() {
           className="ps-content"
         >
           <OfflineIndicator />
-          {isShowingOfflineData ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="offline-banner offline-banner-warning"
-            >
-              <span className="offline-banner-status">
-                <span className="offline-banner-dot offline-dot-warning" />
-                Showing data from last session
-              </span>
-            </div>
-          ) : null}
+          {isShowingOfflineData ? <StaleDataNotice /> : null}
           {pwaInstall.canPrompt && !isDesktopSidebarViewport && (location.pathname === '/home' || location.pathname.startsWith('/home/')) ? (
             // A quiet card in line with the cards below it. It used to be the loudest thing on
             // Home (a green gradient and border) and sat 8px off to the right.

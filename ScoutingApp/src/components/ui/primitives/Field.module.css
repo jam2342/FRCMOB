@@ -55,10 +55,6 @@
     background-color var(--motion-fast) var(--motion-ease);
 }
 
-.control:hover:not(:disabled) {
-  border-color: var(--control-border-strong);
-}
-
 .control:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -171,9 +167,10 @@
   user-select: none;
 }
 
-.stepperButton:hover:not(:disabled) {
-  background: var(--control-bg-hover);
-  border-color: var(--control-border-strong);
+@media (hover: hover) {
+  .stepperButton:hover:not(:disabled) {
+    background: var(--control-bg-hover);
+  }
 }
 
 .stepperButton:active:not(:disabled) {
@@ -505,9 +502,10 @@
   color: var(--color-text-muted);
 }
 
-.segment:hover:not([data-checked]) {
-  background: var(--control-bg-hover);
-  border-color: var(--control-border-strong);
+@media (hover: hover) {
+  .segment:hover:not([data-checked]) {
+    background: var(--control-bg-hover);
+  }
 }
 
 /* Focus lands on the hidden input, so the ring has to be drawn on the label. */

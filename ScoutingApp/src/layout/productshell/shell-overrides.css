@@ -180,7 +180,6 @@
     transform var(--motion-fast) ease;
 }
 
-.product-shell .scout-profile-chip:hover,
 .product-shell .scout-profile-chip.active {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
@@ -331,19 +330,12 @@
   transition: all var(--motion-fast);
 }
 
-@keyframes badge-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0.4); }
-  70% { box-shadow: 0 0 0 6px rgba(255, 159, 10, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0); }
-}
-
 .scout-sidebar-overview-state:not(.ready) {
   border-color: color-mix(in srgb, var(--color-warning) 80%, transparent);
   background: color-mix(in srgb, var(--color-warning) 25%, transparent);
   /* The fill is a 25% tint of the surface behind it, so it is dark in one theme
      and pale in the other. A literal white read at 1.23:1 in light. */
   color: var(--color-text);
-  animation: badge-pulse 2.5s infinite ease-out;
 }
 
 .scout-sidebar-overview-state.ready {

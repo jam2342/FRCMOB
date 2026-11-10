@@ -21,12 +21,15 @@
   background: var(--color-accent);
   color: var(--color-on-accent);
   box-shadow: var(--shadow-md);
-  transition: transform var(--motion-fast) ease;
+  transition: background-color var(--motion-fast) ease;
 }
 
-.lite-stream:hover .lite-stream__play,
-.lite-stream:focus-visible .lite-stream__play {
-  transform: scale(1.06);
+/* The whole thumbnail is the button; under the pointer its play disc steps to the hover shade,
+   like any primary button (uniform.css "One hover"). */
+@media (hover: hover) {
+  .lite-stream:hover .lite-stream__play {
+    background: var(--color-accent-hover);
+  }
 }
 
 .lite-stream__play svg {

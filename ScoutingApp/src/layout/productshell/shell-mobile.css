@@ -489,91 +489,10 @@
      over the app header once the page scrolls. */
   top: var(--ps-topbar-height);
   z-index: 9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 0.4rem 1rem;
-  font-size: var(--font-size-sm);
-  font-weight: 400;
-  /* --text-on-danger / --surface-danger / --surface-warning are defined
-     nowhere, so this banner always rendered its hardcoded fallbacks: white on
-     #5c0000, in both themes, with no light override at all. Tinting a token
-     surface instead keeps it theme-aware and keeps the text legible by
-     construction. */
-  color: var(--color-text);
-  border-bottom: 1px solid var(--color-border);
 }
 
-/* Offline is this app's designed-for state, not a fault — it is built for venue
-   wifi and the banner's own copy says the data is safe. A full-bleed blood-red
-   alarm contradicted that, so the calm surface carries the message and the dot
-   carries the state. */
-.offline-banner-info {
-  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-raised));
-  border-bottom-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
-}
-
-/* Pending changes while online is the state that actually wants attention:
-   there is an action to take, and leaving the venue without taking it loses
-   work. This is the one that gets the warning tint. */
-.offline-banner-warning {
-  background: color-mix(in srgb, var(--color-warning) 16%, var(--color-surface-raised));
-  border-bottom-color: color-mix(in srgb, var(--color-warning) 42%, transparent);
-}
-
-/* The one genuine failure: queued scouting entries were rejected or dropped, so
-   work is gone. This is the role="alert" case and keeps the loudest tint. */
-.offline-banner-danger {
-  background: color-mix(in srgb, var(--color-danger) 20%, var(--color-surface-raised));
-  border-bottom-color: color-mix(in srgb, var(--color-danger) 52%, transparent);
-}
-
-.offline-banner-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.offline-banner-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.offline-dot-warning {
-  background: var(--color-warning);
-}
-
-.offline-dot-info {
-  /* Grey, not the accent: green is what "Online" and "Live" wear everywhere else. */
-  background: var(--color-text-dim);
-}
-
-.offline-dot-danger {
-  background: var(--color-danger);
-}
-
-.offline-banner-sync-btn {
-  padding: 0.2rem 0.75rem;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
-  color: inherit;
-  cursor: pointer;
-  font-size: var(--font-size-2xs);
-  transition: background 0.12s;
-}
-
-.offline-banner-sync-btn:hover {
-  background: var(--color-surface-soft);
-}
-
-.offline-banner-hint {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-2xs);
-}
+/* Its look (a notice in the card stack, tones per state) lives with the component:
+   components/ui/OfflineIndicator.module.css. */
 
 /* ================================================================== */
 /*  ERROR BOUNDARY FALLBACK                                             */
@@ -614,10 +533,6 @@
   cursor: pointer;
   font-size: var(--font-size-base);
   transition: background 0.12s;
-}
-
-.error-boundary-retry:hover {
-  background: var(--color-surface-muted);
 }
 
 /* ================================================================== */
@@ -787,11 +702,6 @@
   justify-content: center;
   cursor: pointer;
   transition: border-color 140ms ease, color 140ms ease;
-}
-
-.home-drawer-close:hover {
-  border-color: var(--color-accent);
-  color: var(--color-text);
 }
 
 .home-drawer-close svg {
@@ -2359,12 +2269,6 @@
     transition: border-color 0.15s ease, transform 0.12s ease;
   }
 
-  .home-match-row:hover {
-    border-color: color-mix(in srgb, var(--color-info-text) 35%, transparent);
-    background: color-mix(in srgb, var(--color-bg) 85%, transparent);
-    transform: none;
-  }
-
   .home-match-row.winner-red {
     border-color: color-mix(in srgb, var(--color-danger-text) 35%, transparent);
     background: color-mix(in srgb, color-mix(in srgb, var(--color-bg) 88%, transparent) 88%, color-mix(in srgb, var(--color-danger-text) 18%, transparent));
@@ -2805,11 +2709,6 @@
     color: var(--color-text-muted);
   }
 
-  .home-drawer-close:hover {
-    border-color: color-mix(in srgb, var(--color-info-text) 50%, transparent);
-    color: var(--color-info-text);
-  }
-
   .home-drawer-section {
     padding: 14px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
@@ -2851,10 +2750,6 @@
     min-height: 36px;
     font-size: var(--font-size-2xs);
     transition: border-color 0.15s ease;
-  }
-
-  .home-drawer-section .home-ranking-row:hover {
-    border-color: color-mix(in srgb, var(--color-info-text) 35%, transparent);
   }
 
   .home-drawer-section .home-ranking-row .rank {
@@ -2957,14 +2852,12 @@
     color: var(--color-text-muted);
   }
 
-  .home-card-collapse-btn:hover,
   .home-card-collapse-btn.collapsed {
     border-color: color-mix(in srgb, var(--color-info-text) 50%, transparent);
     background: color-mix(in srgb, var(--color-info-text) 6%, transparent);
     color: var(--color-info-text);
   }
 
-  .home-card-collapse-btn:hover .home-card-collapse-icon,
   .home-card-collapse-btn.collapsed .home-card-collapse-icon {
     border-color: color-mix(in srgb, var(--color-info-text) 40%, transparent);
     background: color-mix(in srgb, var(--color-info-text) 6%, transparent);

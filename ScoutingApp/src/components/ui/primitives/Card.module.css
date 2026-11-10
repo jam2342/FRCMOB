@@ -63,8 +63,10 @@
   cursor: pointer;
 }
 
-.rowButton:hover {
-  background: var(--color-surface-soft);
+@media (hover: hover) {
+  .rowButton:hover {
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover));
+  }
 }
 
 .rowButton:focus-visible {

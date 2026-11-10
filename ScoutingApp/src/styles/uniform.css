@@ -142,10 +142,6 @@ input[type='search']::-webkit-search-decoration {
   text-underline-offset: 3px;
 }
 
-.product-shell .entity-link:hover {
-  text-decoration-color: currentColor;
-}
-
 .product-shell a.home-next-hero {
   display: block;
   color: inherit;
@@ -178,11 +174,10 @@ input[type='search']::-webkit-search-decoration {
 /* ================================================================== */
 /*  Nothing paints past a parent that clips                            */
 /* ================================================================== */
-/* These parents scroll or round-clip their contents, so the shell's 2px hover lift lost the
-   control's top edge and the 2px-offset focus ring was shaved on one to four sides (40-odd
-   places). Inside them, controls stay put on hover and draw the ring just inside their edge.
-   A new scrolling list or strip of controls goes on this list (e2e/polish/clip/scan.mjs finds
-   them). */
+/* These parents scroll or round-clip their contents, so the 2px-offset focus ring was shaved
+   on one to four sides (40-odd places). Inside them, controls draw the ring just inside their
+   edge. A new scrolling list or strip of controls goes on this list (e2e/polish/clip/scan.mjs
+   finds them). */
 :where(
   .ps-context-quick-row,
   .center-list-scroll,
@@ -196,17 +191,6 @@ input[type='search']::-webkit-search-decoration {
   .finder-sidebar-sections
 ) :focus-visible {
   outline-offset: -2px;
-}
-
-:where(.ps-context-quick-row, .center-list-scroll, .center-sort-chip-row)
-  :where(.ps-context-quick-chip, .event-picker-item, .center-sort-chip, .center-btn):hover:not(:active) {
-  transform: none;
-}
-
-/* Their hover shadow spread past the list's sides and was cut off straight. */
-:where(.ps-context-quick-row, .center-list-scroll, .center-sort-chip-row)
-  :where(.ps-context-quick-chip, .event-picker-item, .center-sort-chip, .center-btn):not(.active):hover {
-  box-shadow: none;
 }
 
 /* ================================================================== */
@@ -227,18 +211,12 @@ input[type='search']::-webkit-search-decoration {
 /* The sidebar: plain rows, a soft fill under the pointer, a firmer one (and the accent dash
    from shell-features) on the page you are on. */
 .product-shell .ps-nav-link,
-.product-shell .ps-nav-link:hover,
 .product-shell .ps-nav-link.active {
   border-color: transparent;
 }
 
 .product-shell .ps-nav-link:not(.active) {
   background: transparent;
-}
-
-.product-shell .ps-nav-link:not(.active):hover {
-  background: var(--control-bg-hover);
-  color: var(--control-text);
 }
 
 .product-shell .ps-nav-link.active {
@@ -317,10 +295,13 @@ input[type='search']::-webkit-search-decoration {
   transition: none;
 }
 
-.product-shell .segmented-tabs .segmented-tabs__item:where(:hover, :focus-visible):not(.active, [aria-selected='true'], [aria-current='page']) {
-  border-color: transparent;
-  background: transparent;
-  color: var(--color-text);
+/* A tab in the tray isn't a button on its own, so under the pointer only its text firms up. */
+@media (hover: hover) {
+  .product-shell .segmented-tabs .segmented-tabs__item:hover:not(.active, [aria-selected='true'], [aria-current='page']) {
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-text);
+  }
 }
 
 /* The phone strip's old underline style made the selected tab's bottom edge transparent, so the
@@ -373,4 +354,136 @@ input[type='search']::-webkit-search-decoration {
   right: -3px;
   margin-left: -40px;
   background: linear-gradient(to left, var(--color-surface-muted) 22px, transparent);
+}
+
+/* ================================================================== */
+/*  One hover per kind of thing                                        */
+/* ================================================================== */
+/* The 2026-11-10 sweep of every route found 27 hover looks in the dark theme and 28 in the
+   light one. Buttons lifted 1px, 2px or not at all, some with a shadow or a brightness filter.
+   List rows lifted, swept a shine across, slid in a side bar or did nothing. Cards you can't
+   click lifted under the pointer, and hovering a tab or chip made it look selected. Now there
+   are four:
+
+   - a primary button's fill steps to its hover shade;
+   - any other control's fill steps to --control-bg-hover and its text goes full strength;
+   - a row you act on gets the --row-bg-hover tint, laid over whatever fill it already has;
+   - a text link's underline goes full strength; a quiet text button's text does.
+
+   Nothing moves, grows, glows or changes its edge. A card or row that isn't itself clickable
+   does nothing (its links do), and a selected item stays as it is. Keyboard focus shows the
+   focus ring, not the hover.
+
+   All of it sits behind (hover: hover). A phone keeps :hover on whatever was tapped last, so a
+   tapped button stayed lifted and lighter until the next tap. Components with their own module
+   (Button, Field, Table, the feature cards) follow the same four rules there.
+   consistency.test.ts holds every stylesheet to them. Add a new kind to one of these lists,
+   never a hover of its own.
+
+   The declarations are !important because this is the one rule that decides hover: resting
+   styles across the shell are written at every specificity (.product-shell .ps-topbar :is(...)),
+   and a hover that loses to any of them silently isn't one. The :not() lists keep a selected,
+   pressed or disabled item out of it. Text boxes, switches and checkboxes have no hover; the
+   focus ring is theirs. */
+@media (hover: hover) {
+  /* Primary buttons */
+  :where(.center-btn:not(.ghost), .home-board-btn:not(.subtle)):hover:not(:disabled, [aria-disabled='true'], .active) {
+    background-color: var(--control-bg-accent-hover) !important;
+  }
+
+  :where(.mso__submit, .tut-btn-primary):hover:not(:disabled, [aria-disabled='true']) {
+    border-color: var(--color-accent-hover) !important;
+    background-color: var(--color-accent-hover) !important;
+  }
+
+  /* Every other control */
+  :where(
+    .center-btn.ghost,
+    .home-board-btn.subtle,
+    .center-tab-btn,
+    .page-view-tab,
+    .fm-tab,
+    .home-mini-tab-btn,
+    .scout-sidebar-nav-pill,
+    .ps-nav-link,
+    .ps-sidebar-toggle,
+    .ps-finder-toggle,
+    .ps-topbar-search-btn,
+    .ps-context-toggle-btn,
+    .ps-context-pin-btn,
+    button.ps-context-chip,
+    .ps-context-quick-chip,
+    .ps-mobile-burger-btn,
+    .surface-card-expand-btn,
+    .surface-card-collapse-btn,
+    .home-card-collapse-btn,
+    .center-sort-chip,
+    .center-team-chip,
+    .home-team-pill,
+    .scout-team-chip,
+    .scout-opponent-chip,
+    .scout-profile-chip,
+    .scout-mini-timer-btn,
+    .home-day-nav-btn,
+    .home-day-picker-btn,
+    .home-event-search-trigger,
+    .home-match-link-btn,
+    .home-calendar-nav-btn,
+    .home-calendar-modal-chip,
+    .home-calendar-modal-more,
+    .home-calendar-modal-close,
+    .home-drawer-close,
+    .live-ratings-panel__more,
+    .scout-sidebar-collapse-btn,
+    .events-cal-nav-btn,
+    .match-picker-copy-btn,
+    .tut-close,
+    .tut-btn-ghost,
+    .ms__link,
+    .mso__back,
+    .mso__clear,
+    .mso__context-chip--link,
+    .error-boundary-retry
+  ):hover:not(:disabled, [aria-disabled='true'], .active, .collapsed, [aria-pressed='true'], [aria-selected='true'], [aria-current='page'], .segmented-tabs__item) {
+    background-color: var(--control-bg-hover) !important;
+    color: var(--control-text) !important;
+  }
+
+  /* Faded until wanted. */
+  .match-picker-copy-btn:hover {
+    opacity: 1;
+  }
+
+  /* Rows you act on */
+  :where(
+    .event-picker-item,
+    .event-picker-dropdown-item,
+    .home-ranking-row,
+    .home-match-main,
+    .home-match-score,
+    .favorites-match-row,
+    .events-cal-item,
+    .page-view-menu-item,
+    .mso__recent-item,
+    .picklist-row,
+    .pit-team-cell,
+    .pit-photo-add
+  ):hover:not(:disabled, [aria-disabled='true'], .active, .pit-team-cell--active, [aria-selected='true'], [aria-current='page']) {
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover)) !important;
+  }
+
+  /* A wide table's rows: a reading aid, the same tint. */
+  .center-table tbody tr:hover > :is(td, th) {
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover)) !important;
+  }
+
+  /* Text links */
+  :where(.entity-link, .center-link-btn, .center-inline-link, .site-footer a, .product-shell a:not([class])):hover {
+    text-decoration-color: currentColor !important;
+  }
+
+  /* Quiet text buttons, and the footer's dim links */
+  :where(.site-footer a, .mso__recent-clear, .mso__hints-dismiss, .tut-skip-all, .ps-pwa-dismiss):hover {
+    color: var(--color-text) !important;
+  }
 }

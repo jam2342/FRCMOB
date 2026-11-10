@@ -52,17 +52,7 @@
   font-weight: 600;
 }
 
-/* Every strip scrolls sideways, and a sideways scroller clips up and down too: the shell's 2px
-   hover lift lost the tab's top edge and its shadow, and the focus ring lost its top and bottom.
-   Tabs stay put on hover and draw the ring just inside their edge. */
-.segmented-tabs__item:hover:not(:active) {
-  transform: none;
-}
-
-.segmented-tabs__item:not(.active):hover {
-  box-shadow: none;
-}
-
+/* A sideways scroller clips up and down too, so the ring sits just inside the tab's edge. */
 .segmented-tabs__item:focus-visible {
   outline-offset: -2px;
 }

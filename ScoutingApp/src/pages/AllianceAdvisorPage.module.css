@@ -205,6 +205,13 @@
   border-radius: var(--radius-full);
 }
 
+/* A team name that opens its team: the link hover (uniform.css "One hover"). */
+@media (hover: hover) {
+  .chipButton:hover {
+    text-decoration: underline;
+  }
+}
+
 .chipButton:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -268,8 +275,10 @@
   cursor: pointer;
 }
 
-.teamLink:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .teamLink:hover {
+    text-decoration: underline;
+  }
 }
 
 .teamLink:focus-visible {
@@ -299,6 +308,12 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
+}
+
+@media (hover: hover) {
+  .modelSettings > summary:hover {
+    color: var(--color-text);
+  }
 }
 
 .modelSettings[open] > summary {

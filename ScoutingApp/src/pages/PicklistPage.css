@@ -242,11 +242,6 @@ button.picklist-rank--button {
   height: calc(var(--bottom-bar-height) + var(--space-3));
 }
 
-@media (hover: hover) {
-  .picklist-row:hover {
-    background: color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-surface-soft));
-  }
-}
 
 /* Phones: one line per team (rank, team, tier, arrows) so a 75-team list is
    a list, not three rows of buttons per team. Notes and the move form wrap

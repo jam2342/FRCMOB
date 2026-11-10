@@ -67,8 +67,10 @@
   cursor: pointer;
 }
 
-.action:hover {
-  background: var(--color-accent-soft);
+@media (hover: hover) {
+  .action:hover {
+    background: var(--control-bg-hover);
+  }
 }
 
 .action:focus-visible {

@@ -580,10 +580,10 @@ export function MatchCenterPage() {
   // Your own team on the side that just won gets a moment of its own.
   const ourTeamNumber = useWorkspace()?.workspace.frc_team_number ?? null;
   const ourWin = revealing ? ourWinningTeam(selectedMatch, resolvedWinner, ourTeamNumber) : null;
+  // The losing side steps back; the winner is marked by its badge, not a glow.
   const revealClass = (side: 'red' | 'blue') => {
     if (!revealing || !resolvedWinner || resolvedWinner === 'tie') return '';
-    if (resolvedWinner !== side) return resultStyles.lost;
-    return side === 'red' ? resultStyles.wonRed : resultStyles.wonBlue;
+    return resolvedWinner !== side ? resultStyles.lost : '';
   };
 
   // A finished match can be shared as a picture.

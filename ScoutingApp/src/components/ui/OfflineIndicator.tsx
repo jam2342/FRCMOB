@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import styles from './OfflineIndicator.module.css';
-import { Link } from 'react-router-dom';
+import { useHref, useLinkClickHandler } from 'react-router-dom';
+import { AlertTriangleIcon, ClockIcon, CloudSyncIcon, WifiOffIcon } from './Icons';
+import { Button } from './primitives';
+import { cx } from './primitives/cx';
 import { clearSyncIssue, lastSyncIssue } from '../../features/offline/syncReceipt';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { flush, type DroppedMutationInfo } from '../../utils/offlineQueue';
@@ -129,6 +132,69 @@ function useReconnectMoment(online: boolean, queueSize: number): Reconnect | nul
   return moment;
 }
 
+type Tone = 'neutral' | 'warning' | 'danger';
+
+// Every state is one line of text: icon, short status, quiet detail, with any buttons after it.
+// It wraps as a sentence on a narrow phone instead of splitting into columns. `offline-banner`
+// stays on the root because the shell measures that class to keep sticky bars clear of it.
+function Notice({
+  tone = 'neutral',
+  icon,
+  actions,
+  className,
+  children,
+  ...live
+}: {
+  tone?: Tone;
+  icon: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+  children: ReactNode;
+  role: 'status' | 'alert';
+  'aria-live'?: 'polite';
+}) {
+  return (
+    <div {...live} className={cx('offline-banner', styles.notice, styles[tone], className)}>
+      <p className={styles.text}>
+        <span className={styles.icon} aria-hidden="true">{icon}</span>
+        {children}
+      </p>
+      {actions ? <div className={styles.actions}>{actions}</div> : null}
+    </div>
+  );
+}
+
+function Detail({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <span className={styles.sep} aria-hidden="true"> · </span>
+      <span className={styles.hint}>{children}</span>
+    </>
+  );
+}
+
+// A link that looks like the notice's other buttons. Its own component because useHref needs a
+// router, and only this state links anywhere.
+function RecoverLink() {
+  const href = useHref('/my-team');
+  const onClick = useLinkClickHandler('/my-team');
+  return (
+    <Button as="a" variant="quiet" size="sm" href={href} onClick={onClick}>
+      Recover saved edits
+    </Button>
+  );
+}
+
+// The shell's "these numbers are from the saved copy" notice: the same notice, so the two never
+// sit one above the other in two different looks.
+export function StaleDataNotice() {
+  return (
+    <Notice role="status" aria-live="polite" icon={<ClockIcon size={16} />}>
+      <span className={styles.title}>Showing data from last session</span>
+    </Notice>
+  );
+}
+
 export function OfflineIndicator() {
   const { online, queueSize, serverTrouble } = useOnlineStatus();
   const reconnect = useReconnectMoment(online, queueSize);
@@ -148,26 +214,31 @@ export function OfflineIndicator() {
 
   if (dropped) {
     return (
-      <div role="alert" className="offline-banner offline-banner-danger">
-        <span className="offline-banner-status">
-          <span className="offline-banner-dot offline-dot-danger" />
-          {dropped.count} queued change{dropped.count > 1 ? 's' : ''}{' '}
-          {dropped.reason === 'conflict'
-            ? "conflicted with a teammate; your original edit is still saved on this phone"
-            : dropped.reason === 'server-rejected'
-              ? 'were rejected by the server; your original edit is still saved on this phone'
-              : 'could not be saved for offline sync'}
-          {dropped.labels.length > 0 ? ` (${dropped.labels.slice(0, 3).join(', ')}${dropped.labels.length > 3 ? ', …' : ''})` : ''}
-        </span>
-        {dropped.reason === 'storage-failure' ? (
-          <button onClick={downloadLocalEntriesCsv} className="offline-banner-sync-btn">Download local CSV</button>
-        ) : (
-          <Link to="/my-team" className="offline-banner-sync-btn">Recover saved edits</Link>
-        )}
-        <button onClick={() => { clearSyncIssue(); setDropped(null); }} className="offline-banner-sync-btn">
-          Dismiss
-        </button>
-      </div>
+      <Notice
+        role="alert"
+        tone="danger"
+        icon={<AlertTriangleIcon size={16} />}
+        actions={
+          <>
+            {dropped.reason === 'storage-failure' ? (
+              <Button variant="quiet" size="sm" onClick={downloadLocalEntriesCsv}>Download local CSV</Button>
+            ) : (
+              <RecoverLink />
+            )}
+            <Button variant="quiet" size="sm" onClick={() => { clearSyncIssue(); setDropped(null); }}>
+              Dismiss
+            </Button>
+          </>
+        }
+      >
+        {dropped.count} queued change{dropped.count > 1 ? 's' : ''}{' '}
+        {dropped.reason === 'conflict'
+          ? "conflicted with a teammate; your original edit is still saved on this phone"
+          : dropped.reason === 'server-rejected'
+            ? 'were rejected by the server; your original edit is still saved on this phone'
+            : 'could not be saved for offline sync'}
+        {dropped.labels.length > 0 ? ` (${dropped.labels.slice(0, 3).join(', ')}${dropped.labels.length > 3 ? ', …' : ''})` : ''}
+      </Notice>
     );
   }
 
@@ -180,29 +251,29 @@ export function OfflineIndicator() {
         ? `All ${reconnect.total} change${reconnect.total === 1 ? '' : 's'} synced`
         : 'Back online';
     return (
-      <div
+      <Notice
         role="status"
         aria-live="polite"
-        className={`offline-banner ${syncing ? 'offline-banner-info' : styles.success} ${reconnect.phase === 'leaving' ? styles.leaving : ''}`}
-      >
-        <span className="offline-banner-status">
-          {syncing ? (
-            <svg className={styles.spin} viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        className={cx(syncing ? styles.syncing : styles.success, reconnect.phase === 'leaving' && styles.leaving)}
+        icon={
+          syncing ? (
+            <svg className={styles.spin} viewBox="0 0 24 24" width="16" height="16">
               <path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
           ) : (
-            <svg className={styles.check} viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <svg className={styles.check} viewBox="0 0 24 24" width="16" height="16">
               <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-          )}
-          {message}
-        </span>
+          )
+        }
+      >
+        <span className={styles.title}>{message}</span>
         {syncing && reconnect.total > 0 ? (
           <span className={styles.progress} aria-hidden="true">
             <span style={{ transform: `scaleX(${synced / reconnect.total})` }} />
           </span>
         ) : null}
-      </div>
+      </Notice>
     );
   }
 
@@ -211,6 +282,22 @@ export function OfflineIndicator() {
   const handleFlush = () => {
     flush().catch(() => {});
   };
+
+  if (online) {
+    // Pending changes while online is the state that wants attention: there is an action to
+    // take, and leaving the venue without taking it loses work. So it is the one warning tint.
+    return (
+      <Notice
+        role="status"
+        aria-live="polite"
+        tone="warning"
+        icon={<CloudSyncIcon size={16} />}
+        actions={<Button variant="quiet" size="sm" onClick={handleFlush}>Sync now</Button>}
+      >
+        <span className={styles.title}>{`${queueSize} pending change${queueSize > 1 ? 's' : ''} to sync`}</span>
+      </Notice>
+    );
+  }
 
   const localEntryCount = (() => {
     try {
@@ -222,39 +309,28 @@ export function OfflineIndicator() {
     }
   })();
 
+  // Offline is the state this app is built for (venue wifi), and the copy says the data is
+  // safe, so it stays neutral: no alarm tint, and no green, which means live or selected.
   return (
-    <div
+    <Notice
       role="status"
       aria-live="polite"
-      className={`offline-banner ${online ? 'offline-banner-warning' : 'offline-banner-info'}`}
+      icon={serverTrouble ? <AlertTriangleIcon size={16} /> : <WifiOffIcon size={16} />}
+      actions={
+        localEntryCount > 0 ? (
+          <Button variant="quiet" size="sm" onClick={downloadLocalEntriesCsv}>Download CSV</Button>
+        ) : null
+      }
     >
-      <span className="offline-banner-status">
-        <span className={`offline-banner-dot ${online ? 'offline-dot-warning' : 'offline-dot-info'}`} />
-        {!online && (serverTrouble ? "Can't reach FRCMOB's server right now" : 'You are offline')}
-        {online && queueSize > 0 && `${queueSize} pending change${queueSize > 1 ? 's' : ''} to sync`}
-      </span>
-      {online && queueSize > 0 && (
-        <button onClick={handleFlush} className="offline-banner-sync-btn">
-          Sync now
-        </button>
-      )}
-      {!online && (
-        <>
-          {/* What's waiting is the number that matters offline. The local
-              entry count is every entry this phone has ever kept (up to 600),
-              which read like a sync backlog when it wasn't one. */}
-          <span className="offline-banner-hint">
-            {queueSize > 0
-              ? `${queueSize} change${queueSize === 1 ? '' : 's'} will sync when you're back online`
-              : 'Anything you save stays on this phone'}
-          </span>
-          {localEntryCount > 0 && (
-            <button onClick={downloadLocalEntriesCsv} className="offline-banner-sync-btn">
-              Download CSV
-            </button>
-          )}
-        </>
-      )}
-    </div>
+      <span className={styles.title}>{serverTrouble ? "Can't reach FRCMOB's server right now" : 'You are offline'}</span>
+      {/* What's waiting is the number that matters offline. The local entry count is every
+          entry this phone has ever kept (up to 600), which read like a sync backlog when it
+          wasn't one. */}
+      <Detail>
+        {queueSize > 0
+          ? `${queueSize} change${queueSize === 1 ? '' : 's'} will sync when you're back online`
+          : 'Anything you save stays on this phone'}
+      </Detail>
+    </Notice>
   );
 }

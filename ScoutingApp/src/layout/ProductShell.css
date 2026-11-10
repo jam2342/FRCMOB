@@ -28,13 +28,6 @@
   box-shadow: none;
 }
 
-.product-shell .ps-topbar-search-btn:hover:not(:disabled),
-.product-shell .ps-topbar-search-btn:focus-visible {
-  border-color: transparent;
-  background: var(--control-bg-hover);
-  color: var(--color-text);
-}
-
 /* Desktop header row: the context chips take the free space on the left and give way to the
    search when the window narrows. */
 .product-shell .ps-topbar-title {
@@ -57,10 +50,6 @@
    chip is a label (not a button), so it stays unfilled. */
 .product-shell .ps-topbar :is(button.ps-context-chip, .ps-context-pin-btn, .ps-context-toggle-btn) {
   background: var(--control-bg);
-}
-
-.product-shell .ps-topbar :is(button.ps-context-chip, .ps-context-pin-btn, .ps-context-toggle-btn):hover {
-  background: var(--control-bg-hover);
 }
 
 .product-shell .ps-topbar .ps-context-chip {
@@ -420,17 +409,6 @@
   font: inherit;
 }
 
-.match-picker-copy-btn:hover,
-.match-picker-copy-btn:focus-visible {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.product-shell.theme-light .match-picker-copy-btn:hover,
-.product-shell.theme-light .match-picker-copy-btn:focus-visible {
-  background: rgba(0, 0, 0, 0.06);
-}
-
 .center-recent-match-row {
   flex-wrap: wrap;
   gap: 6px;
@@ -555,11 +533,6 @@
   cursor: pointer;
 }
 
-.ps-context-toggle-btn:hover {
-  color: var(--color-text);
-  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
-}
-
 .ps-context-toggle-icon {
   width: 12px;
   height: 12px;
@@ -633,12 +606,6 @@
 button.ps-context-chip {
   cursor: pointer;
   transition: border-color 140ms ease, color 140ms ease, transform 140ms ease;
-}
-
-button.ps-context-chip:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--color-accent) 62%, var(--color-border));
-  color: var(--color-text);
-  transform: translateY(-1px);
 }
 
 button.ps-context-chip:disabled {
@@ -986,16 +953,6 @@ button.ps-context-chip:disabled {
   cursor: pointer;
   max-width: min(100%, 240px);
   transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease;
-}
-
-.product-shell .home-day-picker-btn:hover,
-.product-shell .home-day-picker-btn:focus-visible,
-.product-shell .home-day-nav-btn:hover,
-.product-shell .home-day-nav-btn:focus-visible {
-  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
-  color: var(--color-text);
-  background: color-mix(in srgb, var(--color-accent-soft) 38%, transparent);
-  transform: translateY(-1px);
 }
 
 .product-shell .home-day-nav-btn .icon-inline,
@@ -1358,17 +1315,13 @@ button.ps-context-chip:disabled {
     transform var(--motion-fast) var(--motion-ease);
 }
 
-.product-shell :is(.home-event-item, .home-ranking-row):hover::before, .product-shell .home-event-item.active::before {
+.product-shell .home-event-item.active::before {
   opacity: 0.92;
   transform: scaleY(1);
 }
 
 .product-shell .home-event-item.active {
   border-color: var(--home-polish-ring);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--ui-accent) 18%, transparent),
-    0 14px 28px color-mix(in srgb, var(--ui-accent) 10%, rgba(6, 10, 16, 0.16));
 }
 
 .product-shell .home-event-item.home-event-item-rail {
@@ -1517,18 +1470,6 @@ button.ps-context-chip:disabled {
     background-color var(--motion-fast) var(--motion-ease),
     color var(--motion-fast) var(--motion-ease),
     transform var(--motion-fast) var(--motion-ease);
-}
-
-.product-shell .home-match-link-btn:hover,
-.product-shell .home-match-link-btn:focus-visible {
-  border-color: color-mix(in srgb, var(--ui-accent) 56%, var(--ui-border));
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--ui-accent-soft) 62%, transparent),
-    color-mix(in srgb, var(--ui-surface-soft) 92%, transparent)
-  );
-  color: var(--ui-text);
-  transform: translateY(-1px);
 }
 
 .product-shell .home-board-embed-wrap {
@@ -1813,12 +1754,6 @@ button.ps-context-chip:disabled {
   justify-content: center;
 }
 
-.home-calendar-modal-close:hover {
-  border-color: var(--color-accent-strong);
-  background: linear-gradient(145deg, rgba(28, 105, 71, 0.45), rgba(19, 43, 31, 0.72));
-  color: var(--color-text);
-}
-
 .home-calendar-modal-weekdays {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1903,7 +1838,6 @@ button.ps-context-chip:disabled {
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-.home-calendar-modal-chip:hover,
 .home-calendar-modal-chip.active {
   border-color: var(--color-accent-strong);
   background: linear-gradient(140deg, rgba(28, 89, 61, 0.7), color-mix(in srgb, var(--color-surface) 95%, transparent));
@@ -1921,12 +1855,6 @@ button.ps-context-chip:disabled {
   cursor: pointer;
   text-align: left;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
-}
-
-.home-calendar-modal-more:hover {
-  color: var(--color-text);
-  border-color: var(--color-accent-strong);
-  background: rgba(28, 89, 61, 0.35);
 }
 
 @media (max-width: 900px) {
@@ -1973,11 +1901,6 @@ button.ps-context-chip:disabled {
   flex-shrink: 0;
 }
 
-.events-cal-nav-btn:hover {
-  border-color: var(--color-info-text);
-  color: var(--color-text);
-}
-
 .events-cal-nav-btn .icon-inline {
   width: 14px;
   height: 14px;
@@ -2000,11 +1923,6 @@ button.ps-context-chip:disabled {
   cursor: pointer;
   text-align: left;
   width: 100%;
-}
-
-.events-cal-item:hover {
-  border-color: var(--color-info-text);
-  background: color-mix(in srgb, var(--color-info-text) 7%, transparent);
 }
 
 .events-cal-item.active {

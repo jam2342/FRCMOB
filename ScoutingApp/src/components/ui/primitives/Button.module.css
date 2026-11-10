@@ -29,8 +29,7 @@
   transition:
     background-color var(--motion-fast) var(--motion-ease),
     border-color var(--motion-fast) var(--motion-ease),
-    color var(--motion-fast) var(--motion-ease),
-    transform var(--motion-fast) var(--motion-ease);
+    color var(--motion-fast) var(--motion-ease);
 }
 
 .button:focus-visible {
@@ -38,33 +37,15 @@
   outline-offset: var(--focus-ring-offset);
 }
 
-/* Hover lift is suppressed for disabled and loading, which both keep the
-   element focusable-looking but non-actionable. */
-.button:hover:not(:disabled):not([aria-disabled='true']),
-.button:focus-visible:not(:disabled):not([aria-disabled='true']) {
-  transform: translateY(-1px);
-}
-
-.button:active:not(:disabled):not([aria-disabled='true']) {
-  transform: translateY(0);
-}
-
 .button:disabled,
 .button[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.55;
-  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .button {
     transition: none;
-  }
-
-  .button:hover,
-  .button:focus-visible,
-  .button:active {
-    transform: none;
   }
 }
 
@@ -80,24 +61,13 @@
   color: var(--color-on-accent);
 }
 
-.primary:hover:not(:disabled):not([aria-disabled='true']),
-.primary:focus-visible:not(:disabled):not([aria-disabled='true']) {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
-}
-
 /* The established default: accent tinted into the surface. Inherits the exact
    mix `center-btn` used, so a half-migrated page stays visually coherent. */
 .default {
-  background: color-mix(in srgb, var(--color-accent) 44%, var(--color-surface-soft));
+  background: var(--control-bg-accent);
   border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
   color: var(--color-text);
   box-shadow: var(--control-shadow-soft);
-}
-
-.default:hover:not(:disabled):not([aria-disabled='true']),
-.default:focus-visible:not(:disabled):not([aria-disabled='true']) {
-  background: color-mix(in srgb, var(--color-accent) 54%, var(--color-surface-soft));
 }
 
 .quiet {
@@ -106,22 +76,31 @@
   color: var(--control-text);
 }
 
-.quiet:hover:not(:disabled):not([aria-disabled='true']),
-.quiet:focus-visible:not(:disabled):not([aria-disabled='true']) {
-  background: var(--control-bg-hover);
-  border-color: var(--control-border-strong);
-}
-
 .danger {
   background: var(--color-danger-soft);
   border-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-border));
   color: var(--color-danger-text);
 }
 
-.danger:hover:not(:disabled):not([aria-disabled='true']),
-.danger:focus-visible:not(:disabled):not([aria-disabled='true']) {
-  background: color-mix(in srgb, var(--color-danger) 26%, var(--color-surface-soft));
-  border-color: var(--color-danger);
+/* Hover steps the fill and nothing else (uniform.css "One hover"): no lift, no edge change.
+   Keyboard focus shows the ring, not the hover. A pressed toggle keeps its own look. */
+@media (hover: hover) {
+  .quiet:hover:not(:disabled, [aria-disabled='true'], [aria-pressed='true']) {
+    background: var(--control-bg-hover);
+  }
+
+  .primary:hover:not(:disabled, [aria-disabled='true']) {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+  }
+
+  .default:hover:not(:disabled, [aria-disabled='true'], [aria-pressed='true']) {
+    background: var(--control-bg-accent-hover);
+  }
+
+  .danger:hover:not(:disabled, [aria-disabled='true'], [aria-pressed='true']) {
+    background: color-mix(in srgb, var(--color-danger) 26%, var(--color-surface-soft));
+  }
 }
 
 /* ── Sizes ────────────────────────────────────────────────────────── */

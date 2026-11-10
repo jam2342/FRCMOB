@@ -136,13 +136,6 @@
   padding: var(--ui-card-padding-y) var(--ui-card-padding-x);
 }
 
-.product-shell .surface-card:hover,
-.product-shell .home-board-card:hover,
-.product-shell .home-event-section:hover,
-.product-shell .home-mini-panel:hover {
-  box-shadow: var(--ui-shadow-card-hover);
-}
-
 .product-shell .surface-card-head,
 .product-shell .home-card-head,
 .product-shell .home-event-section-head {
@@ -285,7 +278,7 @@
   display: grid;
   gap: var(--space-2);
   padding-top: var(--space-2);
-  animation: dsPanelIn var(--motion-fast) var(--motion-ease) both;
+  animation: dsPanelIn var(--motion-fast) var(--motion-ease) backwards;
 }
 
 .product-shell .center-actions-row.primary-actions {
@@ -464,9 +457,11 @@
   background-clip: padding-box;
 }
 
-.product-shell *::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--ui-border-strong) 96%, transparent);
-  background-clip: padding-box;
+@media (hover: hover) {
+  .product-shell *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--ui-border-strong) 96%, transparent);
+    background-clip: padding-box;
+  }
 }
 
 .product-shell input,
@@ -530,7 +525,6 @@
   color: var(--ui-text-muted);
 }
 
-.product-shell .ps-nav-link:hover,
 .product-shell .ps-nav-link.active {
   border-color: var(--ui-accent);
   background: color-mix(in srgb, var(--ui-accent-soft) 52%, var(--ui-surface-soft));
@@ -571,7 +565,6 @@
   color: #2f485f;
 }
 
-.product-shell.theme-light .ps-mobile-burger-btn:hover,
 .product-shell.theme-light .ps-mobile-burger-btn.active {
   border-color: #83b39d;
   background: #e5f0fa;
@@ -676,13 +669,6 @@
   border-color: var(--ui-border);
   background: var(--ui-surface-soft);
   color: var(--ui-text-muted);
-}
-
-.product-shell .center-btn:hover,
-.product-shell .home-board-btn:hover,
-.product-shell .ps-topbar-search-btn:hover {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
 }
 
 .product-shell .surface-card,
@@ -819,7 +805,6 @@
   margin-top: 10px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--ui-accent) 74%, var(--ui-text));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--ui-accent) 24%, transparent);
 }
 
 .product-shell.finder-collapsed .center-sidebar > * {
@@ -877,18 +862,10 @@
   color: var(--ui-text-muted);
 }
 
-.product-shell .center-tab-btn:hover {
-  border-color: color-mix(in srgb, var(--ui-border-strong) 70%, var(--ui-accent));
-  color: var(--ui-text);
-  background: color-mix(in srgb, var(--ui-surface-soft) 90%, var(--ui-accent-soft));
-  transform: translateY(-0.5px);
-}
-
 .product-shell .center-tab-btn.active {
   border-color: var(--ui-accent);
   background: color-mix(in srgb, var(--ui-accent-soft) 54%, var(--ui-surface-soft));
   color: var(--ui-text);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--ui-accent) 15%, transparent);
 }
 
 .product-shell .center-status-row {
@@ -952,11 +929,6 @@
   box-shadow: none;
 }
 
-.product-shell .center-team-chip:hover {
-  border-color: var(--ui-accent);
-  background: color-mix(in srgb, var(--ui-accent-soft) 48%, var(--ui-surface-soft));
-}
-
 /* Rows: a hairline between them, a tint on hover, a stripe when selected. */
 .product-shell :where(.home-event-item, .home-ranking-row, .favorites-match-row, .home-match-row) {
   border: 0;
@@ -965,10 +937,6 @@
   border-radius: 0;
   background: none;
   box-shadow: none;
-}
-
-.product-shell :where(.home-event-item, .home-ranking-row, .favorites-match-row, .home-match-row):hover {
-  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
 }
 
 .product-shell :where(.home-event-item, .home-ranking-row, .favorites-match-row, .home-match-row).active {
@@ -981,11 +949,6 @@
 .product-shell .home-calendar-nav-btn {
   border-color: var(--ui-border);
   color: var(--ui-text-muted);
-}
-
-.product-shell .home-calendar-nav-btn:hover {
-  border-color: var(--ui-accent);
-  color: var(--ui-text);
 }
 
 .product-shell .home-event-item-tba {
@@ -1068,14 +1031,6 @@
 
 .product-shell.theme-light .center-table tbody tr:nth-child(even) {
   background: rgba(32, 74, 129, 0.045);
-}
-
-.product-shell .center-table tbody tr:hover {
-  background: color-mix(in srgb, var(--color-accent-strong) 8%, transparent);
-}
-
-.product-shell.theme-light .center-table tbody tr:hover {
-  background: rgba(46, 154, 99, 0.1);
 }
 
 .product-shell .home-board-layout {
@@ -1249,20 +1204,12 @@
   background: color-mix(in srgb, var(--ui-surface) 86%, transparent);
 }
 
-.product-shell .center-table tbody tr:hover {
-  background: color-mix(in srgb, var(--ui-accent-soft) 50%, var(--ui-surface-soft));
-}
-
 .product-shell .center-table tbody tr:last-child td {
   border-bottom: 0;
 }
 
 .product-shell.theme-light .center-table tbody tr:nth-child(even) {
   background: rgba(59, 88, 128, 0.035);
-}
-
-.product-shell.theme-light .center-table tbody tr:hover {
-  background: color-mix(in srgb, var(--color-accent) 11%, transparent);
 }
 
 .product-shell .compare-layout-grid .center-main,
@@ -1284,10 +1231,6 @@
 
 .product-shell.theme-light .center-inline-link {
   color: var(--color-text);
-}
-
-.product-shell.theme-light .center-inline-link:hover {
-  color: var(--color-accent-text);
 }
 
 .product-shell.theme-light .center-tab-btn.active,
@@ -2018,12 +1961,6 @@
     color 140ms ease;
 }
 
-.page-view-menu-item:where(:hover, :focus-visible) {
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  outline: none;
-}
-
 .page-view-menu-item.active {
   background: var(--color-accent-soft);
   color: var(--color-text);
@@ -2070,17 +2007,10 @@
   text-overflow: ellipsis;
 }
 
-.product-shell .segmented-tabs__item:where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
-  border-color: var(--control-border-strong);
-  background: var(--control-bg-hover);
-  color: var(--control-text);
-}
-
 .product-shell .segmented-tabs__item:where(.active, [aria-selected='true']) {
   border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
   background: var(--control-bg-active);
   color: var(--control-text);
-  box-shadow: var(--control-shadow-active);
 }
 
 .product-shell :where(
@@ -2130,7 +2060,7 @@
   .ps-topbar-search-btn
 ) {
   border: 1px solid color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
-  background: color-mix(in srgb, var(--color-accent) 44%, var(--color-surface-soft));
+  background: var(--control-bg-accent);
   color: var(--color-text);
   box-shadow: var(--control-shadow-soft);
 }
@@ -2194,33 +2124,6 @@
 }
 
 .product-shell :where(
-  .center-tab-btn,
-  .page-view-tab,
-  .fm-tab,
-  .ps-nav-link,
-  .scout-sidebar-nav-pill,
-  .surface-card-collapse-btn,
-  .surface-card-expand-btn,
-  .ps-sidebar-toggle,
-  .ps-finder-toggle,
-  .center-sort-chip,
-  .ms__link
-):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
-  border-color: var(--control-border-strong);
-  background: var(--control-bg-hover);
-  color: var(--control-text);
-}
-
-.product-shell :where(
-  .center-btn:not(.ghost),
-  .home-board-btn:not(.subtle),
-  .ps-topbar-search-btn
-):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
-  filter: brightness(1.04);
-  transform: translateY(-1px);
-}
-
-.product-shell :where(
   .center-tab-btn.active,
   .page-view-tab.active,
   .fm-tab.active,
@@ -2232,14 +2135,6 @@
   border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border));
   background: var(--control-bg-active);
   color: var(--control-text);
-  box-shadow: var(--control-shadow-active);
-}
-
-.product-shell :where(
-  .center-btn.ghost,
-  .home-board-btn.subtle
-):where(:hover, :focus-visible):not(:disabled):not([aria-disabled='true']) {
-  transform: translateY(-1px);
 }
 
 .product-shell .btb__tab {
@@ -2256,7 +2151,6 @@
 
 .product-shell .btb__tab--active .btb__icon {
   background: var(--control-bg-active);
-  box-shadow: var(--control-shadow-active);
 }
 
 .product-shell .ms__link {
@@ -2325,6 +2219,10 @@
    Motion / Interactivity Pass (Desktop + Mobile)
    ========================================================================== */
 
+/* Entrance animations fill backwards, never both: each ends on the element's own look, and one
+   held at its last frame stays "running", so Safari keeps the element on a layer of its own. A
+   held card that later grew or moved (Members, after a new join code pushed it down) was only
+   part-painted on iPhones, cut off mid-line with its right half missing. */
 @keyframes uiPageFadeIn {
   from {
     opacity: 0;
@@ -2387,20 +2285,8 @@
   }
 }
 
-@keyframes uiLivePulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(43, 209, 113, 0.46);
-  }
-  70% {
-    box-shadow: 0 0 0 7px rgba(43, 209, 113, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(43, 209, 113, 0);
-  }
-}
-
 .product-shell .ps-content > *{
-  animation: uiPageFadeIn var(--motion-page) var(--motion-ease) both;
+  animation: uiPageFadeIn var(--motion-page) var(--motion-ease) backwards;
 }
 
 .product-shell .surface-card,
@@ -2409,20 +2295,15 @@
 .product-shell .center-match-row,
 .product-shell .center-team-card,
 .product-shell .center-list-item-card,
-
 .product-shell .surface-card-backdrop,
 .surface-card-backdrop {
-  animation: uiFadeIn var(--motion-fast) ease both;
+  animation: uiFadeIn var(--motion-fast) ease backwards;
 }
 
 .product-shell .surface-card--expanded,
 .surface-card--expanded {
-  animation: uiSheetDropIn calc(var(--motion-fast) + 60ms) var(--motion-ease) both;
+  animation: uiSheetDropIn calc(var(--motion-fast) + 60ms) var(--motion-ease) backwards;
   transform-origin: top center;
-}
-
-.product-shell .center-live-dot {
-  animation: uiLivePulse 1.55s ease-out infinite;
 }
 
 .product-shell .ps-nav-link,
@@ -2455,16 +2336,6 @@
   overflow: hidden;
 }
 
-.product-shell .home-match-row::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(108deg, transparent 24%, rgba(255, 255, 255, 0.075) 50%, transparent 76%);
-  transform: translate3d(-115%, 0, 0);
-  transition: transform 520ms var(--motion-ease);
-  pointer-events: none;
-}
-
 .product-shell .home-board-event-list,
 .product-shell .center-list-scroll,
 .product-shell .home-ranking-list {
@@ -2473,7 +2344,7 @@
 }
 
 .product-shell .ps-nav .ps-nav-link {
-  animation: uiFinderCardReveal var(--motion-list) var(--motion-ease) both;
+  animation: uiFinderCardReveal var(--motion-list) var(--motion-ease) backwards;
 }
 
 .product-shell .ps-nav .ps-nav-link:nth-child(1) { animation-delay: 24ms; }
@@ -2490,9 +2361,8 @@
 .product-shell .home-ranking-list > :nth-child(-n + 8),
 .product-shell .ms__grid > :nth-child(-n + 6) {
   --ui-item-delay: 0ms;
-  animation: uiListStaggerIn var(--motion-list) var(--motion-ease) both;
+  animation: uiListStaggerIn var(--motion-list) var(--motion-ease) backwards;
   animation-delay: var(--ui-item-delay);
-  will-change: transform, opacity;
 }
 
 .product-shell :is(.home-board-event-list, .center-list-scroll, .home-ranking-list, .ms__grid) > :nth-child(1) { --ui-item-delay: 18ms; }
@@ -2513,7 +2383,7 @@
 .product-shell .home-mini-tab-btn.active,
 .product-shell .btb__tab--active .btb__icon,
 .product-shell .ms__link--active {
-  animation: uiMicroPop 220ms var(--motion-spring) both;
+  animation: uiMicroPop 220ms var(--motion-spring) backwards;
 }
 
 .product-shell .ms,
@@ -2521,34 +2391,6 @@
 .product-shell .surface-card--expanded,
 .product-shell .home-drawer {
   will-change: transform, opacity;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .product-shell .ps-nav-link:hover,
-  .product-shell .center-btn:hover,
-  .product-shell .ps-topbar-search-btn:hover,
-  .product-shell .event-picker-item:hover,
-  .product-shell .home-event-item:hover,
-  .product-shell .home-ranking-row:hover,
-  .product-shell .home-team-pill:hover,
-  .product-shell .center-tab-btn:hover,
-  .product-shell .center-sort-chip:hover,
-  .product-shell .home-card-collapse-btn:hover,
-  .product-shell .home-board-btn:hover {
-    transform: translate3d(0, -2px, 0);
-    box-shadow: 0 8px 16px color-mix(in srgb, var(--color-bg) 18%, transparent);
-  }
-
-  .product-shell .surface-card:hover,
-  .product-shell .home-event-item:hover,
-  .product-shell .event-picker-item:hover,
-  .product-shell .center-match-row:hover {
-    box-shadow: 0 10px 20px color-mix(in srgb, var(--color-bg) 20%, transparent);
-  }
-
-  .product-shell .home-match-row:hover::before {
-    transform: translate3d(115%, 0, 0);
-  }
 }
 
 .product-shell .ps-nav-link:active,
@@ -2593,10 +2435,6 @@
   .product-shell .ms__link--active,
   .product-shell .btb__tab--active .btb__icon {
     animation: none !important;
-  }
-
-  .product-shell .home-match-row::before {
-    display: none;
   }
 
   .product-shell .ps-mobile-burger-btn .ps-burger-icon .line {
@@ -2649,11 +2487,6 @@
   .product-shell .surface-card--expanded,
   .product-shell .home-drawer {
     will-change: auto !important;
-  }
-
-  /* No shimmer sweep on match rows — saves a composite layer */
-  .product-shell .home-match-row::before {
-    display: none !important;
   }
 
   /* Instant scroll on slow devices */

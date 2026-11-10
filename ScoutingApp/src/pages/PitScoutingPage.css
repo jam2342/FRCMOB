@@ -196,13 +196,6 @@
   margin-top: var(--space-2);
 }
 
-@media (hover: hover) {
-  .pit-team-cell:hover,
-  .pit-photo-add:hover {
-    border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
-    background: color-mix(in srgb, var(--color-accent-soft) 42%, var(--color-surface-soft));
-  }
-}
 
 @media (max-width: 640px) {
   .pit-team-grid {

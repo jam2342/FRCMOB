@@ -273,9 +273,15 @@
   --control-bg: color-mix(in srgb, var(--color-surface-soft) 92%, transparent);
   --control-bg-hover: color-mix(in srgb, var(--color-surface-muted) 78%, var(--color-surface-soft));
   --control-bg-active: color-mix(in srgb, var(--color-accent-soft) 62%, var(--color-surface-soft));
+  /* The accent-tinted button (Button's default, the shell's center-btn) and its hover step. */
+  --control-bg-accent: color-mix(in srgb, var(--color-accent) 44%, var(--color-surface-soft));
+  --control-bg-accent-hover: color-mix(in srgb, var(--color-accent) 54%, var(--color-surface-soft));
+  /* A row's hover: a tint laid over whatever fill the row already has (uniform.css "One hover"),
+     so it reads the same on a bare page, inside a card, on an alliance-coloured row and in
+     either theme. */
+  --row-bg-hover: color-mix(in srgb, var(--color-text) 6%, transparent);
   --control-text: var(--color-text);
   --control-text-muted: var(--color-text-muted);
-  --control-shadow-active: 0 8px 16px color-mix(in srgb, var(--color-accent) 12%, transparent);
   --control-shadow-soft: 0 4px 12px rgba(8, 15, 24, 0.12);
 
   /* ── Focus ─────────────────────────────────────────────────────── */

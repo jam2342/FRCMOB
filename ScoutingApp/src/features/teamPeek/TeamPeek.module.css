@@ -136,18 +136,20 @@
   color: var(--color-on-accent);
 }
 
-.primary:hover {
-  background: var(--color-accent-hover);
-}
-
 .secondary {
   border: 1px solid var(--color-border-strong);
   background: transparent;
   color: var(--color-text);
 }
 
-.secondary:hover {
-  background: var(--color-surface-muted);
+@media (hover: hover) {
+  .primary:hover {
+    background: var(--color-accent-hover);
+  }
+
+  .secondary:hover:not([aria-pressed='true']) {
+    background: var(--control-bg-hover);
+  }
 }
 
 .secondary[aria-pressed='true'] {

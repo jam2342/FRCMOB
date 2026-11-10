@@ -27,6 +27,13 @@
   border-radius: var(--radius-xs);
 }
 
+/* A team name that opens its team: the link hover (uniform.css "One hover"). */
+@media (hover: hover) {
+  .chipButton:hover {
+    text-decoration: underline;
+  }
+}
+
 /* ── Narrow-width summary ─────────────────────────────────────────── */
 
 .mobileList {
