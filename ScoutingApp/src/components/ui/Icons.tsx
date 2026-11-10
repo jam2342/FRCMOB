@@ -264,6 +264,32 @@ export function ImageIcon({ className, size }: { className?: string; size?: numb
   );
 }
 
+export function CheckIcon({ className, size }: { className?: string; size?: number }) {
+  return (
+    <I className={className} size={size}>
+      <polyline points="4 12.5 9.5 18 20 6.5" />
+    </I>
+  );
+}
+
+export function CloseIcon({ className, size }: { className?: string; size?: number }) {
+  return (
+    <I className={className} size={size}>
+      <path d="M6 6l12 12" />
+      <path d="M18 6L6 18" />
+    </I>
+  );
+}
+
+export function CameraIcon({ className, size }: { className?: string; size?: number }) {
+  return (
+    <I className={className} size={size}>
+      <path d="M4 8h3l1.6-2.5h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </I>
+  );
+}
+
 export function CodeIcon({ className, size }: { className?: string; size?: number }) {
   return (
     <I className={className} size={size}>

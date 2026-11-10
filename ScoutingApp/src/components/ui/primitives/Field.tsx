@@ -434,6 +434,8 @@ export type FieldRadioGroupProps = {
    * row of plain buttons never gave.
    */
   segmented?: boolean;
+  /** Tapping the selected option again reports an empty value, so a yes/no question can go back to unanswered. */
+  allowClear?: boolean;
   hint?: string;
   badge?: ReactNode;
   className?: string;
@@ -447,6 +449,7 @@ export function FieldRadioGroup({
   options,
   inline = false,
   segmented = false,
+  allowClear = false,
   hint,
   badge,
   className,
@@ -480,6 +483,8 @@ export function FieldRadioGroup({
               checked={value === option.value}
               disabled={option.disabled}
               onChange={() => onValueChange(option.value)}
+              // A checked radio fires click but never change, so re-tapping is the only way to clear.
+              onClick={allowClear && value === option.value ? () => onValueChange('') : undefined}
             />
             <span>{option.label}</span>
           </label>
