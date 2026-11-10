@@ -13,6 +13,9 @@ regexes = [
   # snake_case identifiers used as keys in UI tables and fixtures
   # (word or short-number segments only, so a token like sk_live_<random> never matches)
   '''^[a-z]+(_([a-z]+[0-9]{0,2}|[0-9]{1,3}))+$''',
+  # Cloudflare Web Analytics site token (src/perf/webAnalytics.ts): public by design,
+  # it ships in every page's beacon tag and only names the site
+  '''^33bc009e074e4046a183f8bdaa77bad0$''',
 ]
 paths = [
   # sha256 of the detector weights and of audited source files
