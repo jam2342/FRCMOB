@@ -53,7 +53,7 @@ return {passed:true,realNativeHTTP:true,realBackend:true,join:true,sync:true,ide
 check(!window.__simulatorOffline, 'live network blocked');
 const statuses = {};
 for (const path of ['/health', '/matches/event/2026arc/schedule?include_teams=true', '/teams/event/2026arc/intel?include_tba=false&include_statbotics=false']) {
-  const response = await fetch('https://scouting-app-iryg.vercel.app/api'+path);
+  const response = await fetch('https://frcmob.com/api'+path);
   check(response.ok, 'Native HTTP failed: '+path+' '+response.status);
   const data = await response.json(); check(data && typeof data === 'object', 'Invalid JSON');
   statuses[path] = response.status;
@@ -67,7 +67,7 @@ window.fetch = (input, options) => {
   const url = new URL(typeof input === 'string' ? input : input.url, location.href);
   const method = options?.method || (typeof input === 'object' && input.method) || 'GET';
   check(['GET','HEAD'].includes(method.toUpperCase()), 'Writes forbidden in preparation probe');
-  if (url.protocol === 'https:') {check(url.host === 'scouting-app-iryg.vercel.app', 'Unexpected server'); reads++;}
+  if (url.protocol === 'https:') {check(url.host === 'frcmob.com', 'Unexpected server'); reads++;}
   return original(input, options);
 };
 const module = await import('/assets/${offlineAsset}');

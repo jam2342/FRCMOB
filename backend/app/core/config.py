@@ -174,7 +174,7 @@ class Settings(BaseSettings):
     push_notifications_enabled: bool = True
     vapid_public_key: str = ""
     vapid_private_key: str = ""
-    vapid_subject: str = "https://scouting-app-iryg.vercel.app"
+    vapid_subject: str = "https://frcmob.com"
     push_match_alert_interval_sec: int = 60
     push_match_lead_minutes_default: int = 15
     push_ttl_sec: int = 1800

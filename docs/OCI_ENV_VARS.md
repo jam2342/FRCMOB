@@ -21,7 +21,9 @@ Upstash credentials, the Roboflow key) should be treated as compromised and rota
 | `STRICT_STARTUP_ENV_VALIDATION` | `true` |
 | `ENFORCE_ADMIN_AUTH_FOR_WRITES` | `true` |
 | `UVICORN_WORKERS` | `2` |
-| `BACKEND_TLS_HOST` | `141-148-171-128.sslip.io` (changes with the public IP) |
+| `MODEL_FILES_TOKEN` | `<from .env>`: the folder under `/home/ubuntu/frcmob-model-files` served at `frcmob.com/models/` |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | `scouting-app-iryg.vercel.app,frcmob.com` |
+| `VAPID_SUBJECT` | `https://frcmob.com` |
 
 `DATABASE_URL` must use `postgresql+psycopg://` (psycopg3). If you ever point it back
 at Neon, drop `&channel_binding=require`.

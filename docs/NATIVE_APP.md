@@ -70,8 +70,8 @@ No shell configuration or existing Java installation needs to change.
 
 ## Runtime behavior
 
-- Native HTTP uses the public `https://scouting-app-iryg.vercel.app/api` service.
-  Live rooms use `wss://141-148-171-128.sslip.io`. Native HTTP fetch patching avoids
+- Native HTTP uses the public `https://frcmob.com/api` service, and live rooms use
+  `wss://frcmob.com/api`, both through Cloudflare to the API server. Native HTTP fetch patching avoids
   requiring WebView origins in the backend's browser CORS list. Optional public
   overrides are `VITE_NATIVE_API_URL` and `VITE_NATIVE_WS_URL`; insecure/relative
   endpoints are rejected. Website endpoint overrides do not affect the native app.

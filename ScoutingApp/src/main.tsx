@@ -17,6 +17,7 @@ import { preloadEventSearchIndex } from './utils/eventSearchIndex';
 import { scheduleIdleWork } from './utils/idle';
 import { startRum, trackingAllowed } from './perf/rum';
 import { onVercelHost, startWebAnalytics } from './perf/webAnalytics';
+import { startHostMove } from './platform/hostMove';
 import { startCspReports } from './perf/cspReports';
 import { startIntentPrefetch } from './features/prefetch/intentPrefetch';
 import { startMatchPreload } from './features/prefetch/matchPreload';
@@ -58,6 +59,8 @@ if (!isNativeApp() && 'serviceWorker' in navigator) {
 }
 
 async function bootstrap() {
+  // The old address hands over to frcmob.com once nothing here still needs syncing.
+  startHostMove();
   bootstrapNativeEphemeralAccess();
   await bootstrapWorkspaceSession();
   await bootstrapNativeQueue();

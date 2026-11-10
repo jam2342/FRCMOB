@@ -56,6 +56,6 @@ jobs:
       - name: Live check
         if: steps.changed.outputs.deploy == 'true'
         run: |
-          body=$(curl -fsS --max-time 60 --retry 3 --retry-delay 10 https://141-148-171-128.sslip.io/health/deep)
+          body=$(curl -fsS --max-time 60 --retry 3 --retry-delay 10 https://api.frcmob.com/health/deep)
           echo "$body"
           echo "$body" | grep -q '"ok":true'

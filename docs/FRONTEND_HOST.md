@@ -13,6 +13,8 @@
   - onnxruntime's WebGPU engine `ort-wasm-simd-threaded.jsep-<hash>.wasm` (28 MiB)
 
   The engine's name changes whenever `onnxruntime-web` changes. When it does, copy `ScoutingApp/dist/assets/<that file>` into the folder; `web-deploy.yml` refuses to publish until `https://frcmob.com/assets/<that file>` answers. The build fails if anything else crosses 25 MiB.
+- **Rate limit:** one rule (the free plan's only one): `frcmob.com/api/*` requests that reach the server, 300 per 10 s per IP, then blocked for 10 s. Generous because a venue's Wi-Fi puts a whole crowd behind one IP. `api.frcmob.com` isn't covered: Vercel's old `/api` rewrite arrives there from a handful of Vercel IPs.
+- **The old address:** `scouting-app-iryg.vercel.app` still builds from `main`; its `/api` rewrite goes to `api.frcmob.com`. The app there hands people over to frcmob.com (`src/platform/hostMove.ts`), but only once that browser has nothing left to sync (queued edits, recordings not yet uploaded, pit drafts), since browser storage belongs to each address. Logins don't carry over: teams rejoin with their join code once.
 - **Analytics:** Cloudflare Web Analytics (`src/perf/webAnalytics.ts`), only on frcmob.com, off under DNT/GPC. Vercel Web Analytics stays only on `*.vercel.app`.
 
 
@@ -23,10 +25,7 @@ Rule: **behavior lives in the backend and the app; the host only serves files an
 - **Caching rules are set by the backend** (#2, `backend/app/api/edge_cache.py`), with standard headers (`CDN-Cache-Control`, `Cache-Control`, ETags). A new CDN honors them without code changes. The header name is one setting.
 - **No host APIs.** No purge tokens, no edge functions, no host-specific image or blob services. The only Vercel-specific line is the caching opt-in in `vercel.json`.
 - **Prebuilt responses in Redis (#9) and the saved copy on the phone (#7) don't care about the host at all**, and they carry most of the speed win. If the edge cache disappeared tomorrow, they still hold.
-- **Best long-term shape, once there's a domain:** put the API on its own name (`api.<domain>`) behind a CDN (Cloudflare's free plan is the obvious one), and point the app straight at it instead of through the frontend host's `/api` proxy. Then API caching is independent of whoever hosts the static files, and swapping the frontend host is a DNS change. Costs to plan for:
-  - A cross-origin API means CORS preflights for the custom headers (`X-Workspace-Access`, `X-Admin-Session`). Answer `OPTIONS` with `Access-Control-Max-Age: 86400` so a phone pays that once a day.
-  - `CORS_ALLOW_ORIGINS` must list the new frontend origin.
-  - sslip.io names can't sit behind Cloudflare's proxy, so this waits for a real domain (already needed for the accounts plan's email sender).
+- **Why `/api` stayed same-origin on Cloudflare** instead of the app calling `api.frcmob.com` directly: the service worker (offline pit photos, push-alert prefetch) and the boot prefetch all assume `/api` on the page's own origin, and a cross-origin API would add CORS preflights for the custom headers. Cloudflare routes `frcmob.com/api/*` to the VM with no Worker, so it costs nothing per request.
 
 ## Host move checklist
 

@@ -12,7 +12,7 @@ identify individual robots reliably.
 ## Smoke test after every deploy
 
 ```bash
-curl -s https://scouting-app-iryg.vercel.app/api/health/deep
+curl -s https://frcmob.com/api/health/deep
 ```
 
 Healthy: `"ok": true`, `"database": true`, `"redis": true`, no `env_validation.errors`.
@@ -49,7 +49,7 @@ The regional automation tick (every 12 h) re-ingests each completed event of the
 season, then recomputes its ratings.
 
 ```bash
-curl -s https://scouting-app-iryg.vercel.app/api/automation/regional/season/2026/status
+curl -s https://frcmob.com/api/automation/regional/season/2026/status
 ```
 
 `last_run_at` should be under ~14 h old; `last_result.failed_event_count` should be 0

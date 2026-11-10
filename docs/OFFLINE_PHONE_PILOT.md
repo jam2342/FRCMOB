@@ -15,7 +15,7 @@ Automated baseline (2026-09-30): Chrome opened saved event pages and the isolate
 
 ## iPhone walkthrough
 
-1. In Safari, open https://scouting-app-iryg.vercel.app, tap Share → Add to Home Screen, then launch FRCMOB from its new icon. Work in that Home Screen app for the rest of the check.
+1. In Safari, open https://frcmob.com, tap Share → Add to Home Screen, then launch FRCMOB from its new icon. Work in that Home Screen app for the rest of the check.
 2. Join your existing team workspace and select the event in Events. On Wi-Fi, open My Team → **Ready for no signal** and tap **Get ready for offline**. Wait for **Match recorder: Saved on this phone** and **Event data: Verified**. Note any **Needs retry** item and tap **Update saved data** until it clears or record the failure.
 3. Turn on Airplane Mode and turn Wi-Fi off. Fully close the Home Screen app and reopen it from the icon. Confirm My Team, Events, one Team Center page, Strategy, and Match recorder open with saved information. A live-only value may be stale; it should be labeled as saved rather than presented as current.
 4. While offline, save one clearly marked test scouting entry in your workspace. In My Team → **Saved on this phone**, confirm the scouting-change count increased. Do not clear website data or uninstall the app while anything is waiting.
