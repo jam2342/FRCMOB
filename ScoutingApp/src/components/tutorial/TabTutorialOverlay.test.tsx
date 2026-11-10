@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TabTutorialOverlay } from './TabTutorialOverlay';
 import { hasSeenTutorial, markTutorialSeen } from '../../tutorial/tutorialState';
 
-vi.mock('./TutorialRobotMascot', () => ({ TutorialRobotMascot: () => null }));
+vi.mock('../ui/RobotMascot', () => ({ RobotMascot: () => null }));
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 

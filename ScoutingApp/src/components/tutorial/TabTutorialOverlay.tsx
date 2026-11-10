@@ -7,7 +7,7 @@ import {
   type TutorialWalkthroughStep,
 } from '../../tutorial/tutorialBlueprints';
 import { markTutorialSeen } from '../../tutorial/tutorialState';
-import { TutorialRobotMascot } from './TutorialRobotMascot';
+import { RobotMascot } from '../ui/RobotMascot';
 import './TabTutorialOverlay.css';
 
 type SpotlightRect = { top: number; left: number; width: number; height: number };
@@ -136,7 +136,7 @@ function TutorialRobotGuide({
   return (
     <div className="tut-guide" aria-hidden="true">
       <div className="tut-robot-stage">
-        <TutorialRobotMascot pose={pose} talking />
+        <RobotMascot pose={pose} talking />
       </div>
       <div className="tut-guide-bubble is-talking">
         <div className="tut-guide-kicker-row">

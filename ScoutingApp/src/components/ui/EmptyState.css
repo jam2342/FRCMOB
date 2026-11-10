@@ -20,6 +20,12 @@
   gap: var(--space-2);
 }
 
+/* The robot (RobotMascot) says hello with two waves, then idles: an empty page isn't a
+   tour, so it shouldn't keep waving at someone reading it. */
+.es .robot-mascot-arm-group-right.is-waving {
+  animation-iteration-count: 2;
+}
+
 .es__icon {
   width: 56px;
   height: 56px;
