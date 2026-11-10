@@ -39,7 +39,7 @@ export function PitTeamPicker({ teams, entriesByTeam, selectedTeam, disabled, co
           <strong>Team {teamNumber(selectedTeam)}</strong>
           {nickname ? <span title={nickname}>{nickname}</span> : null}
         </div>
-        <Button size="sm" icon={<ListIcon />} onClick={() => setChooserOpen(true)} disabled={disabled}>
+        <Button variant="quiet" size="sm" icon={<ListIcon />} onClick={() => setChooserOpen(true)} disabled={disabled}>
           Change team
         </Button>
       </div>
