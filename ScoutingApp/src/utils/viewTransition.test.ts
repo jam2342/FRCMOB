@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isPlainClick, navigateWithTransition, notifyRouteCommitted, sectionDirection, switchTabWithTransition } from './viewTransition';
+import { isPlainClick, markNextPageArrived, navigateInstantly, navigateWithTransition, notifyRouteCommitted, sectionDirection, switchTabWithTransition } from './viewTransition';
 
 type TransitionDoc = { startViewTransition?: unknown };
 const transitionDoc = () => document as unknown as TransitionDoc;
@@ -132,5 +132,44 @@ describe('view transitions', () => {
     expect(isPlainClick(base)).toBe(true);
     expect(isPlainClick({ ...base, metaKey: true })).toBe(false);
     expect(isPlainClick({ ...base, button: 1 })).toBe(false);
+  });
+});
+
+describe('instant tab switches', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+    delete transitionDoc().startViewTransition;
+  });
+
+  it('marks the incoming page as arrived before it is drawn, so it never fades in', async () => {
+    document.body.innerHTML = '<main class="ps-content"><section id="old"></section></main>';
+    const content = document.querySelector('.ps-content')!;
+    markNextPageArrived();
+    const page = document.createElement('section');
+    content.replaceChildren(page);
+    await Promise.resolve();
+    expect(page.hasAttribute('data-arrived')).toBe(true);
+  });
+
+  it('stops marking pages once the switch is over', async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<main class="ps-content"></main>';
+    markNextPageArrived();
+    vi.advanceTimersByTime(3000);
+    const later = document.createElement('section');
+    document.querySelector('.ps-content')!.append(later);
+    await Promise.resolve();
+    expect(later.hasAttribute('data-arrived')).toBe(false);
+  });
+
+  it('navigates at once, even with view transitions available, and every tap lands', () => {
+    const starts = vi.fn();
+    transitionDoc().startViewTransition = starts;
+    document.body.innerHTML = '<main class="ps-content"></main>';
+    const visited: string[] = [];
+    for (const to of ['/home', '/events', '/scouting']) navigateInstantly((path) => visited.push(path), to);
+    expect(visited).toEqual(['/home', '/events', '/scouting']);
+    expect(starts).not.toHaveBeenCalled();
   });
 });

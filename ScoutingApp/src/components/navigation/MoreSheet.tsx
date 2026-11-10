@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { markNextPageArrived } from '../../utils/viewTransition';
 import { NavLink } from 'react-router-dom';
 import './MoreSheet.css';
 
@@ -122,6 +123,15 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
     setClosing(true);
   }
 
+  // Picking a page closes the sheet in the same frame the page changes. It used to slide down
+  // for 200 ms over the new page while that page faded in underneath, so the menu and both
+  // pages showed at once. Dismissing without picking (backdrop, swipe, Esc) still slides.
+  function leaveFor() {
+    markNextPageArrived();
+    setClosing(false);
+    onClose();
+  }
+
   useEffect(() => {
     if (!closing) return;
     const timer = setTimeout(() => {
@@ -220,7 +230,7 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
                 key={item.to}
                 to={item.to}
                 className={linkClass}
-                onClick={startClose}
+                onClick={leaveFor}
               >
                 <span className="ms__link-icon">{item.icon}</span>
                 <span className="ms__link-label">{item.label}</span>
@@ -239,7 +249,7 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
                 key={item.to}
                 to={item.to}
                 className={linkClass}
-                onClick={startClose}
+                onClick={leaveFor}
               >
                 <span className="ms__link-icon">{item.icon}</span>
                 <span className="ms__link-label">{item.label}</span>
@@ -257,7 +267,7 @@ export function MoreSheet({ open, onClose }: MoreSheetProps) {
                 key={item.to}
                 to={item.to}
                 className={linkClass}
-                onClick={startClose}
+                onClick={leaveFor}
               >
                 <span className="ms__link-icon">{item.icon}</span>
                 <span className="ms__link-label">{item.label}</span>
