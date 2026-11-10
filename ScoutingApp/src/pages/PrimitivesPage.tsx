@@ -180,6 +180,7 @@ export function PrimitivesPage() {
               <CardRow label="Open match log" value="12 matches" onClick={() => undefined} />
             </div>
             <EmptyState compact icon={<ClockIcon />} title="No pit data yet" description="This team has not been pit scouted at this event." />
+            <EmptyState compact mascot title="No matches today" description="The robot is the same one that runs the page tours." />
           </CardBody>
         </SurfaceCard>
 

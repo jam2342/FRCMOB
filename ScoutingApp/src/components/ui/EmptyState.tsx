@@ -24,7 +24,7 @@ export function EmptyState({ icon, title, description, action, compact, classNam
 
   return (
     <div className={`es es--${type} ${compact ? 'es--compact' : ''} ${className || ''}`}>
-      {mascot ? <RobotMascot size={compact ? 64 : 88} /> : defaultIcon && <div className="es__icon">{defaultIcon}</div>}
+      {mascot ? <RobotMascot size={compact ? 56 : 76} /> : defaultIcon && <div className="es__icon">{defaultIcon}</div>}
       <h3 className="es__title">{title}</h3>
       {description && <p className="es__desc">{description}</p>}
       {action && <div className="es__action">{action}</div>}

@@ -193,9 +193,8 @@ export function PrivacyPolicyPage() {
               advertising in FRCMOB and no advertising or cross-site trackers.
             </p>
             <p>
-              The website at frcmob.com counts page views with Cloudflare Web Analytics (under{' '}
-              <a href={CLOUDFLARE_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Cloudflare&apos;s privacy policy</a>
-              ). It uses no cookies or local storage and does not fingerprint you or keep your IP
+              The website at frcmob.com counts page views with Cloudflare Web Analytics, under the
+              Cloudflare privacy policy linked below. It uses no cookies or local storage and does not fingerprint you or keep your IP
               address; each page view records the page, the referring site, country, browser and
               device type, and page-load timings. The old scouting-app-iryg.vercel.app address used{' '}
               <a href={VERCEL_ANALYTICS_PRIVACY_URL} target="_blank" rel="noopener noreferrer">Vercel Web Analytics</a>
