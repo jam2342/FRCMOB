@@ -1,6 +1,6 @@
 import { cx } from '../ui/primitives/cx';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { isPlainClick, navigateWithTransition, sectionDirection } from '../../utils/viewTransition';
+import { isPlainClick, navigateInstantly } from '../../utils/viewTransition';
 import { useHideOnScroll } from '../../hooks/useHideOnScroll';
 import { hapticTap } from '../../utils/haptics';
 import './BottomTabBar.css';
@@ -141,7 +141,6 @@ const TAB_ITEMS: BottomTabItem[] = [
   { to: '/match-center', label: 'Matches' },
 ];
 
-const TAB_ORDER = TAB_ITEMS.map((tab) => tab.to);
 
 const ICON_MAP: Record<string, React.FC<{ active: boolean }>> = {
   '/home': HomeIcon,
@@ -170,9 +169,7 @@ export function BottomTabBar({ moreOpen, onToggleMore }: BottomTabBarProps) {
             hapticTap();
             if (!isPlainClick(event) || location.pathname === tab.to) return;
             event.preventDefault();
-            navigateWithTransition(navigate, tab.to, {
-              direction: sectionDirection(TAB_ORDER, location.pathname, tab.to),
-            });
+            navigateInstantly(navigate, tab.to);
           }}
         >
           {({ isActive }) => {

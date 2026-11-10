@@ -90,6 +90,48 @@ function waitForSettled(): Promise<void> {
   });
 }
 
+// How long a tab switch keeps marking the incoming page as arrived: long enough for a page whose
+// chunk is still loading on a slow phone (its Suspense fallback is swapped for the page later).
+const ARRIVAL_WATCH_MS = 2500;
+let arrivalWatch: { observer: MutationObserver; timer: number } | null = null;
+
+// A tab switch shows the destination as it is: no fade, no slide. The shell fades every newly
+// mounted page in (uiPageFadeIn), which on a tab switch read as the screen dimming and snapping
+// back; a page marked as arrived skips it. The observer's callback runs as a microtask right
+// after React inserts the page, before the browser styles or paints it, so the page is never
+// drawn mid-fade.
+export function markNextPageArrived(): void {
+  if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+  const content = document.querySelector('.ps-content');
+  if (!content) return;
+  if (arrivalWatch) {
+    arrivalWatch.observer.disconnect();
+    window.clearTimeout(arrivalWatch.timer);
+  }
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      record.addedNodes.forEach((node) => {
+        if (node instanceof Element) node.setAttribute('data-arrived', '');
+      });
+    }
+  });
+  observer.observe(content, { childList: true });
+  const timer = window.setTimeout(() => {
+    observer.disconnect();
+    arrivalWatch = null;
+  }, ARRIVAL_WATCH_MS);
+  arrivalWatch = { observer, timer };
+}
+
+// Bottom tabs and the More sheet switch sections the way a phone's own tab bar does: at once.
+// The cross-fade they used drew the old and new page through each other for ~150 ms (dimmed,
+// ghosted text), and a tap during one skipped the transition and changed the page under it, so
+// fast taps flashed through several half-drawn states. Every tap now ends on its destination.
+export function navigateInstantly(navigate: NavigateFn, to: string): void {
+  markNextPageArrived();
+  navigate(to);
+}
+
 export function navigateWithTransition(navigate: NavigateFn, to: string, options: TransitionOptions = {}): void {
   const doc = document as DocumentWithTransitions;
   if (!viewTransitionsAvailable() || activeTransition || !doc.startViewTransition) {

@@ -20,6 +20,16 @@ describe('MoreSheet', () => {
     document.body.style.overflow = '';
   });
 
+  it('picking a page closes the sheet in the same frame, with no slide-down over the new page', () => {
+    vi.useFakeTimers();
+    render(<MoreSheetHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open more' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /Compare/ }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('.ms__backdrop')).toBeNull();
+  });
+
   it('traps focus, closes on Escape, and restores the opener', () => {
     vi.useFakeTimers();
     render(<MoreSheetHarness />);

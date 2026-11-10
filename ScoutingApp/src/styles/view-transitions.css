@@ -124,6 +124,20 @@ html[data-vt] .product-shell .ps-content > *,
   animation: none;
 }
 
+/* ...and so do its cards and rows. The shell fades each one in as it mounts (uiFadeIn); on a
+   tab switch every card of the incoming page did that at once, so the screen dimmed and snapped
+   back even with the page itself shown at once. */
+.product-shell .ps-content > [data-arrived] :is(
+  .surface-card,
+  .home-board-card,
+  .home-event-section,
+  .center-match-row,
+  .center-team-card,
+  .center-list-item-card
+) {
+  animation: none;
+}
+
 @keyframes vtFadeIn {
   from { opacity: 0; }
 }
