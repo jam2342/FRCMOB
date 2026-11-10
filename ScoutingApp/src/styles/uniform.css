@@ -290,9 +290,9 @@ input[type='search']::-webkit-search-decoration {
 .product-shell .segmented-tabs {
   gap: 2px;
   padding: 3px;
-  /* The tray's padding and gap, so a strip snapped to its first tab sits at scrollLeft 0 and
-     doesn't fade that tab as if more were past it. */
-  scroll-padding-inline: 5px;
+  /* The edge fade's width: a snapped tab starts just clear of the fade, with the one before it
+     fading out behind. At the first tab this clamps to scrollLeft 0, so nothing fades there. */
+  scroll-padding-inline: 40px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
@@ -323,6 +323,12 @@ input[type='search']::-webkit-search-decoration {
   color: var(--color-text);
 }
 
+/* The phone strip's old underline style made the selected tab's bottom edge transparent, so the
+   raised segment read as an open box. */
+.product-shell .segmented-tabs.segmented-tabs--ink .segmented-tabs__item:where(.active, [aria-selected='true']) {
+  border-bottom-color: var(--color-border);
+}
+
 .product-shell .segmented-tabs .segmented-tabs__item:where(.active, [aria-selected='true'], [aria-current='page']) {
   border-color: var(--color-border);
   background: var(--color-surface-raised);
@@ -349,19 +355,22 @@ input[type='search']::-webkit-search-decoration {
   content: '';
   position: sticky;
   z-index: 1;
-  flex: 0 0 28px;
+  flex: 0 0 40px;
   align-self: stretch;
   pointer-events: none;
 }
 
+/* Solid for the first 22px, then fading: a tab cut at the edge disappears into it. A plain
+   28px fade left the cut word readable ("ew" of Overview) and looking broken. */
 .product-shell .segmented-tabs:is([data-more='start'], [data-more='both'])::before {
-  left: 0;
-  margin-right: -28px;
-  background: linear-gradient(to right, var(--color-surface-muted), transparent);
+  /* Past the tray's 3px padding, or a sliver of the cut tab shows at the very edge. */
+  left: -3px;
+  margin-right: -40px;
+  background: linear-gradient(to right, var(--color-surface-muted) 22px, transparent);
 }
 
 .product-shell .segmented-tabs:is([data-more='end'], [data-more='both'])::after {
-  right: 0;
-  margin-left: -28px;
-  background: linear-gradient(to left, var(--color-surface-muted), transparent);
+  right: -3px;
+  margin-left: -40px;
+  background: linear-gradient(to left, var(--color-surface-muted) 22px, transparent);
 }

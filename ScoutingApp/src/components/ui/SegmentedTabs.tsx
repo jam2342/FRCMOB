@@ -145,7 +145,8 @@ export function SegmentedTabs<T extends string>({
     if (!scroller || scroller.scrollWidth <= scroller.clientWidth + 1) return;
     const tab = active.getBoundingClientRect();
     const box = scroller.getBoundingClientRect();
-    const margin = 16;
+    // Clear of the strip's edge fades (40px, uniform.css), so the selected tab is never under one.
+    const margin = 48;
     if (tab.left < box.left) scroller.scrollLeft -= box.left - tab.left + margin;
     else if (tab.right > box.right) scroller.scrollLeft += tab.right - box.right + margin;
   }, [value, items.length]);
