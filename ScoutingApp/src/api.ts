@@ -3978,6 +3978,75 @@ export async function deletePitPhoto(payload: {
   return (await res.json()) as { ok: boolean; entry: PitScoutingEntry };
 }
 
+export interface PitAssignment {
+  team_key: string;
+  member_id: number | null;
+  member_name: string | null;
+  source: "leader" | "claim" | "auto";
+  assigned_by_member_id: number | null;
+  updated_at: string | null;
+}
+
+async function postPitAssignment<T>(action: string, body: Record<string, unknown>): Promise<T> {
+  const res = await apiFetch(`${API}/pit-scouting/assignments/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as T;
+}
+
+export async function getPitAssignments(eventKey: string): Promise<PitAssignment[]> {
+  const params = new URLSearchParams({ event_key: eventKey });
+  const res = await apiFetch(`${API}/pit-scouting/assignments?${params.toString()}`, {
+    bypassCache: true,
+    cacheTtlMs: 0,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const data = (await res.json()) as { ok: boolean; assignments: PitAssignment[] };
+  return data.assignments ?? [];
+}
+
+// Rejects with the server's sentence (naming who holds the team) when someone else has it.
+export async function claimPitTeam(
+  eventKey: string,
+  teamKey: string,
+  opts?: { force?: boolean },
+): Promise<{ ok: boolean; assignment: PitAssignment }> {
+  return postPitAssignment("claim", {
+    event_key: eventKey,
+    team_key: teamKey,
+    ...(opts?.force ? { force: true } : {}),
+  });
+}
+
+export async function releasePitTeam(eventKey: string, teamKey: string): Promise<{ ok: boolean; released: boolean }> {
+  return postPitAssignment("release", { event_key: eventKey, team_key: teamKey });
+}
+
+export async function setPitAssignment(
+  eventKey: string,
+  teamKey: string,
+  memberId: number | null,
+): Promise<{ ok: boolean; assignment: PitAssignment | null }> {
+  return postPitAssignment("set", { event_key: eventKey, team_key: teamKey, member_id: memberId });
+}
+
+export async function autoSplitPitTeams(
+  eventKey: string,
+  opts: { teamKeys: string[]; memberIds: number[]; onlyUnscouted?: boolean; replaceExisting?: boolean },
+): Promise<PitAssignment[]> {
+  const data = await postPitAssignment<{ ok: boolean; assignments: PitAssignment[] }>("auto-split", {
+    event_key: eventKey,
+    team_keys: opts.teamKeys,
+    member_ids: opts.memberIds,
+    only_unscouted: opts.onlyUnscouted ?? true,
+    replace_existing: opts.replaceExisting ?? false,
+  });
+  return data.assignments ?? [];
+}
+
 // ── Scouting insights (coverage / leaderboard / raw export) ────
 
 interface CoverageSlot {

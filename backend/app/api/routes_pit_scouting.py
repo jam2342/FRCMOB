@@ -24,7 +24,7 @@ from app.db import models
 from app.db.session import get_db
 from app.core.config import settings
 from app.services.workspace_limits import guard_pit_photo_storage, lock_pit_photo_storage, pit_photo_bytes_used
-from app.services.workspaces import require_workspace_actor, require_workspace_writer
+from app.services.workspaces import WorkspaceActor, require_workspace_actor, require_workspace_writer
 
 logger = logging.getLogger(__name__)
 
@@ -347,3 +347,244 @@ def delete_pit_photo(payload: PitPhotoDeleteRequest, request: Request, db: Sessi
         db.refresh(row)
         response_entry = _serialize_entry(row, actor.member.id)
     return {"ok": True, "entry": response_entry}
+
+
+MAX_SPLIT_TEAMS = 200
+MAX_SPLIT_MEMBERS = 50
+
+SOURCE_LEADER = "leader"
+SOURCE_CLAIM = "claim"
+SOURCE_AUTO = "auto"
+
+
+class PitClaimRequest(BaseModel):
+    event_key: str
+    team_key: str
+    force: bool = False
+
+class PitReleaseRequest(BaseModel):
+    event_key: str
+    team_key: str
+
+class PitAssignmentSetRequest(BaseModel):
+    event_key: str
+    team_key: str
+    member_id: int | None = None
+
+class PitAutoSplitRequest(BaseModel):
+    event_key: str
+    team_keys: list[str] = Field(default_factory=list, max_length=MAX_SPLIT_TEAMS)
+    member_ids: list[int] = Field(min_length=1, max_length=MAX_SPLIT_MEMBERS)
+    only_unscouted: bool = True
+    replace_existing: bool = False
+
+
+def _team_number(team_key: str) -> int:
+    return int(team_key[3:])
+
+def _serialize_assignment(row: models.PitAssignment, names: dict[int, str]) -> dict[str, Any]:
+    return {
+        "team_key": row.team_key,
+        "member_id": row.member_id,
+        "member_name": names.get(row.member_id) if row.member_id is not None else None,
+        "source": row.source,
+        "assigned_by_member_id": row.assigned_by_member_id,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+def _member_names(db: Session, workspace_id: int) -> dict[int, str]:
+    rows = db.execute(
+        select(models.TeamWorkspaceMember.id, models.TeamWorkspaceMember.display_name).where(
+            models.TeamWorkspaceMember.workspace_id == workspace_id,
+        )
+    ).all()
+    return {int(row[0]): str(row[1]) for row in rows}
+
+def _list_assignments(db: Session, workspace_id: int, event_key: str) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(models.PitAssignment).where(
+            models.PitAssignment.workspace_id == workspace_id,
+            models.PitAssignment.event_key == event_key,
+        )
+    ).scalars().all()
+    names = _member_names(db, workspace_id)
+    ordered = sorted(rows, key=lambda row: _team_number(row.team_key))
+    return [_serialize_assignment(row, names) for row in ordered]
+
+def _load_assignment(db: Session, workspace_id: int, event_key: str, team_key: str) -> models.PitAssignment | None:
+    return db.execute(
+        select(models.PitAssignment).where(
+            models.PitAssignment.workspace_id == workspace_id,
+            models.PitAssignment.event_key == event_key,
+            models.PitAssignment.team_key == team_key,
+        )
+    ).scalar_one_or_none()
+
+def _active_member(db: Session, workspace_id: int, member_id: int) -> models.TeamWorkspaceMember:
+    member = db.get(models.TeamWorkspaceMember, member_id)
+    if member is None or member.workspace_id != workspace_id or member.removed_at is not None:
+        raise HTTPException(status_code=404, detail="That member isn't in this workspace.")
+    return member
+
+def _require_leader(actor: WorkspaceActor) -> None:
+    if not actor.is_leader:
+        raise HTTPException(status_code=403, detail="Only workspace leaders can do that.")
+
+
+@router.get("/assignments")
+def list_pit_assignments(
+    request: Request,
+    event_key: str = Query(..., max_length=48),
+    db: Session = Depends(get_db),
+):
+    actor = require_workspace_actor(request, db)
+    normalized = _normalize_event_key(event_key)
+    return {"ok": True, "assignments": _list_assignments(db, actor.workspace_id, normalized)}
+
+
+@router.post("/assignments/claim")
+def claim_pit_team(payload: PitClaimRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
+    normalized_event = _normalize_event_key(payload.event_key)
+    normalized_team = _normalize_team_key(payload.team_key)
+    if payload.force:
+        _require_leader(actor)
+
+    row = _load_assignment(db, actor.workspace_id, normalized_event, normalized_team)
+    holder = None
+    if row is not None and row.member_id is not None and row.member_id != actor.member.id:
+        holder = db.get(models.TeamWorkspaceMember, row.member_id)
+        if holder is not None and holder.removed_at is not None:
+            holder = None
+    if holder is not None and not payload.force:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{normalized_team} is already taken by {holder.display_name}.",
+        )
+    if row is None:
+        row = models.PitAssignment(
+            workspace_id=actor.workspace_id,
+            event_key=normalized_event,
+            team_key=normalized_team,
+            member_id=actor.member.id,
+            assigned_by_member_id=actor.member.id,
+            source=SOURCE_CLAIM,
+        )
+        db.add(row)
+    elif row.member_id != actor.member.id:
+        row.member_id = actor.member.id
+        row.assigned_by_member_id = actor.member.id
+        row.source = SOURCE_CLAIM
+    db.commit()
+    db.refresh(row)
+    return {"ok": True, "assignment": _serialize_assignment(row, _member_names(db, actor.workspace_id))}
+
+
+@router.post("/assignments/release")
+def release_pit_team(payload: PitReleaseRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
+    normalized_event = _normalize_event_key(payload.event_key)
+    normalized_team = _normalize_team_key(payload.team_key)
+    row = _load_assignment(db, actor.workspace_id, normalized_event, normalized_team)
+    if row is None:
+        return {"ok": True, "released": False}
+    if row.member_id is not None and row.member_id != actor.member.id and not actor.is_leader:
+        raise HTTPException(status_code=403, detail="Only the scout who took this team, or a leader, can release it.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "released": True}
+
+
+@router.post("/assignments/set")
+def set_pit_assignment(payload: PitAssignmentSetRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
+    _require_leader(actor)
+    normalized_event = _normalize_event_key(payload.event_key)
+    normalized_team = _normalize_team_key(payload.team_key)
+    if payload.member_id is not None:
+        _active_member(db, actor.workspace_id, payload.member_id)
+
+    row = _load_assignment(db, actor.workspace_id, normalized_event, normalized_team)
+    if payload.member_id is None:
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        return {"ok": True, "assignment": None}
+    if row is None:
+        row = models.PitAssignment(
+            workspace_id=actor.workspace_id,
+            event_key=normalized_event,
+            team_key=normalized_team,
+        )
+        db.add(row)
+    row.member_id = payload.member_id
+    row.assigned_by_member_id = actor.member.id
+    row.source = SOURCE_LEADER
+    db.commit()
+    db.refresh(row)
+    return {"ok": True, "assignment": _serialize_assignment(row, _member_names(db, actor.workspace_id))}
+
+
+@router.post("/assignments/auto-split")
+def auto_split_pit_teams(payload: PitAutoSplitRequest, request: Request, db: Session = Depends(get_db)):
+    actor = require_workspace_writer(request, db)
+    _require_leader(actor)
+    normalized_event = _normalize_event_key(payload.event_key)
+    team_keys = sorted({_normalize_team_key(key) for key in payload.team_keys}, key=_team_number)
+    # Sorted by id so the same request always deals teams out the same way.
+    member_ids = sorted(set(payload.member_ids))
+    for member_id in member_ids:
+        _active_member(db, actor.workspace_id, member_id)
+
+    existing = {
+        row.team_key: row
+        for row in db.execute(
+            select(models.PitAssignment).where(
+                models.PitAssignment.workspace_id == actor.workspace_id,
+                models.PitAssignment.event_key == normalized_event,
+            )
+        ).scalars()
+    }
+    scouted: set[str] = set()
+    if payload.only_unscouted:
+        scouted = set(
+            db.execute(
+                select(models.PitScoutingEntry.team_key).where(
+                    models.PitScoutingEntry.workspace_id == actor.workspace_id,
+                    models.PitScoutingEntry.event_key == normalized_event,
+                )
+            ).scalars()
+        )
+
+    eligible = []
+    for team_key in team_keys:
+        if team_key in scouted:
+            continue
+        current = existing.get(team_key)
+        if current is not None and current.member_id is not None and not payload.replace_existing:
+            continue
+        eligible.append(team_key)
+
+    # Count what the chosen scouts already hold, so the split ends up balanced overall.
+    eligible_set = set(eligible)
+    load = {member_id: 0 for member_id in member_ids}
+    for team_key, row in existing.items():
+        if row.member_id in load and team_key not in eligible_set:
+            load[row.member_id] += 1
+
+    for team_key in eligible:
+        member_id = min(member_ids, key=lambda candidate: (load[candidate], candidate))
+        load[member_id] += 1
+        row = existing.get(team_key)
+        if row is None:
+            row = models.PitAssignment(
+                workspace_id=actor.workspace_id,
+                event_key=normalized_event,
+                team_key=team_key,
+            )
+            db.add(row)
+        row.member_id = member_id
+        row.assigned_by_member_id = actor.member.id
+        row.source = SOURCE_AUTO
+    db.commit()
+    return {"ok": True, "assignments": _list_assignments(db, actor.workspace_id, normalized_event)}

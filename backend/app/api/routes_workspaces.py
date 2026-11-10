@@ -20,6 +20,7 @@ from app.api.routes_scouting_rooms import (
 from app.core.security import issue_workspace_access_token, request_has_explicit_admin_credential, require_admin_access, require_write_access
 from app.db import models
 from app.db.session import get_db
+from app.services.pit_assignments import release_pit_assignments
 from app.services.workspace_limits import record_join_failure, take_workspace_creation_slot
 from app.services.signup_challenge import signup_policy, verify_signup_challenge
 from app.services.workspaces import (
@@ -250,6 +251,7 @@ def remove_member(member_id: int, body: MemberRemoveRequest, request: Request, d
     member.removed_at = utc_now()
     member.removed_by_member_id = actor.member.id
     release_scout_room_roles(db, actor.workspace_id, member.display_name)
+    release_pit_assignments(db, actor.workspace_id, member.id)
     join_code = issue_join_code(db, actor.workspace) if body.rotate_join_code else None
     db.commit()
     # Open room sockets stop at once, not at the member's next heartbeat.
@@ -289,6 +291,7 @@ def leave_workspace(body: LeaveRequest, request: Request, db: Session = Depends(
     actor.member.removed_at = utc_now()
     actor.member.removed_by_member_id = actor.member.id
     release_scout_room_roles(db, actor.workspace_id, actor.member.display_name)
+    release_pit_assignments(db, actor.workspace_id, actor.member.id)
     if not others:
         # The warning promises this: without it, anyone holding the old code could
         # join and be promoted to leader of every picklist, pit note and room here.
