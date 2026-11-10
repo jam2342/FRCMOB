@@ -164,3 +164,143 @@
   font-size: var(--font-size-xs);
   font-weight: 600;
 }
+
+.filterTabs {
+  max-width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+/* Phone cards. Alliance is a stripe plus a word, not a fill: the scout colours
+   already carry identity, and two loud colour systems on one card fought. */
+.matchList {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.matchCard {
+  min-width: 0;
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.matchPlayed {
+  opacity: 0.6;
+}
+
+.matchHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-muted);
+  border-bottom: var(--border-default);
+  font-size: var(--font-size-sm);
+}
+
+.matchMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.openBadge {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.allianceBlock {
+  margin: var(--space-2) var(--space-3);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--color-border);
+  min-width: 0;
+}
+
+.allianceRed {
+  border-inline-start-color: var(--color-alliance-red);
+}
+
+.allianceBlue {
+  border-inline-start-color: var(--color-alliance-blue);
+}
+
+.allianceLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+
+.slotRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  min-width: 0;
+}
+
+.slotTeam {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  min-width: 4.5rem;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.scoutDot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: var(--radius-full);
+  flex: none;
+}
+
+/* The same select as the desktop grid, but neutral: the scout's colour is the dot. */
+.mobileSlot :global(.assign-cell-select) {
+  min-height: 40px;
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: var(--border-default);
+  text-overflow: ellipsis;
+}
+
+.mobileSlot :global(.assign-cell-select.assigned) {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: var(--border-default);
+}
+
+.mobileSlot :global(.assign-cell-select):disabled {
+  opacity: 1;
+}
+
+.matchHead {
+  flex-wrap: wrap;
+}
+
+/* Very narrow phones: the team number sits above its select so names fit whole. */
+@media (max-width: 320px) {
+  .slotRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: var(--space-2) 0;
+  }
+
+  .mobileSlot {
+    flex: none;
+  }
+}

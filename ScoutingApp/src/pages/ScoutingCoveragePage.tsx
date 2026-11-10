@@ -1,5 +1,5 @@
 import { formatDayTime } from '../utils/formatTime';
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { getScoutingCoverage } from '../api';
 import type { ScoutingCoverageResponse } from '../api';
 import { EventPicker } from '../components/EventPicker';
@@ -51,20 +51,90 @@ const STORAGE_KEY = 'scouting_center_event_key';
 const REFRESH_MS = 30_000;
 
 type CoverageTab = 'grid' | 'leaderboard' | 'quality';
+type GridFilter = 'gaps' | 'all';
+type GridRow = ScoutingCoverageResponse['grid'][number];
+type GridSlot = GridRow['slots'][number];
+
+function slotsFor(row: GridRow, alliance: 'red' | 'blue'): GridSlot[] {
+  return row.slots.filter((slot) => slot.alliance === alliance);
+}
+
+function missingCount(row: GridRow): number {
+  return row.slots.filter((slot) => slot.entry_count === 0).length;
+}
+
+function slotNote(slot: GridSlot): string {
+  if (slot.entry_count === 0) return 'Not scouted';
+  const who = slot.scouts.filter(Boolean).join(', ');
+  const entries = slot.entry_count > 1 ? ` (${slot.entry_count} entries)` : '';
+  return who ? `Scouted by ${who}${entries}` : `Scouted${entries}`;
+}
+
+// A mark and a word, so covered and missing never rest on red against green alone.
+function SlotChip({ slot }: { slot: GridSlot }) {
+  const covered = slot.entry_count > 0;
+  return (
+    <span className={`coverage-chip ${covered ? 'coverage-chip--covered' : 'coverage-chip--missing'}`} title={slotNote(slot)}>
+      {teamNumber(slot.team_key)}
+      <span aria-hidden="true">{covered ? '✓' : '✕'}</span>
+      <span className="sr-only">{covered ? 'scouted' : 'not scouted'}</span>
+    </span>
+  );
+}
+
+function allianceCell(row: GridRow, alliance: 'red' | 'blue') {
+  return (
+    <span className="coverage-chip-row">
+      {slotsFor(row, alliance).map((slot) => <SlotChip key={slot.team_key} slot={slot} />)}
+    </span>
+  );
+}
+
+const GRID_COLUMNS: TableColumn<GridRow>[] = [
+  { key: 'label', label: 'Match' },
+  { key: 'red', label: 'Red', render: (row) => allianceCell(row, 'red') },
+  { key: 'blue', label: 'Blue', render: (row) => allianceCell(row, 'blue') },
+];
+
+// One card per match on a phone: six robots, each with its state in words.
+function CoverageCards({ rows }: { rows: GridRow[] }) {
+  return (
+    <div className="coverage-cards">
+      {rows.map((row) => {
+        const missing = missingCount(row);
+        return (
+          <div className="coverage-card" key={row.match_key}>
+            <div className="coverage-card-head">
+              <strong>{row.label}</strong>
+              <span className="coverage-card-meta">
+                {missing === 0 ? 'All scouted' : `${missing} missing`}
+              </span>
+            </div>
+            {(['red', 'blue'] as const).map((alliance) => (
+              <div className={`coverage-card-alliance coverage-card-alliance--${alliance}`} key={alliance}>
+                <div className="coverage-card-alliance-label">{alliance === 'red' ? 'Red' : 'Blue'}</div>
+                {slotsFor(row, alliance).map((slot) => {
+                  const covered = slot.entry_count > 0;
+                  return (
+                    <div className="coverage-card-slot" key={slot.team_key}>
+                      <span className="coverage-card-team">{teamNumber(slot.team_key)}</span>
+                      <span className={`coverage-card-state ${covered ? 'is-covered' : 'is-missing'}`}>
+                        <span aria-hidden="true">{covered ? '✓' : '✕'}</span> {slotNote(slot)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function teamNumber(teamKey: string): string {
   return teamKey.replace(/^frc/i, '');
-}
-
-/* The header says Red | Blue, but the payload lists the blue slots first — so
-   every team was displayed under the opposing alliance. Ordering here rather
-   than swapping the header, because the payload order is not a contract: a
-   slot knows which alliance it is on, so use that. */
-function orderByAlliance<T extends { alliance: string }>(slots: T[]): T[] {
-  return [...slots].sort((a, b) => {
-    if (a.alliance === b.alliance) return 0;
-    return a.alliance === 'red' ? -1 : 1;
-  });
 }
 
 function relativeTime(iso: string | null): string {
@@ -89,6 +159,7 @@ function ScoutingCoverageWorkspacePage() {
 
   const [data, setData] = useState<ScoutingCoverageResponse | null>(null);
   const [tab, setTab] = useState<CoverageTab>('grid');
+  const [gridFilterChoice, setGridFilterChoice] = useState<GridFilter | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -124,6 +195,10 @@ function ScoutingCoverageWorkspacePage() {
   }, [eventKey, fetchCoverage, fetchTrigger]);
 
   const summary = data?.summary;
+  const gapRows = useMemo(() => (data ? data.grid.filter((row) => missingCount(row) > 0) : []), [data]);
+  // Open on the holes when there are any: that is what this page is for.
+  const gridFilter: GridFilter = gridFilterChoice ?? (gapRows.length > 0 ? 'gaps' : 'all');
+  const gridRows = gridFilter === 'gaps' ? gapRows : (data?.grid ?? []);
   const coverageTabs = data ? (
     <SegmentedTabs<CoverageTab>
       className="coverage-view-tabs"
@@ -204,48 +279,31 @@ function ScoutingCoverageWorkspacePage() {
             >
               {isMobile ? <div className="coverage-mobile-tabs">{coverageTabs}</div> : null}
               {tab === 'grid' ? (
-                <div className="coverage-grid-wrap">
-                  <table className="coverage-grid">
-                    <thead>
-                      <tr>
-                        <th>Match</th>
-                        <th colSpan={3} className="coverage-head--red">Red</th>
-                        <th colSpan={3} className="coverage-head--blue">Blue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.grid.map((row) => (
-                        <tr key={row.match_key}>
-                          <td className="coverage-match-label">{row.label}</td>
-                          {orderByAlliance(row.slots).map((slot, index) => (
-                            <td
-                              key={`${row.match_key}-${slot.team_key}`}
-                              className={[
-                                'coverage-cell',
-                                index === 3 ? 'coverage-cell--alliance-split' : '',
-                                slot.entry_count > 0 ? 'coverage-cell--covered' : 'coverage-cell--missing',
-                              ].filter(Boolean).join(' ')}
-                              title={
-                                slot.entry_count > 0
-                                  ? `${slot.entry_count} entr${slot.entry_count > 1 ? 'ies' : 'y'} by ${slot.scouts.join(', ') || 'unknown'}`
-                                  : 'No scouting entry yet'
-                              }
-                            >
-                              {teamNumber(slot.team_key)}
-                              {slot.entry_count > 1 ? (
-                                <sup className="coverage-count">{slot.entry_count}</sup>
-                              ) : null}
-                            </td>
-                          ))}
-                          {/* Pad rows that have fewer than 6 known slots. */}
-                          {Array.from({ length: Math.max(0, 6 - row.slots.length) }).map((_, i) => (
-                            <td key={`pad-${i}`} className="coverage-cell" />
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <SegmentedTabs<GridFilter>
+                    className="coverage-grid-filter"
+                    ariaLabel="Which matches to show"
+                    value={gridFilter}
+                    onChange={setGridFilterChoice}
+                    items={[
+                      { value: 'gaps', label: <>Gaps <small>{gapRows.length}</small></> },
+                      { value: 'all', label: <>All <small>{data.grid.length}</small></> },
+                    ]}
+                  />
+                  {gridRows.length === 0 ? (
+                    <p className="center-callout muted">
+                      {data.grid.length === 0 ? 'No schedule to check against yet.' : 'Every robot in every match has a scouting entry.'}
+                    </p>
+                  ) : (
+                    <Table
+                      className="coverage-grid-table"
+                      columns={GRID_COLUMNS}
+                      rows={gridRows}
+                      rowKey={(row) => row.match_key}
+                      renderCards={(rows) => <CoverageCards rows={rows} />}
+                    />
+                  )}
+                </>
               ) : null}
 
               {tab === 'leaderboard' ? (

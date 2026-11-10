@@ -7,9 +7,20 @@ import { ScoutingViewBar } from '../components/ScoutingViewBar';
 import { scoutingViewTitle } from '../components/pageViewBarConfig';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, Modal, Stat } from '../components/ui/primitives';
+import { SegmentedTabs } from '../components/ui/SegmentedTabs';
+import { formatTime } from '../utils/formatTime';
 import { useEventKeyParam } from '../hooks/useEventKeyParam';
 import { useMobileLayout } from '../hooks/useMobileLayout';
+import { matchStartTime } from './centerUtils';
 import { NextAssignment } from '../features/workspace/NextAssignment';
+import {
+  NEXT_MATCH_COUNT,
+  defaultAssignFilter,
+  filterCounts,
+  filterMatches,
+  unassignedSlotCount,
+  type AssignFilter,
+} from '../features/workspace/assignFilter';
 import {
   assignmentIndex,
   clearUpcomingChanges,
@@ -79,8 +90,12 @@ function SlotSelect({
         removed && shown === null ? styles.needsScout : '',
       ].filter(Boolean).join(' ')}
       value={value}
+      // The option text stays short so a phone never cuts it; the title has the rest.
+      title={removed && shown === null
+        ? `Needs a scout: ${removed.assigned_display_name} left the team`
+        : members.find((member) => member.member_id === shown)?.display_name}
       disabled={!editable || Boolean(state?.saving)}
-      aria-label={label}
+      aria-label={removed && shown === null ? `${label}. Needs a scout: ${removed.assigned_display_name} left the team` : label}
       aria-busy={state?.saving ? true : undefined}
       onChange={(event) => {
         const next = event.target.value;
@@ -89,18 +104,26 @@ function SlotSelect({
       }}
     >
       <option value="">—</option>
-      {removed ? <option value="removed" disabled>Needs a scout ({removed.assigned_display_name} left)</option> : null}
+      {removed ? <option value="removed" disabled>Needs a scout</option> : null}
       {members.map((member) => {
         // Someone already on another team in this match can't take a second one.
         const busy = busyInMatch.has(member.member_id) && member.member_id !== shown;
         return (
           <option key={member.member_id} value={member.member_id} disabled={busy}>
-            {member.display_name} · {workload.get(member.member_id) ?? 0}{busy ? ' (busy this match)' : ''}
+            {member.display_name} · {workload.get(member.member_id) ?? 0}{busy ? ' (busy)' : ''}
           </option>
         );
       })}
     </select>
   );
+}
+
+function emptyFilterText(filter: AssignFilter, total: number): string {
+  if (total === 0) return 'No schedule published for this event yet.';
+  if (filter === 'mine') return 'Nothing is assigned to you. Pick Unassigned to hand out the open slots.';
+  if (filter === 'unassigned') return 'Every upcoming slot has a scout.';
+  if (filter === 'next5') return 'Every match here has been played.';
+  return 'No matches to show.';
 }
 
 function CellStatus({ state, onRetry }: { state: CellState | undefined; onRetry: () => void }) {
@@ -121,7 +144,7 @@ function ScoutingAssignWorkspacePage() {
   const isMobile = useMobileLayout();
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(STORAGE_KEY_EVENT);
   const room = useTeamRoom(eventKey);
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [filterChoice, setFilterChoice] = useState<AssignFilter | null>(null);
   const [skipped, setSkipped] = useState<Set<number>>(() => new Set());
   const [cells, setCells] = useState<Record<string, CellState>>({});
   const [pending, setPending] = useState<Pending | null>(null);
@@ -135,10 +158,11 @@ function ScoutingAssignWorkspacePage() {
   const index = useMemo(() => assignmentIndex(assignments), [assignments]);
   const workload = useMemo(() => workloadByMember(assignments, schedule), [assignments, schedule]);
   const coverage = useMemo(() => coverageSummary(assignments, schedule), [assignments, schedule]);
-  const visibleMatches = useMemo(
-    () => (showCompleted ? schedule : schedule.filter((match) => !match.is_completed)),
-    [schedule, showCompleted],
-  );
+  const meId = snapshot?.me.member_id ?? -1;
+  // A leader lands on the slots that need a scout; the tab they pick sticks until they leave.
+  const filter = filterChoice ?? defaultAssignFilter(room.isLeader);
+  const visibleMatches = useMemo(() => filterMatches(schedule, index, filter, meId), [schedule, index, filter, meId]);
+  const counts = useMemo(() => filterCounts(schedule, index, meId), [schedule, index, meId]);
   const mine = useMemo(
     () => (snapshot ? myAssignments(snapshot.me.member_id, assignments, schedule) : []),
     [assignments, schedule, snapshot],
@@ -343,23 +367,28 @@ function ScoutingAssignWorkspacePage() {
           >
             Clear upcoming
           </Button>
-          <FieldCheckbox
-            label="Show played matches"
-            checked={showCompleted}
-            onChange={(event) => setShowCompleted(event.target.checked)}
-          />
         </div>
       </SurfaceCard>
 
       <SurfaceCard tourId="assign-matches"
         expandable
         title="Match Assignments"
-        subtitle={`${visibleMatches.length} match${visibleMatches.length === 1 ? '' : 'es'}. Each change saves straight away.`}
+        subtitle="Each change saves straight away."
       >
+        <SegmentedTabs<AssignFilter>
+          className={styles.filterTabs}
+          ariaLabel="Which matches to show"
+          value={filter}
+          onChange={setFilterChoice}
+          items={[
+            { value: 'mine', label: <>Mine <small>{counts.mine}</small></> },
+            { value: 'unassigned', label: <>Unassigned <small>{counts.unassigned}</small></> },
+            { value: 'next5', label: `Next ${NEXT_MATCH_COUNT}` },
+            { value: 'all', label: 'All' },
+          ]}
+        />
         {visibleMatches.length === 0 ? (
-          <p className="center-callout muted">
-            {schedule.length === 0 ? 'No schedule published for this event yet.' : 'Every match here has been played.'}
-          </p>
+          <p className="center-callout muted">{emptyFilterText(filter, schedule.length)}</p>
         ) : !isMobile ? (
           <div className="center-table-wrap">
             <table className="center-table">
@@ -389,25 +418,37 @@ function ScoutingAssignWorkspacePage() {
             </table>
           </div>
         ) : (
-          <div className="assign-mobile-list">
+          <div className={styles.matchList}>
             {visibleMatches.map((match) => {
               const busy = busyByMatch(match);
               const slots = matchSlots(match);
+              const open = match.is_completed ? 0 : unassignedSlotCount(match, index);
+              const start = matchStartTime(match);
               return (
-                <div key={match.match_key} className={`assign-mobile-card${match.is_completed ? ' assign-mobile-completed' : ''}`}>
-                  <div className="assign-mobile-card-head">
-                    <span>{match.display_name || match.match_key}</span>
-                    {match.is_completed ? <span className="text-muted">Played</span> : null}
+                <div key={match.match_key} className={`${styles.matchCard}${match.is_completed ? ` ${styles.matchPlayed}` : ''}`}>
+                  <div className={styles.matchHead}>
+                    <strong>{match.display_name || match.match_key}</strong>
+                    <span className={styles.matchMeta}>
+                      {match.is_completed ? 'Played' : start ? `~${formatTime(start * 1000)}` : ''}
+                      {open > 0 ? <span className={styles.openBadge}>{open} open</span> : null}
+                    </span>
                   </div>
                   {(['red', 'blue'] as const).map((alliance) => (
-                    <div className="assign-mobile-alliance" key={alliance}>
-                      <div className={`assign-mobile-alliance-label ${alliance}`}>{alliance === 'red' ? 'Red' : 'Blue'} Alliance</div>
-                      {slots.filter((slot) => slot.alliance === alliance).map((slot) => (
-                        <div className="assign-mobile-team-row" key={slot.team_key}>
-                          <span className="assign-mobile-team-num">{teamNumber(slot.team_key)}</span>
-                          <div className={styles.mobileSlot}>{renderSlot(match, slot.team_key, busy)}</div>
-                        </div>
-                      ))}
+                    <div className={`${styles.allianceBlock} ${alliance === 'red' ? styles.allianceRed : styles.allianceBlue}`} key={alliance}>
+                      <div className={styles.allianceLabel}>{alliance === 'red' ? 'Red' : 'Blue'}</div>
+                      {slots.filter((slot) => slot.alliance === alliance).map((slot) => {
+                        const row = index.get(slotKey(match.match_key, slot.team_key));
+                        const owner = row?.member_active ? row.assigned_member_id : null;
+                        return (
+                          <div className={styles.slotRow} key={slot.team_key}>
+                            <span className={styles.slotTeam}>
+                              {owner !== null ? <span aria-hidden="true" className={`${styles.scoutDot} ${scoutColorClass(owner, members)}`} /> : null}
+                              {teamNumber(slot.team_key)}
+                            </span>
+                            <div className={styles.mobileSlot}>{renderSlot(match, slot.team_key, busy)}</div>
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
