@@ -17,6 +17,7 @@ import {
   ShieldIcon,
   StarIcon,
   UsersIcon,
+  DownloadIcon,
 } from '../components/ui/Icons';
 import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 import { ToastHost } from '../components/ui/ToastHost';
@@ -979,10 +980,13 @@ export function ProductShell() {
             </div>
           ) : null}
           {pwaInstall.canPrompt && !isDesktopSidebarViewport && (location.pathname === '/home' || location.pathname.startsWith('/home/')) ? (
+            // A quiet card in line with the cards below it. It used to be the loudest thing on
+            // Home (a green gradient and border) and sat 8px off to the right.
             <div className="ps-pwa-install-banner">
-              <span>Install FRCMOB for offline access and a native app experience.</span>
-              <button type="button" className="center-btn" onClick={pwaInstall.promptInstall}>Install</button>
-              <button type="button" className="ps-pwa-dismiss" onClick={pwaInstall.dismiss} aria-label="Dismiss">×</button>
+              <DownloadIcon className="ps-pwa-icon" size={18} />
+              <span>Get the app for offline use.</span>
+              <button type="button" className="center-btn ghost" onClick={pwaInstall.promptInstall}>Install</button>
+              <button type="button" className="ps-pwa-dismiss" onClick={pwaInstall.dismiss} aria-label="Dismiss install suggestion">×</button>
             </div>
           ) : null}
           {/* Event pages carry ?event=; an earlier season's event says so first. */}

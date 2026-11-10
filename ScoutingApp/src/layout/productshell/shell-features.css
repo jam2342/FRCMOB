@@ -1181,17 +1181,24 @@
 /*  PWA install banner                                                 */
 /* ------------------------------------------------------------------ */
 
+/* A card like the ones below it: same width (no side margin of its own, which pushed it 8px
+   right and off the screen's edge), same corner and fill, and the cards' gap beneath. */
 .ps-pwa-install-banner {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.65rem 1rem;
-  border-radius: 10px;
-  margin: 0 0.5rem 0.5rem;
-  background: linear-gradient(135deg, #1b553b, #14222c);
-  border: 1px solid var(--color-accent-strong);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  margin: 0 0 var(--card-stack-gap);
+  background: var(--color-surface);
+  border: 1px solid var(--edge-card);
   font-size: var(--font-size-sm);
-  color: var(--color-text);
+  color: var(--color-text-muted);
+}
+
+.ps-pwa-install-banner .ps-pwa-icon {
+  flex: none;
+  color: var(--color-accent-text);
 }
 
 .ps-pwa-install-banner span {
@@ -1215,22 +1222,9 @@
 }
 
 .ps-pwa-dismiss:hover {
-  color: #fff;
+  color: var(--color-text);
 }
 
-.product-shell.theme-light .ps-pwa-install-banner {
-  background: linear-gradient(135deg, #e8f5ec, var(--color-surface));
-  border-color: #22a95f;
-  color: #1a3626;
-}
-
-.product-shell.theme-light .ps-pwa-dismiss {
-  color: #6b7280;
-}
-
-.product-shell.theme-light .ps-pwa-dismiss:hover {
-  color: #111;
-}
 
 /* ── compare-briefing ─────────────────────────────────── */
 
