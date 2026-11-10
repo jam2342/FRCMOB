@@ -38,7 +38,7 @@ export function PitSaveBar({ status, saving, disabled, onSave, onSaveAndNext }: 
         <span className="pit-save-bar__text">{status.text}</span>
       </p>
       <div className="pit-save-bar__actions">
-        <Button onClick={onSave} loading={saving} disabled={disabled}>
+        <Button variant="quiet" onClick={onSave} loading={saving} disabled={disabled}>
           Save
         </Button>
         <Button variant="primary" onClick={onSaveAndNext} disabled={disabled || saving}>
