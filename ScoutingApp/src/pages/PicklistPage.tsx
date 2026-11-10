@@ -827,7 +827,6 @@ function PicklistWorkspacePage() {
             >
               <EmptyState
                 compact
-                mascot
                 title="Start your list"
                 description="“From ratings” lists every team at this event by FRCMOB rating. Then put them in your order: tap a rank to move a team, use the arrows, or drag on a computer."
                 action={(

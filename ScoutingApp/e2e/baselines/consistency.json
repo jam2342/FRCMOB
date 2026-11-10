@@ -3,13 +3,63 @@
     "startOffset": null,
     "contentTop": 55,
     "scrollers": [],
-    "duplicates": [],
+    "duplicates": [
+      "#114 x2",
+      "#1323 x5",
+      "#1323B x9",
+      "#1538 x6",
+      "#1671 x2",
+      "#1678 x9",
+      "#1678B x4",
+      "#1678C x8",
+      "#1868 x7",
+      "#1868B x2",
+      "#2073 x4",
+      "#2073B x2",
+      "#2135 x3",
+      "#254 x7",
+      "#2813 x5",
+      "#3256 x3",
+      "#3970 x3",
+      "#4414 x8",
+      "#4635 x2",
+      "#4698 x6",
+      "#4698B x5",
+      "#5026 x5",
+      "#581 x7",
+      "#5817 x2",
+      "#581B x2",
+      "#581C x4",
+      "#5924 x2",
+      "#5940 x6",
+      "#5940B x2",
+      "#6305 x3",
+      "#649 x3",
+      "#6619 x2",
+      "#6657 x2",
+      "#7419 x2",
+      "#7421 x4",
+      "#8033 x5",
+      "#8033B x2",
+      "#8048 x2",
+      "#841 x7",
+      "#841B x4",
+      "#8768 x2",
+      "#9470 x2",
+      "#9470B x6",
+      "#9584 x2",
+      "#971 x9",
+      "#971B x2",
+      "#973 x5",
+      "#973B x2"
+    ],
     "destinations": {
       "/home": [
         "Home"
       ],
       "/events": [
-        "Events"
+        "Events",
+        "MadTown Throwdown"
       ],
       "/scouting": [
         "Scouting"
@@ -796,8 +846,7 @@
         "Home"
       ],
       "/events": [
-        "Events",
-        "This event"
+        "Events"
       ],
       "/scouting": [
         "Scouting"
@@ -838,7 +887,7 @@
       "barLeft": null,
       "barWidth": null,
       "activeLabel": null,
-      "title": "Team Finder",
+      "title": "Team 7407",
       "columnWidth": null,
       "eventBoxes": 0,
       "unlabelledEventBoxes": 0

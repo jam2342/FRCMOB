@@ -1,0 +1,9 @@
+/* "Nothing on today, so this is …" with its way back beside it, wrapping under on a phone. */
+.autoDay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: center;
+}
