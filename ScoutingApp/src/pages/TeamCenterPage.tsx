@@ -39,6 +39,7 @@ import { eventDisplayName } from '../utils/eventSearchIndex';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
 import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { PitSummary } from '../features/pit/PitSummary';
 import { useExternalSearchSync } from '../hooks/useExternalSearchSync';
 import { useLiveRefreshSetting } from '../hooks/useLiveRefreshSetting';
 import { MOBILE_LAYOUT_BREAKPOINT, useMobileLayout } from '../hooks/useMobileLayout';
@@ -1847,6 +1848,12 @@ export function TeamCenterPage() {
                     {tbaOverallStatus !== MISSING ? <p className="center-callout muted">{tbaOverallStatus}</p> : null}
                   </SurfaceCard>
 
+                  {inWorkspace && selectedEventKey ? (
+                    <SurfaceCard title="Pit scouting" compactable>
+                      <PitSummary teamKey={selectedTeamKey} eventKey={selectedEventKey} variant="compact" />
+                    </SurfaceCard>
+                  ) : null}
+
                   {selectedEventKey ? <WhatWeNeedCard eventKey={selectedEventKey} teamKey={selectedTeamKey} /> : null}
                 </div>
 
@@ -2106,6 +2113,12 @@ export function TeamCenterPage() {
 
             {activeTab === 'media' ? (
                 <div className={isMobileLayout ? 'fm-content-stack' : 'center-content-grid'}>
+                  {inWorkspace && selectedEventKey ? (
+                    <SurfaceCard title="Pit scouting" subtitle="Your workspace's pit notes" compactable>
+                      <PitSummary teamKey={selectedTeamKey} eventKey={selectedEventKey} />
+                    </SurfaceCard>
+                  ) : null}
+
                   <SurfaceCard title="Team Logo" compactable>
                     {teamLogo?.available && teamLogo.image_url ? (
                       <MediaImage

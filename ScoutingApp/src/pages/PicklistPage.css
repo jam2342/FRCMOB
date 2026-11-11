@@ -340,3 +340,12 @@ button.picklist-rank--button {
   justify-content: center;
   gap: 8px;
 }
+
+.picklist-detail-pit {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.picklist-detail-pit:empty {
+  display: none;
+}
