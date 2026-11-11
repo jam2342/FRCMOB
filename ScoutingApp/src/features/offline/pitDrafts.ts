@@ -29,7 +29,7 @@ export function clearConfirmedPitDraft(workspaceId: number, event: string, team:
 
 const selectionKey = (workspaceId: number, event: string) => `frcmob_pit_selection_v1:${workspaceId}:${encodeURIComponent(event)}`;
 export function readPitSelection(workspaceId: number, event: string): string | null {
-  try { const team = localStorage.getItem(selectionKey(workspaceId,event)); return team && /^frc\d{1,5}$/.test(team) ? team : null; } catch {return null;}
+  try { const team = localStorage.getItem(selectionKey(workspaceId,event)); return team && /^frc\d{1,5}[a-z]?$/.test(team) ? team : null; } catch {return null;}
 }
 export function rememberPitSelection(workspaceId: number, event: string, team: string): void {
   try {localStorage.setItem(selectionKey(workspaceId,event),team);} catch { /* Draft recovery still works by selecting the team. */ }

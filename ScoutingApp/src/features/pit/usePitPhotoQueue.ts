@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listQueuedPitPhotos } from '../offline/pitPhotoQueue';
 import type { QueuedPitPhoto } from '../offline/pitPhotoQueue';
 
-export type WaitingPhoto = { id: string; teamKey: string; url: string; createdAt: number; attempts: number };
+// `refused` photos were turned down by the server and wait for the scout; `error` says why.
+export type WaitingPhoto = { id: string; teamKey: string; url: string; createdAt: number; attempts: number; refused: boolean; error: string | null };
 
 // Photos still on this phone for one workspace's event, kept in step with the queue as it uploads.
 export function usePitPhotoQueue(workspaceId: number, eventKey: string) {
@@ -28,6 +29,8 @@ export function usePitPhotoQueue(workspaceId: number, eventKey: string) {
       url: URL.createObjectURL(new Blob([row.data], { type: row.type })),
       createdAt: row.createdAt,
       attempts: row.attempts,
+      refused: Boolean(row.refused),
+      error: row.lastError ?? null,
     })),
     [rows],
   );

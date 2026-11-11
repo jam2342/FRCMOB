@@ -112,6 +112,10 @@
   line-height: 1.2;
 }
 
+.waitingTag[data-tone='warn'] {
+  color: var(--color-warning-text);
+}
+
 .waitingTag svg {
   flex: none;
   width: 12px;

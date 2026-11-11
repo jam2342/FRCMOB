@@ -3,7 +3,7 @@ import type { ChangeEvent, RefObject } from 'react';
 import { pitPhotoDisplayUrl } from '../../api';
 import type { PitScoutingEntry } from '../../api';
 import { Button } from '../../components/ui/primitives';
-import { CameraIcon, CloseIcon, CloudSyncIcon, ImageIcon } from '../../components/ui/Icons';
+import { AlertTriangleIcon, CameraIcon, CloseIcon, CloudSyncIcon, ImageIcon } from '../../components/ui/Icons';
 import { teamNumber } from './pitTeams';
 import type { WaitingPhoto } from './usePitPhotoQueue';
 import styles from './PitForm.module.css';
@@ -20,13 +20,16 @@ export type PitPhotosProps = {
   // Shots still on this phone, waiting for signal.
   waiting?: WaitingPhoto[];
   onDeleteWaiting?: (id: string) => void;
+  onRetryWaiting?: (ids: string[]) => void;
 };
 
-export function PitPhotos({ teamKey, entry, uploading, disabled, onAdd, onDelete, waiting = [], onDeleteWaiting }: PitPhotosProps) {
+export function PitPhotos({ teamKey, entry, uploading, disabled, onAdd, onDelete, waiting = [], onDeleteWaiting, onRetryWaiting }: PitPhotosProps) {
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
   const uploaded = entry?.photos ?? [];
   const mine = waiting.filter((photo) => photo.teamKey === teamKey);
+  const refused = mine.filter((photo) => photo.refused);
+  const reasons = [...new Set(refused.map((photo) => photo.error || "The server didn't accept it."))];
 
   const pick = (input: RefObject<HTMLInputElement | null>) => (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -74,11 +77,18 @@ export function PitPhotos({ teamKey, entry, uploading, disabled, onAdd, onDelete
         <ul className={styles.strip} aria-label={`Photos of team ${teamNumber(teamKey)}`}>
           {mine.map((photo) => (
             <li key={photo.id} className={styles.thumb}>
-              <img src={photo.url} alt={`Robot ${teamNumber(teamKey)}, waiting to upload`} />
-              <span className={styles.waitingTag} title="Saved on this phone. Uploads when you have signal.">
-                <CloudSyncIcon />
-                Waiting to upload
-              </span>
+              <img src={photo.url} alt={`Robot ${teamNumber(teamKey)}, ${photo.refused ? 'not uploaded' : 'waiting to upload'}`} />
+              {photo.refused ? (
+                <span className={styles.waitingTag} data-tone="warn" title={photo.error ?? undefined}>
+                  <AlertTriangleIcon />
+                  Not uploaded
+                </span>
+              ) : (
+                <span className={styles.waitingTag} title={photo.error ? `Saved on this phone. Last try: ${photo.error}` : 'Saved on this phone. Uploads when you have signal.'}>
+                  <CloudSyncIcon />
+                  Waiting to upload
+                </span>
+              )}
               {onDeleteWaiting ? (
                 <button type="button" className={styles.thumbDelete} aria-label="Delete photo waiting to upload" onClick={() => onDeleteWaiting(photo.id)}>
                   <CloseIcon />
@@ -95,6 +105,17 @@ export function PitPhotos({ teamKey, entry, uploading, disabled, onAdd, onDelete
             </li>
           ))}
         </ul>
+      ) : null}
+      {refused.length > 0 ? (
+        <p className="center-callout warning" role="alert">
+          {refused.length === 1 ? "A photo on this phone wasn't accepted" : `${refused.length} photos on this phone weren't accepted`}: {reasons.join(' ')}
+          {onRetryWaiting ? (
+            <>
+              {' '}
+              <Button variant="quiet" size="sm" onClick={() => onRetryWaiting(refused.map((photo) => photo.id))}>Try again</Button>
+            </>
+          ) : null}
+        </p>
       ) : null}
     </div>
   );

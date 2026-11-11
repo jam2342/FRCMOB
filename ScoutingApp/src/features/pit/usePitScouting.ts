@@ -9,12 +9,15 @@ import {
 import type { PitScoutingEntry } from '../../api';
 import { PIT_FORM_SECTIONS } from '../../config/gameFields';
 import { useEventKeyParam } from '../../hooks/useEventKeyParam';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { usePageVisibility } from '../../hooks/usePageVisibility';
+import { useSingleFlightPolling } from '../../hooks/useSingleFlightPolling';
 import { asRecord, parseNumber } from '../../pages/centerUtils';
 import { listQueuedMutations } from '../../utils/offlineQueue';
 import { hapticSuccess } from '../../utils/haptics';
 import { useWorkspace } from '../workspace/useWorkspace';
 import { readPitDraft, readPitDraftSavedAt, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../offline/pitDrafts';
-import { deleteQueuedPitPhoto, enqueuePitPhoto } from '../offline/pitPhotoQueue';
+import { deleteQueuedPitPhoto, enqueuePitPhoto, retryRefusedPitPhoto } from '../offline/pitPhotoQueue';
 import type { PitPhotoUploadedDetail } from '../offline/pitPhotoQueue';
 import { compressPhoto, isPhotoNetworkFailure, uploadPhotoBlob } from './pitPhotoFiles';
 import { usePitPhotoQueue } from './usePitPhotoQueue';
@@ -23,8 +26,11 @@ import type { PitTeam } from './pitTeams';
 import type { PitSaveStatus } from './PitSaveBar';
 
 const STORAGE_KEY = 'scouting_center_event_key';
+// Same pace as assignments: a teammate's save leaves "Left" within a poll.
+export const PIT_ENTRIES_POLL_MS = 20_000;
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
-type StatusNote = { tone: 'saved' | 'queued' | 'warn'; text: string };
+// `photo`: the note only reports a photo kept on this phone, which a refusal makes out of date.
+type StatusNote = { tone: 'saved' | 'queued' | 'warn'; text: string; photo?: boolean };
 type SaveOutcome = 'saved' | 'queued' | 'failed';
 
 function readScoutProfile(): string {
@@ -63,6 +69,14 @@ export function usePitScouting() {
   const formRef = useRef<Record<string, unknown>>({});
   const contextRef = useRef({ eventKey, selectedTeam });
   contextRef.current = { eventKey, selectedTeam };
+  const entriesRef = useRef(entriesByTeam);
+  entriesRef.current = entriesByTeam;
+  const formDirtyRef = useRef(formDirty);
+  formDirtyRef.current = formDirty;
+  // Bumped by every entry this page writes, so a poll that began before it can't put the old copy back.
+  const entriesSeqRef = useRef(0);
+  const visible = usePageVisibility();
+  const { online } = useOnlineStatus();
 
   const { waiting: waitingPhotos } = usePitPhotoQueue(workspaceId, eventKey);
   const selectedEntry = selectedTeam ? entriesByTeam.get(selectedTeam) ?? null : null;
@@ -124,6 +138,55 @@ export function usePitScouting() {
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
   }, [formDirty, draftStored]);
 
+  function putEntry(entry: PitScoutingEntry) {
+    entriesSeqRef.current += 1;
+    setEntriesByTeam((prev) => {
+      const next = new Map(prev);
+      next.set(entry.team_key.toLowerCase(), entry);
+      return next;
+    });
+  }
+
+  // Teammates save too. Without this, a team scouted on another phone stayed in "Left"
+  // here and "Save & next" could send this scout to it.
+  async function pollEntries(reason: string): Promise<boolean> {
+    if (reason === 'initial') return true; // The event load above just fetched them.
+    const forEvent = contextRef.current.eventKey;
+    const seq = entriesSeqRef.current;
+    try {
+      const result = await listPitEntries(forEvent);
+      if (contextRef.current.eventKey !== forEvent || entriesSeqRef.current !== seq) return true;
+      const fresh = new Map((result.entries ?? []).map((entry) => [entry.team_key.toLowerCase(), entry] as const));
+      const team = contextRef.current.selectedTeam;
+      const before = team ? entriesRef.current.get(team) : undefined;
+      const after = team ? fresh.get(team) : undefined;
+      setEntriesByTeam(fresh);
+      const theirs = JSON.stringify(after?.payload ?? {});
+      // Same as the form shows: this phone's own save arriving, not a teammate's.
+      if (team && after && hasPitEntry(after) && theirs !== JSON.stringify(before?.payload ?? {}) && theirs !== JSON.stringify(formRef.current)) {
+        const ownSaveWaiting = queuedSaveRef.current?.eventKey === forEvent && queuedSaveRef.current.team === team;
+        if (!formDirtyRef.current && !ownSaveWaiting) {
+          // Nothing typed here yet: show their notes, so a save builds on them instead of replacing them.
+          formRef.current = { ...after.payload };
+          setForm(formRef.current);
+          setNote({ tone: 'saved', text: `A teammate just saved notes for #${teamNumber(team)}. You're seeing them now.` });
+        } else {
+          setNote({ tone: 'warn', text: "A teammate just saved notes for this team. Saving yours replaces theirs." });
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  useSingleFlightPolling({
+    enabled: Boolean(eventKey) && serverNotesReady && online,
+    visible,
+    intervalMs: PIT_ENTRIES_POLL_MS,
+    run: pollEntries,
+  });
+
   /* ---- Stats ------------------------------------------------------ */
 
   const completion = useMemo(() => ({
@@ -175,11 +238,7 @@ export function usePitScouting() {
         payload: savedForm,
       });
       if (contextRef.current.eventKey !== eventKey) return 'failed';
-      setEntriesByTeam((prev) => {
-        const next = new Map(prev);
-        next.set(result.entry.team_key.toLowerCase(), result.entry);
-        return next;
-      });
+      putEntry(result.entry);
       clearConfirmedPitDraft(workspaceId, eventKey, selectedTeam, savedForm);
       if (contextRef.current.selectedTeam === selectedTeam && editVersionRef.current === savedEditVersion) { setFormDirty(false); setDraftStored(false); }
       hapticSuccess();
@@ -215,7 +274,8 @@ export function usePitScouting() {
     const team = selectedTeam;
     const outcome = await save();
     if (outcome === 'failed' || contextRef.current.selectedTeam !== team) return;
-    const next = nextUnscoutedTeam(teams, entriesByTeam, team);
+    // The ref, not this render's copy: a poll during the save may have learned of a teammate's work.
+    const next = nextUnscoutedTeam(teams, entriesRef.current, team);
     if (!next) {
       setNote({ tone: 'saved', text: `Saved #${teamNumber(team)}. Every team has notes now.` });
       return;
@@ -290,17 +350,13 @@ export function usePitScouting() {
         const queued = await enqueuePitPhoto({ blob, workspaceId, eventKey, teamKey: team, scoutProfile: scoutName });
         if (queued.ok) {
           hapticSuccess();
-          setNote({ tone: 'queued', text: `Photo saved on this phone for #${teamNumber(team)}.` });
+          setNote({ tone: 'queued', text: `Photo saved on this phone for #${teamNumber(team)}.`, photo: true });
         } else setErrorText(queued.message);
       };
       if (typeof navigator !== 'undefined' && navigator.onLine === false) { await keepOnPhone(); return; }
       try {
         const result = await uploadPhotoBlob({ blob, eventKey, teamKey: team, scoutProfile: scoutName });
-        setEntriesByTeam((prev) => {
-          const next = new Map(prev);
-          next.set(result.entry.team_key.toLowerCase(), result.entry);
-          return next;
-        });
+        putEntry(result.entry);
         hapticSuccess();
         setNote({ tone: 'saved', text: `Photo added for #${teamNumber(team)}.` });
       } catch (err) {
@@ -319,17 +375,19 @@ export function usePitScouting() {
     if (!(await deleteQueuedPitPhoto(id))) setErrorText('Could not remove this photo from the phone. Try again.');
   }
 
+  async function retryWaitingPhotos(ids: string[]) {
+    setErrorText('');
+    const results = await Promise.all(ids.map((id) => retryRefusedPitPhoto(id)));
+    if (results.some((ok) => !ok)) setErrorText('Could not retry this photo. Try again.');
+  }
+
   // A queued photo that uploads (this page open or not) joins the team's saved photos.
   useEffect(() => {
     const onUploaded = (event: Event) => {
       const detail = (event as CustomEvent<PitPhotoUploadedDetail>).detail;
       const entry = detail?.entry as PitScoutingEntry | undefined;
       if (!entry || detail.item.eventKey !== contextRef.current.eventKey) return;
-      setEntriesByTeam((prev) => {
-        const next = new Map(prev);
-        next.set(entry.team_key.toLowerCase(), entry);
-        return next;
-      });
+      putEntry(entry);
       if (detail.item.teamKey === contextRef.current.selectedTeam) {
         setNote({ tone: 'saved', text: `Photo uploaded for #${teamNumber(detail.item.teamKey)}.` });
       }
@@ -347,11 +405,7 @@ export function usePitScouting() {
         team_key: selectedTeam,
         photo_path: photoPath,
       });
-      setEntriesByTeam((prev) => {
-        const next = new Map(prev);
-        next.set(result.entry.team_key.toLowerCase(), result.entry);
-        return next;
-      });
+      putEntry(result.entry);
     } catch (err) {
       setErrorText((err as Error).message || 'Failed to delete photo.');
     }
@@ -359,10 +413,14 @@ export function usePitScouting() {
 
   /* ---- Save bar status ---------------------------------------------- */
 
+  const teamPhotos = waitingPhotos.filter((photo) => photo.teamKey === selectedTeam);
+  const teamRefused = teamPhotos.filter((photo) => photo.refused).length;
+  const teamWaiting = teamPhotos.length - teamRefused;
+
   const baseStatus: PitSaveStatus = (() => {
     if (errorText) return { tone: 'error', text: errorText };
     if (savingForm) return { tone: 'saving', text: 'Saving…' };
-    if (note) return note;
+    if (note && !(note.photo && teamRefused > 0)) return { tone: note.tone, text: note.text };
     if (formDirty) {
       return draftStored
         ? { tone: 'dirty', text: 'Draft kept on this phone. Save shares it with your team.' }
@@ -370,10 +428,14 @@ export function usePitScouting() {
     }
     return hasPitEntry(selectedEntry) ? { tone: 'idle', text: 'Saved. No changes since.' } : { tone: 'idle', text: 'Not saved yet.' };
   })();
-  const teamWaiting = waitingPhotos.filter((photo) => photo.teamKey === selectedTeam).length;
   // Photos still on the phone are part of "did it save?", so they ride along on the same line.
-  const saveStatus: PitSaveStatus = teamWaiting > 0 && baseStatus.tone !== 'error' && baseStatus.tone !== 'saving'
-    ? { tone: baseStatus.tone === 'saved' || baseStatus.tone === 'idle' ? 'queued' : baseStatus.tone, text: `${baseStatus.text.replace(/\.$/, '')} · ${teamWaiting} photo${teamWaiting === 1 ? '' : 's'} waiting to upload` }
+  const photoParts = [
+    teamWaiting > 0 ? `${teamWaiting} photo${teamWaiting === 1 ? '' : 's'} waiting to upload` : '',
+    teamRefused > 0 ? `${teamRefused} photo${teamRefused === 1 ? '' : 's'} not uploaded` : '',
+  ].filter(Boolean);
+  const photoTone = teamRefused > 0 ? 'warn' : 'queued';
+  const saveStatus: PitSaveStatus = photoParts.length > 0 && baseStatus.tone !== 'error' && baseStatus.tone !== 'saving'
+    ? { tone: baseStatus.tone === 'saved' || baseStatus.tone === 'idle' || baseStatus.tone === 'queued' ? photoTone : baseStatus.tone, text: `${baseStatus.text.replace(/\.$/, '')} · ${photoParts.join(' · ')}` }
     : baseStatus;
 
   return {
@@ -381,6 +443,6 @@ export function usePitScouting() {
     teams, entriesByTeam, selectedTeam, selectedEntry, form,
     formDirty, draftStored, serverNotesReady, loading, savingForm, uploadingPhoto,
     errorText, completion, saveStatus,
-    setField, selectTeamForEditing, save, saveAndNext, addPhoto, deletePhoto, waitingPhotos, deleteWaitingPhoto,
+    setField, selectTeamForEditing, save, saveAndNext, addPhoto, deletePhoto, waitingPhotos, deleteWaitingPhoto, retryWaitingPhotos,
   };
 }

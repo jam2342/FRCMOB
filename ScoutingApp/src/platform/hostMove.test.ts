@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ native: false, queued: [] as unknown[], pending: [] as unknown[], queueFails: false }));
+const state = vi.hoisted(() => ({ native: false, queued: [] as unknown[], pending: [] as unknown[], queueFails: false, photos: 0, photosFail: false }));
 vi.mock('./runtime', () => ({ isNativeApp: () => state.native }));
 vi.mock('../utils/offlineQueue', () => ({
   listQueuedMutations: async () => { if (state.queueFails) throw new Error('idb'); return state.queued; },
+}));
+vi.mock('../features/offline/pitPhotoQueue', () => ({
+  countQueuedPitPhotos: async () => { if (state.photosFail) throw new Error('idb'); return state.photos; },
 }));
 vi.mock('../features/onDevice/offlineStore', () => ({
   openDb: async () => ({ close: () => undefined }),
@@ -16,7 +19,7 @@ const replace = vi.fn();
 const at = (hostname: string) => ({ hostname, search: '?x=1', hash: '#/my-team', replace });
 
 beforeEach(() => {
-  Object.assign(state, { native: false, queued: [], pending: [], queueFails: false });
+  Object.assign(state, { native: false, queued: [], pending: [], queueFails: false, photos: 0, photosFail: false });
   localStorage.clear();
   replace.mockReset();
   vi.stubGlobal('indexedDB', {});
@@ -33,7 +36,9 @@ describe('moving from the old address', () => {
     ['queued edits', () => { state.queued = [{ id: 'a' }]; }],
     ['recordings not yet uploaded', () => { state.pending = [{ id: 's' }]; }],
     ['an unsaved pit draft', () => { localStorage.setItem('frcmob_pit_draft_v1:1:2026txhou:frc118', '{}'); }],
+    ['pit photos taken without signal', () => { state.photos = 2; }],
     ['storage it cannot read', () => { state.queueFails = true; }],
+    ['a photo store it cannot read', () => { state.photosFail = true; }],
   ])('stays while this browser holds %s', async (_label, arrange) => {
     arrange();
     expect(await nothingLeftHere()).toBe(false);

@@ -121,6 +121,7 @@ function PitScoutingWorkspacePage() {
                   onDelete={path => void pit.deletePhoto(path)}
                   waiting={pit.waitingPhotos}
                   onDeleteWaiting={id => void pit.deleteWaitingPhoto(id)}
+                  onRetryWaiting={ids => void pit.retryWaitingPhotos(ids)}
                 />
               }
             />

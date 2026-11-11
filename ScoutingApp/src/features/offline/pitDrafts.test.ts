@@ -7,6 +7,8 @@ describe('private pit recovery drafts',()=>{
   expect(savePitDraft(1,'2026arc','frc254',{notes:'Keep me'})).toBe(true);
   expect(readPitDraft(1,'2026arc','frc254')).toEqual({notes:'Keep me'});
   rememberPitSelection(1,'2026arc','frc254');expect(readPitSelection(1,'2026arc')).toBe('frc254');expect(readPitSelection(2,'2026arc')).toBeNull();
+  rememberPitSelection(1,'2026arc','frc100b');expect(readPitSelection(1,'2026arc')).toBe('frc100b');
+  localStorage.setItem('frcmob_pit_selection_v1:1:2026arc','frc100bb');expect(readPitSelection(1,'2026arc')).toBeNull();
   expect(readPitDraft(2,'2026arc','frc254')).toBeNull();expect(readPitDraft(1,'2026other','frc254')).toBeNull();expect(readPitDraft(1,'2026arc','frc1678')).toBeNull();
  });
  it('does not erase newer edits when an earlier save finishes',()=>{

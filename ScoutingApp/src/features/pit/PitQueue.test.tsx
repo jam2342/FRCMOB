@@ -210,6 +210,36 @@ it('leader: reassigns a single team, clears it, and force-takes behind a confirm
   expect(claimPitTeam).toHaveBeenCalledWith('2026arc', 'frc200', { force: true });
 });
 
+it('leader: a refresh while the reassign dialog is open keeps the scout picked and the take confirm', async () => {
+  session.role = 'leader';
+  const props = {
+    eventKey: '2026arc', teams, entriesByTeam: new Map<string, PitScoutingEntry>(), selectedTeam: '',
+    formDirty: false, disabled: false, collapsible: false, onSelect: vi.fn(),
+  };
+  const { rerender } = render(<PitTeamPicker {...props} />);
+  await act(async () => {});
+  await act(async () => {});
+  fireEvent.click(await screen.findByRole('tab', { name: /Left/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Change who has 100' }));
+  let dialog = await screen.findByRole('dialog', { name: 'Team 100' });
+  const picker = await within(dialog).findByLabelText('Assigned to');
+  fireEvent.change(picker, { target: { value: '9' } });
+  // A poll answers: same data, new objects, so every queue row is rebuilt.
+  rerender(<PitTeamPicker {...props} entriesByTeam={new Map()} />);
+  await act(async () => {});
+  dialog = screen.getByRole('dialog', { name: 'Team 100' });
+  expect(within(dialog).getByLabelText('Assigned to')).toHaveValue('9');
+  expect(within(dialog).getByRole('button', { name: 'Save' })).toBeEnabled();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Change who has 200' }));
+  dialog = await screen.findByRole('dialog', { name: 'Team 200' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Take it from Alex' }));
+  rerender(<PitTeamPicker {...props} entriesByTeam={new Map()} />);
+  await act(async () => {});
+  expect(screen.getByRole('dialog', { name: 'Take Team 200?' })).toBeInTheDocument();
+});
+
 it('on a phone the open team shows who has it and claim sits beside Change team', async () => {
   vi.mocked(claimPitTeam).mockResolvedValue({ ok: true, assignment: row('frc100', 7, 'Jamal') });
   vi.mocked(getPitAssignments).mockResolvedValue([]);
