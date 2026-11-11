@@ -5,7 +5,7 @@ ultralytics>=8.4.190,<9.0.0
 # scripts/train_win_correction.py fits the win-probability correction with torch
 # (ultralytics needs it too). Install the CPU wheel on a machine with no GPU:
 # pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1
-torch==2.14.1
+torch==2.15.0
 lap>=0.5.13
 # Label review and audit tools (scripts/audit_labels.py).
 pillow>=13.0.0
