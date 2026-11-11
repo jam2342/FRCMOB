@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PitScoutingEntry } from '../../api';
@@ -34,6 +34,8 @@ beforeEach(() => {
   setPitPhotoStore(createMemoryPitPhotoStore());
   URL.createObjectURL = vi.fn(() => 'blob:thumb');
   URL.revokeObjectURL = vi.fn();
+  // mockReset, not just clear: a one-off answer a test left unused must not reach the next test.
+  vi.mocked(listPitEntries).mockReset();
   serverHas();
   vi.mocked(upsertPitEntry).mockImplementation(async (body) => ({ ok: true, entry: entry(body.team_key, body.payload as Record<string, unknown>, new Date().toISOString()) }));
 });
@@ -81,8 +83,8 @@ it("a poll that started before my save can't put the old copy back", async () =>
   vi.mocked(listPitEntries).mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
   const calls = vi.mocked(listPitEntries).mock.calls.length;
   const slowPoll = refreshActivePolls();
-  await act(async () => {});
-  expect(listPitEntries).toHaveBeenCalledTimes(calls + 1);
+  // A refresh waits for any run already in flight, so give it time to start.
+  await waitFor(() => expect(listPitEntries).toHaveBeenCalledTimes(calls + 1));
   fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '5' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
   expect(upsertPitEntry).toHaveBeenCalledTimes(1);
