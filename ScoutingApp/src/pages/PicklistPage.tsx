@@ -11,7 +11,6 @@ import {
   getEventTeamsIntel,
   getPicklist,
   listPicklists,
-  listPitEntries,
   resolveMediaUrl,
 } from '../api';
 import type { Picklist, PicklistSlot, PicklistSlotTier } from '../api';
@@ -30,6 +29,8 @@ import { metric } from './centerUtils';
 import { slotIndexForRank } from '../features/picklists/rankMove';
 import './PicklistPage.css';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
+import { PitSummary } from '../features/pit/PitSummary';
+import { loadPitEntries } from '../features/pit/usePitEntries';
 import { useWorkspace } from '../features/workspace/useWorkspace';
 import { usePicklistEditor } from '../features/picklists/usePicklistEditor';
 import { DraftBoard } from '../features/picklists/DraftBoard';
@@ -147,18 +148,19 @@ function PicklistWorkspacePage() {
 
   const fetchPitPhotos = useCallback(async (key: string, sequence: number) => {
     try {
-      const result = await listPitEntries(key);
+      // Shared with the pit summary in the expanded rows: one request for both.
+      const entries = await loadPitEntries(workspace.workspace.id, key);
       const map = new Map<string, string>();
-      for (const entry of result.entries ?? []) {
+      for (const [teamKey, entry] of entries) {
         if (entry.photos?.length) {
-          map.set(entry.team_key.toLowerCase(), entry.photo_urls?.[0] || entry.photos[0]);
+          map.set(teamKey, entry.photo_urls?.[0] || entry.photos[0]);
         }
       }
       if (loadSequence.current === sequence) setPitPhotoByTeam(map);
     } catch {
       if (loadSequence.current === sequence) setPitPhotoByTeam(new Map());
     }
-  }, []);
+  }, [workspace.workspace.id]);
 
   const fetchRankings = useCallback(async (key: string, sequence: number) => {
     const official = await getEventRankings(key).then((result) => rankedTeamKeys(result.rankings)).catch(() => []);
@@ -808,6 +810,9 @@ function PicklistWorkspacePage() {
                                 />
                               </label>
                             ) : null}
+                            <div className="picklist-detail-pit">
+                              <PitSummary teamKey={slot.team_key} eventKey={eventKey} variant="compact" />
+                            </div>
                           </div>
                         ) : null}
                         {!isExpanded && (slot.notes || slot.dnp_reason) ? (

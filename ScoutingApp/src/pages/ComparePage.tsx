@@ -20,6 +20,8 @@ import { MobileViewActions } from '../components/ui/MobileViewActions';
 import { EmptyState } from '../components/ui/EmptyState';
 import { SkeletonBlock } from '../components/ui/SkeletonBlock';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
+import { PIT_COMPARE_FIELDS, pitAnswerFor, pitFieldLabel } from '../features/pit/pitAnswers';
+import { usePitEntries } from '../features/pit/usePitEntries';
 import { HeadToHeadCard } from '../features/headToHead/HeadToHeadCard';
 import { Chip, Table, renderCell, type TableColumn } from '../components/ui/primitives';
 import styles from './ComparePage.module.css';
@@ -632,6 +634,46 @@ export function ComparePage() {
     );
   };
 
+  const pitEntries = usePitEntries(selectedEventKey);
+  const renderPitTable = (rows: CompareRow[]) => {
+    const fields = PIT_COMPARE_FIELDS.filter((key) => rows.some((row) => pitAnswerFor(pitEntries.entries.get(row.team_key.toLowerCase()), key)));
+    return (
+      <div className={styles.sideScroll}>
+        <table className={styles.sideTable}>
+          <thead>
+            <tr>
+              <th scope="col"><span className="sr-only">Pit answer</span></th>
+              {rows.map((row) => (
+                <th key={`pit-head-${row.team_key}`} scope="col">
+                  <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)} title={row.breakdown?.team.nickname || undefined}>
+                    #{teamNumberFromTeamKey(row.team_key) ?? row.team_key}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {fields.length === 0 ? (
+              <tr>
+                <th scope="row">Not pit scouted yet</th>
+                {rows.map((row) => <td key={`pit-none-${row.team_key}`}>{MISSING}</td>)}
+              </tr>
+            ) : fields.map((key) => (
+              <tr key={`pit-row-${key}`}>
+                <th scope="row">{pitFieldLabel(key)}</th>
+                {rows.map((row) => (
+                  <td key={`pit-${key}-${row.team_key}`} className={styles.pitCell}>
+                    {pitAnswerFor(pitEntries.entries.get(row.team_key.toLowerCase()), key)?.text ?? MISSING}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   const metricHighlights = useMemo(() => {
     const definitions = [
       {
@@ -1074,6 +1116,12 @@ export function ComparePage() {
             )}
             </SurfaceCard>
 
+        ) : null}
+
+        {activeTab === 'summary' && pitEntries.inWorkspace && selectedEventKey && !pitEntries.loading && compareRows.length > 0 ? (
+          <SurfaceCard title="Pit scouting" subtitle="Claimed in the pits, not observed" compactable>
+            {renderPitTable(compareRows)}
+          </SurfaceCard>
         ) : null}
 
         {activeTab === 'summary' && compareTeamKeys.length >= 2 ? <HeadToHeadCard teamKeys={compareTeamKeys} /> : null}

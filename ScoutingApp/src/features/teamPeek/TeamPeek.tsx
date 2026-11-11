@@ -6,6 +6,7 @@ import { readStoredCenterContext } from '../../layout/centerContext';
 import { readFavoriteTeams, saveFavoriteTeams } from '../../layout/userSettings';
 import { hapticTap } from '../../utils/haptics';
 import { navigateWithTransition } from '../../utils/viewTransition';
+import { PitSummary } from '../pit/PitSummary';
 import { loadTeamCenterIntel } from '../prefetch/pageRequests';
 import { peekFromIntel, type TeamPeekData } from './peekData';
 import styles from './TeamPeek.module.css';
@@ -41,7 +42,7 @@ function cardPosition(rect: DOMRect): { left: number; top: number } {
   const margin = 12;
   const fitsRight = rect.right + margin + CARD_WIDTH < window.innerWidth - margin;
   const left = fitsRight ? rect.right + margin : Math.max(margin, rect.left - margin - CARD_WIDTH);
-  const top = Math.min(Math.max(margin, rect.top - 12), window.innerHeight - 280);
+  const top = Math.min(Math.max(margin, rect.top - 12), window.innerHeight - 400);
   return { left, top };
 }
 
@@ -287,6 +288,9 @@ export function TeamPeek() {
         <div><strong>{data ? data.record ?? '—' : '…'}</strong><span>{data?.recordLabel ?? 'Record'}</span></div>
       </div>
       {data?.status ? <p className={styles.status}>{data.status}</p> : null}
+      <div className={styles.pit}>
+        <PitSummary teamKey={anchor.teamKey} eventKey={anchor.eventKey} variant="compact" />
+      </div>
       <div className={styles.actions}>
         <button type="button" className={styles.primary} onClick={() => go(`/team-center?${eventParam}team=${anchor.teamKey}`)}>Open team</button>
         <button type="button" className={styles.secondary} onClick={compareWith}>Compare</button>

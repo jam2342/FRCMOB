@@ -108,6 +108,10 @@
   font-size: var(--font-size-sm);
 }
 
+.pit:empty {
+  display: none;
+}
+
 .actions {
   display: flex;
   gap: 8px;

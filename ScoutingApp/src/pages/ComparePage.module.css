@@ -136,3 +136,10 @@
   color: var(--color-accent-text);
   font-weight: var(--font-weight-bold);
 }
+
+/* Pit answers are words, so they wrap where the figures above stay on one line. */
+.sideTable .pitCell {
+  white-space: normal;
+  min-width: 5rem;
+  text-align: right;
+}
