@@ -105,7 +105,7 @@ export function PitSummary({ teamKey, eventKey, variant = 'full' }: PitSummaryPr
     return (
       <p className={styles.empty}>
         <span>Not pit scouted yet</span>
-        <Link className={styles.link} to="/scouting/pit">Pit scout →</Link>
+        <Link className={styles.link} to={`/scouting/pit?${new URLSearchParams({ event: eventKey, team: teamKey })}`}>Pit scout →</Link>
       </p>
     );
   }

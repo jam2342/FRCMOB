@@ -1,6 +1,6 @@
 import { breakdownFromIntel, ratingFromIntel, type TeamIntelBreakdown } from './teamIntel';
 import { ratingRangeLabel } from './teamCenterOfficial';
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageViewBar } from '../components/PageViewBar';
 import { COMPARE_VIEWS, viewTitle } from '../components/pageViewBarConfig';
@@ -154,6 +154,81 @@ function competitionsFromIntel(intel: Record<string, unknown>, teamKey: string):
       typeof competitions.registered_events_source === 'string' ? competitions.registered_events_source : 'intel',
     registered_events: registered as TeamCompetitionsResponse['registered_events'],
   };
+}
+
+type AcrossTeam = { key: string; head: ReactNode };
+type AcrossRow = { key: string; label: string; cells: ReactNode[]; bestIdx?: number };
+
+// Figures down, teams across. A table never cuts columns off at its card's edge: when the teams
+// don't fit the box, each team stacks into its own list of figures, and the table returns once
+// the box is wide enough again.
+function TeamsAcross({ teams, rows }: { teams: AcrossTeam[]; rows: AcrossRow[] }) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const neededRef = useRef(0);
+  const [stacked, setStacked] = useState(false);
+
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return undefined;
+    const measure = () => {
+      if (!stacked) {
+        if (box.scrollWidth > box.clientWidth + 1) {
+          neededRef.current = box.scrollWidth;
+          setStacked(true);
+        }
+      } else if (box.clientWidth >= neededRef.current) {
+        setStacked(false);
+      }
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [stacked, teams.length, rows.length]);
+
+  if (stacked) {
+    return (
+      <div className={styles.sideScroll} ref={boxRef}>
+        {teams.map((team, teamIndex) => (
+          <section key={team.key} className={styles.stackTeam}>
+            <h4 className={styles.stackHead}>{team.head}</h4>
+            <dl className={styles.stackList}>
+              {rows.map((row) => (
+                <div key={row.key} className={styles.stackRow}>
+                  <dt>{row.label}</dt>
+                  <dd className={row.bestIdx === teamIndex ? styles.sideBest : undefined}>{row.cells[teamIndex]}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.sideScroll} ref={boxRef}>
+      <table className={styles.sideTable}>
+        <thead>
+          <tr>
+            <th scope="col"><span className="sr-only">Figure</span></th>
+            {teams.map((team) => <th key={team.key} scope="col">{team.head}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <th scope="row">{row.label}</th>
+              {row.cells.map((cell, index) => (
+                <td key={teams[index].key} className={[styles.pitCell, row.bestIdx === index ? styles.sideBest : ''].join(' ').trim()}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function ComparePage() {
@@ -595,83 +670,50 @@ export function ComparePage() {
       .filter((column): column is TableColumn<CompareRow> => Boolean(column))
       // A row every team leaves blank (no TBA rank outside a shared event) is just dashes.
       .filter((column) => column.key === 'matches' || rows.some((row) => sideBySideValue(column.key, row) !== null));
-    return (
-      <div className={styles.sideScroll}>
-        <table className={styles.sideTable}>
-          <thead>
-            <tr>
-              <th scope="col"><span className="sr-only">Figure</span></th>
-              {rows.map((row) => (
-                <th key={`side-head-${row.team_key}`} scope="col">
-                  <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)} title={row.breakdown?.team.nickname || undefined}>
-                    #{teamNumberFromTeamKey(row.team_key) ?? row.team_key}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {metricColumns.map((column) => {
-              const values = rows.map((row) => sideBySideValue(column.key, row));
-              const known = values.filter((value): value is number => value !== null);
-              const best = rows.length > 1 && known.length > 1
-                ? (column.key === 'rank' ? Math.min(...known) : Math.max(...known))
-                : null;
-              return (
-                <tr key={`side-row-${column.key}`}>
-                  <th scope="row">{column.label}</th>
-                  {rows.map((row, index) => (
-                    <td key={`side-${column.key}-${row.team_key}`} className={best !== null && values[index] === best && known.some((value) => value !== best) ? styles.sideBest : undefined}>
-                      {renderCell(column, row)}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
+    const teams = rows.map((row) => ({
+      key: `side-head-${row.team_key}`,
+      head: (
+        <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)} title={row.breakdown?.team.nickname || undefined}>
+          #{teamNumberFromTeamKey(row.team_key) ?? row.team_key}
+        </button>
+      ),
+    }));
+    const tableRows = metricColumns.map((column) => {
+      const values = rows.map((row) => sideBySideValue(column.key, row));
+      const known = values.filter((value): value is number => value !== null);
+      const best = rows.length > 1 && known.length > 1
+        ? (column.key === 'rank' ? Math.min(...known) : Math.max(...known))
+        : null;
+      const hasLeader = best !== null && known.some((value) => value !== best);
+      return {
+        key: `side-row-${column.key}`,
+        label: column.label,
+        cells: rows.map((row) => renderCell(column, row)),
+        bestIdx: hasLeader ? values.findIndex((value) => value === best) : undefined,
+      };
+    });
+    return <TeamsAcross teams={teams} rows={tableRows} />;
   };
 
   const pitEntries = usePitEntries(selectedEventKey);
   const renderPitTable = (rows: CompareRow[]) => {
     const fields = PIT_COMPARE_FIELDS.filter((key) => rows.some((row) => pitAnswerFor(pitEntries.entries.get(row.team_key.toLowerCase()), key)));
-    return (
-      <div className={styles.sideScroll}>
-        <table className={styles.sideTable}>
-          <thead>
-            <tr>
-              <th scope="col"><span className="sr-only">Pit answer</span></th>
-              {rows.map((row) => (
-                <th key={`pit-head-${row.team_key}`} scope="col">
-                  <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)} title={row.breakdown?.team.nickname || undefined}>
-                    #{teamNumberFromTeamKey(row.team_key) ?? row.team_key}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {fields.length === 0 ? (
-              <tr>
-                <th scope="row">Not pit scouted yet</th>
-                {rows.map((row) => <td key={`pit-none-${row.team_key}`}>{MISSING}</td>)}
-              </tr>
-            ) : fields.map((key) => (
-              <tr key={`pit-row-${key}`}>
-                <th scope="row">{pitFieldLabel(key)}</th>
-                {rows.map((row) => (
-                  <td key={`pit-${key}-${row.team_key}`} className={styles.pitCell}>
-                    {pitAnswerFor(pitEntries.entries.get(row.team_key.toLowerCase()), key)?.text ?? MISSING}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+    const teams = rows.map((row) => ({
+      key: `pit-head-${row.team_key}`,
+      head: (
+        <button type="button" className="center-inline-link" onClick={() => openTeamCenter(row.team_key)} title={row.breakdown?.team.nickname || undefined}>
+          #{teamNumberFromTeamKey(row.team_key) ?? row.team_key}
+        </button>
+      ),
+    }));
+    const tableRows = fields.length === 0
+      ? [{ key: 'pit-none', label: 'Not pit scouted yet', cells: rows.map(() => MISSING) }]
+      : fields.map((key) => ({
+          key: `pit-row-${key}`,
+          label: pitFieldLabel(key),
+          cells: rows.map((row) => pitAnswerFor(pitEntries.entries.get(row.team_key.toLowerCase()), key)?.text ?? MISSING),
+        }));
+    return <TeamsAcross teams={teams} rows={tableRows} />;
   };
 
   const metricHighlights = useMemo(() => {

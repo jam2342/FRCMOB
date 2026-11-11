@@ -102,7 +102,7 @@ it('shows only the decision answers, a photo count and a link in the compact var
 it('says so, with a way to scout the team, when a workspace has no entry for it', async () => {
   mount('frc1678');
   expect(await screen.findByText('Not pit scouted yet')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Pit scout →' }).getAttribute('href')).toBe('/scouting/pit');
+  expect(screen.getByRole('link', { name: 'Pit scout →' }).getAttribute('href')).toBe('/scouting/pit?event=2026arc&team=frc1678');
 });
 
 it('renders nothing, and asks for nothing, outside a workspace', async () => {
