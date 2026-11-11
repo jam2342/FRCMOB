@@ -105,7 +105,7 @@ export function PitSummary({ teamKey, eventKey, variant = 'full' }: PitSummaryPr
     return (
       <p className={styles.empty}>
         <span>Not pit scouted yet</span>
-        <Link className="entity-link" to="/scouting/pit">Pit scout →</Link>
+        <Link className={styles.link} to="/scouting/pit">Pit scout →</Link>
       </p>
     );
   }
@@ -134,7 +134,7 @@ export function PitSummary({ teamKey, eventKey, variant = 'full' }: PitSummaryPr
         )}
         <p className={styles.footer}>
           <span className={styles.meta}>{[photos > 0 ? `${photos} ${photos === 1 ? 'photo' : 'photos'}` : null, meta].filter(Boolean).join(' · ')}</span>
-          <Link className="entity-link" to={pitTeamCenterPath(teamKey, eventKey)}>Pit notes →</Link>
+          <Link className={styles.link} to={pitTeamCenterPath(teamKey, eventKey)}>Pit notes →</Link>
         </p>
       </div>
     );

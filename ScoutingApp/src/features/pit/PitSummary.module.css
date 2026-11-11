@@ -115,6 +115,20 @@
   height: 100%;
 }
 
+/* Same look as .entity-link, which does not reach the peek card portalled to <body>. */
+.link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+@media (hover: hover) {
+  .link:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
 .viewer {
   position: fixed;
   inset: 0;
