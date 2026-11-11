@@ -31,6 +31,8 @@ export type PitQueueProps = {
   assignments: PitAssignments;
   isLeader: boolean;
   meId: number | null;
+  // Phones: no field label, and Auto-split sits beside the search, so rows start higher.
+  compact?: boolean;
   onOpen: (teamKey: string) => void;
 };
 
@@ -100,7 +102,7 @@ function RowActions({
   );
 }
 
-export function PitQueue({ rows, selectedTeam, disabled, assignments, isLeader, meId, onOpen }: PitQueueProps) {
+export function PitQueue({ rows, selectedTeam, disabled, assignments, isLeader, meId, compact = false, onOpen }: PitQueueProps) {
   const [query, setQuery] = useState('');
   // Null until the scout picks: the first answer from the server decides it once, so claiming a team later doesn't yank the view.
   const [tab, setTab] = useState<PitTab | null>(null);
@@ -124,16 +126,21 @@ export function PitQueue({ rows, selectedTeam, disabled, assignments, isLeader, 
   return (
     <div className={styles.queue}>
       <div className={styles.tools}>
-        <FieldText
-          label="Find a team"
-          type="search"
-          inputMode="search"
-          enterKeyHint="search"
-          autoComplete="off"
-          placeholder="Number or name"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <div className={compact ? styles.searchRow : undefined}>
+          <FieldText
+            {...(compact ? { 'aria-label': 'Find a team' } : { label: 'Find a team' })}
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
+            placeholder="Number or name"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {compact && isLeader ? (
+            <Button variant="quiet" iconOnly icon={<UsersIcon />} aria-label="Auto-split" title="Auto-split" onClick={() => setSplitOpen(true)} disabled={disabled} />
+          ) : null}
+        </div>
         <SegmentedTabs<PitTab>
           className={styles.tabs}
           ariaLabel="Pit queue"
@@ -145,7 +152,7 @@ export function PitQueue({ rows, selectedTeam, disabled, assignments, isLeader, 
             { value: 'done', label: <>Done<small>{counts.done}</small></>, ariaLabel: `Done, ${counts.done}` },
           ]}
         />
-        {isLeader ? (
+        {isLeader && !compact ? (
           <div className={styles.leaderBar}>
             <Button size="sm" variant="quiet" icon={<UsersIcon />} onClick={() => setSplitOpen(true)} disabled={disabled}>
               Auto-split

@@ -265,3 +265,15 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
 }
+
+.searchRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.searchRow > :first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}

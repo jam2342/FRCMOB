@@ -101,8 +101,9 @@ export function PitTeamPicker({ eventKey, teams, entriesByTeam, selectedTeam, fo
     <SurfaceCard
       tourId="pit-teams"
       title="Teams"
-      subtitle="Tap a team to fill out its pit form. Tap I'm on it so two scouts don't walk to the same pit."
+      subtitle={collapsible ? undefined : "Tap a team to fill out its pit form. Tap I'm on it so two scouts don't walk to the same pit."}
       mobileCollapsible={false}
+      hideTitleOnPhone
     >
       <PitQueue
         rows={rows}
@@ -111,6 +112,7 @@ export function PitTeamPicker({ eventKey, teams, entriesByTeam, selectedTeam, fo
         assignments={assignments}
         isLeader={isLeader}
         meId={meId}
+        compact={collapsible}
         onOpen={(teamKey) => {
           onSelect(teamKey);
           setChooserOpen(false);

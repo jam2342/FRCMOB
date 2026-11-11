@@ -68,3 +68,20 @@ it('collapses the phone queue and reopens its tabs, search and done list', async
   expect(screen.getByRole('button', {name:'Change team'})).toBeInTheDocument();
   expect(screen.queryByRole('tab', {name:/Left/})).not.toBeInTheDocument();
 });
+it('phones: one event line with progress and Change, the picker only on demand, and no strip once a team is open', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { getEventTeamsIntel, listPitEntries } = await import('../api');
+  vi.mocked(getEventTeamsIntel).mockResolvedValueOnce({ teams: [{team_key:'frc254',team_number:254}, {team_key:'frc118',team_number:118}] } as never);
+  vi.mocked(listPitEntries).mockResolvedValueOnce({ entries: [{team_key:'frc118',payload:{notes:'Done'},photos:[]}] } as never);
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
+  await screen.findByRole('button', {name:/^Team 254/});
+  expect(screen.getByText('1/2 done')).toBeInTheDocument();
+  expect(screen.queryByText(/one entry per team/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name:'Load event'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Change'}));
+  expect(screen.getByRole('button', {name:'Load event'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Close'}));
+  expect(screen.queryByRole('button', {name:'Load event'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:/^Team 254/}));
+  expect(screen.queryByText('1/2 done')).not.toBeInTheDocument();
+});
