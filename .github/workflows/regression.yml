@@ -65,22 +65,27 @@ jobs:
             echo "::error::$1. This is a CI infrastructure failure (package mirror or network), not a test result; no tests ran. Re-run the job."
             exit 1
           }
-          canlaunch() {
-            node -e "require('playwright').chromium.launch({ channel: 'chromium' }).then(b => b.close())" >/dev/null 2>&1
+          # Quiet for the first probe (it only decides whether to touch apt); the
+          # final probe runs unredirected so a real launch error lands in the log.
+          launch() {
+            node -e "require('playwright').chromium.launch({ channel: 'chromium' }).then(b => b.close())"
           }
 
           # Browser download: a cache hit makes this a no-op. No --with-deps, so no apt.
           retry npx playwright install chromium || infra_fail "Chromium download failed after 4 attempts"
 
           # System libraries: skip apt when the runner image already has them.
-          if canlaunch; then
+          if launch >/dev/null 2>&1; then
             echo "Chromium launches with the runner's own libraries; skipping apt."
           else
             echo "Chromium can't launch yet; installing its system dependencies."
             echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
             retry sudo apt-get update || echo "::warning::apt-get update kept failing; trying install-deps anyway"
             retry npx playwright install-deps chromium || infra_fail "apt could not install Chromium's system dependencies after 4 attempts"
-            canlaunch || infra_fail "Chromium still won't launch after installing its dependencies"
+            launch || {
+              echo "::error::Chromium still won't launch after installing its dependencies (error above). If apt warnings above show mirror/DNS failures, re-run; otherwise this is a setup problem to fix, not a flaky run."
+              exit 1
+            }
           fi
       - run: npm run e2e:regression
         env:
