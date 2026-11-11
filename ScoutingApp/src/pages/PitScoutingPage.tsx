@@ -9,11 +9,13 @@ import { PitForm } from '../features/pit/PitForm';
 import { PitPhotos } from '../features/pit/PitPhotos';
 import { PitSaveBar } from '../features/pit/PitSaveBar';
 import { PitTeamPicker } from '../features/pit/PitTeamPicker';
+import { usePitStepper } from '../features/pit/pitStepConfig';
 import { usePitScouting } from '../features/pit/usePitScouting';
 
 function PitScoutingWorkspacePage() {
   const isMobile = useMobileLayout();
   const pit = usePitScouting();
+  const stepper = usePitStepper(pit.selectedTeam);
   const { selectedTeam, errorText } = pit;
   const errorRef = useRef<HTMLParagraphElement | null>(null);
   const busy = pit.savingForm || pit.uploadingPhoto;
@@ -69,6 +71,7 @@ function PitScoutingWorkspacePage() {
               nickname={pit.teams.find(team => team.team_key === selectedTeam)?.nickname ?? null}
               values={pit.form}
               onChange={pit.setField}
+              stepper={stepper}
               photos={
                 <PitPhotos
                   teamKey={selectedTeam}
@@ -77,6 +80,8 @@ function PitScoutingWorkspacePage() {
                   disabled={!pit.serverNotesReady}
                   onAdd={pit.addPhoto}
                   onDelete={path => void pit.deletePhoto(path)}
+                  waiting={pit.waitingPhotos}
+                  onDeleteWaiting={id => void pit.deleteWaitingPhoto(id)}
                 />
               }
             />
@@ -86,6 +91,7 @@ function PitScoutingWorkspacePage() {
               disabled={!pit.serverNotesReady}
               onSave={() => void pit.save()}
               onSaveAndNext={() => void pit.saveAndNext()}
+              stepper={stepper}
             />
           </>
         ) : null}
