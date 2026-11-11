@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { EventPicker } from '../components/EventPicker';
 import { ScoutingViewBar } from '../components/ScoutingViewBar';
 import { scoutingViewTitle } from '../components/pageViewBarConfig';
@@ -10,15 +11,29 @@ import { PitPhotos } from '../features/pit/PitPhotos';
 import { PitSaveBar } from '../features/pit/PitSaveBar';
 import { PitTeamPicker } from '../features/pit/PitTeamPicker';
 import { usePitScouting } from '../features/pit/usePitScouting';
+import { deepLinkTeam } from '../features/pit/pitTeams';
 
 function PitScoutingWorkspacePage() {
   const isMobile = useMobileLayout();
   const pit = usePitScouting();
   const { selectedTeam, errorText } = pit;
   const errorRef = useRef<HTMLParagraphElement | null>(null);
+  const [searchParams] = useSearchParams();
+  const linkedTeam = searchParams.get('team');
+  const openedLink = useRef('');
   const busy = pit.savingForm || pit.uploadingPhoto;
 
   useEffect(() => { if (errorText && !selectedTeam) errorRef.current?.scrollIntoView?.({ block: 'nearest' }); }, [errorText, selectedTeam]);
+
+  // Opens the linked team once its event has loaded; it never claims the team.
+  useEffect(() => {
+    const target = deepLinkTeam(linkedTeam, pit.teams);
+    const id = `${pit.eventKey}:${target}`;
+    if (!target || openedLink.current === id) return;
+    openedLink.current = id;
+    pit.selectTeamForEditing(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedTeam, pit.teams, pit.eventKey]);
 
   const discardUnsaved = (action: string) =>
     !(pit.formDirty && !pit.draftStored && !window.confirm(`This draft could not be saved on your device. Discard it and ${action}?`));
@@ -54,6 +69,8 @@ function PitScoutingWorkspacePage() {
         </SurfaceCard>
 
         <PitTeamPicker
+          eventKey={pit.eventKey}
+          formDirty={pit.formDirty}
           teams={pit.teams}
           entriesByTeam={pit.entriesByTeam}
           selectedTeam={selectedTeam}

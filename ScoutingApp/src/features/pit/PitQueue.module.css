@@ -1,0 +1,267 @@
+/* Pit queue: one row per team. Tokens only. */
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  /* A row's actions sit at its far edge; on a wide screen a capped list keeps them near the team. */
+  max-width: 46rem;
+}
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Three tabs share the strip, so none is ever cut at the edge, even at 250px. */
+@media (max-width: 480px) {
+  .queue .tabs > :global(.segmented-tabs__item) {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: var(--space-1);
+  }
+}
+
+.leaderBar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.banner {
+  position: sticky;
+  top: calc(var(--ps-topbar-height) + var(--space-2));
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.banner > span {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bannerIcon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+.dismiss {
+  flex: none;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-3) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-base);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Hairlines between rows, no boxes: a long list of teams should scan like a table. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.main {
+  flex: 1 1 12rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.main[aria-current='true'] {
+  background: var(--color-info-soft);
+}
+
+.main:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .main:hover:not(:disabled, [aria-current='true']) {
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover));
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.number {
+  flex: none;
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mark {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-text-muted);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* The wording carries the status; the icon repeats it. Colour is only a hint on the two states that need attention. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text);
+}
+
+.status[data-status='draft'],
+.status[data-status='queued'] {
+  color: var(--color-warning-text);
+}
+
+.status[data-status='draft'] .mark,
+.status[data-status='queued'] .mark {
+  color: inherit;
+}
+
+.status[data-status='done'] {
+  color: var(--color-text-muted);
+}
+
+.mine {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding-bottom: var(--space-1);
+}
+
+/* On a narrow phone the actions drop under the team and sit at the right edge. */
+.action {
+  min-height: var(--touch-target-min);
+}
+
+.more {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sheetLead {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.sheetNote {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.scoutPick {
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.splitList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.splitList li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--touch-target-min);
+  align-items: center;
+  border-top: 1px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Header strip for the open team: who has it, and the one tap to take it. */
+.openTeam {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}

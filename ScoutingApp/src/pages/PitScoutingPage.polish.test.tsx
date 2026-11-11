@@ -13,14 +13,15 @@ import { PitScoutingPage } from './PitScoutingPage';
 import { upsertPitEntry } from '../api';
 import { readPitDraft } from '../features/offline/pitDrafts';
 const queue = vi.hoisted(() => ({ rows: [] as Array<{id: string; url: string; body: string; queuedAt: string; failure?: {reason: string}}> }));
+vi.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => ({ online: true }) }));
 vi.mock('../utils/offlineQueue', () => ({ listQueuedMutations: vi.fn(async () => queue.rows) }));
-vi.mock('../api', async original => ({ ...(await original<typeof import('../api')>()), getEventTeamsIntel: vi.fn(async () => ({ teams: [{team_key:'frc254', team_number:254}] })), listPitEntries: vi.fn(async () => ({entries:[]})), upsertPitEntry: vi.fn() }));
+vi.mock('../api', async original => ({ ...(await original<typeof import('../api')>()), getEventTeamsIntel: vi.fn(async () => ({ teams: [{team_key:'frc254', team_number:254}] })), listPitEntries: vi.fn(async () => ({entries:[]})), upsertPitEntry: vi.fn(), getPitAssignments: vi.fn(async () => []) }));
 
 it('keeps unanswered capabilities missing and saves explicit No separately', async () => {
   Element.prototype.scrollIntoView = vi.fn();
   vi.mocked(upsertPitEntry).mockRejectedValue(new Error('save stopped for inspection'));
   render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
-  fireEvent.click(await screen.findByRole('button', { name: /254/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Team 254/ }));
   const { PIT_FORM_SECTIONS } = await import('../config/gameFields');
   const fields = PIT_FORM_SECTIONS.flatMap((section) => section.fields).filter((field) => field.type === 'toggle');
   const answer = (label: string, option: 'Yes' | 'No') => within(screen.getByRole('group', { name: label })).getByRole('radio', { name: option });
