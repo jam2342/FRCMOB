@@ -24,6 +24,7 @@ from app.core.security import sign_media_path
 from app.db import models
 from app.db.session import get_db
 from app.core.config import settings
+from app.services.team_utils import stored_team_key, team_key_sort_key
 from app.services.workspace_limits import guard_pit_photo_storage, lock_pit_photo_storage, pit_photo_bytes_used
 from app.services.workspaces import WorkspaceActor, require_workspace_actor, require_workspace_writer
 
@@ -35,7 +36,6 @@ MEDIA_ROOT = Path(__file__).resolve().parents[2] / "media"
 PIT_PHOTOS_ROOT = MEDIA_ROOT / "pit_photos"
 
 _EVENT_KEY_RE = re.compile(r"^\d{4}[a-z0-9]+$")
-_TEAM_KEY_RE = re.compile(r"^frc\d{1,5}$")
 
 MAX_PHOTO_BYTES = 6 * 1024 * 1024
 MAX_PHOTOS_PER_TEAM = 12
@@ -55,8 +55,8 @@ def _normalize_event_key(raw: str | None) -> str:
     return token
 
 def _normalize_team_key(raw: str | None) -> str:
-    token = str(raw or "").strip().lower()
-    if not token or not _TEAM_KEY_RE.match(token):
+    token = stored_team_key(raw)
+    if token is None:
         raise HTTPException(status_code=400, detail="Invalid team key")
     return token
 
@@ -380,8 +380,6 @@ class PitAutoSplitRequest(BaseModel):
     replace_existing: bool = False
 
 
-def _team_number(team_key: str) -> int:
-    return int(team_key[3:])
 
 def _serialize_assignment(row: models.PitAssignment, names: dict[int, str]) -> dict[str, Any]:
     return {
@@ -409,7 +407,7 @@ def _list_assignments(db: Session, workspace_id: int, event_key: str) -> list[di
         )
     ).scalars().all()
     names = _member_names(db, workspace_id)
-    ordered = sorted(rows, key=lambda row: _team_number(row.team_key))
+    ordered = sorted(rows, key=lambda row: team_key_sort_key(row.team_key))
     return [_serialize_assignment(row, names) for row in ordered]
 
 def _load_assignment(db: Session, workspace_id: int, event_key: str, team_key: str) -> models.PitAssignment | None:
@@ -550,7 +548,7 @@ def auto_split_pit_teams(payload: PitAutoSplitRequest, request: Request, db: Ses
     actor = require_workspace_writer(request, db)
     _require_leader(actor)
     normalized_event = _normalize_event_key(payload.event_key)
-    team_keys = sorted({_normalize_team_key(key) for key in payload.team_keys}, key=_team_number)
+    team_keys = sorted({_normalize_team_key(key) for key in payload.team_keys}, key=team_key_sort_key)
     # Sorted by id so the same request always deals teams out the same way.
     member_ids = sorted(set(payload.member_ids))
     for member_id in member_ids:

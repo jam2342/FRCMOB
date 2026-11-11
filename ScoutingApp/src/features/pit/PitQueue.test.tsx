@@ -221,3 +221,17 @@ it('on a phone the open team shows who has it and claim sits beside Change team'
   expect(screen.getByText("You're on it")).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Release' })).toBeInTheDocument();
 });
+
+it('lists a B team right after its main team and reads it as "Team 100B"', async () => {
+  vi.mocked(getPitAssignments).mockResolvedValue([row('frc100B', 8, 'Alex')]);
+  await renderPicker({
+    teams: [team(100, 'Alpha'), { team_key: 'frc100b', team_number: 100, nickname: 'Alpha B' }, team(200, 'Bravo')],
+    entriesByTeam: new Map(),
+  });
+  fireEvent.click(screen.getByRole('tab', { name: /^Left/ }));
+  expect(teamRows()).toEqual([
+    'Team 100, Alpha, not assigned, to do',
+    'Team 100B, Alpha B, assigned to Alex, to do',
+    'Team 200, Bravo, not assigned, to do',
+  ]);
+});

@@ -34,6 +34,33 @@
   }
 }
 
+/* A short phone gets the strip on one row: "Change team" shrinks to its icon (name kept for screen readers, title for hover). */
+@media (max-height: 580px) and (max-width: 519px) {
+  .pit-selected-team__who {
+    flex-basis: 5.5rem;
+  }
+
+  .pit-selected-team__change {
+    min-width: var(--touch-target-min);
+  }
+
+  .pit-selected-team__change-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Landscape: the section menu is the one spare row, and the bottom tabs still switch section. */
+@media (max-height: 440px) {
+  .product-shell:has(.pit-save-bar) .scouting-page-view-bar {
+    display: none;
+  }
+}
+
 .pit-selected-team__who strong {
   font-size: var(--font-size-lg);
 }
@@ -180,6 +207,59 @@
 .pit-save-bar__actions > * {
   min-width: 0;
   white-space: nowrap;
+}
+
+/* Short screens (a 250x450 phone, or any phone on its side): the bar is one row so it never sits on the photo buttons.
+   Narrow, the status shrinks to its icon (the text stays in the live region and the title); a warning or error
+   keeps its full sentence on a row of its own, since that is the one a scout must read. */
+@media (max-height: 580px) {
+  .pit-save-bar {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .pit-save-bar__status {
+    align-items: center;
+  }
+
+  .pit-save-bar__text {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
+
+  .pit-save-bar__status[data-tone='warn'],
+  .pit-save-bar__status[data-tone='error'] {
+    grid-column: 1 / -1;
+  }
+
+  .pit-save-bar__status[data-tone='warn'] .pit-save-bar__text,
+  .pit-save-bar__status[data-tone='error'] .pit-save-bar__text {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+}
+
+@media (max-height: 580px) and (max-width: 519px) {
+  .pit-save-bar__status:not([data-tone='warn']):not([data-tone='error']) .pit-save-bar__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .pit-save-bar__actions > button {
+    padding-inline: var(--space-2);
+  }
+}
+
+@media (max-height: 580px) and (min-width: 520px) {
+  .pit-save-bar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  }
 }
 
 .pit-field--yesno {

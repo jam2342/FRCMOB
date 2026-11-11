@@ -145,6 +145,29 @@ class PitAssignmentTests(unittest.TestCase):
         self.assertEqual(cleared.status_code, 200)
         self.assertEqual(self._list(self.lead_h), [])
 
+    def test_b_teams_claim_and_list_under_the_stored_spelling(self):
+        response = self._post("/claim", self.alex_h, team_key="frc100b")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["assignment"]["team_key"], "frc100B")
+        self.assertEqual(self._post("/claim", self.sam_h, team_key="FRC100B").status_code, 409)
+        self.assertEqual(self._by_team(self.sam_h), {"frc100B": self.alex_id})
+        self.assertEqual(self._post("/set", self.lead_h, team_key="frc100b", member_id=self.sam_id).status_code, 200)
+        self.assertEqual(self._by_team(self.sam_h), {"frc100B": self.sam_id})
+        self.assertEqual(self._post("/release", self.sam_h, team_key="frc100b").status_code, 200)
+        self.assertEqual(self._list(self.sam_h), [])
+
+    def test_auto_split_orders_b_teams_after_their_main_team(self):
+        teams = ["frc101", "frc100b", "frc100", "frc99", "FRC100B"]
+        rows = self._post("/auto-split", self.lead_h, team_keys=teams, member_ids=[self.alex_id]).json()["assignments"]
+        self.assertEqual([row["team_key"] for row in rows], ["frc99", "frc100", "frc100B", "frc101"])
+
+    def test_bad_keys_are_rejected_everywhere(self):
+        for bad in ("frc", "frc12345678", "frc100BB", "254"):
+            for path, extra in (("/claim", {}), ("/release", {}), ("/set", {"member_id": self.alex_id})):
+                self.assertEqual(self._post(path, self.lead_h, team_key=bad, **extra).status_code, 400, (path, bad))
+            self.assertEqual(self._post("/auto-split", self.lead_h, team_keys=[bad], member_ids=[self.alex_id]).status_code, 400)
+        self.assertEqual(self._list(self.lead_h), [])
+
     def test_auto_split_is_leader_only(self):
         response = self._post("/auto-split", self.alex_h, team_keys=["frc1"], member_ids=[self.alex_id])
         self.assertEqual(response.status_code, 403)

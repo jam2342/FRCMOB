@@ -6,8 +6,14 @@ export type PitTeam = {
   nickname: string | null;
 };
 
+// "frc100b" -> "100B": a B team's letter reads as a capital, like the stored key.
 export function teamNumber(teamKey: string): string {
-  return teamKey.replace(/^frc/i, '');
+  return teamKey.replace(/^frc/i, '').toUpperCase();
+}
+
+// Team 100 before 100B before 101; the plain number alone ties.
+export function compareTeams(a: PitTeam, b: PitTeam): number {
+  return a.team_number - b.team_number || a.team_key.localeCompare(b.team_key);
 }
 
 export function hasPitEntry(entry: PitScoutingEntry | null | undefined): boolean {
@@ -69,7 +75,7 @@ export function buildQueueRows(
       updatedAt: entry?.updated_at ?? null,
     };
   });
-  return rows.sort((a, b) => Number(a.done) - Number(b.done) || a.team.team_number - b.team.team_number);
+  return rows.sort((a, b) => Number(a.done) - Number(b.done) || compareTeams(a.team, b.team));
 }
 
 export function rowsForTab(rows: PitQueueRow[], tab: PitTab): PitQueueRow[] {
@@ -91,7 +97,7 @@ export function searchQueueRows(rows: PitQueueRow[], query: string, keepKey?: st
   return rows.filter(
     (row) =>
       row.team.team_key === keepKey ||
-      String(row.team.team_number).includes(needle) ||
+      teamNumber(row.team.team_key).toLowerCase().includes(needle) ||
       (row.team.nickname ?? '').toLowerCase().includes(needle),
   );
 }
@@ -111,7 +117,7 @@ export function pitUpdatedAgo(iso: string | null, nowMs: number = Date.now()): s
 export function queueRowLabel(row: PitQueueRow, extras: { selected?: boolean } = {}): string {
   const who = row.mine ? 'assigned to you' : row.assigneeName ? `assigned to ${row.assigneeName}` : 'not assigned';
   return [
-    `Team ${row.team.team_number}`,
+    `Team ${teamNumber(row.team.team_key)}`,
     row.team.nickname,
     who,
     PIT_STATUS_LABEL[row.status].toLowerCase(),

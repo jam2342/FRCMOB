@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { PitAssignment } from '../../api';
 import { Button, FieldCheckbox, FieldSelect, Modal } from '../../components/ui/primitives';
 import type { PitAssignments } from './usePitAssignments';
+import { teamNumber } from './pitTeams';
 import type { PitQueueRow } from './pitTeams';
 import type { Scout } from './usePitScouts';
 import styles from './PitQueue.module.css';
@@ -145,7 +146,7 @@ export function PitReassign({ row, onClose, scouts, assignments, meId }: Reassig
       <Modal
         open
         onClose={onClose}
-        title={`Take Team ${row.team.team_number}?`}
+        title={`Take Team ${teamNumber(row.team.team_key)}?`}
         size="sm"
         footer={
           <>
@@ -163,7 +164,7 @@ export function PitReassign({ row, onClose, scouts, assignments, meId }: Reassig
     <Modal
       open
       onClose={onClose}
-      title={`Team ${row.team.team_number}`}
+      title={`Team ${teamNumber(row.team.team_key)}`}
       size="sm"
       footer={
         <>

@@ -83,8 +83,8 @@ export function PitTeamPicker({ eventKey, teams, entriesByTeam, selectedTeam, fo
               Release
             </Button>
           ) : null}
-          <Button variant="quiet" size="sm" icon={<ListIcon />} onClick={() => setChooserOpen(true)} disabled={disabled}>
-            Change team
+          <Button variant="quiet" size="sm" icon={<ListIcon />} className="pit-selected-team__change" title="Change team" onClick={() => setChooserOpen(true)} disabled={disabled}>
+            <span className="pit-selected-team__change-label">Change team</span>
           </Button>
         </div>
         {assignments.notice ? (

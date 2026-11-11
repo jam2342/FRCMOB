@@ -270,3 +270,14 @@
     font-size: var(--font-size-sm);
   }
 }
+
+/* Short phones: the save bar takes a row at the bottom, so the camera button and the step strip give back height. */
+@media (max-height: 580px) {
+  .steps {
+    margin-bottom: var(--space-2);
+  }
+
+  .photos .takePhoto {
+    min-height: 48px;
+  }
+}

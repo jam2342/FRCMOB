@@ -18,7 +18,7 @@ import { deleteQueuedPitPhoto, enqueuePitPhoto } from '../offline/pitPhotoQueue'
 import type { PitPhotoUploadedDetail } from '../offline/pitPhotoQueue';
 import { compressPhoto, isPhotoNetworkFailure, uploadPhotoBlob } from './pitPhotoFiles';
 import { usePitPhotoQueue } from './usePitPhotoQueue';
-import { hasPitEntry, nextUnscoutedTeam, teamNumber } from './pitTeams';
+import { compareTeams, hasPitEntry, nextUnscoutedTeam, teamNumber } from './pitTeams';
 import type { PitTeam } from './pitTeams';
 import type { PitSaveStatus } from './PitSaveBar';
 
@@ -84,7 +84,7 @@ export function usePitScouting() {
       setTeams((payload.teams ?? []).map(entry => {
         const row = asRecord(entry);
         return { team_key: String(row?.team_key || '').toLowerCase(), team_number: parseNumber(row?.team_number) ?? 0, nickname: typeof row?.nickname === 'string' ? row.nickname : null };
-      }).filter(row => row.team_key).sort((a, b) => a.team_number - b.team_number));
+      }).filter(row => row.team_key).sort(compareTeams));
       setEntriesByTeam(new Map((result.entries ?? []).map(entry => [entry.team_key.toLowerCase(), entry])));
       const lastTeam = readPitSelection(workspaceId, eventKey);
       if (lastTeam && (payload.teams ?? []).some(team => String(team.team_key || '').toLowerCase() === lastTeam)) setSelectedTeam(lastTeam);
@@ -92,7 +92,7 @@ export function usePitScouting() {
       if (cancelled) return;
       const lastTeam = readPitSelection(workspaceId, eventKey);
       if (lastTeam && readPitDraft(workspaceId, eventKey, lastTeam)) {
-        setTeams([{ team_key: lastTeam, team_number: Number(lastTeam.slice(3)), nickname: 'Saved draft' }]); setSelectedTeam(lastTeam);
+        setTeams([{ team_key: lastTeam, team_number: parseInt(lastTeam.slice(3), 10) || 0, nickname: 'Saved draft' }]); setSelectedTeam(lastTeam);
         setErrorText('Server notes could not be loaded. Your local draft is open. Reload the event after reconnecting before sharing it.');
       } else setErrorText('Could not load teams and saved pit notes. Try loading the event again. ' + ((err as Error).message || ''));
     }).finally(() => { if (!cancelled) setLoading(false); });
