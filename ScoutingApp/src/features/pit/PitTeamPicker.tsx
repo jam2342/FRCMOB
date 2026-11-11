@@ -1,48 +1,99 @@
 import { useMemo, useState } from 'react';
 import type { PitScoutingEntry } from '../../api';
 import { SurfaceCard } from '../../components/ui/SurfaceCard';
-import { Button, FieldCheckbox, FieldText } from '../../components/ui/primitives';
-import { CameraIcon, CheckIcon, ListIcon } from '../../components/ui/Icons';
-import { filterPitTeams, hasPitEntry, teamNumber } from './pitTeams';
+import { Button } from '../../components/ui/primitives';
+import { ListIcon } from '../../components/ui/Icons';
+import { useWorkspace } from '../workspace/useWorkspace';
+import { PitQueue } from './PitQueue';
+import { buildQueueRows, teamNumber } from './pitTeams';
 import type { PitTeam } from './pitTeams';
+import { usePitAssignments } from './usePitAssignments';
+import { usePitLocalState } from './usePitLocalState';
+import queueStyles from './PitQueue.module.css';
 import './pit.css';
 
 export type PitTeamPickerProps = {
+  eventKey: string;
   teams: PitTeam[];
   entriesByTeam: Map<string, PitScoutingEntry>;
   selectedTeam: string;
+  // The open form has edits not yet saved, which means a draft on this phone.
+  formDirty: boolean;
   // Picking a team, saving and leaving all wait for a save or upload in flight.
   disabled: boolean;
-  // On a phone the grid folds away behind "Change team" once a team is open.
+  // On a phone the queue folds away behind "Change team" once a team is open.
   collapsible: boolean;
   onSelect: (teamKey: string) => void;
 };
 
-export function PitTeamPicker({ teams, entriesByTeam, selectedTeam, disabled, collapsible, onSelect }: PitTeamPickerProps) {
+export function PitTeamPicker({ eventKey, teams, entriesByTeam, selectedTeam, formDirty, disabled, collapsible, onSelect }: PitTeamPickerProps) {
+  const session = useWorkspace();
   const [chooserOpen, setChooserOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  // On by default: a scout walking the pits wants the robots still to do, not the ones already done.
-  const [unscoutedOnly, setUnscoutedOnly] = useState(true);
-
-  const visible = useMemo(
-    () => filterPitTeams(teams, entriesByTeam, { query, unscoutedOnly, keepKey: selectedTeam }),
-    [teams, entriesByTeam, query, unscoutedOnly, selectedTeam],
+  const meId = session?.me.id ?? null;
+  const isLeader = session?.me.role === 'leader';
+  const assignments = usePitAssignments({
+    eventKey,
+    me: session ? { id: session.me.id, display_name: session.me.display_name } : null,
+    enabled: Boolean(session) && teams.length > 0,
+  });
+  const local = usePitLocalState(session?.workspace.id ?? 0, eventKey, teams, entriesByTeam, selectedTeam, formDirty);
+  const rows = useMemo(
+    () => buildQueueRows(teams, entriesByTeam, assignments.byTeam, local, meId),
+    [teams, entriesByTeam, assignments.byTeam, local, meId],
   );
 
   if (teams.length === 0) return null;
 
   if (collapsible && selectedTeam && !chooserOpen) {
+    const row = rows.find((item) => item.team.team_key === selectedTeam);
     const nickname = teams.find((team) => team.team_key === selectedTeam)?.nickname ?? null;
+    const busy = assignments.pending.has(selectedTeam);
+    const blocked = !assignments.online;
     return (
-      <div className="pit-selected-team">
-        <div className="pit-selected-team__who">
-          <strong>Team {teamNumber(selectedTeam)}</strong>
-          {nickname ? <span title={nickname}>{nickname}</span> : null}
+      <>
+        <div className="pit-selected-team">
+          <div className="pit-selected-team__who">
+            <strong>Team {teamNumber(selectedTeam)}</strong>
+            {nickname ? <span title={nickname}>{nickname}</span> : null}
+            {row && !row.done && row.assigneeId !== null ? (
+              <small className={queueStyles.openTeam}>{row.mine ? "You're on it" : `${row.assigneeName} is on it`}</small>
+            ) : null}
+          </div>
+          {row && !row.done && row.assigneeId === null ? (
+            <Button
+              size="sm"
+              variant="quiet"
+              loading={busy}
+              disabled={blocked || !assignments.ready}
+              title={blocked ? "Offline: reconnect to change who's on a team" : undefined}
+              onClick={() => void assignments.claim(selectedTeam)}
+            >
+              I'm on it
+            </Button>
+          ) : null}
+          {row && !row.done && row.mine ? (
+            <Button
+              size="sm"
+              variant="quiet"
+              loading={busy}
+              disabled={blocked}
+              title={blocked ? "Offline: reconnect to change who's on a team" : undefined}
+              onClick={() => void assignments.release(selectedTeam)}
+            >
+              Release
+            </Button>
+          ) : null}
+          <Button variant="quiet" size="sm" icon={<ListIcon />} onClick={() => setChooserOpen(true)} disabled={disabled}>
+            Change team
+          </Button>
         </div>
-        <Button variant="quiet" size="sm" icon={<ListIcon />} onClick={() => setChooserOpen(true)} disabled={disabled}>
-          Change team
-        </Button>
-      </div>
+        {assignments.notice ? (
+          <p className={queueStyles.banner} role="status">
+            <span>{assignments.notice.text}</span>
+            <button type="button" className={queueStyles.dismiss} onClick={assignments.dismissNotice}>Dismiss</button>
+          </p>
+        ) : null}
+      </>
     );
   }
 
@@ -50,71 +101,21 @@ export function PitTeamPicker({ teams, entriesByTeam, selectedTeam, disabled, co
     <SurfaceCard
       tourId="pit-teams"
       title="Teams"
-      subtitle="Tap a team to fill out its pit form. A check means it's scouted; a camera means it has photos."
+      subtitle="Tap a team to fill out its pit form. Tap I'm on it so two scouts don't walk to the same pit."
       mobileCollapsible={false}
     >
-      <div className="pit-picker-tools">
-        <FieldText
-          label="Find a team"
-          type="search"
-          inputMode="search"
-          enterKeyHint="search"
-          autoComplete="off"
-          placeholder="Number or name"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <FieldCheckbox
-          label="Unscouted only"
-          checked={unscoutedOnly}
-          onChange={(event) => setUnscoutedOnly(event.target.checked)}
-        />
-      </div>
-      {visible.length === 0 ? (
-        <p className="pit-picker-empty" role="status">
-          {query.trim() ? `No team matches "${query.trim()}".` : 'Every team has notes. Untick "Unscouted only" to review them.'}
-        </p>
-      ) : (
-        <div className="pit-team-grid">
-          {visible.map((team) => {
-            const entry = entriesByTeam.get(team.team_key);
-            const done = hasPitEntry(entry);
-            const hasPhotos = Boolean(entry?.photos?.length);
-            const label = [
-              `Team ${team.team_number}`,
-              team.nickname,
-              done ? 'completed' : null,
-              hasPhotos ? 'has photos' : null,
-            ].filter(Boolean).join(', ');
-            return (
-              <button
-                key={team.team_key}
-                type="button"
-                className={[
-                  'pit-team-cell',
-                  done ? 'pit-team-cell--done' : '',
-                  selectedTeam === team.team_key ? 'pit-team-cell--active' : '',
-                ].filter(Boolean).join(' ')}
-                disabled={disabled}
-                onClick={() => {
-                  onSelect(team.team_key);
-                  setChooserOpen(false);
-                }}
-                aria-label={label}
-                aria-pressed={selectedTeam === team.team_key}
-                title={team.nickname ?? undefined}
-              >
-                <span className="pit-team-cell__head">
-                  <strong>{team.team_number}</strong>
-                  {done ? <CheckIcon className="pit-team-cell__mark pit-team-cell__mark--done" /> : null}
-                  {hasPhotos ? <CameraIcon className="pit-team-cell__mark" /> : null}
-                </span>
-                {team.nickname ? <span className="pit-team-cell__name">{team.nickname}</span> : null}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <PitQueue
+        rows={rows}
+        selectedTeam={selectedTeam}
+        disabled={disabled}
+        assignments={assignments}
+        isLeader={isLeader}
+        meId={meId}
+        onOpen={(teamKey) => {
+          onSelect(teamKey);
+          setChooserOpen(false);
+        }}
+      />
     </SurfaceCard>
   );
 }
