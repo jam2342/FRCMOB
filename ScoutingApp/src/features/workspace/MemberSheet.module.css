@@ -1,0 +1,14 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.role {
+  margin: 0;
+}
+
+.body > button {
+  width: 100%;
+  min-height: var(--touch-target-min);
+}
