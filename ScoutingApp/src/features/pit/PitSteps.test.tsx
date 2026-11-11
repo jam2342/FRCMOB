@@ -6,7 +6,10 @@ vi.mock('../../components/PageViewBar', () => ({ PageViewBar: () => null }));
 vi.mock('../../components/EventPicker', () => ({ EventPicker: () => null }));
 vi.mock('../workspace/WorkspaceGate', () => ({ WorkspaceGate: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('../workspace/useWorkspace', () => ({ useWorkspace: () => ({ workspace: { id: 1 }, me: { role: 'member', display_name: 'Priya' } }) }));
-vi.mock('../../utils/offlineQueue', () => ({ listQueuedMutations: vi.fn(async () => []) }));
+vi.mock('../../utils/offlineQueue', async (original) => ({
+  ...(await original<typeof import('../../utils/offlineQueue')>()),
+  listQueuedMutations: vi.fn(async () => []),
+}));
 vi.mock('./pitPhotoFiles', async (original) => ({
   ...(await original<typeof import('./pitPhotoFiles')>()),
   compressPhoto: vi.fn(async () => new Blob(['jpeg'], { type: 'image/jpeg' })),
