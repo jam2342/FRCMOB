@@ -3978,6 +3978,87 @@ export async function deletePitPhoto(payload: {
   return (await res.json()) as { ok: boolean; entry: PitScoutingEntry };
 }
 
+export interface PitAssignment {
+  team_key: string;
+  member_id: number | null;
+  member_name: string | null;
+  source: "leader" | "claim" | "auto";
+  assigned_by_member_id: number | null;
+  updated_at: string | null;
+}
+
+// Literal URLs at each call site: the frontend/backend route contract test reads them.
+async function readPitAssignmentResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as T;
+}
+
+function pitAssignmentPost(body: Record<string, unknown>): RequestInit {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export async function getPitAssignments(eventKey: string): Promise<PitAssignment[]> {
+  const params = new URLSearchParams({ event_key: eventKey });
+  const res = await apiFetch(`${API}/pit-scouting/assignments?${params.toString()}`, {
+    bypassCache: true,
+    cacheTtlMs: 0,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const data = (await res.json()) as { ok: boolean; assignments: PitAssignment[] };
+  return data.assignments ?? [];
+}
+
+// Rejects with the server's sentence (naming who holds the team) when someone else has it.
+export async function claimPitTeam(
+  eventKey: string,
+  teamKey: string,
+  opts?: { force?: boolean },
+): Promise<{ ok: boolean; assignment: PitAssignment }> {
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/claim`,
+    pitAssignmentPost({ event_key: eventKey, team_key: teamKey, ...(opts?.force ? { force: true } : {}) }),
+  );
+  return readPitAssignmentResponse(res);
+}
+
+export async function releasePitTeam(eventKey: string, teamKey: string): Promise<{ ok: boolean; released: boolean }> {
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/release`,
+    pitAssignmentPost({ event_key: eventKey, team_key: teamKey }),
+  );
+  return readPitAssignmentResponse(res);
+}
+
+export async function setPitAssignment(
+  eventKey: string,
+  teamKey: string,
+  memberId: number | null,
+): Promise<{ ok: boolean; assignment: PitAssignment | null }> {
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/set`,
+    pitAssignmentPost({ event_key: eventKey, team_key: teamKey, member_id: memberId }),
+  );
+  return readPitAssignmentResponse(res);
+}
+
+export async function autoSplitPitTeams(
+  eventKey: string,
+  opts: { teamKeys: string[]; memberIds: number[]; onlyUnscouted?: boolean; replaceExisting?: boolean },
+): Promise<PitAssignment[]> {
+  const res = await apiFetch(
+    `${API}/pit-scouting/assignments/auto-split`,
+    pitAssignmentPost({
+      event_key: eventKey,
+      team_keys: opts.teamKeys,
+      member_ids: opts.memberIds,
+      only_unscouted: opts.onlyUnscouted ?? true,
+      replace_existing: opts.replaceExisting ?? false,
+    }),
+  );
+  const data = await readPitAssignmentResponse<{ ok: boolean; assignments: PitAssignment[] }>(res);
+  return data.assignments ?? [];
+}
+
 // ── Scouting insights (coverage / leaderboard / raw export) ────
 
 interface CoverageSlot {

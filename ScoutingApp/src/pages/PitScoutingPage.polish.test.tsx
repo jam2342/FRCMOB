@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('../components/PageViewBar', () => ({ PageViewBar: () => null }));
@@ -23,18 +23,24 @@ it('keeps unanswered capabilities missing and saves explicit No separately', asy
   fireEvent.click(await screen.findByRole('button', { name: /254/ }));
   const { PIT_FORM_SECTIONS } = await import('../config/gameFields');
   const fields = PIT_FORM_SECTIONS.flatMap((section) => section.fields).filter((field) => field.type === 'toggle');
-  for (const field of fields) expect(screen.getByLabelText(field.label)).toHaveValue('');
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save entry' })[0]);
+  const answer = (label: string, option: 'Yes' | 'No') => within(screen.getByRole('group', { name: label })).getByRole('radio', { name: option });
+  for (const field of fields) {
+    expect(answer(field.label, 'Yes')).not.toBeChecked();
+    expect(answer(field.label, 'No')).not.toBeChecked();
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await screen.findByText('save stopped for inspection');
   for (const field of fields) expect(vi.mocked(upsertPitEntry).mock.calls[0][0].payload).not.toHaveProperty(field.key);
   const field = fields[0];
-  fireEvent.change(screen.getByLabelText(field.label), { target: { value: 'no' } });
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save entry' })[0]);
+  fireEvent.click(answer(field.label, 'No'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await act(async () => {});
   expect(vi.mocked(upsertPitEntry).mock.calls.at(-1)![0].payload[field.key]).toBe(false);
-  fireEvent.change(screen.getByLabelText(field.label), { target: { value: 'yes' } });
+  fireEvent.click(answer(field.label, 'Yes'));
   expect(readPitDraft(1, '2026old', 'frc254')?.[field.key]).toBe(true);
-  fireEvent.change(screen.getByLabelText(field.label), { target: { value: '' } });
+  // Tapping the chosen answer again goes back to unanswered.
+  fireEvent.click(answer(field.label, 'Yes'));
+  expect(answer(field.label, 'Yes')).not.toBeChecked();
   expect(readPitDraft(1, '2026old', 'frc254')).not.toHaveProperty(field.key);
   const photo = screen.getByLabelText('Add robot photo');
   expect(photo).toHaveAttribute('type', 'file');

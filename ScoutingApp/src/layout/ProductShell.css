@@ -327,11 +327,6 @@
     padding: 6px;
     gap: 8px;
   }
-
-  .product-shell .surface-card-head {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
 }
 
 @media (max-width: 280px) {

@@ -1,6 +1,7 @@
 import { ScheduleStatus } from './ScheduleStatus';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getEventTeamsIntel, listPitEntries } from '../../api';
 import { EventPicker } from '../../components/EventPicker';
 import { SurfaceCard } from '../../components/ui/SurfaceCard';
 import { Button, Stat } from '../../components/ui/primitives';
@@ -12,9 +13,36 @@ import { useWorkspace } from './useWorkspace';
 import { useAssignmentBadge } from '../../hooks/useAssignmentBadge';
 import { TeamCalendarLinks } from '../calendar/TeamCalendarLinks';
 import { ScoutThanksNote } from '../scoutThanks/ScoutThanksNote';
+import { pitProgress } from './pitProgress';
 import styles from './TeamScoutingCard.module.css';
 
 const EVENT_STORAGE_KEY = 'scouting_center_event_key';
+
+function usePitProgress(eventKey: string) {
+  const [progress, setProgress] = useState<{ eventKey: string; done: number; total: number } | null>(null);
+  useEffect(() => {
+    if (!eventKey) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [teams, pit] = await Promise.all([
+          getEventTeamsIntel(eventKey, { include_tba: true, include_season_fallback: false, include_rating_details: false, include_rating_signals: false }),
+          listPitEntries(eventKey),
+        ]);
+        if (cancelled) return;
+        const counted = pitProgress(
+          (teams.teams ?? []).map((team) => String(team.team_key || '')).filter(Boolean),
+          (pit.entries ?? []).map((entry) => entry.team_key),
+        );
+        setProgress({ eventKey, ...counted });
+      } catch {
+        if (!cancelled) setProgress(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [eventKey]);
+  return progress && progress.eventKey === eventKey && progress.total > 0 ? progress : null;
+}
 
 // My Team's bridge into event scouting: leaders see coverage and a way to
 // assign, members see what they're scouting next.
@@ -36,6 +64,8 @@ export function TeamScoutingCard() {
     () => coverageSummary(snapshot?.assignments ?? [], schedule),
     [schedule, snapshot],
   );
+  const pit = usePitProgress(eventKey);
+  const eventQuery = `?event=${encodeURIComponent(eventKey)}`;
   const assignHref = `/scouting/assignments?event=${encodeURIComponent(eventKey)}`;
 
   if (!eventKey || changingEvent) {
@@ -106,6 +136,23 @@ export function TeamScoutingCard() {
             showAllHref={mine.length > 0 ? assignHref : undefined}
           />
         ) : null}
+        <nav className={styles.links} aria-label="Team scouting tools">
+          <Link className={styles.linkRow} to={`/scouting/pit${eventQuery}`}>
+            <span className={styles.linkName}>Pit scouting</span>
+            <span className={styles.linkMeta}>{pit ? `${pit.done}/${pit.total} teams` : 'Open'}</span>
+            <span className={styles.arrow} aria-hidden="true">›</span>
+          </Link>
+          <Link className={styles.linkRow} to={`/scouting/coverage${eventQuery}`}>
+            <span className={styles.linkName}>Coverage</span>
+            <span className={styles.linkMeta}>Scouting gaps</span>
+            <span className={styles.arrow} aria-hidden="true">›</span>
+          </Link>
+          <Link className={styles.linkRow} to={`/compare/picklist${eventQuery}`}>
+            <span className={styles.linkName}>Picklist</span>
+            <span className={styles.linkMeta}>Pick order</span>
+            <span className={styles.arrow} aria-hidden="true">›</span>
+          </Link>
+        </nav>
         {snapshot && session ? (
           <ScoutThanksNote eventKey={eventKey} me={session.me.display_name} allDone={mine.length > 0 && mine.every((item) => item.done)} />
         ) : null}

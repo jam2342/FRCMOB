@@ -511,7 +511,7 @@ function PicklistWorkspacePage() {
       <div className="center-page-container">
 
           <SurfaceCard tourId="picklist-head"
-            title={isMobile && doc ? doc.title : viewTitle(COMPARE_VIEWS, '/compare/picklist')}
+            title={viewTitle(COMPARE_VIEWS, '/compare/picklist')}
             subtitle={isMobile && doc ? "Shared with your team · Saves automatically." : "Hand-ordered alliance selection list. Shared with your whole team — edits sync automatically."}
             className="no-print"
             mobileCollapsible={false}
@@ -660,7 +660,9 @@ function PicklistWorkspacePage() {
                             alt={`Robot ${teamNumber(slot.team_key)}`}
                             loading="lazy"
                           />
-                        ) : null}
+                        ) : (
+                          <span className="picklist-photo picklist-photo--empty" aria-hidden="true" />
+                        )}
                         <button
                           type="button"
                           className="picklist-team"

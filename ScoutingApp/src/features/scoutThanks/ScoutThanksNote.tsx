@@ -18,7 +18,8 @@ export function ScoutThanksNote({ eventKey, me, allDone }: Props) {
     return () => { live = false; };
   }, [eventKey]);
 
-  const thanks = loaded?.eventKey === eventKey ? scoutThanks(loaded.data.leaderboard, me, allDone) : null;
+  // An older or partial response may lack the leaderboard; that means no note, not a failed page.
+  const thanks = loaded?.eventKey === eventKey ? scoutThanks(loaded.data.leaderboard ?? [], me, allDone) : null;
   if (!thanks) return null;
   return (
     <p className={`${styles.note} ${allDone ? styles.done : ''}`.trim()}>

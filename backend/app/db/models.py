@@ -730,6 +730,28 @@ class PitScoutingEntry(Base):
         UniqueConstraint("workspace_id", "event_key", "team_key", name="uq_pit_scouting_workspace_event_team"),
     )
 
+class PitAssignment(Base):
+    # Who walks to which pit, so two scouts don't visit the same team. One row per
+    # (workspace, event, team); a freed team has no row.
+    __tablename__ = "pit_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("team_workspaces.id"), index=True)
+    # Plain strings (no FK), like pit entries: assignments can exist before event ingest.
+    event_key: Mapped[str] = mapped_column(String)
+    team_key: Mapped[str] = mapped_column(String)
+    member_id: Mapped[int | None] = mapped_column(ForeignKey("team_workspace_members.id"), nullable=True)
+    assigned_by_member_id: Mapped[int | None] = mapped_column(ForeignKey("team_workspace_members.id"), nullable=True)
+    # leader | claim | auto
+    source: Mapped[str] = mapped_column(String, default="leader")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "event_key", "team_key", name="uq_pit_assignment_workspace_event_team"),
+        Index("ix_pit_assignments_workspace_event", "workspace_id", "event_key"),
+    )
+
 class StrategyBoard(Base):
     # A match's plan drawn on the field (Strategy Briefing → Plan on the field), private to the
     # workspace that drew it. Strokes are in field fractions (0-1), so every screen size draws
