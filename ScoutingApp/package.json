@@ -48,7 +48,7 @@
     "@capacitor/app": "8.1.1",
     "@capacitor/browser": "8.0.4",
     "@capacitor/core": "8.5.3",
-    "@capacitor/filesystem": "8.1.4",
+    "@capacitor/filesystem": "8.1.5",
     "@capacitor/haptics": "8.0.2",
     "@capacitor/ios": "8.5.3",
     "@capacitor/share": "8.0.3",
