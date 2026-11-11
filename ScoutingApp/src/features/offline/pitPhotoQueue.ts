@@ -23,6 +23,9 @@ export type QueuedPitPhoto = {
   attempts: number;
   nextAttemptAt: number;
   lastError?: string;
+  // The server answered and refused it (photo limit, storage full, bad image). Retrying on
+  // a timer can't fix that, so it waits for the scout: try again, or delete it.
+  refused?: boolean;
 };
 
 export interface PitPhotoStore {
@@ -103,6 +106,12 @@ export async function listQueuedPitPhotos(): Promise<QueuedPitPhoto[]> {
   try { return (await activeStore.getAll()).sort(byAge); } catch { return []; }
 }
 
+// Unlike the list above, an unreadable store throws: a caller deciding whether this
+// phone still holds photos must not read "couldn't look" as "none".
+export async function countQueuedPitPhotos(): Promise<number> {
+  return (await activeStore.getAll()).length;
+}
+
 export function pitPhotoBackoffMs(attempts: number): number {
   return Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.max(0, attempts - 1));
 }
@@ -162,12 +171,33 @@ export async function deleteQueuedPitPhoto(id: string): Promise<boolean> {
   return true;
 }
 
+// A refusal names the photo, not the connection: 4xx except timeout and rate limit.
+export function isPitPhotoRefusal(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+// Hands a refused photo back to the queue and uploads it now.
+export async function retryRefusedPitPhoto(id: string, now: number = Date.now()): Promise<boolean> {
+  try {
+    const row = (await activeStore.getAll()).find((item) => item.id === id);
+    if (!row) return false;
+    await activeStore.put({ ...row, refused: false, nextAttemptAt: now });
+  } catch {
+    return false;
+  }
+  emit('pitphotos:change');
+  syncNow?.(true);
+  return true;
+}
+
 export type PitPhotoUploader = (item: QueuedPitPhoto) => Promise<unknown>;
 
 let flushing: Promise<{ uploaded: number; remaining: number }> | null = null;
 
-// Oldest first, one at a time. The first failure stops the run so photos keep their order
-// and a dead connection costs one attempt, not forty.
+// Oldest first, one at a time. A dead connection stops the run, so it costs one attempt,
+// not forty. A photo the server refused is set aside and the run goes on: one bad photo
+// must never hold up every photo behind it.
 export function flushPitPhotos(
   upload: PitPhotoUploader,
   options: { workspaceId: number | null; force?: boolean; now?: () => number },
@@ -186,7 +216,8 @@ async function run(
   // A photo taken for one team is never sent under another's login.
   const rows = (await listQueuedPitPhotos()).filter((row) => row.workspaceId === options.workspaceId);
   for (const row of rows) {
-    if (!options.force && row.nextAttemptAt > clock()) break;
+    if (row.refused) continue;
+    if (!options.force && row.nextAttemptAt > clock()) continue;
     try {
       const entry = await upload(row);
       await deleteQueuedPitPhoto(row.id);
@@ -194,24 +225,27 @@ async function run(
       emit('pitphotos:uploaded', { item: row, entry } satisfies PitPhotoUploadedDetail);
     } catch (err) {
       const attempts = row.attempts + 1;
+      const refused = isPitPhotoRefusal(err);
       try {
         await activeStore.put({
           ...row,
           attempts,
           nextAttemptAt: clock() + pitPhotoBackoffMs(attempts),
           lastError: (err as Error)?.message || 'Upload failed',
+          refused,
         });
         emit('pitphotos:change');
       } catch {
         // The photo stays as it was; the next run retries it.
       }
-      break;
+      if (!refused) break;
     }
   }
   return { uploaded, remaining: rows.length - uploaded };
 }
 
 let syncBound = false;
+let syncNow: ((force?: boolean) => void) | null = null;
 
 // Same triggers as the note queue: the online event, a timer (venue wifi often fails while
 // the browser still says online), the app coming back to the front, and app start.
@@ -222,6 +256,7 @@ export function startPitPhotoSync(upload: PitPhotoUploader, currentWorkspaceId: 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     flushPitPhotos(upload, { workspaceId: currentWorkspaceId(), force }).catch(() => {});
   };
+  syncNow = flush;
   window.addEventListener('online', () => { window.setTimeout(() => flush(true), 1500); });
   window.setInterval(() => flush(), 30_000);
   document.addEventListener('visibilitychange', () => {

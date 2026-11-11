@@ -1,10 +1,12 @@
 import { isNativeApp } from './runtime';
 import { listQueuedMutations } from '../utils/offlineQueue';
 import { listPendingSessions, openDb } from '../features/onDevice/offlineStore';
+import { countQueuedPitPhotos } from '../features/offline/pitPhotoQueue';
 
 // The site moved to frcmob.com on 2026-11-10. Browser storage belongs to each address,
 // so the old one hands people over only when nothing here is still waiting to reach
-// the server: queued edits, recordings not yet uploaded, unsaved pit drafts. Until
+// the server: queued edits, recordings not yet uploaded, unsaved pit drafts, pit photos
+// taken without signal. Until
 // then it keeps working (and syncing) as before, and moves them on a later visit.
 export const OLD_HOST = 'scouting-app-iryg.vercel.app';
 export const NEW_ORIGIN = 'https://frcmob.com';
@@ -22,6 +24,7 @@ export async function nothingLeftHere(): Promise<boolean> {
   try {
     if ((await listQueuedMutations()).length > 0) return false;
     if (hasPitDrafts()) return false;
+    if ((await countQueuedPitPhotos()) > 0) return false;
     if (typeof indexedDB !== 'undefined') {
       const db = await openDb();
       try {
@@ -52,4 +55,5 @@ export function startHostMove(): void {
   if (isNativeApp() || typeof window === 'undefined' || window.location.hostname !== OLD_HOST) return;
   void moveToNewHostIfSafe();
   window.addEventListener('offlinequeue:change', () => { void moveToNewHostIfSafe(); });
+  window.addEventListener('pitphotos:change', () => { void moveToNewHostIfSafe(); });
 }

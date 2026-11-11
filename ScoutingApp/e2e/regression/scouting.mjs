@@ -15,6 +15,7 @@ async function toNotesStep(page) {
   }
 }
 
+const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const BOARD ='/#/scouting?event=2026arc&match=2026arc_qm1&team=frc971';
 const ROOM_ENTRIES = 'scouting_manual_entries_v2:w7';
 const LOCAL_ENTRIES = 'scouting_manual_entries_v2';
@@ -201,6 +202,40 @@ export default [
         return value.includes('Bob:') ? value : '';
       }, { timeout: 20000, what: "the teammate's newer notes" });
       check(shown.includes('Bob:'), 'old draft shown instead of newer notes');
+    },
+  },
+  {
+    name: 'a pit photo the server refuses says why and does not hold up the photos behind it',
+    async run(browser) {
+      const ctx = await phone(browser);
+      const server = makeServer();
+      installPit(server);
+      server.refusePhotos = new Set(['frc971']);
+      await server.install(ctx);
+      const page = await ctx.newPage();
+      page.on('dialog', (dialog) => dialog.accept().catch(() => {}));
+      await page.goto(`${BASE}/#/scouting/pit?event=2026arc`);
+      await page.getByRole('button', { name: /^Team 971\b/ }).waitFor({ timeout: 30000 });
+      const labels = await page.getByRole('button', { name: /^Team \d+/ }).evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label') || ''));
+      const other = labels.map((label) => /^Team (\d+)/.exec(label)?.[1]).find((number) => number && number !== '971');
+      check(Boolean(other), 'no second team to photograph');
+      const shot = { name: 'robot.png', mimeType: 'image/png', buffer: Buffer.from(TINY_PNG, 'base64') };
+      await server.setOffline(ctx, true);
+      // The refused photo is the oldest, so it is first in line.
+      for (const team of ['971', other]) {
+        await page.goto(`${BASE}/#/scouting/pit?event=2026arc&team=frc${team}`);
+        await page.getByRole('heading', { name: `Team ${team}` }).waitFor({ timeout: 15000 });
+        await page.getByLabel('Take robot photo').setInputFiles(shot);
+        await until(async () => /Photo saved on this phone/.test(await bodyText(page)), { timeout: 10000, what: `the photo of ${team} to wait on the phone` });
+      }
+      await server.setOffline(ctx, false);
+      await until(() => server.pitById.get(`2026arc|frc${other}`)?.photos.length === 1, { timeout: 30000, what: 'the photo behind the refused one to upload' });
+      await page.goto(`${BASE}/#/scouting/pit?event=2026arc&team=frc971`);
+      const text = await until(async () => {
+        const body = await bodyText(page);
+        return /Not uploaded/.test(body) && /Photo limit reached/.test(body) ? body : '';
+      }, { timeout: 15000, what: 'the refused photo to say why' });
+      check(text.includes("wasn't accepted"), 'the refusal reason is not shown');
     },
   },
   {

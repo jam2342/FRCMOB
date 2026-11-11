@@ -9,10 +9,13 @@ import {
   enqueuePitPhoto,
   flushPitPhotos,
   listQueuedPitPhotos,
+  isPitPhotoRefusal,
   pitPhotoBackoffMs,
+  retryRefusedPitPhoto,
   setPitPhotoStore,
 } from './pitPhotoQueue';
 import type { PitPhotoStore } from './pitPhotoQueue';
+import { HttpStatusError } from '../../api';
 
 const blob = (text = 'x', type = 'image/jpeg') => new Blob([text], { type });
 const photo = (over: Record<string, unknown> = {}) => ({ blob: blob(), workspaceId: 1, eventKey: '2026arc', teamKey: 'frc100', scoutProfile: 'Priya', ...over });
@@ -42,24 +45,55 @@ it('uploads in order and removes each photo once it is sent', async () => {
   expect(uploaded).toHaveBeenCalledTimes(2);
 });
 
-it('keeps a failed photo, stops the run so order holds, and backs off before retrying', async () => {
+it('stops the run on a dead connection and backs the failed photo off before retrying it', async () => {
   await enqueuePitPhoto(photo({ teamKey: 'frc100' }), 1000);
   await enqueuePitPhoto(photo({ teamKey: 'frc200' }), 2000);
   const upload = vi.fn().mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValue({});
   await flushPitPhotos(upload, { workspaceId: 1, now: () => 10_000 });
+  // One attempt, not one per photo.
   expect(upload).toHaveBeenCalledTimes(1);
   let rows = await listQueuedPitPhotos();
   expect(rows).toHaveLength(2);
-  expect(rows[0]).toMatchObject({ attempts: 1, nextAttemptAt: 10_000 + pitPhotoBackoffMs(1), lastError: 'Failed to fetch' });
-  // Too soon: nothing is tried.
+  expect(rows[0]).toMatchObject({ attempts: 1, nextAttemptAt: 10_000 + pitPhotoBackoffMs(1), lastError: 'Failed to fetch', refused: false });
+  // Too soon for the first; the one behind it doesn't wait on it.
   await flushPitPhotos(upload, { workspaceId: 1, now: () => 11_000 });
-  expect(upload).toHaveBeenCalledTimes(1);
-  // After the wait the first goes, then the second.
+  expect(upload.mock.calls.map(([row]) => row.teamKey)).toEqual(['frc100', 'frc200']);
+  expect((await listQueuedPitPhotos()).map((row) => row.teamKey)).toEqual(['frc100']);
+  // After the wait the first goes too.
   await flushPitPhotos(upload, { workspaceId: 1, now: () => 10_000 + pitPhotoBackoffMs(1) });
   rows = await listQueuedPitPhotos();
   expect(rows).toEqual([]);
   expect(pitPhotoBackoffMs(2)).toBe(pitPhotoBackoffMs(1) * 2);
   expect(pitPhotoBackoffMs(50)).toBeLessThanOrEqual(5 * 60_000);
+});
+
+it('sets aside a photo the server refuses and keeps uploading the ones behind it', async () => {
+  await enqueuePitPhoto(photo({ teamKey: 'frc100' }), 1000);
+  await enqueuePitPhoto(photo({ teamKey: 'frc200' }), 2000);
+  const refusal = new HttpStatusError(400, 'Photo limit reached (12 per team). Delete one first.');
+  const upload = vi.fn(async (row: { teamKey: string }) => {
+    if (row.teamKey === 'frc100') throw refusal;
+    return {};
+  });
+  const result = await flushPitPhotos(upload, { workspaceId: 1, now: () => 10_000 });
+  expect(result).toEqual({ uploaded: 1, remaining: 1 });
+  const [kept] = await listQueuedPitPhotos();
+  expect(kept).toMatchObject({ teamKey: 'frc100', refused: true, lastError: refusal.message });
+  // Timers and reconnects leave it alone: retrying can't change the answer.
+  for (const now of [20_000, 10 * 60_000]) await flushPitPhotos(upload, { workspaceId: 1, now: () => now, force: true });
+  expect(upload).toHaveBeenCalledTimes(2);
+  // The scout asks for another try (after deleting a photo on the server, say).
+  expect(await retryRefusedPitPhoto(kept.id, 30_000)).toBe(true);
+  await flushPitPhotos(async () => ({}), { workspaceId: 1, now: () => 30_000 });
+  expect(await listQueuedPitPhotos()).toEqual([]);
+});
+
+it('treats timeouts, rate limits and server errors as the connection, not the photo', () => {
+  expect(isPitPhotoRefusal(new HttpStatusError(413, 'full'))).toBe(true);
+  expect(isPitPhotoRefusal(new HttpStatusError(403, 'removed'))).toBe(true);
+  for (const status of [408, 429, 500, 502, 503]) expect(isPitPhotoRefusal(new HttpStatusError(status, 'x'))).toBe(false);
+  expect(isPitPhotoRefusal(new TypeError('Failed to fetch'))).toBe(false);
+  expect(isPitPhotoRefusal(null)).toBe(false);
 });
 
 it('never sends one team workspace photo under another login', async () => {

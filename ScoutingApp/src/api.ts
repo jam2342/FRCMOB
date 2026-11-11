@@ -23,6 +23,15 @@ import { markData, type DataSource } from "./perf/routeTiming";
 export class QueuedForSyncError extends Error {
   readonly queued = true;
 }
+
+// The server answered and said no; callers that retry tell a refusal from a dead connection by the status.
+export class HttpStatusError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 import type { AutoScoutDraftRecord } from "./pages/scoutingPage.types";
 import { SEASON } from './config/season';
 import {
@@ -3960,7 +3969,7 @@ export async function uploadPitPhoto(payload: {
     body: JSON.stringify(payload),
     timeoutMs: 45000,
   });
-  if (!res.ok) throw new Error(await readError(res));
+  if (!res.ok) throw new HttpStatusError(res.status, await readError(res));
   return (await res.json()) as { ok: boolean; photo: string; entry: PitScoutingEntry };
 }
 

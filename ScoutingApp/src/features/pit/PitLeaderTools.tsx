@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PitAssignment } from '../../api';
 import { Button, FieldCheckbox, FieldSelect, Modal } from '../../components/ui/primitives';
 import type { PitAssignments } from './usePitAssignments';
@@ -122,11 +122,16 @@ export function PitReassign({ row, onClose, scouts, assignments, meId }: Reassig
   const [choice, setChoice] = useState('');
   const [confirmingTake, setConfirmingTake] = useState(false);
   const teamKey = row?.team.team_key ?? '';
+  const holderId = row?.assigneeId ?? null;
+  const holderRef = useRef(holderId);
+  holderRef.current = holderId;
 
+  // Starts over when a different team opens, not when a poll rebuilds the same row:
+  // that used to throw away the scout the leader had just picked.
   useEffect(() => {
-    setChoice(row?.assigneeId ? String(row.assigneeId) : '');
+    setChoice(holderRef.current ? String(holderRef.current) : '');
     setConfirmingTake(false);
-  }, [row]);
+  }, [teamKey]);
 
   if (!row) return null;
   const heldByOther = row.assigneeId !== null && !row.mine;

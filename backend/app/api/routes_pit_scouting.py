@@ -8,6 +8,7 @@ import base64
 import binascii
 import io
 import logging
+import math
 import re
 import uuid
 from pathlib import Path
@@ -16,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -68,6 +69,9 @@ def _normalize_payload(raw: Any) -> dict[str, Any]:
         token = str(key)[:64]
         if isinstance(value, (str,)):
             cleaned[token] = value[:2000]
+        elif isinstance(value, float) and not math.isfinite(value):
+            # JSON parsing accepts NaN/Infinity, but the JSON column can't store them.
+            raise HTTPException(status_code=400, detail=f"{token} must be a finite number")
         elif isinstance(value, (int, float, bool)) or value is None:
             cleaned[token] = value
         elif isinstance(value, list):
@@ -96,6 +100,15 @@ def _load_entry(db: Session, workspace_id: int, event_key: str, team_key: str) -
             models.PitScoutingEntry.team_key == team_key,
         )
     ).scalar_one_or_none()
+
+def _lock_entry(db: Session, workspace_id: int, event_key: str, team_key: str) -> None:
+    # There may be no row yet to lock, so first saves and first photos for the same team
+    # take a transaction lock on its key; otherwise both insert and one hits the unique index.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(CAST(:ns AS integer), hashtext(:key))"),
+            {"ns": 0x50495445, "key": f"{workspace_id}:{event_key}:{team_key}"},
+        )
 
 def _detect_image_extension(data: bytes) -> str | None:
     for signature, extension in _IMAGE_SIGNATURES:
@@ -197,30 +210,39 @@ def list_pit_entries(
 @router.post("")
 def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Session = Depends(get_db)):
     actor = require_workspace_writer(request, db)
-    # There may be no pit row yet to lock. Serialize first saves and photo edits
-    # on the owning workspace so concurrent inserts cannot hit the unique index.
     normalized_event = _normalize_event_key(payload.event_key)
     normalized_team = _normalize_team_key(payload.team_key)
     scout_profile = str(payload.scout_profile or "").strip()[:40] or actor.member.display_name
+    answers = _normalize_payload(payload.payload)
 
-    row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
-    if row is None:
-        row = models.PitScoutingEntry(
-            workspace_id=actor.workspace_id,
-            event_key=normalized_event,
-            team_key=normalized_team,
-            scout_profile=scout_profile,
-            payload=_normalize_payload(payload.payload),
-            photos=[],
-        )
-        db.add(row)
-    else:
-        row.payload = _normalize_payload(payload.payload)
-        if scout_profile:
-            row.scout_profile = scout_profile
-    db.commit()
-    db.refresh(row)
-    return {"ok": True, "entry": _serialize_entry(row, actor.member.id)}
+    # The lock serializes first saves on PostgreSQL; the retry covers anything that
+    # still loses the insert (the row then exists and is updated instead).
+    for attempt in (1, 2):
+        _lock_entry(db, actor.workspace_id, normalized_event, normalized_team)
+        row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
+        if row is None:
+            row = models.PitScoutingEntry(
+                workspace_id=actor.workspace_id,
+                event_key=normalized_event,
+                team_key=normalized_team,
+                scout_profile=scout_profile,
+                payload=answers,
+                photos=[],
+            )
+            db.add(row)
+        else:
+            row.payload = answers
+            if scout_profile:
+                row.scout_profile = scout_profile
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if attempt == 2:
+                raise HTTPException(status_code=409, detail="This team was just saved by someone else. Try again.") from None
+            continue
+        db.refresh(row)
+        return {"ok": True, "entry": _serialize_entry(row, actor.member.id)}
 
 @router.post("/photo")
 def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Session = Depends(get_db)):
@@ -260,6 +282,7 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
             ),
         )
 
+    _lock_entry(db, actor.workspace_id, normalized_event, normalized_team)
     row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
         row = models.PitScoutingEntry(
@@ -567,14 +590,17 @@ def auto_split_pit_teams(payload: PitAutoSplitRequest, request: Request, db: Ses
         }
         scouted: set[str] = set()
         if payload.only_unscouted:
-            scouted = set(
-                db.execute(
-                    select(models.PitScoutingEntry.team_key).where(
+            # Scouted means answers, as in the app: a photo-only row is still to do.
+            scouted = {
+                team_key
+                for team_key, answers in db.execute(
+                    select(models.PitScoutingEntry.team_key, models.PitScoutingEntry.payload).where(
                         models.PitScoutingEntry.workspace_id == workspace_id,
                         models.PitScoutingEntry.event_key == normalized_event,
                     )
-                ).scalars()
-            )
+                ).all()
+                if isinstance(answers, dict) and answers
+            }
 
         eligible = []
         for team_key in team_keys:

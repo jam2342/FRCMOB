@@ -33,7 +33,8 @@ export function installPit(srv) {
       }
       if (p.endsWith('/auto-split')) {
         if (!leader) return json({ detail: 'Only workspace leaders can do that.' }, 403);
-        const scouted = new Set([...srv.pitById.values()].filter(e => e.event_key === body.event_key).map(e => e.team_key));
+        // Scouted means answers; a photo-only row is still to do.
+        const scouted = new Set([...srv.pitById.values()].filter(e => e.event_key === body.event_key && Object.keys(e.payload || {}).length).map(e => e.team_key));
         const ids = [...new Set(body.member_ids)].sort((a, b) => a - b);
         const eligible = [...new Set(body.team_keys)].filter(t => !(body.only_unscouted && scouted.has(t)) && !(srv.pitAssignments.get(body.event_key + '|' + t)?.member_id != null && !body.replace_existing));
         eligible.forEach((t, i) => srv.pitAssignments.set(body.event_key + '|' + t, { event_key: body.event_key, team_key: t, member_id: ids[i % ids.length], source: 'auto', by: srv.me.id, updated_at: now() }));
@@ -52,6 +53,7 @@ export function installPit(srv) {
     if (p === '/pit-scouting/photo' && m === 'POST') {
       const body = JSON.parse(route.request().postData() || '{}'); srv.posts.push({ photo: true, len: body.image_base64?.length });
       if (srv.writesFail) return json({ detail: 'Forbidden' }, 403);
+      if (srv.refusePhotos?.has(body.team_key)) return json({ detail: 'Photo limit reached (12 per team). Delete one first.' }, 400);
       const k = body.event_key + '|' + body.team_key; const ex = srv.pitById.get(k) || { id: id++, event_key: body.event_key, team_key: body.team_key, scout_profile: srv.me.display_name, payload: {}, photos: [], photo_urls: [], created_at: now() };
       const path = `pit_photos/${body.event_key}/${body.team_key}/${Date.now()}.jpg`;
       ex.photos = [...ex.photos, path]; ex.photo_urls = [...(ex.photo_urls || []), body.image_base64]; ex.updated_at = now();
