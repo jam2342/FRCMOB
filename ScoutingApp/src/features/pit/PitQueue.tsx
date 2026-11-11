@@ -3,7 +3,7 @@ import { SegmentedTabs } from '../../components/ui/SegmentedTabs';
 import { Button, FieldText } from '../../components/ui/primitives';
 import { CameraIcon, CheckIcon, CloudSyncIcon, PenIcon, UsersIcon, WifiOffIcon } from '../../components/ui/Icons';
 import { PitAutoSplit, PitReassign } from './PitLeaderTools';
-import { PIT_STATUS_LABEL, pitUpdatedAgo, queueRowLabel, rowsForTab, searchQueueRows, tabCounts } from './pitTeams';
+import { PIT_STATUS_LABEL, pitUpdatedAgo, queueRowLabel, rowsForTab, searchQueueRows, tabCounts, teamNumber } from './pitTeams';
 import type { PitQueueRow, PitStatus, PitTab } from './pitTeams';
 import type { PitAssignments } from './usePitAssignments';
 import { usePitScouts } from './usePitScouts';
@@ -53,7 +53,7 @@ function RowActions({
   const busy = assignments.pending.has(row.team.team_key);
   const blocked = !assignments.online;
   const reason = blocked ? OFFLINE_REASON : undefined;
-  const number = row.team.team_number;
+  const number = teamNumber(row.team.team_key);
   return (
     <div className={styles.actions}>
       {row.assigneeId === null ? (
@@ -196,7 +196,7 @@ export function PitQueue({ rows, selectedTeam, disabled, assignments, isLeader, 
                   onClick={() => onOpen(key)}
                 >
                   <span className={styles.head}>
-                    <strong className={styles.number}>{row.team.team_number}</strong>
+                    <strong className={styles.number}>{teamNumber(row.team.team_key)}</strong>
                     {row.team.nickname ? <span className={styles.name} title={row.team.nickname}>{row.team.nickname}</span> : null}
                     {row.hasPhotos ? <CameraIcon className={styles.mark} /> : null}
                   </span>

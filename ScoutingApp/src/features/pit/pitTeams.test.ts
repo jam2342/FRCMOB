@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { PitAssignment, PitScoutingEntry } from '../../api';
-import { buildQueueRows, deepLinkTeam, hasPitEntry, nextUnscoutedTeam, pitStatus, pitUpdatedAgo, queueRowLabel, rowsForTab, searchQueueRows, tabCounts } from './pitTeams';
+import { buildQueueRows, deepLinkTeam, hasPitEntry, nextUnscoutedTeam, pitStatus, pitUpdatedAgo, queueRowLabel, rowsForTab, searchQueueRows, tabCounts, teamNumber } from './pitTeams';
 
 const team = (n: number, nickname: string | null = null) => ({ team_key: `frc${n}`, team_number: n, nickname });
 const entry = (payload: Record<string, unknown>) => ({ payload, photos: [] }) as unknown as PitScoutingEntry;
@@ -87,4 +87,24 @@ it('accepts a deep-link team only when it is well formed and in the event', () =
   expect(deepLinkTeam('300', teams)).toBeNull();
   expect(deepLinkTeam('frc300;drop', teams)).toBeNull();
   expect(deepLinkTeam(null, teams)).toBeNull();
+});
+
+const bTeams = [team(100, 'Alpha'), { team_key: 'frc100b', team_number: 100, nickname: 'Alpha B' }, team(101, null)];
+
+it('opens a B team from a deep link in any letter case', () => {
+  expect(deepLinkTeam('frc100b', bTeams)).toBe('frc100b');
+  expect(deepLinkTeam(' FRC100B ', bTeams)).toBe('frc100b');
+  expect(deepLinkTeam('frc101b', bTeams)).toBeNull();
+  expect(deepLinkTeam('frc100bb', bTeams)).toBeNull();
+});
+
+it('shows a B team as "100B", sorts it after its main team and finds it by search', () => {
+  expect(teamNumber('frc100b')).toBe('100B');
+  expect(teamNumber('frc254')).toBe('254');
+  const rows = buildQueueRows([bTeams[1], bTeams[2], bTeams[0]], new Map(), new Map(), none, 7);
+  expect(rows.map((r) => r.team.team_key)).toEqual(['frc100', 'frc100b', 'frc101']);
+  expect(queueRowLabel(rows[1])).toBe('Team 100B, Alpha B, not assigned, to do');
+  expect(searchQueueRows(rows, '100b').map((r) => r.team.team_key)).toEqual(['frc100b']);
+  expect(searchQueueRows(rows, 'frc100B').map((r) => r.team.team_key)).toEqual(['frc100b']);
+  expect(searchQueueRows(rows, '100').map((r) => r.team.team_key)).toEqual(['frc100', 'frc100b']);
 });
