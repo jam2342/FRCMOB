@@ -382,7 +382,7 @@ function ScoutingAssignWorkspacePage() {
           onChange={setFilterChoice}
           items={[
             { value: 'mine', label: <>Mine <small>{counts.mine}</small></> },
-            { value: 'unassigned', label: <>Unassigned <small>{counts.unassigned}</small></> },
+            { value: 'unassigned', label: <>Open <small>{counts.unassigned}</small></> },
             { value: 'next5', label: `Next ${NEXT_MATCH_COUNT}` },
             { value: 'all', label: 'All' },
           ]}
@@ -437,12 +437,9 @@ function ScoutingAssignWorkspacePage() {
                     <div className={`${styles.allianceBlock} ${alliance === 'red' ? styles.allianceRed : styles.allianceBlue}`} key={alliance}>
                       <div className={styles.allianceLabel}>{alliance === 'red' ? 'Red' : 'Blue'}</div>
                       {slots.filter((slot) => slot.alliance === alliance).map((slot) => {
-                        const row = index.get(slotKey(match.match_key, slot.team_key));
-                        const owner = row?.member_active ? row.assigned_member_id : null;
                         return (
                           <div className={styles.slotRow} key={slot.team_key}>
                             <span className={styles.slotTeam}>
-                              {owner !== null ? <span aria-hidden="true" className={`${styles.scoutDot} ${scoutColorClass(owner, members)}`} /> : null}
                               {teamNumber(slot.team_key)}
                             </span>
                             <div className={styles.mobileSlot}>{renderSlot(match, slot.team_key, busy)}</div>

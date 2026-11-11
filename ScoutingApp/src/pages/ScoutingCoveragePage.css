@@ -108,7 +108,7 @@
   overflow-wrap: anywhere;
 }
 
-.coverage-card-state.is-covered { color: var(--color-success-text); }
+.coverage-card-state.is-covered .coverage-card-mark { color: var(--color-success-text); }
 .coverage-card-state.is-missing { color: var(--color-danger-text); }
 
 .coverage-rank-badge {
@@ -206,7 +206,7 @@
   flex-wrap: wrap;
 }
 
-@media (max-width: 320px) {
+@media (max-width: 360px) {
   .coverage-card-slot {
     flex-direction: column;
     gap: 0;

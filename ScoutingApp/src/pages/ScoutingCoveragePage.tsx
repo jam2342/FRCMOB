@@ -65,7 +65,7 @@ function missingCount(row: GridRow): number {
 
 function slotNote(slot: GridSlot): string {
   if (slot.entry_count === 0) return 'Not scouted';
-  const who = slot.scouts.filter(Boolean).join(', ');
+  const who = [...new Set(slot.scouts.filter(Boolean))].join(', ');
   const entries = slot.entry_count > 1 ? ` (${slot.entry_count} entries)` : '';
   return who ? `Scouted by ${who}${entries}` : `Scouted${entries}`;
 }
@@ -119,7 +119,7 @@ function CoverageCards({ rows }: { rows: GridRow[] }) {
                     <div className="coverage-card-slot" key={slot.team_key}>
                       <span className="coverage-card-team">{teamNumber(slot.team_key)}</span>
                       <span className={`coverage-card-state ${covered ? 'is-covered' : 'is-missing'}`}>
-                        <span aria-hidden="true">{covered ? '✓' : '✕'}</span> {slotNote(slot)}
+                        <span className="coverage-card-mark" aria-hidden="true">{covered ? '✓' : '✕'}</span> {slotNote(slot)}
                       </span>
                     </div>
                   );

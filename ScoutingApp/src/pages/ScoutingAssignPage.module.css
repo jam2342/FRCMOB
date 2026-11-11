@@ -259,13 +259,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.scoutDot {
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: var(--radius-full);
-  flex: none;
-}
-
 /* The same select as the desktop grid, but neutral: the scout's colour is the dot. */
 .mobileSlot :global(.assign-cell-select) {
   min-height: 40px;

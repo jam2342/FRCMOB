@@ -47,3 +47,16 @@ it('on a phone shows a card per match with words for covered and missing, gaps f
   const labels = [...q1.querySelectorAll('.coverage-card-alliance-label')].map((el) => el.textContent);
   expect(labels).toEqual(['Red', 'Blue']);
 });
+
+it('lists a scout once when they filed several entries, keeping order and the entry count', async () => {
+  mockPhone();
+  const dup = {
+    ...coverage,
+    grid: [{ match_key: 'm3', label: 'Q3', comp_level: 'qm', time: null, slots: [
+      slot('21', 'red', 3, ['Zed', 'Ana', 'Zed']), slot('22', 'red', 1, ['Ben']), slot('23', 'red', 1, ['Ben']),
+      slot('24', 'blue', 0, []), slot('25', 'blue', 1, ['Ben']), slot('26', 'blue', 1, ['Ben']) ] }],
+  };
+  vi.mocked(getScoutingCoverage).mockResolvedValue(dup as never);
+  render(<MemoryRouter initialEntries={['/?event=2026test']}><ScoutingCoveragePage /></MemoryRouter>);
+  expect(await screen.findByText(/Scouted by Zed, Ana \(3 entries\)/)).toBeInTheDocument();
+});
