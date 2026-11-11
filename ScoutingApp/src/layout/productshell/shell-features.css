@@ -73,9 +73,10 @@
   padding: 20px;
   box-sizing: border-box;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--ui-border) 55%, transparent);
-  background:
-    linear-gradient(180deg, rgba(22, 32, 42, 0.98) 0%, rgba(15, 23, 31, 0.98) 100%);
+  border: 1px solid var(--color-border);
+  /* Surface tokens, so the card flips with the theme; it was a fixed dark gradient that left
+     the title (a theme text colour) dark on dark in light mode. */
+  background: var(--color-surface);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.03) inset,
     0 30px 60px -20px rgba(0, 0, 0, 0.55),
@@ -161,7 +162,7 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+  color: var(--color-text-muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -195,7 +196,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #3ac988;
+  color: var(--color-accent-text);
 }
 
 .product-shell .tut-title {
@@ -302,7 +303,7 @@
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: #52dfa0;
+  color: var(--color-accent-text);
 }
 
 .product-shell .tut-guide-meter {
@@ -380,7 +381,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text-muted) 82%, transparent);
+  color: var(--color-text-muted);
 }
 
 .product-shell .tut-step-title {
@@ -395,7 +396,7 @@
   margin: 0;
   font-size: var(--font-size-sm);
   line-height: 1.55;
-  color: color-mix(in srgb, var(--color-text-muted) 94%, transparent);
+  color: var(--color-text-muted);
 }
 
 .product-shell .tut-tips {
@@ -411,7 +412,7 @@
   padding: 9px 12px 9px 28px;
   font-size: var(--font-size-2xs);
   line-height: 1.45;
-  color: color-mix(in srgb, var(--color-text-muted) 94%, transparent);
+  color: var(--color-text-muted);
   background: color-mix(in srgb, var(--ui-surface-soft) 55%, transparent);
   border: 1px solid color-mix(in srgb, var(--ui-border) 50%, transparent);
   border-radius: 10px;
@@ -444,7 +445,7 @@
   text-align: center;
   font-size: var(--font-size-2xs);
   font-weight: 400;
-  color: color-mix(in srgb, var(--color-text-muted) 80%, transparent);
+  color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -461,7 +462,7 @@
   padding: 0 4px;
   border: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--color-text-muted) 78%, transparent);
+  color: var(--color-text-muted);
   font-size: var(--font-size-legacy-11);
   font-weight: 600;
   line-height: 1.2;
@@ -497,7 +498,7 @@
 .product-shell .tut-btn-ghost {
   border: 1px solid color-mix(in srgb, var(--ui-border) 60%, transparent);
   background: transparent;
-  color: color-mix(in srgb, var(--color-text-muted) 90%, transparent);
+  color: var(--color-text-muted);
 }
 
 /* The same flat accent as every other primary button (Button's primary). */
@@ -702,6 +703,34 @@
   .product-shell .tut-panel.is-mobile .tut-tips li {
     font-size: var(--font-size-legacy-11);
     padding: 7px 9px 7px 24px;
+  }
+}
+
+/* Short or narrow screens (250x450, phone landscape): the card was 44% of the height, so the
+   step text got a 0px row and the close button sat clipped. Drop the mascot (its bubble keeps the
+   step title), give the card more room, and let the text scroll inside it. */
+@media (max-width: 320px), (max-height: 500px) {
+  .product-shell .tut-panel.is-mobile {
+    max-height: min(66vh, 360px);
+    max-height: min(66svh, 360px);
+    grid-template-rows: auto auto auto minmax(48px, 1fr) auto;
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-robot-stage {
+    display: none;
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-guide-bubble::before {
+    display: none;
+  }
+
+  .product-shell .tut-panel.is-mobile .tut-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 

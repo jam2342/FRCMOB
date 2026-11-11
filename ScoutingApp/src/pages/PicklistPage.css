@@ -118,6 +118,13 @@ button.picklist-rank--button {
   flex-shrink: 0;
 }
 
+/* Keeps the slot a robot photo would fill, so team numbers line up down the list. */
+.picklist-photo--empty {
+  display: inline-block;
+  border-color: transparent;
+  background: transparent;
+}
+
 .picklist-team {
   display: inline-flex;
   align-items: baseline;
@@ -205,9 +212,10 @@ button.picklist-rank--button {
   min-height: 32px;
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 720px) {
   .picklist-tier,
-  .picklist-mini-btn {
+  .picklist-mini-btn,
+  button.picklist-rank--button {
     min-width: 44px;
     min-height: 44px;
   }

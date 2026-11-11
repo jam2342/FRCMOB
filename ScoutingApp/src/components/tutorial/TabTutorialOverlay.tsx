@@ -7,7 +7,7 @@ import {
 } from '../../tutorial/tutorialBlueprints';
 import { markTutorialSeen } from '../../tutorial/tutorialState';
 import { RobotMascot } from '../ui/RobotMascot';
-import { placeDesktopPanel } from './panelPlacement';
+import { pickMobileDock, placeDesktopPanel } from './panelPlacement';
 import './TabTutorialOverlay.css';
 
 type SpotlightRect = { top: number; left: number; width: number; height: number };
@@ -20,7 +20,9 @@ type TabTutorialOverlayProps = {
 const MOBILE_BREAKPOINT_PX = 900;
 // Only until the panel has been measured once.
 const DESKTOP_PANEL_FALLBACK_HEIGHT_PX = 320;
-const MOBILE_DOCK_SWITCH_RATIO = 0.5;
+// How long the tour waits for its first target before giving up quietly.
+const TARGET_WAIT_MS = 5000;
+const TARGET_RECHECK_MS = 100;
 
 
 
@@ -56,6 +58,18 @@ function stepsFor(walkthrough: TutorialWalkthroughStep[], isMobile: boolean): Tu
     if (step.only === 'desktop' && isMobile) return false;
     return !step.requiresTarget || isVisible(findTargetElement(resolveSelector(step, isMobile)));
   });
+}
+
+// Steps already shown stay: a target that scrolls out or re-renders must not shrink the count.
+function mergeSteps(
+  all: TutorialWalkthroughStep[],
+  prev: TutorialWalkthroughStep[],
+  next: TutorialWalkthroughStep[],
+  isMobile: boolean,
+): TutorialWalkthroughStep[] {
+  const keep = new Set([...prev, ...next].map((step) => step.id));
+  const merged = all.filter((step) => keep.has(step.id) && !(step.only === 'phone' && !isMobile) && !(step.only === 'desktop' && isMobile));
+  return merged.length === prev.length && merged.every((step, i) => step === prev[i]) ? prev : merged;
 }
 
 function buildSpotlightRect(rect: DOMRect): SpotlightRect {
@@ -111,12 +125,12 @@ function TutorialRobotGuide({
 export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) {
   const blueprint = useMemo(() => getTutorialBlueprint(scope), [scope]);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT_PX);
-  const [walkthrough, setWalkthrough] = useState(() =>
-    blueprint.walkthrough.filter((step) => !step.requiresTarget && step.only !== (isMobile ? 'desktop' : 'phone')),
-  );
+  // Empty until the page's targets exist: the panel is not drawn with no steps (never "1/0").
+  const [walkthrough, setWalkthrough] = useState<TutorialWalkthroughStep[]>([]);
   const [stepIndex, setStepIndex] = useState(0);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [targetFound, setTargetFound] = useState(false);
+  const [mobileDock, setMobileDock] = useState<'top' | 'bottom'>('bottom');
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const panelRef = useRef<HTMLElement | null>(null);
 
@@ -126,15 +140,44 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
     setStepIndex(0);
   }, [blueprint, isMobile]);
 
+  // Cards that load after the tour opens (a workspace, an event) join as they appear.
+  useEffect(() => {
+    let timer = 0;
+    const recheck = () => {
+      timer = 0;
+      const found = stepsFor(blueprint.walkthrough, isMobile);
+      setWalkthrough((prev) => mergeSteps(blueprint.walkthrough, prev, found, isMobile));
+    };
+    const observer = new MutationObserver(() => {
+      if (!timer) timer = window.setTimeout(recheck, TARGET_RECHECK_MS);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [blueprint, isMobile]);
+
   const totalSteps = walkthrough.length;
+  const hasSteps = totalSteps > 0;
+  // The parent's callback changes every render; the give-up timer must not restart with it.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // A tour that never had a step to show is neither seen nor left open.
+  useEffect(() => {
+    if (hasSteps) {
+      markTutorialSeen(scope);
+      return;
+    }
+    const giveUp = window.setTimeout(() => onCloseRef.current(), TARGET_WAIT_MS);
+    return () => window.clearTimeout(giveUp);
+  }, [hasSteps, scope]);
   const safeIndex = totalSteps ? Math.max(0, Math.min(stepIndex, totalSteps - 1)) : 0;
   const step = totalSteps ? walkthrough[safeIndex] : null;
   const atStart = safeIndex === 0;
   const atEnd = safeIndex >= totalSteps - 1;
-  const mobileDockClass =
-    spotlight && spotlight.top + spotlight.height / 2 > window.innerHeight * MOBILE_DOCK_SWITCH_RATIO
-      ? 'is-mobile-top'
-      : 'is-mobile-bottom';
+  const mobileDockClass = mobileDock === 'top' ? 'is-mobile-top' : 'is-mobile-bottom';
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT_PX);
@@ -143,12 +186,13 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
   }, []);
 
   useEffect(() => {
+    if (!hasSteps) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previous;
     };
-  }, []);
+  }, [hasSteps]);
 
   useEffect(() => {
     if (!step) return;
@@ -174,6 +218,10 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
       const visible = rect.width > 2 && rect.height > 2;
       setTargetFound(visible);
       setSpotlight(visible ? buildSpotlightRect(rect) : null);
+      if (isMobile && visible) {
+        const panelHeight = panelRef.current?.offsetHeight || 0;
+        setMobileDock(pickMobileDock(buildSpotlightRect(rect), panelHeight, window.innerHeight));
+      }
       if (!isMobile && visible) {
         const panelHeight = panelRef.current?.offsetHeight || DESKTOP_PANEL_FALLBACK_HEIGHT_PX;
         setPanelStyle(placeDesktopPanel(rect, step.placement || 'auto', panelHeight, { width: window.innerWidth, height: window.innerHeight }));
@@ -221,6 +269,8 @@ export function TabTutorialOverlay({ scope, onClose }: TabTutorialOverlayProps) 
     markTutorialSeen(scope);
     onClose();
   }
+
+  if (!hasSteps) return null;
 
   const effectivePanelStyle = !isMobile && targetFound ? panelStyle : undefined;
 
