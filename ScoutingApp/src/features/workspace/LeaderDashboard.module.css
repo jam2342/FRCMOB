@@ -7,7 +7,9 @@
 }
 
 .cell {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
   min-height: var(--touch-target-min);
   margin: 0;
@@ -34,8 +36,23 @@
   }
 }
 
+.cell > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.cell:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
 @media (hover: hover) {
   .cell:hover {
-    background: var(--row-bg-hover);
+    background-image: linear-gradient(var(--row-bg-hover), var(--row-bg-hover));
   }
 }

@@ -44,45 +44,41 @@ export function LeaderDashboard({ eventKey, members, slots, pit }: Props) {
   const query = `?event=${encodeURIComponent(eventKey)}`;
   const active = members ? activeScouts(members) : null;
 
+  const scouts = active === null || !members ? DASH : `${active}/${members.length}`;
+  const open = slots ? String(slots.open) : DASH;
+  const cov = coverage === null ? DASH : `${Math.round(coverage)}%`;
+  const pitValue = pit ? `${pit.done}/${pit.total}` : DASH;
+  const chevron = <span className={styles.chevron} aria-hidden="true">›</span>;
+
   return (
     <SurfaceCard tourId="myteam-dashboard" title="Right now" mobileCollapsible={false}>
       <div className={styles.grid}>
         <button
           type="button"
           className={styles.cell}
+          aria-label={`Scouts active ${scouts}, see members`}
           onClick={() => document.querySelector('[data-tour="myteam-members"]')?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
         >
-          <Stat
-            size="sm"
-            label="Scouts active"
-            value={active === null || !members ? DASH : `${active}/${members.length}`}
-            sub="seen in 10 min"
-          />
+          <Stat size="sm" label="Scouts active" value={scouts} sub="seen in 10 min" />
+          {chevron}
         </button>
-        <Link className={styles.cell} to={`/scouting/assignments${query}`}>
+        <Link className={styles.cell} to={`/scouting/assignments${query}`} aria-label={`Open slots ${open}, open Assignments`}>
           <Stat
             size="sm"
             label="Open slots"
-            value={slots ? slots.open : DASH}
+            value={open}
             sub={slots && slots.needNewScout > 0 ? `${slots.needNewScout} need a new scout` : 'upcoming matches'}
             tone={slots && slots.needNewScout > 0 ? 'warning' : 'default'}
           />
+          {chevron}
         </Link>
-        <Link className={styles.cell} to={`/scouting/coverage${query}`}>
-          <Stat
-            size="sm"
-            label="Match coverage"
-            value={coverage === null ? DASH : `${Math.round(coverage)}%`}
-            sub="slots scouted"
-          />
+        <Link className={styles.cell} to={`/scouting/coverage${query}`} aria-label={`Match coverage ${cov}, open Coverage`}>
+          <Stat size="sm" label="Match coverage" value={cov} sub="slots scouted" />
+          {chevron}
         </Link>
-        <Link className={styles.cell} to={`/scouting/pit${query}`}>
-          <Stat
-            size="sm"
-            label="Pit scouting"
-            value={pit ? `${pit.done}/${pit.total}` : DASH}
-            sub="teams done"
-          />
+        <Link className={styles.cell} to={`/scouting/pit${query}`} aria-label={`Pit scouting ${pitValue}, open Pit scouting`}>
+          <Stat size="sm" label="Pit scouting" value={pitValue} sub="teams done" />
+          {chevron}
         </Link>
       </div>
     </SurfaceCard>
