@@ -43,7 +43,11 @@ it('keeps unanswered capabilities missing and saves explicit No separately', asy
   fireEvent.click(answer(field.label, 'Yes'));
   expect(answer(field.label, 'Yes')).not.toBeChecked();
   expect(readPitDraft(1, '2026old', 'frc254')).not.toHaveProperty(field.key);
-  const photo = screen.getByLabelText('Add robot photo');
-  expect(photo).toHaveAttribute('type', 'file');
-  expect(photo).not.toHaveAttribute('tabindex', '-1');
+  // The camera is a real button for keyboards; the file inputs behind it are only what it opens.
+  expect(screen.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Choose from library' })).toBeEnabled();
+  const camera = screen.getByLabelText('Take robot photo');
+  expect(camera).toHaveAttribute('type', 'file');
+  expect(camera).toHaveAttribute('capture', 'environment');
+  expect(screen.getByLabelText('Choose robot photo from library')).not.toHaveAttribute('capture');
 });
