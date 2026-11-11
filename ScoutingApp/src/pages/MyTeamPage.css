@@ -49,8 +49,7 @@
 }
 
 .my-team__row-actions,
-.my-team__code-actions,
-.my-team__member-actions {
+.my-team__code-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -81,29 +80,56 @@
   flex-direction: column;
 }
 
-.my-team__member {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-3) 0;
+.my-team__member-item {
   border-bottom: var(--border-width-1) solid var(--color-border);
 }
 
-.my-team__member:last-child {
+.my-team__member-item:last-child {
   border-bottom: none;
+}
+
+.my-team__member {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.my-team__member--action {
+  cursor: pointer;
+}
+
+.my-team__member-arrow {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+@media (hover: hover) {
+  .my-team__member--action:hover {
+    background: var(--row-bg-hover);
+  }
 }
 
 .my-team__member-main {
   display: flex;
   flex-direction: column;
-  flex: 1 1 160px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .my-team__member-name {
   font-weight: 600;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .my-team__you,
@@ -111,12 +137,6 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   font-weight: 400;
-}
-
-@media (max-width: 480px) {
-  .my-team__member-actions {
-    flex-basis: 100%;
-  }
 }
 
 .my-team__you-are strong {

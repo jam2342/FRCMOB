@@ -21,6 +21,7 @@ import { OfflineReadyCard } from '../components/ui/OfflineReadyCard';
 import { SyncStatusCard } from '../features/offline/SyncStatusCard';
 import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { Button, Chip, FieldCheckbox, FieldText, Modal } from '../components/ui/primitives';
+import { MemberSheet } from '../features/workspace/MemberSheet';
 import { TeamScoutingCard } from '../features/workspace/TeamScoutingCard';
 import { SeasonStoryCard } from '../features/seasonStory/SeasonStoryCard';
 import { useWorkspace } from '../features/workspace/useWorkspace';
@@ -336,6 +337,7 @@ function TeamWorkspaceView() {
   const [workspaceName, setWorkspaceName] = useState('');
   const [teamNumber, setTeamNumber] = useState('');
   const [removing, setRemoving] = useState<WorkspaceMemberRecord | null>(null);
+  const [acting, setActing] = useState<WorkspaceMemberRecord | null>(null);
   const [rotateOnRemove, setRotateOnRemove] = useState(true);
   const [leaving, setLeaving] = useState<'confirm' | 'last-member' | null>(null);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
@@ -424,7 +426,7 @@ function TeamWorkspaceView() {
   return (
     <>
       {/* What a scout opens this page for: where they're scouting and what's next. */}
-      <TeamScoutingCard />
+      <TeamScoutingCard members={state?.members} />
 
       <SurfaceCard tourId="myteam-workspace"
         title={workspace.name}
@@ -515,44 +517,43 @@ function TeamWorkspaceView() {
 
       <SurfaceCard tourId="myteam-members"
         title={state ? `Members (${members.length})` : 'Members'}
-        subtitle={isLeader ? 'Leaders can promote, demote and remove members.' : undefined}
+        subtitle={isLeader ? 'Tap a member to change their role or remove them.' : undefined}
         mobileCollapsible={false}
       >
         {!state && !error ? <p className="my-team__note">Loading members…</p> : null}
         <ul className="my-team__members">
           {members.map((member) => {
             const self = member.id === me?.id;
+            const tappable = isLeader && !self;
+            const content = (
+            <>
+            <span className="my-team__member-main">
+              <span className="my-team__member-name" title={member.display_name}>
+                {member.display_name}
+                {self ? <span className="my-team__you"> (you)</span> : null}
+              </span>
+              <span className="my-team__member-meta">{lastSeen(member.last_seen_at)}</span>
+            </span>
+            <Chip size="sm" tone={member.role === 'leader' ? 'accent' : 'neutral'}>
+              {member.role === 'leader' ? 'Leader' : 'Member'}
+            </Chip>
+            {tappable ? <span className="my-team__member-arrow" aria-hidden="true">›</span> : null}
+            </>
+            );
             return (
-              <li key={member.id} className="my-team__member">
-                <div className="my-team__member-main">
-                  <span className="my-team__member-name">
-                    {member.display_name}
-                    {self ? <span className="my-team__you"> (you)</span> : null}
-                  </span>
-                  <span className="my-team__member-meta">{lastSeen(member.last_seen_at)}</span>
-                </div>
-                <Chip size="sm" tone={member.role === 'leader' ? 'accent' : 'neutral'}>
-                  {member.role === 'leader' ? 'Leader' : 'Member'}
-                </Chip>
-                {isLeader && !self ? (
-                  <div className="my-team__member-actions">
-                    <Button
-                      size="sm"
-                      variant="quiet"
-                      loading={busy === `role-${member.id}`}
-                      onClick={() =>
-                        void run(`role-${member.id}`, () =>
-                          setWorkspaceMemberRole(member.id, member.role === 'leader' ? 'member' : 'leader'),
-                        )
-                      }
-                    >
-                      {member.role === 'leader' ? 'Make member' : 'Make leader'}
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={() => { setRotateOnRemove(true); setRemoveError(null); setRemoving(member); }}>
-                      Remove
-                    </Button>
-                  </div>
-                ) : null}
+              <li key={member.id} className="my-team__member-item">
+                {tappable ? (
+                  <button
+                    type="button"
+                    className="my-team__member my-team__member--action"
+                    aria-label={`${member.display_name}, ${member.role}. Open actions`}
+                    onClick={() => { setError(null); setActing(member); }}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div className="my-team__member">{content}</div>
+                )}
               </li>
             );
           })}
@@ -568,6 +569,21 @@ function TeamWorkspaceView() {
         </p>
         <Button variant="danger" onClick={() => setLeaving('confirm')}>Leave workspace</Button>
       </SurfaceCard>
+
+      <MemberSheet
+        member={acting}
+        busy={acting !== null && busy === `role-${acting.id}`}
+        error={error}
+        onClose={() => setActing(null)}
+        onToggleRole={async () => {
+          if (!acting) return;
+          const target = acting;
+          if (await run(`role-${target.id}`, () => setWorkspaceMemberRole(target.id, target.role === 'leader' ? 'member' : 'leader'))) {
+            setActing(null);
+          }
+        }}
+        onRemove={() => { setRotateOnRemove(true); setRemoveError(null); setRemoving(acting); setActing(null); }}
+      />
 
       <Modal
         open={removing !== null}

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWorkspace, ensureTeamRoom, getEventSchedule, joinWorkspace, getMyWorkspace } from '../api';
+import { createWorkspace, ensureTeamRoom, getEventSchedule, getEventTeamsIntel, getScoutingCoverage, joinWorkspace, listPitEntries, getMyWorkspace, setWorkspaceMemberRole } from '../api';
 import { MyTeamPage } from './MyTeamPage';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
 import {
@@ -57,6 +57,8 @@ vi.mock('../api', () => ({
   ensureTeamRoom: vi.fn(),
   getTeamRoom: vi.fn(async () => null),
   getEventSchedule: vi.fn(),
+  getEventTeamsIntel: vi.fn(),
+  listPitEntries: vi.fn(),
 }));
 
 vi.mock('../hooks/useOnlineStatus', () => ({
@@ -163,13 +165,40 @@ describe('My Team page', () => {
     signInTestWorkspace('leader');
     renderPage();
     expect(await screen.findByText('Sam')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /Sam, member/ }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove from team' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Remove Sam?' });
     await act(async () => {
       fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
     });
     await waitFor(() => expect(screen.queryByText('Sam')).toBeNull());
     expect(screen.getByText('NEWCO-DE123')).toBeTruthy();
+  });
+
+  it('opens an action sheet for another member, never for your own row', async () => {
+    signInTestWorkspace('leader');
+    renderPage();
+    await screen.findByText('Sam');
+    expect(screen.queryByRole('button', { name: /Test Scout/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Sam, member/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Sam' });
+    expect(within(dialog).getByRole('button', { name: 'Remove from team' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Make leader' }));
+    });
+    expect(setWorkspaceMemberRole).toHaveBeenCalledWith(2, 'leader');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('opens the remove confirm with the new-code checkbox from the sheet', async () => {
+    signInTestWorkspace('leader');
+    renderPage();
+    await screen.findByText('Sam');
+    fireEvent.click(screen.getByRole('button', { name: /Sam, member/ }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove from team' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Remove Sam?' });
+    expect(within(confirm).getByLabelText(/Also make a new join code/)).toBeChecked();
   });
 
   it('hides management controls from members', async () => {
@@ -185,6 +214,8 @@ describe('My Team page', () => {
     // Sam is both "You're Sam" and a row in the member list.
     expect((await screen.findAllByText('Sam')).length).toBe(2);
     expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Open actions/ })).toBeNull();
+    expect(screen.queryByText('Right now')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Invite scouts' })).toBeNull();
   });
 
@@ -243,9 +274,61 @@ describe('My Team scouting card', () => {
     vi.mocked(ensureTeamRoom).mockResolvedValue(teamSnapshot('leader') as never);
     renderPage();
 
-    expect(await screen.findByText('1 / 12')).toBeTruthy();
+    expect(await screen.findByText('11')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Assign matches' }).getAttribute('href'))
       .toBe('/scouting/assignments?event=2026week0');
+  });
+});
+
+describe('Leader dashboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    localStorage.setItem('scouting_center_event_key', '2026week0');
+    vi.mocked(getEventSchedule).mockResolvedValue(WEEK0_SCHEDULE as never);
+    vi.mocked(ensureTeamRoom).mockResolvedValue(teamSnapshot('leader') as never);
+  });
+  afterEach(() => {
+    clearWorkspaceSession('left');
+  });
+
+  it('shows scouts, open slots, coverage and pit progress from loaded data', async () => {
+    signInTestWorkspace('leader');
+    vi.mocked(getScoutingCoverage).mockResolvedValue({ ok: true, summary: { coverage_pct: 62 } } as never);
+    vi.mocked(getEventTeamsIntel).mockResolvedValue({ teams: [{ team_key: 'frc1' }, { team_key: 'frc2' }, { team_key: 'frc3' }, { team_key: 'frc4' }] } as never);
+    vi.mocked(listPitEntries).mockResolvedValue({ entries: [{ team_key: 'frc1' }] } as never);
+    renderPage();
+
+    expect(await screen.findByText('Right now')).toBeTruthy();
+    expect(await screen.findByText('1/2')).toBeTruthy();
+    expect(await screen.findByText('62%')).toBeTruthy();
+    expect(await screen.findByText('1/4')).toBeTruthy();
+    expect(await screen.findByText('11')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Match coverage/ }).getAttribute('href')).toBe('/scouting/coverage?event=2026week0');
+    expect(screen.getByRole('link', { name: /Pit scouting/ }).getAttribute('href')).toBe('/scouting/pit?event=2026week0');
+    expect(screen.getByRole('link', { name: /Open slots/ }).getAttribute('href')).toBe('/scouting/assignments?event=2026week0');
+  });
+
+  it('shows a dash for every number that fails to load', async () => {
+    signInTestWorkspace('leader');
+    vi.mocked(getScoutingCoverage).mockRejectedValue(new Error('down'));
+    vi.mocked(getEventTeamsIntel).mockRejectedValue(new Error('down'));
+    vi.mocked(listPitEntries).mockRejectedValue(new Error('down'));
+    vi.mocked(getEventSchedule).mockRejectedValue(new Error('down'));
+    renderPage();
+
+    await screen.findByText('Right now');
+    await waitFor(() => expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3));
+  });
+
+  it('survives a thin coverage response', async () => {
+    signInTestWorkspace('leader');
+    vi.mocked(getScoutingCoverage).mockResolvedValue({ ok: true } as never);
+    vi.mocked(getEventTeamsIntel).mockResolvedValue({} as never);
+    vi.mocked(listPitEntries).mockResolvedValue({} as never);
+    renderPage();
+    expect(await screen.findByText('Right now')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Match coverage/ })).toBeTruthy();
   });
 });
 

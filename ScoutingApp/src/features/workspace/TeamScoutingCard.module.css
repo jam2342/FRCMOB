@@ -7,12 +7,6 @@
   min-width: 0;
 }
 
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
-  gap: var(--space-3);
-}
-
 .note {
   margin: 0;
   color: var(--color-text-muted);
