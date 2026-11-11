@@ -171,7 +171,7 @@ export default [
       await page.getByRole('button', { name: /^Team 971\b/ }).tap();
       await page.locator('textarea').first().fill('Mine: swerve');
       await server.setOffline(ctx, true);
-      await page.getByRole('button', { name: /^Save entry$/ }).first().tap();
+      await page.getByRole('button', { name: /^Save$/ }).first().tap();
       await sleep(1500);
       await page.goto(`${BASE}/#/`);
       await server.setOffline(ctx, false);
