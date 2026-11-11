@@ -29,8 +29,13 @@ function toMap(rows: PitAssignment[]): Map<string, PitAssignment> {
   return new Map(rows.filter((row) => row.member_id !== null).map((row) => [row.team_key.toLowerCase(), row]));
 }
 
+// The server names the team by key ("frc1912 is already taken by Alex."); the app says "Team 1912".
+export function friendlyTeamMessage(text: string): string {
+  return text.replace(/^frc(\d+[a-z]?)\b/i, 'Team $1');
+}
+
 function messageOf(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return error instanceof Error && error.message ? friendlyTeamMessage(error.message) : fallback;
 }
 
 export function usePitAssignments({ eventKey, me, enabled }: { eventKey: string; me: Me | null; enabled: boolean }): PitAssignments {

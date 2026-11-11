@@ -127,10 +127,10 @@ it('a 409 puts the team back and says who has it in a quiet notice', async () =>
   fireEvent.click(await screen.findByRole('tab', { name: /Left/ }));
   fireEvent.click(screen.getByRole('button', { name: "I'm on it for 100" }));
   await act(async () => {});
-  expect(screen.getByText('frc100 is already taken by Alex.')).toBeInTheDocument();
+  expect(screen.getByText('Team 100 is already taken by Alex.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^Team 100, Alpha, not assigned/ })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-  expect(screen.queryByText('frc100 is already taken by Alex.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Team 100 is already taken by Alex.')).not.toBeInTheDocument();
 });
 
 it('releases my own team, and offers no claim on a teammate\'s', async () => {

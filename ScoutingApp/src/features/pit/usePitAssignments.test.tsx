@@ -12,7 +12,7 @@ vi.mock('../../api', () => ({
   autoSplitPitTeams: vi.fn(),
 }));
 import { autoSplitPitTeams, claimPitTeam, getPitAssignments, releasePitTeam, setPitAssignment } from '../../api';
-import { usePitAssignments } from './usePitAssignments';
+import { friendlyTeamMessage, usePitAssignments } from './usePitAssignments';
 
 const row = (teamKey: string, id: number, name: string): PitAssignment => ({
   team_key: teamKey, member_id: id, member_name: name, source: 'claim', assigned_by_member_id: id, updated_at: null,
@@ -66,7 +66,7 @@ it('rolls a 409 back, shows the server sentence and re-reads the assignments', a
   expect(result.current.byTeam.has('frc254')).toBe(false);
   const calls = vi.mocked(getPitAssignments).mock.calls.length;
   await act(async () => { await result.current.claim('frc254'); });
-  expect(result.current.notice?.text).toBe('frc254 is already taken by Alex.');
+  expect(result.current.notice?.text).toBe('Team 254 is already taken by Alex.');
   expect(result.current.byTeam.has('frc254')).toBe(false);
   expect(vi.mocked(getPitAssignments).mock.calls.length).toBeGreaterThan(calls);
 });
@@ -159,4 +159,11 @@ it('a poll that started before a claim does not put the old state back', async (
   vi.mocked(getPitAssignments).mockResolvedValue([row('frc254', 8, 'Alex'), row('frc111', 7, 'Jamal')]);
   await act(async () => { answerPoll([row('frc254', 8, 'Alex')]); });
   expect(result.current.byTeam.get('frc111')?.member_id).toBe(7);
+});
+
+it('words a leading team key as "Team N" and leaves other text alone', () => {
+  expect(friendlyTeamMessage('frc1912 is already taken by Alex.')).toBe('Team 1912 is already taken by Alex.');
+  expect(friendlyTeamMessage('frc100B is already taken by Sam.')).toBe('Team 100B is already taken by Sam.');
+  expect(friendlyTeamMessage('Only leaders can do that.')).toBe('Only leaders can do that.');
+  expect(friendlyTeamMessage('Ask frc254 later')).toBe('Ask frc254 later');
 });
