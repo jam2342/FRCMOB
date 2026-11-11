@@ -33,7 +33,6 @@ import { dismissTourPrompt, tourPromptDismissed } from '../tutorial/tourPrompt';
 import {
   countSeenTutorials,
   hasSeenTutorial,
-  markTutorialSeen,
   SCOUTING_TUTORIAL_PROGRESS_EVENT,
 } from '../tutorial/tutorialState';
 import { smartSearchEvents } from '../utils/eventSearch';
@@ -626,8 +625,10 @@ export function ProductShell() {
   // real feature read like leftover debug output.
   const helperLabel = !jumpInput.trim() ? '' : guessLabel(guessedTarget);
 
+  // The tour marks itself seen once it has a step to show; a page whose cards never appeared is
+  // not retried this session, or the autoplay below would reopen it in a loop.
+  const autoplayTried = useRef<Set<TutorialScope>>(new Set());
   const openTutorial = useCallback((scope: TutorialScope) => {
-    markTutorialSeen(scope);
     setTutorialScope(scope);
     setTutorialOpen(true);
   }, []);
@@ -636,6 +637,8 @@ export function ProductShell() {
     if (!tutorialAutoplay || !activeScope) return;
     if (activeTutorialSeen) return;
     if (tutorialOpen) return;
+    if (autoplayTried.current.has(activeScope)) return;
+    autoplayTried.current.add(activeScope);
     openTutorial(activeScope);
   }, [activeScope, activeTutorialSeen, openTutorial, tutorialAutoplay, tutorialOpen]);
 
