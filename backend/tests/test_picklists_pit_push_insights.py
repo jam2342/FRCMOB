@@ -216,6 +216,39 @@ class PitScoutingEndpointTests(_EndpointTestCase):
         self.assertEqual(response.json()["entry"]["photos"], [])
         self.assertFalse(stored.exists())
 
+    def test_b_team_is_saved_listed_and_photographed_under_the_stored_spelling(self):
+        for sent in ("frc100b", "FRC100B", "frc100B"):
+            response = self.client.post(
+                "/pit-scouting",
+                json={"event_key": "2026test", "team_key": sent, "payload": {"drivetrain": "Swerve"}},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["entry"]["team_key"], "frc100B")
+        listing = self.client.get("/pit-scouting", params={"event_key": "2026test"}).json()
+        self.assertEqual([row["team_key"] for row in listing["entries"]], ["frc100B"])
+
+        response = self.client.post(
+            "/pit-scouting/photo",
+            json={"event_key": "2026test", "team_key": "frc100b", "image_base64": base64.b64encode(jpeg_bytes()).decode()},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        photo = response.json()["photo"]
+        self.assertTrue(photo.startswith("/media/pit_photos/2026test/frc100B/"))
+        self.assertEqual(response.json()["entry"]["team_key"], "frc100B")
+        response = self.client.post(
+            "/pit-scouting/photo/delete",
+            json={"event_key": "2026test", "team_key": "frc100b", "photo_path": photo},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["entry"]["photos"], [])
+
+    def test_bad_team_keys_are_rejected(self):
+        for bad in ("frc", "frc12345678", "frc100BB", "254", "frc100-b", "frcB"):
+            response = self.client.post(
+                "/pit-scouting", json={"event_key": "2026test", "team_key": bad, "payload": {"a": 1}}
+            )
+            self.assertEqual(response.status_code, 400, bad)
+
     def _upload(self, data: bytes) -> Path:
         response = self.client.post(
             "/pit-scouting/photo",
