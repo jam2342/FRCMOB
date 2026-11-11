@@ -1,10 +1,10 @@
 import { ScheduleStatus } from './ScheduleStatus';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getEventTeamsIntel, listPitEntries } from '../../api';
+import { getEventTeamsIntel, listPitEntries, type WorkspaceMemberRecord } from '../../api';
 import { EventPicker } from '../../components/EventPicker';
 import { SurfaceCard } from '../../components/ui/SurfaceCard';
-import { Button, Stat } from '../../components/ui/primitives';
+import { Button } from '../../components/ui/primitives';
 import { useEventKeyParam } from '../../hooks/useEventKeyParam';
 import { NextAssignment } from './NextAssignment';
 import { coverageSummary, myAssignments } from './teamAssignments';
@@ -14,6 +14,7 @@ import { useAssignmentBadge } from '../../hooks/useAssignmentBadge';
 import { TeamCalendarLinks } from '../calendar/TeamCalendarLinks';
 import { ScoutThanksNote } from '../scoutThanks/ScoutThanksNote';
 import { pitProgress } from './pitProgress';
+import { LeaderDashboard } from './LeaderDashboard';
 import styles from './TeamScoutingCard.module.css';
 
 const EVENT_STORAGE_KEY = 'scouting_center_event_key';
@@ -46,7 +47,7 @@ function usePitProgress(eventKey: string) {
 
 // My Team's bridge into event scouting: leaders see coverage and a way to
 // assign, members see what they're scouting next.
-export function TeamScoutingCard() {
+export function TeamScoutingCard({ members }: { members?: WorkspaceMemberRecord[] } = {}) {
   const { eventKey, eventInput, setEventInput, commitInput, selectEvent } = useEventKeyParam(EVENT_STORAGE_KEY);
   const [changingEvent, setChangingEvent] = useState(false);
   const room = useTeamRoom(eventKey);
@@ -93,7 +94,19 @@ export function TeamScoutingCard() {
   const title = `Scouting at ${room.eventName || 'this event'}`;
   const loading = !snapshot && room.status === 'loading';
 
+  const slotsReady = Boolean(snapshot && room.schedule !== null && !room.scheduleError);
+  const showDashboard = room.isLeader || session?.me.role === 'leader';
+
   return (
+    <>
+    {showDashboard ? (
+      <LeaderDashboard
+        eventKey={eventKey}
+        members={members}
+        slots={slotsReady ? { open: coverage.upcomingSlots - coverage.assignedSlots, needNewScout: coverage.needsReassignment } : null}
+        pit={pit}
+      />
+    ) : null}
     <SurfaceCard tourId="myteam-scouting"
       title={title}
       subtitle={room.isLeader ? 'You can assign matches to everyone on your team.' : undefined}
@@ -110,18 +123,6 @@ export function TeamScoutingCard() {
 
         {snapshot && room.schedule !== null && !room.scheduleError && room.isLeader ? (
           <>
-            <div className={styles.stats}>
-              <Stat
-                label="Slots assigned"
-                value={`${coverage.assignedSlots} / ${coverage.upcomingSlots}`}
-                tone={coverage.upcomingSlots > 0 && coverage.assignedSlots >= coverage.upcomingSlots ? 'success' : 'default'}
-                size="sm"
-              />
-              <Stat label="Scouts" value={snapshot.members.length} size="sm" />
-              {coverage.needsReassignment > 0 ? (
-                <Stat label="Need a new scout" value={coverage.needsReassignment} tone="warning" size="sm" />
-              ) : null}
-            </div>
             {coverage.upcomingSlots === 0 && room.schedule ? (
               <p className={styles.note}>No upcoming matches at this event right now.</p>
             ) : null}
@@ -137,6 +138,7 @@ export function TeamScoutingCard() {
           />
         ) : null}
         <nav className={styles.links} aria-label="Team scouting tools">
+          {room.isLeader ? null : (<>
           <Link className={styles.linkRow} to={`/scouting/pit${eventQuery}`}>
             <span className={styles.linkName}>Pit scouting</span>
             <span className={styles.linkMeta}>{pit ? `${pit.done}/${pit.total} teams` : 'Open'}</span>
@@ -147,6 +149,7 @@ export function TeamScoutingCard() {
             <span className={styles.linkMeta}>Scouting gaps</span>
             <span className={styles.arrow} aria-hidden="true">›</span>
           </Link>
+          </>)}
           <Link className={styles.linkRow} to={`/compare/picklist${eventQuery}`}>
             <span className={styles.linkName}>Picklist</span>
             <span className={styles.linkMeta}>Pick order</span>
@@ -159,5 +162,6 @@ export function TeamScoutingCard() {
         {teamNumber ? <TeamCalendarLinks eventKey={eventKey} teamNumber={teamNumber} /> : null}
       </div>
     </SurfaceCard>
+    </>
   );
 }

@@ -13,8 +13,9 @@ import { PitScoutingPage } from './PitScoutingPage';
 import { QueuedForSyncError, upsertPitEntry } from '../api';
 import { readPitDraft } from '../features/offline/pitDrafts';
 const queue = vi.hoisted(() => ({ rows: [] as Array<{id: string; url: string; body: string; queuedAt: string; failure?: {reason: string}}> }));
+vi.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => ({ online: true }) }));
 vi.mock('../utils/offlineQueue', () => ({ listQueuedMutations: vi.fn(async () => queue.rows) }));
-vi.mock('../api', async original => ({ ...(await original<typeof import('../api')>()), getEventTeamsIntel: vi.fn(async () => ({ teams: [{team_key:'frc254', team_number:254}] })), listPitEntries: vi.fn(async () => ({entries:[]})), upsertPitEntry: vi.fn() }));
+vi.mock('../api', async original => ({ ...(await original<typeof import('../api')>()), getEventTeamsIntel: vi.fn(async () => ({ teams: [{team_key:'frc254', team_number:254}] })), listPitEntries: vi.fn(async () => ({entries:[]})), upsertPitEntry: vi.fn(), getPitAssignments: vi.fn(async () => []) }));
 it('keeps a rejected specific save and its draft after pending count reaches zero', async () => {
   Element.prototype.scrollIntoView = vi.fn();
   vi.mocked(upsertPitEntry).mockImplementation(async payload => {
@@ -22,7 +23,7 @@ it('keeps a rejected specific save and its draft after pending count reaches zer
     throw new QueuedForSyncError('queued');
   });
   render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
-  fireEvent.click(await screen.findByRole('button', {name: /254/}));
+  fireEvent.click(await screen.findByRole('button', {name: /^Team 254/}));
   const input = screen.getAllByRole('spinbutton')[0];
   fireEvent.change(input, {target:{value:'5'}});
   fireEvent.click(screen.getByRole('button', {name:'Save'}));
@@ -40,7 +41,7 @@ it('confirms only the specific save even with unrelated items pending', async ()
     throw new QueuedForSyncError('queued');
   });
   render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
-  fireEvent.click(await screen.findByRole('button',{name:/254/}));
+  fireEvent.click(await screen.findByRole('button',{name:/^Team 254/}));
   fireEvent.change(screen.getAllByRole('spinbutton')[0],{target:{value:'5'}});
   fireEvent.click(screen.getByRole('button',{name:'Save'}));
   await screen.findByText(/Saved #254 on this phone/);
@@ -48,23 +49,39 @@ it('confirms only the specific save even with unrelated items pending', async ()
   await screen.findByText('Synced with your team.');
   expect(readPitDraft(1,'2026old','frc254')).toBeNull();
 });
-it('collapses the phone team grid and reopens its completion, photo and unscouted controls', async () => {
+it('collapses the phone queue and reopens its tabs, search and done list', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   const { getEventTeamsIntel, listPitEntries } = await import('../api');
   vi.mocked(getEventTeamsIntel).mockResolvedValueOnce({ teams: [{team_key:'frc254',team_number:254}, {team_key:'frc118',team_number:118}] } as never);
   vi.mocked(listPitEntries).mockResolvedValueOnce({ entries: [{team_key:'frc118',payload:{notes:'Done'},photos:[{}]}] } as never);
   render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
-  fireEvent.click(await screen.findByRole('button', {name:'Team 254'}));
-  expect(screen.queryByRole('button', {name:/Team 118, completed, has photos/})).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', {name:/^Team 254/}));
+  expect(screen.queryByRole('tab', {name:/Done/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name:'Change team'}));
-  // Unscouted only starts on, so the finished team is hidden until it is turned off.
-  expect(screen.getByLabelText('Unscouted only')).toBeChecked();
-  expect(screen.queryByRole('button', {name:/Team 118/})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText('Unscouted only'));
-  expect(screen.getByRole('button', {name:'Team 118, completed, has photos'})).toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText('Unscouted only'));
-  expect(screen.queryByRole('button', {name:/Team 118, completed/})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', {name:'Team 254'}));
+  // Left is the default view, so the finished team waits in Done.
+  expect(screen.getByRole('tab', {name:'Left, 1'})).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('button', {name:/^Team 118/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', {name:'Done, 1'}));
+  expect(screen.getByRole('button', {name:'Team 118, not assigned, done, has photos'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', {name:'Left, 1'}));
+  fireEvent.click(screen.getByRole('button', {name:/^Team 254/}));
   expect(screen.getByRole('button', {name:'Change team'})).toBeInTheDocument();
-  expect(screen.queryByLabelText('Unscouted only')).not.toBeInTheDocument();
+  expect(screen.queryByRole('tab', {name:/Left/})).not.toBeInTheDocument();
+});
+it('phones: one event line with progress and Change, the picker only on demand, and no strip once a team is open', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { getEventTeamsIntel, listPitEntries } = await import('../api');
+  vi.mocked(getEventTeamsIntel).mockResolvedValueOnce({ teams: [{team_key:'frc254',team_number:254}, {team_key:'frc118',team_number:118}] } as never);
+  vi.mocked(listPitEntries).mockResolvedValueOnce({ entries: [{team_key:'frc118',payload:{notes:'Done'},photos:[]}] } as never);
+  render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
+  await screen.findByRole('button', {name:/^Team 254/});
+  expect(screen.getByText('1/2 done')).toBeInTheDocument();
+  expect(screen.queryByText(/one entry per team/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name:'Load event'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Change'}));
+  expect(screen.getByRole('button', {name:'Load event'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'Close'}));
+  expect(screen.queryByRole('button', {name:'Load event'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:/^Team 254/}));
+  expect(screen.queryByText('1/2 done')).not.toBeInTheDocument();
 });

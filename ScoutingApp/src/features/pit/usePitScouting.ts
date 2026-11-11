@@ -5,7 +5,6 @@ import {
   getEventTeamsIntel,
   listPitEntries,
   upsertPitEntry,
-  uploadPitPhoto,
 } from '../../api';
 import type { PitScoutingEntry } from '../../api';
 import { PIT_FORM_SECTIONS } from '../../config/gameFields';
@@ -15,16 +14,16 @@ import { listQueuedMutations } from '../../utils/offlineQueue';
 import { hapticSuccess } from '../../utils/haptics';
 import { useWorkspace } from '../workspace/useWorkspace';
 import { readPitDraft, readPitDraftSavedAt, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../offline/pitDrafts';
+import { deleteQueuedPitPhoto, enqueuePitPhoto } from '../offline/pitPhotoQueue';
+import type { PitPhotoUploadedDetail } from '../offline/pitPhotoQueue';
+import { compressPhoto, isPhotoNetworkFailure, uploadPhotoBlob } from './pitPhotoFiles';
+import { usePitPhotoQueue } from './usePitPhotoQueue';
 import { hasPitEntry, nextUnscoutedTeam, teamNumber } from './pitTeams';
 import type { PitTeam } from './pitTeams';
 import type { PitSaveStatus } from './PitSaveBar';
 
 const STORAGE_KEY = 'scouting_center_event_key';
 const SCOUT_PROFILE_STORAGE = 'scouting_manual_profile_v1';
-/** Photos get downscaled client-side so uploads stay small on venue WiFi. */
-const PHOTO_MAX_DIMENSION = 1280;
-const PHOTO_JPEG_QUALITY = 0.82;
-
 type StatusNote = { tone: 'saved' | 'queued' | 'warn'; text: string };
 type SaveOutcome = 'saved' | 'queued' | 'failed';
 
@@ -33,25 +32,6 @@ function readScoutProfile(): string {
     return String(window.localStorage.getItem(SCOUT_PROFILE_STORAGE) || '').trim();
   } catch {
     return '';
-  }
-}
-
-/** Downscale + re-encode a photo file to a JPEG data URL. */
-async function compressPhoto(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  try {
-    const scale = Math.min(1, PHOTO_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Canvas unavailable');
-    context.drawImage(bitmap, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY);
-  } finally {
-    bitmap.close();
   }
 }
 
@@ -84,6 +64,7 @@ export function usePitScouting() {
   const contextRef = useRef({ eventKey, selectedTeam });
   contextRef.current = { eventKey, selectedTeam };
 
+  const { waiting: waitingPhotos } = usePitPhotoQueue(workspaceId, eventKey);
   const selectedEntry = selectedTeam ? entriesByTeam.get(selectedTeam) ?? null : null;
   const scoutName = memberName || readScoutProfile() || undefined;
 
@@ -298,36 +279,64 @@ export function usePitScouting() {
   async function addPhoto(file: File | null) {
     if (!file || !eventKey || !selectedTeam) return;
     if (!file.type.startsWith('image/')) { setErrorText('Choose an image file, such as a JPG or PNG.'); return; }
+    const team = selectedTeam;
     setUploadingPhoto(true);
     setErrorText('');
     try {
-      let dataUrl: string;
-      try { dataUrl = await compressPhoto(file); } catch { throw new Error('Could not read this photo. Choose another JPG or PNG and try again.'); }
-      const result = await uploadPitPhoto({
-        event_key: eventKey,
-        team_key: selectedTeam,
-        scout_profile: scoutName,
-        image_base64: dataUrl,
-      });
-      setEntriesByTeam((prev) => {
-        const next = new Map(prev);
-        next.set(result.entry.team_key.toLowerCase(), result.entry);
-        return next;
-      });
-      hapticSuccess();
-      setNote({ tone: 'saved', text: `Photo added for #${teamNumber(selectedTeam)}.` });
+      let blob: Blob;
+      try { blob = await compressPhoto(file); } catch { throw new Error('Could not read this photo. Choose another JPG or PNG and try again.'); }
+      // No signal: keep the shot on this phone and upload it when the connection is back.
+      const keepOnPhone = async () => {
+        const queued = await enqueuePitPhoto({ blob, workspaceId, eventKey, teamKey: team, scoutProfile: scoutName });
+        if (queued.ok) {
+          hapticSuccess();
+          setNote({ tone: 'queued', text: `Photo saved on this phone for #${teamNumber(team)}.` });
+        } else setErrorText(queued.message);
+      };
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) { await keepOnPhone(); return; }
+      try {
+        const result = await uploadPhotoBlob({ blob, eventKey, teamKey: team, scoutProfile: scoutName });
+        setEntriesByTeam((prev) => {
+          const next = new Map(prev);
+          next.set(result.entry.team_key.toLowerCase(), result.entry);
+          return next;
+        });
+        hapticSuccess();
+        setNote({ tone: 'saved', text: `Photo added for #${teamNumber(team)}.` });
+      } catch (err) {
+        if (!isPhotoNetworkFailure(err)) throw err;
+        await keepOnPhone();
+      }
     } catch (err) {
-      // Photos aren't queued for later like notes are (they're megabytes each), so say
-      // plainly that this one didn't stick, instead of a browser "Failed to fetch".
-      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-      const network = err instanceof TypeError || /failed to fetch|load failed|network/i.test((err as Error).message || '');
-      setErrorText(offline || network
-        ? "No connection, so this photo wasn't saved. Photos need signal; take it again once you're back online. Your notes still save on this phone."
-        : (err as Error).message || 'Failed to upload photo.');
+      setErrorText((err as Error).message || 'Failed to upload photo.');
     } finally {
       setUploadingPhoto(false);
     }
   }
+
+  async function deleteWaitingPhoto(id: string) {
+    if (!window.confirm('Delete this photo? It has not uploaded yet.')) return;
+    if (!(await deleteQueuedPitPhoto(id))) setErrorText('Could not remove this photo from the phone. Try again.');
+  }
+
+  // A queued photo that uploads (this page open or not) joins the team's saved photos.
+  useEffect(() => {
+    const onUploaded = (event: Event) => {
+      const detail = (event as CustomEvent<PitPhotoUploadedDetail>).detail;
+      const entry = detail?.entry as PitScoutingEntry | undefined;
+      if (!entry || detail.item.eventKey !== contextRef.current.eventKey) return;
+      setEntriesByTeam((prev) => {
+        const next = new Map(prev);
+        next.set(entry.team_key.toLowerCase(), entry);
+        return next;
+      });
+      if (detail.item.teamKey === contextRef.current.selectedTeam) {
+        setNote({ tone: 'saved', text: `Photo uploaded for #${teamNumber(detail.item.teamKey)}.` });
+      }
+    };
+    window.addEventListener('pitphotos:uploaded', onUploaded);
+    return () => window.removeEventListener('pitphotos:uploaded', onUploaded);
+  }, []);
 
   async function deletePhoto(photoPath: string) {
     if (!eventKey || !selectedTeam) return;
@@ -350,7 +359,7 @@ export function usePitScouting() {
 
   /* ---- Save bar status ---------------------------------------------- */
 
-  const saveStatus: PitSaveStatus = (() => {
+  const baseStatus: PitSaveStatus = (() => {
     if (errorText) return { tone: 'error', text: errorText };
     if (savingForm) return { tone: 'saving', text: 'Saving…' };
     if (note) return note;
@@ -361,12 +370,17 @@ export function usePitScouting() {
     }
     return hasPitEntry(selectedEntry) ? { tone: 'idle', text: 'Saved. No changes since.' } : { tone: 'idle', text: 'Not saved yet.' };
   })();
+  const teamWaiting = waitingPhotos.filter((photo) => photo.teamKey === selectedTeam).length;
+  // Photos still on the phone are part of "did it save?", so they ride along on the same line.
+  const saveStatus: PitSaveStatus = teamWaiting > 0 && baseStatus.tone !== 'error' && baseStatus.tone !== 'saving'
+    ? { tone: baseStatus.tone === 'saved' || baseStatus.tone === 'idle' ? 'queued' : baseStatus.tone, text: `${baseStatus.text.replace(/\.$/, '')} · ${teamWaiting} photo${teamWaiting === 1 ? '' : 's'} waiting to upload` }
+    : baseStatus;
 
   return {
     eventKey, eventInput, setEventInput, commitInput, selectEvent,
     teams, entriesByTeam, selectedTeam, selectedEntry, form,
     formDirty, draftStored, serverNotesReady, loading, savingForm, uploadingPhoto,
     errorText, completion, saveStatus,
-    setField, selectTeamForEditing, save, saveAndNext, addPhoto, deletePhoto,
+    setField, selectTeamForEditing, save, saveAndNext, addPhoto, deletePhoto, waitingPhotos, deleteWaitingPhoto,
   };
 }

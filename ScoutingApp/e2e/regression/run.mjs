@@ -47,6 +47,7 @@ if (!process.env.REGRESSION_BASE) {
 
 // Imported after REGRESSION_BASE is settled: the checks read it when they load.
 const { launch } = await import('./lib.mjs');
+const { unmockedCalls } = await import('./mocks/room.mjs');
 const suites = {
   scouting: (await import('./scouting.mjs')).default,
   navigation: (await import('./navigation.mjs')).default,
@@ -62,13 +63,18 @@ const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 6
 
 async function attempt(browser, item) {
   let timer;
+  unmockedCalls.length = 0;
   try {
     await Promise.race([
       item.run(browser),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`took over ${CHECK_TIMEOUT_MS / 1000}s`)), CHECK_TIMEOUT_MS); }),
     ]);
+    // The fake server is behind the API: an unanswered private call otherwise surfaces as a 401 and a sign-out far from the cause.
+    if (unmockedCalls.length) throw new Error(`unmocked API calls: ${[...new Set(unmockedCalls)].join(', ')}`);
     return null;
   } catch (error) {
+    // A check that failed for another reason may still have hit an unmocked route, which is the likelier cause.
+    if (unmockedCalls.length && !/unmocked API calls/.test(error.message)) error.message += ` (also unmocked API calls: ${[...new Set(unmockedCalls)].join(', ')})`;
     let index = 0;
     for (const ctx of browser.contexts()) {
       for (const page of ctx.pages()) {
@@ -91,6 +97,7 @@ for (const item of checks) {
   // Live data and timing can blip once; a real regression fails twice.
   if (error) {
     retried = true;
+    console.log(`first try failed: ${item.name}\n                 ${error.message.split('\n')[0]}`);
     error = await attempt(browser, item);
   }
   const seconds = Math.round((Date.now() - started) / 1000);

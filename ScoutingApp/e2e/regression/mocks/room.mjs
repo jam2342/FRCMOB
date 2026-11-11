@@ -1,3 +1,6 @@
+// Every private-API call no mock answered, so the runner can fail the check that made it.
+export const unmockedCalls = [];
+
 // Stateful mock of the private workspace and team-room API, shaped like the backend
 // (routes_workspaces.py, routes_scouting_rooms.py). Public reads go to the real data.
 export function makeServer(opts = {}) {
@@ -57,7 +60,7 @@ export function makeServer(opts = {}) {
     if (rm && m === 'GET') return json({ ...wsState(), access: access() });
     if (p.startsWith('/workspaces') || p.startsWith('/scouting/rooms') || p.startsWith('/picklists') || p.startsWith('/pit-scouting') || p.startsWith('/push')) {
       if (state.handleExtra) { const r = await state.handleExtra(route, p, m, url, json); if (r) return; }
-      state.unmocked = (state.unmocked || []); state.unmocked.push(m + ' ' + p);
+      state.unmocked = (state.unmocked || []); state.unmocked.push(m + ' ' + p); unmockedCalls.push(m + ' ' + p);
       return route.fallback();
     }
     return route.fallback();

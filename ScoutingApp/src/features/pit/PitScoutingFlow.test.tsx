@@ -6,7 +6,8 @@ vi.mock('../../components/PageViewBar', () => ({ PageViewBar: () => null }));
 vi.mock('../../components/EventPicker', () => ({ EventPicker: () => null }));
 vi.mock('../workspace/WorkspaceGate', () => ({ WorkspaceGate: ({ children }: { children: React.ReactNode }) => children }));
 const member = vi.hoisted(() => ({ name: 'Priya' }));
-vi.mock('../workspace/useWorkspace', () => ({ useWorkspace: () => ({ workspace: { id: 1 }, me: { role: 'member', display_name: member.name } }) }));
+vi.mock('../workspace/useWorkspace', () => ({ useWorkspace: () => ({ workspace: { id: 1 }, me: { id: 7, role: 'member', display_name: member.name } }) }));
+vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => ({ online: true }) }));
 vi.mock('../../utils/offlineQueue', () => ({ listQueuedMutations: vi.fn(async () => []) }));
 vi.mock('../../api', async original => ({
   ...(await original<typeof import('../../api')>()),
@@ -17,6 +18,8 @@ vi.mock('../../api', async original => ({
   ] })),
   listPitEntries: vi.fn(async () => ({ entries: [{ team_key: 'frc200', payload: { notes: 'done' }, photos: [], updated_at: null }] })),
   upsertPitEntry: vi.fn(),
+  getPitAssignments: vi.fn(async () => []),
+  claimPitTeam: vi.fn(),
 }));
 import { PitScoutingPage } from '../../pages/PitScoutingPage';
 import { QueuedForSyncError, upsertPitEntry } from '../../api';
@@ -28,21 +31,23 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks(); });
 
-const renderPage = () => render(<MemoryRouter initialEntries={['/?event=2026old']}><PitScoutingPage /></MemoryRouter>);
+const renderPage = (search = '?event=2026old') => render(<MemoryRouter initialEntries={['/' + search]}><PitScoutingPage /></MemoryRouter>);
 
-it('lists unscouted teams first with nicknames, and a check plus screen reader text on done ones', async () => {
+it('lists the teams still to do as queue rows, with who has them and a screen reader sentence', async () => {
   renderPage();
   await screen.findByRole('button', { name: /Team 100/ });
-  fireEvent.click(screen.getByLabelText('Unscouted only'));
-  const cells = screen.getAllByRole('button', { name: /^Team \d+/ }).map((cell) => cell.getAttribute('aria-label'));
-  expect(cells).toEqual(['Team 100, Alpha Bots', 'Team 300, Charlie Crew', 'Team 200, Bravo, completed']);
+  const rows = screen.getAllByRole('button', { name: /^Team \d+/ }).map((row) => row.getAttribute('aria-label'));
+  expect(rows).toEqual(['Team 100, Alpha Bots, not assigned, to do', 'Team 300, Charlie Crew, not assigned, to do']);
   expect(screen.getByText('Charlie Crew')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Done, 1' }));
+  expect(screen.getAllByRole('button', { name: /^Team \d+/ }).map((row) => row.getAttribute('aria-label'))).toEqual(['Team 200, Bravo, not assigned, done']);
 });
 
-it('starts on unscouted only and filters by number or nickname', async () => {
+it('opens on Left when nothing is assigned to me, with counts on the tabs, and filters by number or nickname', async () => {
   renderPage();
   await screen.findByRole('button', { name: /Team 100/ });
-  expect(screen.getByLabelText('Unscouted only')).toBeChecked();
+  expect(screen.getByRole('tab', { name: 'Left, 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('tab', { name: 'Mine, 0' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Team 200/ })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Find a team'), { target: { value: 'charlie' } });
   expect(screen.getAllByRole('button', { name: /^Team \d+/ })).toHaveLength(1);
@@ -50,7 +55,7 @@ it('starts on unscouted only and filters by number or nickname', async () => {
   fireEvent.change(screen.getByLabelText('Find a team'), { target: { value: '10' } });
   expect(screen.getByRole('button', { name: /Team 100/ })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Find a team'), { target: { value: 'zzz' } });
-  expect(screen.getByText('No team matches "zzz".')).toBeInTheDocument();
+  expect(screen.getByText('No team matches "zzz" here.')).toBeInTheDocument();
 });
 
 it('shows the save result in the pinned bar and credits the signed-in member', async () => {
@@ -120,4 +125,20 @@ it('answers yes and no with toggle buttons that clear on a second tap', async ()
   expect(yes).not.toBeChecked();
   fireEvent.click(within(group).getByRole('radio', { name: 'No' }));
   expect(within(group).getByRole('radio', { name: 'No' })).not.toBeChecked();
+});
+
+it('a ?team= link opens that team without claiming it, and ignores bad or unknown keys', async () => {
+  const { claimPitTeam } = await import('../../api');
+  renderPage('?event=2026old&team=frc300');
+  expect(await screen.findByRole('heading', { name: 'Team 300' })).toBeInTheDocument();
+  expect(claimPitTeam).not.toHaveBeenCalled();
+  cleanup();
+  localStorage.clear();
+  renderPage('?event=2026old&team=frc999');
+  await screen.findByRole('button', { name: /^Team 100/ });
+  expect(screen.queryByRole('heading', { name: /^Team 999/ })).not.toBeInTheDocument();
+  cleanup();
+  renderPage('?event=2026old&team=300%3Cscript%3E');
+  await screen.findByRole('button', { name: /^Team 100/ });
+  expect(screen.queryByRole('heading', { name: 'Team 300' })).not.toBeInTheDocument();
 });

@@ -136,3 +136,53 @@
   color: var(--color-accent-text);
   font-weight: var(--font-weight-bold);
 }
+
+/* Pit answers are words, so they wrap where the figures above stay on one line. */
+.sideTable .pitCell {
+  white-space: normal;
+  min-width: 5rem;
+  text-align: right;
+}
+
+.stackTeam {
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-width-1) solid var(--color-border);
+}
+
+.stackTeam:last-child {
+  border-bottom: 0;
+}
+
+.stackHead {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.stackList {
+  margin: 0;
+}
+
+.stackRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.stackRow dt {
+  flex: 0 1 auto;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.stackRow dd {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}

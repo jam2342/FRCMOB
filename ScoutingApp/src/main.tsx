@@ -3,6 +3,8 @@ import './platform/storageGuard';
 import { bootstrapNativeEphemeralAccess } from './api';
 import { bootstrapWorkspaceSession, getWorkspaceSession } from './features/workspace/workspaceSession';
 import { startPitDraftCleanup } from './features/offline/pitDrafts';
+import { startPitPhotoSync } from './features/offline/pitPhotoQueue';
+import { uploadQueuedPitPhoto } from './features/pit/pitPhotoFiles';
 import { bootstrapNativeQueue } from './utils/offlineQueue';
 import { isNativeApp } from './platform/runtime';
 import { startNativeLifecycle } from './platform/nativeLifecycle';
@@ -67,6 +69,8 @@ async function bootstrap() {
   // Auto-replay queued mutations when the device comes back online.
   startAutoFlush();
   startPitDraftCleanup(() => getWorkspaceSession()?.workspace.id ?? null);
+  // Robot photos taken offline upload once the phone has signal again.
+  startPitPhotoSync(uploadQueuedPitPhoto, () => getWorkspaceSession()?.workspace.id ?? null);
   // Flush finished on-device match breakdowns to the server on reconnect.
   startOnDeviceSyncAutoFlush();
   // Warm the shared event-search index once the browser is idle.

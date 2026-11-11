@@ -1,82 +1,5 @@
 /* Pit scouting styles */
 
-.pit-picker-tools {
-  display: grid;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.pit-picker-empty {
-  margin: 0;
-  padding: var(--space-3) 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-base);
-}
-
-.pit-team-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: var(--space-2);
-}
-
-.pit-team-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  border: var(--border-default);
-  background: color-mix(in srgb, var(--color-surface-soft) 88%, transparent);
-  color: var(--color-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  min-height: 52px;
-  transition:
-    background var(--motion-fast) var(--motion-ease),
-    border-color var(--motion-fast) var(--motion-ease);
-}
-
-.pit-team-cell--done {
-  border-color: color-mix(in srgb, var(--color-success) 62%, var(--color-border));
-  background: color-mix(in srgb, var(--color-success-soft) 58%, var(--color-surface-soft));
-}
-
-.pit-team-cell--active {
-  border-color: color-mix(in srgb, var(--color-info) 74%, var(--color-border));
-  background: var(--color-info-soft);
-}
-
-.pit-team-cell__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--font-size-md);
-}
-
-.pit-team-cell__mark {
-  flex: none;
-  width: 1rem;
-  height: 1rem;
-  color: var(--color-text-muted);
-}
-
-.pit-team-cell__mark--done {
-  color: var(--color-success-text);
-}
-
-.pit-team-cell__name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
 /* Stays under the top bar while the form scrolls, so "Change team" is never a long scroll away. */
 .pit-selected-team {
   position: sticky;
@@ -88,6 +11,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -99,7 +23,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex: 1 1 0;
+  /* A basis, not 0: on a narrow phone the buttons drop to their own row instead of crushing the team number. */
+  flex: 1 1 7rem;
 }
 
 /* The pinned strip must stay slim on a 250px phone: the nickname is already in the form's heading. */
@@ -119,99 +44,6 @@
   white-space: nowrap;
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
-}
-
-/* Tiles stretch from 88px so two always fit a 250px phone (198px of room); the cap keeps them from ballooning on desktop. */
-.pit-photos {
-  display: grid;
-  max-width: 30rem;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-}
-
-.pit-photo-item {
-  position: relative;
-  margin: 0;
-}
-
-.pit-photo-item img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  display: block;
-}
-
-/* Two classes: touch-polish.css gives every button min-height 44px, and the tap area is the ::before. */
-.pit-photo-item .pit-photo-delete {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  min-height: 0;
-  min-width: 0;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--color-danger) 50%, transparent);
-  background: color-mix(in srgb, var(--color-danger) 78%, var(--color-bg));
-  color: var(--color-text);
-  cursor: pointer;
-  line-height: 1;
-}
-
-.pit-photo-delete svg {
-  width: 14px;
-  height: 14px;
-}
-
-@media (pointer: coarse) {
-  .pit-photo-delete::before {
-    content: '';
-    position: absolute;
-    inset: -10px;
-  }
-}
-
-.pit-photo-add {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 1;
-  border-radius: var(--radius-md);
-  border: 2px dashed color-mix(in srgb, var(--color-border) 90%, transparent);
-  background: color-mix(in srgb, var(--color-surface-soft) 80%, transparent);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font-weight: 600;
-  transition:
-    background var(--motion-fast) var(--motion-ease),
-    border-color var(--motion-fast) var(--motion-ease),
-    color var(--motion-fast) var(--motion-ease);
-}
-
-.pit-photo-add.busy {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.pit-photo-add input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.pit-photo-add:focus-within {
-  outline: 2px solid var(--color-text);
-  outline-offset: 3px;
 }
 
 .pit-field select { min-height: 44px; }
@@ -339,6 +171,10 @@
   display: grid;
   grid-template-columns: 1fr 1.4fr;
   gap: var(--space-2);
+}
+
+.pit-save-bar__actions--back {
+  grid-template-columns: auto 1fr 1.4fr;
 }
 
 .pit-save-bar__actions > * {

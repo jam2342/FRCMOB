@@ -78,8 +78,9 @@ it('keeps removal errors inside the dialog across background refreshes', async (
   vi.mocked(removeWorkspaceMember).mockRejectedValueOnce(new Error('Could not remove Sam. Try again.'));
   renderPage();
   await screen.findByText('Sam');
-  fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(screen.getByRole('button', { name: /Sam, member/ }));
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove from team' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Remove Sam?' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('Could not remove Sam. Try again.');
   await act(async () => window.dispatchEvent(new Event('focus')));

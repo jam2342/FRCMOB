@@ -1,0 +1,272 @@
+/* Step strip: the current step spells itself out, the others shrink to a number. */
+.steps {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.step {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-2);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--control-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+
+.stepCurrent {
+  flex: 1 1 0;
+  min-width: 0;
+  border-color: var(--color-accent);
+  background: var(--control-bg-active);
+  color: var(--color-text);
+}
+
+.stepText {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .step:hover:not(.stepCurrent) {
+    background: var(--control-bg-hover);
+  }
+}
+
+.step:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Photos: camera first, one big target, then the strip. */
+.photos {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 30rem;
+  margin-bottom: var(--space-4);
+}
+
+.photos .takePhoto {
+  min-height: 56px;
+  font-size: var(--font-size-md);
+}
+
+.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: var(--space-2);
+  max-width: 30rem;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumb {
+  position: relative;
+  min-width: 0;
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+/* A label with an icon, so "not uploaded yet" never rests on colour alone. */
+.waitingTag {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  color: var(--color-info-text);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+}
+
+.waitingTag svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+/* Two classes beat touch-polish's 44px button minimum; the tap area is the ::before. */
+.thumb .thumbDelete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 50%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 78%, var(--color-bg));
+  color: var(--color-text);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.thumbDelete svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (pointer: coarse) {
+  .thumbDelete::before {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+}
+
+/* The card sits under the pinned team strip, so scrolling to it must stop short of that strip. */
+.card {
+  scroll-margin-top: 56px;
+}
+
+/* On a phone the step strip already names the page, so the section box gives its space back. */
+.flat.flat {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.flat legend {
+  padding: 0 0 var(--space-3);
+}
+
+/* Choices are thumb targets with a visible edge, not a dropdown; the chosen one takes the accent. */
+.choice {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--control-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.choiceOn {
+  border-color: var(--color-accent);
+  background: var(--control-bg-active);
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+@media (hover: hover) {
+  .choice:hover:not(.choiceOn) {
+    background: var(--control-bg-hover);
+    color: var(--color-text);
+  }
+}
+
+.choice:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.number {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.number :global(.pit-unit) {
+  align-self: center;
+}
+
+.numberButton {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0;
+  border: var(--border-width-1) solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .numberButton:hover:not(:disabled) {
+    background: var(--control-bg-hover);
+  }
+}
+
+.numberButton:active:not(:disabled) {
+  background: var(--control-bg-active);
+}
+
+.numberButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.numberButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.numberValue {
+  flex: 1;
+  min-width: 0;
+  max-width: 9rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.numberValue::-webkit-outer-spin-button,
+.numberValue::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+@media (max-width: 340px) {
+  .step {
+    padding: 0 var(--space-1);
+    font-size: var(--font-size-sm);
+  }
+}

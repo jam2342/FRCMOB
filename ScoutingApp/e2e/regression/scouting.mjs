@@ -5,7 +5,17 @@ import { makeServer } from './mocks/room.mjs';
 import { installPit } from './mocks/pit.mjs';
 import { installPick } from './mocks/picklist.mjs';
 
-const BOARD = '/#/scouting?event=2026arc&match=2026arc_qm1&team=frc971';
+// The pit form shows one step at a time on a phone; the notes box is on a later step.
+async function toNotesStep(page) {
+  for (let i = 0; i < 6 && !(await page.locator('textarea').count()); i += 1) {
+    const next = page.getByRole('button', { name: 'Next step' });
+    if (await next.count()) await next.tap();
+    // Let the step render (and a reopened team settle) before looking again.
+    await sleep(400);
+  }
+}
+
+const BOARD ='/#/scouting?event=2026arc&match=2026arc_qm1&team=frc971';
 const ROOM_ENTRIES = 'scouting_manual_entries_v2:w7';
 const LOCAL_ENTRIES = 'scouting_manual_entries_v2';
 const ANON_PROFILE = { scouting_manual_profile_v1: 'Alice' };
@@ -169,6 +179,7 @@ export default [
       await page.goto(`${BASE}/#/scouting/pit?event=2026arc`);
       await page.getByRole('button', { name: /^Team 971\b/ }).waitFor({ timeout: 30000 });
       await page.getByRole('button', { name: /^Team 971\b/ }).tap();
+      await toNotesStep(page);
       await page.locator('textarea').first().fill('Mine: swerve');
       await server.setOffline(ctx, true);
       await page.getByRole('button', { name: /^Save$/ }).first().tap();
@@ -185,6 +196,7 @@ export default [
       entry.updated_at = new Date().toISOString();
       await page.goto(`${BASE}/#/scouting/pit?event=2026arc`);
       const shown = await until(async () => {
+        await toNotesStep(page);
         const value = await page.locator('textarea').first().inputValue().catch(() => '');
         return value.includes('Bob:') ? value : '';
       }, { timeout: 20000, what: "the teammate's newer notes" });
