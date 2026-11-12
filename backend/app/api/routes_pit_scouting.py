@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -100,15 +100,6 @@ def _load_entry(db: Session, workspace_id: int, event_key: str, team_key: str) -
             models.PitScoutingEntry.team_key == team_key,
         )
     ).scalar_one_or_none()
-
-def _lock_entry(db: Session, workspace_id: int, event_key: str, team_key: str) -> None:
-    # There may be no row yet to lock, so first saves and first photos for the same team
-    # take a transaction lock on its key; otherwise both insert and one hits the unique index.
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(
-            text("SELECT pg_advisory_xact_lock(CAST(:ns AS integer), hashtext(:key))"),
-            {"ns": 0x50495445, "key": f"{workspace_id}:{event_key}:{team_key}"},
-        )
 
 def _detect_image_extension(data: bytes) -> str | None:
     for signature, extension in _IMAGE_SIGNATURES:
@@ -215,10 +206,10 @@ def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Sessi
     scout_profile = str(payload.scout_profile or "").strip()[:40] or actor.member.display_name
     answers = _normalize_payload(payload.payload)
 
-    # The lock serializes first saves on PostgreSQL; the retry covers anything that
-    # still loses the insert (the row then exists and is updated instead).
+    # require_workspace_writer holds the workspace row lock until commit, which already
+    # serializes first saves and photos (360 simultaneous ones across two workers, no
+    # error). The retry only matters if that lock ever goes: the loser updates instead.
     for attempt in (1, 2):
-        _lock_entry(db, actor.workspace_id, normalized_event, normalized_team)
         row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
         if row is None:
             row = models.PitScoutingEntry(
@@ -282,7 +273,6 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
             ),
         )
 
-    _lock_entry(db, actor.workspace_id, normalized_event, normalized_team)
     row = _load_entry(db, actor.workspace_id, normalized_event, normalized_team)
     if row is None:
         row = models.PitScoutingEntry(

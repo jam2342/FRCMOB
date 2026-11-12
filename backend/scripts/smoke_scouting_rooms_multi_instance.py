@@ -143,13 +143,18 @@ async def recv_until(
 
 
 async def run() -> None:
-    base_a = f"http://{HOST}:{PORT_A}"
-    base_b = f"http://{HOST}:{PORT_B}"
+    # SMOKE_BASE_A/SMOKE_BASE_B: two already-running instances (for example a throwaway
+    # multi-worker test server) instead of starting two local ones. They must share a
+    # database and Redis; the check creates its own "(delete me)"-style workspace.
+    external_a, external_b = os.environ.get("SMOKE_BASE_A"), os.environ.get("SMOKE_BASE_B")
+    base_a = external_a or f"http://{HOST}:{PORT_A}"
+    base_b = external_b or f"http://{HOST}:{PORT_B}"
 
     process_a = BackendProcess(PORT_A)
     process_b = BackendProcess(PORT_B)
-    process_a.start()
-    process_b.start()
+    if not (external_a and external_b):
+        process_a.start()
+        process_b.start()
 
     try:
         await wait_for_health(base_a)
@@ -213,13 +218,13 @@ async def run() -> None:
                 }
 
         ws_a_url = (
-            f"ws://{HOST}:{PORT_A}/scouting/rooms/{room_key}/ws"
+            f"{base_a.replace('http', 'ws', 1)}/scouting/rooms/{room_key}/ws"
             f"?scout_profile=ScoutA&client_id=client-a"
             f"&room_access={quote(access_by_profile['ScoutA']['token'], safe='')}"
             f"&workspace_access={quote(access_by_profile['ScoutA']['workspace'], safe='')}"
         )
         ws_b_url = (
-            f"ws://{HOST}:{PORT_B}/scouting/rooms/{room_key}/ws"
+            f"{base_b.replace('http', 'ws', 1)}/scouting/rooms/{room_key}/ws"
             f"?scout_profile=ScoutB&client_id=client-b"
             f"&room_access={quote(access_by_profile['ScoutB']['token'], safe='')}"
             f"&workspace_access={quote(access_by_profile['ScoutB']['workspace'], safe='')}"
