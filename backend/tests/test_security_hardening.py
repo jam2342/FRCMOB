@@ -91,6 +91,21 @@ class HealthDetailTests(unittest.TestCase):
         self.assertIn("env_ok", deep)
         self.assertNotIn("env_validation", deep)
 
+    def test_deep_health_names_the_commit_the_image_was_built_from(self):
+        import tempfile
+        from pathlib import Path
+
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        with tempfile.TemporaryDirectory() as folder:
+            build = Path(folder) / "BUILD_SHA"
+            with mock.patch("app.main._BUILD_SHA_FILE", build), mock.patch("app.main.SessionLocal"), mock.patch("app.main.redis.from_url"):
+                # No file (a local run): unknown, so the deploy workflow deploys to be sure.
+                self.assertIsNone(self.client.get("/health/deep").json()["build"])
+                build.write_text(sha + "\n")
+                self.assertEqual(self.client.get("/health/deep").json()["build"], sha)
+                build.write_text("not-a-sha")
+                self.assertIsNone(self.client.get("/health/deep").json()["build"])
+
     def test_admins_still_see_the_full_report(self):
         headers = {"X-Admin-Key": "test-admin-key-at-least-32-bytes-long"}
         health = self.client.get("/health", headers=headers).json()

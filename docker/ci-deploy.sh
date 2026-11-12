@@ -17,8 +17,9 @@ STATE=/home/ubuntu/frcmob-deploy
 COMPOSE=(sudo docker compose --env-file "$APP/.env" -f "$APP/docker/docker-compose.oci.yml" --profile tls)
 
 request="${SSH_ORIGINAL_COMMAND:-}"
-if [[ ! "$request" =~ ^deploy\ ([0-9a-f]{7,40})$ ]]; then
-  echo "refusing: expected 'deploy <sha>', got '${request:0:80}'" >&2
+# The full sha: the image records it (BUILD_SHA) and /health/deep reports it back.
+if [[ ! "$request" =~ ^deploy\ ([0-9a-f]{40})$ ]]; then
+  echo "refusing: expected 'deploy <40-character sha>', got '${request:0:80}'" >&2
   exit 2
 fi
 sha="${BASH_REMATCH[1]}"
@@ -63,6 +64,8 @@ find "$APP/backend/app" "$APP/backend/alembic" "$APP/backend/scripts" "$APP/back
 echo "== pruned $pruned file(s) no longer in the repo"
 
 echo "== build"
+# Baked into the image, so the running backend can say which commit it is.
+echo "$sha" > "$APP/backend/BUILD_SHA"
 "${COMPOSE[@]}" build backend
 echo "== migrate"
 "${COMPOSE[@]}" run --rm --no-deps backend python -m alembic upgrade head
@@ -78,8 +81,11 @@ if [[ "$caddy_before" != "$caddy_after" ]]; then
 fi
 
 echo "== health"
+# Healthy, and running this commit. A backend from before /health/deep reported its
+# build has no "build" key at all; that still counts, so older commits can be redeployed.
+is_this_build() { grep -q "\"build\":\"$sha\"" <<<"$1" || ! grep -q '"build":' <<<"$1"; }
 for _ in $(seq 1 30); do
-  if body=$(curl -fsS --max-time 10 http://127.0.0.1:8000/health/deep 2>/dev/null) && grep -q '"ok":true' <<<"$body"; then
+  if body=$(curl -fsS --max-time 10 http://127.0.0.1:8000/health/deep 2>/dev/null) && grep -q '"ok":true' <<<"$body" && is_this_build "$body"; then
     echo "$body"
     echo "$sha" > "$STATE/last_deployed_sha"
     echo "== deployed $sha"

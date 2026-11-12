@@ -576,6 +576,19 @@ def health(request: Request):
         "env_validation": env_report,
     }
 
+# The commit this image was built from: docker/ci-deploy.sh writes it before the build,
+# and the deploy workflow compares it with main to decide what still needs deploying.
+_BUILD_SHA_FILE = Path(__file__).resolve().parents[1] / "BUILD_SHA"
+
+
+def _build_sha() -> str | None:
+    try:
+        value = _BUILD_SHA_FILE.read_text().strip()
+    except OSError:
+        return None
+    return value if len(value) == 40 and all(c in "0123456789abcdef" for c in value) else None
+
+
 @app.get("/health/deep")
 def deep_health(request: Request):
     database_ok = False
@@ -607,6 +620,7 @@ def deep_health(request: Request):
         "database": bool(database_ok),
         "redis": bool(redis_ok),
         "env_ok": bool(env_report.get("ok")),
+        "build": _build_sha(),
     }
     if request_has_explicit_admin_credential(request):
         payload["env_validation"] = env_report

@@ -32,3 +32,6 @@ ScoutingApp/dist-native/
 # Local project guidance
 CLAUDE.md
 /AGENTS.md
+
+# Written on the VM by docker/ci-deploy.sh just before the image build.
+backend/BUILD_SHA

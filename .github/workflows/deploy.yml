@@ -28,17 +28,30 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2
-      - name: Backend changed?
+          fetch-depth: 0
+      - name: Backend changed since the live build?
         id: changed
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          # Tests alone change nothing on the server; a restart would only cost the season replay.
-          if git diff --name-only HEAD~1 HEAD | grep -E '^(backend/|docker/|\.dockerignore$)' | grep -qvE '^backend/tests/'; then
+          # Compare with what is actually running, not with the previous commit: a merge
+          # whose CI failed never deployed, and the next merge must still ship it.
+          live=$(curl -fsS --max-time 20 --retry 2 https://api.frcmob.com/health/deep \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin).get("build") or "")' 2>/dev/null || true)
+          head=$(git rev-parse HEAD)
+          if [ -z "$live" ] || ! git cat-file -e "${live}^{commit}" 2>/dev/null; then
+            echo "Live build unknown (${live:-none}); deploying to be sure."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          elif [ "$live" != "$head" ] && git merge-base --is-ancestor "$head" "$live"; then
+            # A late run for an older commit: the live build already contains it.
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Live build ${live:0:12} is newer than ${head:0:12}; nothing to deploy."
+          elif git diff --name-only "$live" "$head" | grep -E '^(backend/|docker/|\.dockerignore$)' | grep -qvE '^backend/tests/'; then
+            # Tests alone change nothing on the server; a restart would only cost the season replay.
+            echo "Backend changed since the live build ${live:0:12}."
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "No backend changes in $(git rev-parse --short HEAD); nothing to deploy."
+            echo "No backend changes since the live build ${live:0:12}; nothing to deploy."
           fi
       - name: Deploy to the VM
         if: steps.changed.outputs.deploy == 'true'
@@ -58,4 +71,10 @@ jobs:
         run: |
           body=$(curl -fsS --max-time 60 --retry 3 --retry-delay 10 https://api.frcmob.com/health/deep)
           echo "$body"
+          # The deploy only counts if the public API now runs this exact commit.
+          build=$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("build") or "")' "$body")
+          if [ "$build" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::api.frcmob.com reports build '${build:-none}', expected $(git rev-parse HEAD)"
+            exit 1
+          fi
           echo "$body" | grep -q '"ok":true'
