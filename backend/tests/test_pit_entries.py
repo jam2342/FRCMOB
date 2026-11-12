@@ -97,6 +97,69 @@ class PitEntryTests(unittest.TestCase):
             self.assertIn("weight_lbs", response.json()["detail"])
         self.assertEqual(self._rows(), [])
 
+    def _save(self, headers, payload=None, changes=None, team="frc254"):
+        body = {"event_key": EVENT, "team_key": team, "payload": payload or {}}
+        if changes is not None:
+            body["changes"] = changes
+        response = self.client.post("/pit-scouting", json=body, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["entry"]
+
+    def test_two_scouts_changing_different_answers_both_keep_theirs(self):
+        self._save(self.lead_h, changes={"drivetrain": {"to": "swerve"}})
+        # Alex opened the team before that save, saw nothing, and answered weight only.
+        entry = self._save(self.alex_h, payload={"weight_lbs": 112}, changes={"weight_lbs": {"to": 112}})
+        self.assertEqual(entry["payload"], {"drivetrain": "swerve", "weight_lbs": 112})
+        self.assertEqual(entry["conflicts"], [])
+
+    def test_the_same_answer_changed_differently_keeps_the_other_one_as_a_conflict(self):
+        self._save(self.lead_h, changes={"drivetrain": {"to": "swerve"}})
+        entry = self._save(self.alex_h, changes={"drivetrain": {"to": "tank"}})
+        self.assertEqual(entry["payload"], {"drivetrain": "tank"})
+        [conflict] = entry["conflicts"]
+        self.assertEqual({k: conflict[k] for k in ("field", "kept", "other", "other_by")}, {"field": "drivetrain", "kept": "tank", "other": "swerve", "other_by": "Lead"})
+        # Picking one (here keeping Alex's) settles it.
+        entry = self._save(self.lead_h, changes={"drivetrain": {"from": "tank", "to": "tank"}})
+        self.assertEqual(entry["conflicts"], [])
+        self.assertEqual(entry["payload"], {"drivetrain": "tank"})
+
+    def test_agreeing_or_unchanged_answers_are_not_conflicts(self):
+        self._save(self.lead_h, changes={"drivetrain": {"to": "swerve"}, "weight_lbs": {"to": None}})
+        # Same value from both, and a blank number vs no answer, are the same answer.
+        entry = self._save(self.alex_h, changes={"drivetrain": {"to": "swerve"}, "weight_lbs": {"from": None, "to": 90}})
+        self.assertEqual(entry["conflicts"], [])
+        self.assertEqual(entry["payload"], {"drivetrain": "swerve", "weight_lbs": 90})
+
+    def test_a_save_queued_offline_replays_as_a_merge(self):
+        # Alex opened the team when only drivetrain was known, went offline, changed notes.
+        self._save(self.lead_h, changes={"drivetrain": {"to": "swerve"}})
+        queued = {"notes": {"to": "climbs L2"}}
+        # Meanwhile the lead adds weight and changes the drivetrain.
+        self._save(self.lead_h, changes={"weight_lbs": {"to": 120}, "drivetrain": {"from": "swerve", "to": "tank"}})
+        entry = self._save(self.alex_h, payload={"drivetrain": "swerve", "notes": "climbs L2"}, changes=queued)
+        self.assertEqual(entry["payload"], {"drivetrain": "tank", "weight_lbs": 120, "notes": "climbs L2"})
+        self.assertEqual(entry["conflicts"], [])
+
+    def test_clearing_an_answer_removes_it_and_an_older_app_still_replaces(self):
+        self._save(self.lead_h, changes={"drivetrain": {"to": "swerve"}, "notes": {"to": "x"}})
+        entry = self._save(self.alex_h, changes={"notes": {"from": "x"}})
+        self.assertEqual(entry["payload"], {"drivetrain": "swerve"})
+        self._save(self.lead_h, changes={"drivetrain": {"to": "tank"}})
+        entry = self._save(self.alex_h, changes={"drivetrain": {"from": "swerve", "to": "mecanum"}})
+        self.assertEqual(len(entry["conflicts"]), 1)
+        # No "changes": the whole payload replaces, conflicts go with it.
+        entry = self._save(self.alex_h, payload={"weight_lbs": 1})
+        self.assertEqual(entry["payload"], {"weight_lbs": 1})
+        self.assertEqual(entry["conflicts"], [])
+
+    def test_bad_values_in_changes_are_rejected_like_the_payload(self):
+        body = '{"event_key": "%s", "team_key": "frc254", "changes": {"weight_lbs": {"to": NaN}}}' % EVENT
+        response = self.client.post("/pit-scouting", content=body, headers={**self.alex_h, "Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 400, response.text)
+        too_many = {f"f{i}": {"to": 1} for i in range(routes_pit_scouting.MAX_PAYLOAD_FIELDS + 1)}
+        response = self.client.post("/pit-scouting", json={"event_key": EVENT, "team_key": "frc254", "changes": too_many}, headers=self.alex_h)
+        self.assertEqual(response.status_code, 400, response.text)
+
     def test_auto_split_hands_out_teams_that_only_have_photos(self):
         with self.SessionLocal() as db:
             db.add(models.PitScoutingEntry(workspace_id=self.workspace_id, event_key=EVENT, team_key="frc254", payload={}, photos=["/media/pit_photos/x.jpg"]))

@@ -2,6 +2,8 @@
 // Notes queue through utils/offlineQueue; photos are megabytes, so they get their own
 // IndexedDB store with a cap, and a store that can't open degrades to "online only".
 
+import { keepStorageForQueuedWork } from '../../platform/persistStorage';
+
 export const PIT_PHOTO_QUEUE_MAX_ITEMS = 40;
 export const PIT_PHOTO_QUEUE_MAX_BYTES = 60 * 1024 * 1024;
 const BACKOFF_BASE_MS = 5_000;
@@ -157,6 +159,7 @@ export async function enqueuePitPhoto(
     // Storage full or blocked at write time: same outcome as not having a queue.
     return { ok: false, reason: 'unavailable', message: PIT_PHOTO_UNAVAILABLE_MESSAGE };
   }
+  keepStorageForQueuedWork();
   emit('pitphotos:change');
   return { ok: true, item };
 }

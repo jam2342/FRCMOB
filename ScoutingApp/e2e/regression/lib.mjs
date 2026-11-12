@@ -1,10 +1,12 @@
 // Shared helpers for the regression checks (see README.md).
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 export const BASE = process.env.REGRESSION_BASE || 'http://127.0.0.1:5210';
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function launch() {
+  // PW_ENGINE=webkit: Safari's engine (not real iOS Safari, but its storage and fetch).
+  if (process.env.PW_ENGINE === 'webkit') return webkit.launch();
   // Locally, real Chrome (PW_CHANNEL=chrome); in CI, Playwright's own Chromium.
   return chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 }

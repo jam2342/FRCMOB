@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {storageMethodTarget} from '../../test/storage';
-import {readPitDraft,savePitDraft,clearConfirmedPitDraft,rememberPitSelection,readPitSelection,pitDraftPersisted} from './pitDrafts';
+import {readPitDraft,readPitDraftBase,savePitDraft,clearConfirmedPitDraft,rememberPitSelection,readPitSelection,pitDraftPersisted} from './pitDrafts';
 describe('private pit recovery drafts',()=>{
  beforeEach(()=>localStorage.clear());
  it('recovers edits only for the same workspace, event and robot',()=>{
@@ -10,6 +10,12 @@ describe('private pit recovery drafts',()=>{
   rememberPitSelection(1,'2026arc','frc100b');expect(readPitSelection(1,'2026arc')).toBe('frc100b');
   localStorage.setItem('frcmob_pit_selection_v1:1:2026arc','frc100bb');expect(readPitSelection(1,'2026arc')).toBeNull();
   expect(readPitDraft(2,'2026arc','frc254')).toBeNull();expect(readPitDraft(1,'2026other','frc254')).toBeNull();expect(readPitDraft(1,'2026arc','frc1678')).toBeNull();
+ });
+ it('keeps the base the draft started from, so a later save sends only its own edits',()=>{
+  savePitDraft(1,'2026arc','frc254',{weight_lbs:5},{drivetrain:'Swerve'});
+  expect(readPitDraftBase(1,'2026arc','frc254')).toEqual({drivetrain:'Swerve'});
+  savePitDraft(1,'2026arc','frc118',{weight_lbs:5});
+  expect(readPitDraftBase(1,'2026arc','frc118')).toBeNull();
  });
  it('does not erase newer edits when an earlier save finishes',()=>{
   savePitDraft(1,'2026arc','frc254',{notes:'Newer'});clearConfirmedPitDraft(1,'2026arc','frc254',{notes:'Earlier'});expect(readPitDraft(1,'2026arc','frc254')).toEqual({notes:'Newer'});

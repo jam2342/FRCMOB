@@ -717,6 +717,9 @@ class PitScoutingEntry(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=lambda: {})
     # List of media-relative photo paths ("/media/pit_photos/...").
     photos: Mapped[list] = mapped_column(JSON, default=lambda: [])
+    # Answers two scouts changed differently: the saved value won, the other is kept
+    # here ({field, kept, other, other_by, at}) until someone picks one.
+    conflicts: Mapped[list] = mapped_column(JSON, default=lambda: [])
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

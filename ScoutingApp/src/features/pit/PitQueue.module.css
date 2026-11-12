@@ -157,6 +157,11 @@
   color: var(--color-text-muted);
 }
 
+/* Answers that differ need someone to pick; the row's spoken label says so too. */
+.mark[data-tone='warn'] {
+  color: var(--color-warning-text);
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;

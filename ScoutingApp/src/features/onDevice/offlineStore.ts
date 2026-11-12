@@ -7,6 +7,7 @@ import { classifyRecordingSyncFailure, type RecordingSyncFailure } from './recor
 import { beginSessionChangeBatch, notifySessionChange } from './sessionChanges';
 import type { TrackPoint } from './trackProduction';
 import type { OnDeviceSessionSyncResponse } from '../../api';
+import { keepStorageForQueuedWork } from '../../platform/persistStorage';
 
 export type StoredCalibration = {
   id: string; // e.g. event key, or "current"
@@ -110,6 +111,7 @@ export async function getCalibration(db: IDBDatabase, id: string): Promise<Store
 
 export async function saveSession(db: IDBDatabase, session: StoredSession): Promise<void> {
   await withStore(db, SESSIONS, 'readwrite', (s) => req(s.put(session)));
+  keepStorageForQueuedWork();
   notifySessionChange();
 }
 

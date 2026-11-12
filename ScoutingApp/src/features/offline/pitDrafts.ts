@@ -1,6 +1,7 @@
 import { setItemMakingRoom } from '../../utils/apiCacheSpace';
 // Private pit drafts stay on this device and never cross workspace/event/robot keys.
 const volatileDrafts = new Map<string,Record<string,unknown>>();
+const volatileBases = new Map<string,Record<string,unknown>>();
 if (typeof window !== 'undefined') window.addEventListener('beforeunload', event => {if(volatileDrafts.size) event.preventDefault();});
 const key = (workspaceId: number, event: string, team: string) => `frcmob_pit_draft_v1:${workspaceId}:${encodeURIComponent(event)}:${encodeURIComponent(team)}`;
 export function readPitDraft(workspaceId: number, event: string, team: string): Record<string, unknown> | null {
@@ -19,12 +20,22 @@ export function readPitDraftSavedAt(workspaceId: number, event: string, team: st
     return typeof row?.savedAt === 'number' ? row.savedAt : null;
   } catch { return null; }
 }
-export function savePitDraft(workspaceId: number, event: string, team: string, payload: Record<string,unknown>): boolean {
+// `base`: the server's answers when the draft was started, so a save from this draft
+// later sends only what this scout changed (pitMerge.ts).
+export function readPitDraftBase(workspaceId: number, event: string, team: string): Record<string, unknown> | null {
+  const volatile = volatileBases.get(key(workspaceId,event,team));
+  if (volatile) return {...volatile};
+  try {
+    const row = JSON.parse(localStorage.getItem(key(workspaceId,event,team)) || 'null');
+    return row?.base && typeof row.base === 'object' && !Array.isArray(row.base) ? row.base : null;
+  } catch { return null; }
+}
+export function savePitDraft(workspaceId: number, event: string, team: string, payload: Record<string,unknown>, base?: Record<string,unknown>): boolean {
   const id = key(workspaceId,event,team);
-  try { setItemMakingRoom(id,JSON.stringify({payload,savedAt:Date.now()})); volatileDrafts.delete(id); return true; } catch { volatileDrafts.set(id,{...payload}); return false; }
+  try { setItemMakingRoom(id,JSON.stringify({payload,base,savedAt:Date.now()})); volatileDrafts.delete(id); volatileBases.delete(id); return true; } catch { volatileDrafts.set(id,{...payload}); if (base) volatileBases.set(id,{...base}); return false; }
 }
 export function clearConfirmedPitDraft(workspaceId: number, event: string, team: string, confirmed: Record<string,unknown>): void {
-  try { if (JSON.stringify(readPitDraft(workspaceId,event,team)) === JSON.stringify(confirmed)) {localStorage.removeItem(key(workspaceId,event,team));volatileDrafts.delete(key(workspaceId,event,team));} } catch { /* Keep the draft if removal fails. */ }
+  try { if (JSON.stringify(readPitDraft(workspaceId,event,team)) === JSON.stringify(confirmed)) {localStorage.removeItem(key(workspaceId,event,team));volatileDrafts.delete(key(workspaceId,event,team));volatileBases.delete(key(workspaceId,event,team));} } catch { /* Keep the draft if removal fails. */ }
 }
 
 const selectionKey = (workspaceId: number, event: string) => `frcmob_pit_selection_v1:${workspaceId}:${encodeURIComponent(event)}`;

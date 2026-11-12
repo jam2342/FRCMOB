@@ -98,7 +98,7 @@ try {
   const alex = (await api('/workspaces/join', { body: { join_code: lead.join_code, display_name: 'Alex' } })).json;
   const teams = (await api(`/teams/event/${EVENT}/intel?include_tba=false&include_season_fallback=false`, { token: lead.access.token })).json;
   const numbers = (teams?.teams ?? []).map((t) => Number(t.team_number)).filter(Boolean).sort((a, b) => a - b);
-  if (numbers.length < 20) throw new Error(`Event ${EVENT} has ${numbers.length} teams; need 20.`);
+  if (numbers.length < 24) throw new Error(`Event ${EVENT} has ${numbers.length} teams; need 24.`);
   console.log(`workspace ${lead.workspace.id}, event ${EVENT}, ${numbers.length} teams`);
 
   const A = await openPhone(browser, 'Lead', lead, { width: 1366, height: 900, mobile: false });
@@ -129,11 +129,11 @@ try {
     return `after ${(ms / 1000).toFixed(1)}s`;
   });
 
-  await check('with edits in progress the scout keeps them and is warned instead', async () => {
+  await check('with the same answer being edited, the scout keeps theirs and is told both are kept', async () => {
     await typeNumber(B.page, 333);
     await typeNumber(A.page, 444);
     await A.page.getByRole('button', { name: 'Save', exact: true }).click();
-    await waitFor('the warning', async () => /Saving yours replaces theirs/.test(await statusOf(B.page)));
+    await waitFor('the warning', async () => /also changed Weight/.test(await statusOf(B.page)));
     const kept = await B.page.getByRole('spinbutton').first().inputValue();
     if (kept !== '333') throw new Error(`scout's typing replaced: ${kept}`);
   });
@@ -200,6 +200,63 @@ try {
     }
     const spread = new Set(answers.map((a) => a.worker));
     return `${answers.length} requests, workers ${[...spread].sort().join(', ')}`;
+  });
+
+  const entryOf = async (n) => (await api(`/pit-scouting?event_key=${EVENT}`, { token: lead.access.token })).json.entries.find((e) => e.team_key === `frc${n}`);
+
+  await check('two people answering different questions of one team: both answers are saved', async () => {
+    const n = numbers[21];
+    await openTeam(A.page, n);
+    await openTeam(B.page, n);
+    await B.page.getByRole('radio', { name: 'Swerve' }).first().click();
+    await typeNumber(A.page, 111);
+    await A.page.getByRole('button', { name: 'Save', exact: true }).click();
+    await waitFor('the save', async () => /Saved pit entry/.test(await statusOf(A.page)));
+    // The phone saves straight away, before any poll could tell it about the weight.
+    await B.page.getByRole('button', { name: 'Save', exact: true }).click();
+    await waitFor("the phone's save", async () => /Saved/.test(await statusOf(B.page)));
+    const saved = (await entryOf(n)).payload;
+    if (saved.weight_lbs !== 111 || saved.drivetrain !== 'Swerve') throw new Error(`saved ${JSON.stringify(saved)}`);
+    return JSON.stringify(saved);
+  });
+
+  await check('the same question answered differently: both kept, settled with one tap', async () => {
+    const n = numbers[22];
+    await openTeam(A.page, n);
+    await openTeam(B.page, n);
+    await typeNumber(B.page, 112);
+    await typeNumber(A.page, 120);
+    await A.page.getByRole('button', { name: 'Save', exact: true }).click();
+    await waitFor('the save', async () => /Saved pit entry/.test(await statusOf(A.page)));
+    await B.page.getByRole('button', { name: 'Save', exact: true }).click();
+    await waitFor("the phone's note", async () => /Lead had a different answer for Weight/.test(await statusOf(B.page)));
+    const [conflict] = (await entryOf(n)).conflicts;
+    if (!conflict || conflict.field !== 'weight_lbs' || conflict.kept !== 112 || conflict.other !== 120) throw new Error(`conflicts ${JSON.stringify((await entryOf(n)).conflicts)}`);
+    // The laptop learns of it on its next poll and settles it.
+    const callout = A.page.getByRole('status', { name: 'Answers that differ' });
+    await waitFor("the laptop's callout", async () => callout.isVisible());
+    await callout.getByRole('button', { name: 'Use 120 lbs' }).click();
+    await waitFor('the conflict to clear', async () => (await entryOf(n)).conflicts.length === 0 && (await entryOf(n)).payload.weight_lbs === 120);
+  });
+
+  await check('a save made offline replays as a merge, not an overwrite', async () => {
+    const n = numbers[23];
+    await openTeam(A.page, n);
+    await openTeam(B.page, n);
+    await B.ctx.setOffline(true);
+    await B.page.getByRole('radio', { name: 'Mecanum' }).first().click();
+    await B.page.getByRole('button', { name: 'Save', exact: true }).click();
+    await waitFor('the save to queue', async () => /on this phone/.test(await statusOf(B.page)));
+    await typeNumber(A.page, 130);
+    await A.page.getByRole('button', { name: 'Save', exact: true }).click();
+    await waitFor('the save', async () => /Saved pit entry/.test(await statusOf(A.page)));
+    await B.ctx.setOffline(false);
+    await B.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    const { value } = await waitFor('the queued save to land as a merge', async () => {
+      const saved = (await entryOf(n))?.payload ?? {};
+      return saved.drivetrain === 'Mecanum' && saved.weight_lbs === 130 ? JSON.stringify(saved) : '';
+    }, 60_000);
+    return value;
   });
 
   await A.ctx.close();

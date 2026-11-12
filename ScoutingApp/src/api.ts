@@ -3926,8 +3926,18 @@ export interface PitScoutingEntry {
   photos: string[];
   // Signed display links, aligned with `photos` (the stored paths, used to delete).
   photo_urls?: string[];
+  // Answers two scouts changed differently: `kept` is saved, `other` waits to be picked.
+  conflicts?: PitConflict[];
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface PitConflict {
+  field: string;
+  kept: unknown;
+  other: unknown;
+  other_by: string | null;
+  at: string;
 }
 
 export async function listPitEntries(
@@ -3947,6 +3957,8 @@ export async function upsertPitEntry(payload: {
   team_key: string;
   scout_profile?: string;
   payload: Record<string, unknown>;
+  // What changed since the team was opened; the server merges instead of replacing.
+  changes?: Record<string, { from?: unknown; to?: unknown }>;
 }): Promise<{ ok: boolean; entry: PitScoutingEntry }> {
   const res = await apiFetch(`${API}/pit-scouting`, {
     method: "POST",
