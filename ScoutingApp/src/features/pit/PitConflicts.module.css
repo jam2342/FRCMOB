@@ -1,0 +1,29 @@
+/* Each differing answer, then its two choices. No list indent and wrapping choices,
+   so long answers ("Use Mobility, Scores preload") fit a 250 px phone. Two classes
+   beat touch-polish's unlayered button rules. */
+.list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.choices .choice {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  text-align: start;
+}

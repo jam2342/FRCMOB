@@ -1,3 +1,4 @@
+import { keepStorageForQueuedWork } from '../platform/persistStorage';
 import { isNativeApp } from '../platform/runtime';
 import { SecureStorage } from '../platform/secureStorage';
 /**
@@ -247,6 +248,7 @@ export async function enqueue(mutation: Omit<QueuedMutation, 'id' | 'queuedAt' |
     emitDropped({ reason: 'storage-failure', count: 1, labels: [item.label ?? 'Scouting changes'] });
     throw new Error('This change could not be saved on this phone. Keep your form open and try again.');
   }
+  keepStorageForQueuedWork();
   emitChange((await readQueue()).filter((item) => !item.failure).length);
 }
 

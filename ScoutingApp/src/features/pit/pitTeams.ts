@@ -39,6 +39,8 @@ export type PitQueueRow = {
   // A save waiting to sync counts as done: the scout finished the robot, only the network is late.
   done: boolean;
   hasPhotos: boolean;
+  // Answers two scouts saved differently, waiting for someone to pick.
+  conflicts: number;
   assigneeId: number | null;
   assigneeName: string | null;
   mine: boolean;
@@ -69,6 +71,7 @@ export function buildQueueRows(
       status,
       done: hasPitEntry(entry) || status === 'queued',
       hasPhotos: Boolean(entry?.photos?.length),
+      conflicts: entry?.conflicts?.length ?? 0,
       assigneeId,
       assigneeName: assigneeId === null ? null : assignment?.member_name?.trim() || 'a teammate',
       mine: meId !== null && assigneeId === meId,
@@ -122,6 +125,7 @@ export function queueRowLabel(row: PitQueueRow, extras: { selected?: boolean } =
     who,
     PIT_STATUS_LABEL[row.status].toLowerCase(),
     row.hasPhotos ? 'has photos' : null,
+    row.conflicts ? `${row.conflicts} answer${row.conflicts === 1 ? '' : 's'} differ` : null,
     extras.selected ? 'open now' : null,
   ].filter(Boolean).join(', ');
 }

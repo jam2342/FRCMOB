@@ -68,12 +68,12 @@ it("shows a teammate's notes on the open team when nothing is typed, and warns i
   await poll();
   expect(screen.getByRole('status')).toHaveTextContent("A teammate just saved notes for #100. You're seeing them now.");
   expect(screen.getByDisplayValue('from Alex')).toBeInTheDocument();
-  // Now type, then Alex saves again: my typing stays and I'm told what Save would do.
+  // Now type, then Alex changes the same answer: my typing stays and I'm told both are kept.
   fireEvent.change(screen.getByDisplayValue('from Alex'), { target: { value: 'mine' } });
   serverHas(entry('frc100', { notes: 'Alex again' }, '2026-11-11T10:05:00Z'));
   await poll();
   expect(screen.getByDisplayValue('mine')).toBeInTheDocument();
-  expect(screen.getByRole('status')).toHaveTextContent('Saving yours replaces theirs.');
+  expect(screen.getByRole('status')).toHaveTextContent('Alex also changed Notes. Saving keeps yours and keeps theirs for your team to pick.');
 });
 
 it("a poll that started before my save can't put the old copy back", async () => {

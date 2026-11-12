@@ -11,11 +11,12 @@ import logging
 import math
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -88,6 +89,7 @@ def _serialize_entry(row: models.PitScoutingEntry, member_id: int) -> dict[str, 
         "photos": row.photos if isinstance(row.photos, list) else [],
         # What to display: the stored paths above stay the identifiers (delete uses them).
         "photo_urls": [sign_media_path(str(path), member_id=member_id) for path in (row.photos if isinstance(row.photos, list) else [])],
+        "conflicts": row.conflicts if isinstance(row.conflicts, list) else [],
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -157,11 +159,60 @@ def _strip_photo_metadata(data: bytes, extension: str) -> bytes:
         upright.save(output, format=save_format, **options)
         return output.getvalue()
 
+class PitFieldChange(BaseModel):
+    # A missing "from"/"to" means the field had no answer (as opposed to null).
+    model_config = ConfigDict(populate_by_name=True)
+    from_: Any = Field(default=None, alias="from")
+    to: Any = None
+
+
 class PitEntryUpsertRequest(BaseModel):
     event_key: str
     team_key: str
     scout_profile: str | None = Field(default=None, max_length=40)
     payload: dict[str, Any] = Field(default_factory=dict)
+    # Sent by current apps: what this scout changed since opening the team. The save then
+    # merges into what teammates saved instead of replacing it. Without it (an older app)
+    # the payload replaces the answers, as before.
+    changes: dict[str, PitFieldChange] | None = None
+
+
+MAX_CONFLICTS = 40
+_MISSING = object()
+
+
+def _same(a: Any, b: Any) -> bool:
+    # "No answer" is one thing whether the key is absent or null.
+    if a in (_MISSING, None) or b in (_MISSING, None):
+        return a in (_MISSING, None) and b in (_MISSING, None)
+    return a == b
+
+
+def _merge_changes(
+    current: dict[str, Any], changes: dict[str, PitFieldChange], *, other_by: str | None, at: str
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    merged = dict(current)
+    conflicts: list[dict[str, Any]] = []
+    for raw_key, change in changes.items():
+        key = str(raw_key)[:64]
+        before = _normalize_payload({key: change.from_}).get(key, _MISSING) if "from_" in change.model_fields_set else _MISSING
+        after = _normalize_payload({key: change.to}).get(key, _MISSING) if "to" in change.model_fields_set else _MISSING
+        server = merged.get(key, _MISSING)
+        # Someone else changed this answer since this scout opened the team, to something
+        # else: this save wins, and theirs is kept for the team to pick from.
+        if not _same(server, before) and not _same(server, after):
+            conflicts.append({
+                "field": key,
+                "kept": None if after is _MISSING else after,
+                "other": None if server is _MISSING else server,
+                "other_by": other_by,
+                "at": at,
+            })
+        if after is _MISSING:
+            merged.pop(key, None)
+        else:
+            merged[key] = after
+    return dict(list(merged.items())[:MAX_PAYLOAD_FIELDS]), conflicts
 
 class PitPhotoUploadRequest(BaseModel):
     event_key: str
@@ -204,7 +255,10 @@ def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Sessi
     normalized_event = _normalize_event_key(payload.event_key)
     normalized_team = _normalize_team_key(payload.team_key)
     scout_profile = str(payload.scout_profile or "").strip()[:40] or actor.member.display_name
-    answers = _normalize_payload(payload.payload)
+    if payload.changes is not None and len(payload.changes) > MAX_PAYLOAD_FIELDS:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_PAYLOAD_FIELDS} answers per save")
+    answers = _normalize_payload(payload.payload) if payload.changes is None else None
+    now = datetime.now(timezone.utc).isoformat()
 
     # require_workspace_writer holds the workspace row lock until commit, which already
     # serializes first saves and photos (360 simultaneous ones across two workers, no
@@ -217,14 +271,24 @@ def upsert_pit_entry(payload: PitEntryUpsertRequest, request: Request, db: Sessi
                 event_key=normalized_event,
                 team_key=normalized_team,
                 scout_profile=scout_profile,
-                payload=answers,
+                payload={},
                 photos=[],
+                conflicts=[],
             )
             db.add(row)
-        else:
+        current = row.payload if isinstance(row.payload, dict) else {}
+        if payload.changes is None:
             row.payload = answers
-            if scout_profile:
-                row.scout_profile = scout_profile
+            row.conflicts = []
+        else:
+            merged, found = _merge_changes(current, payload.changes, other_by=row.scout_profile, at=now)
+            touched = {str(key)[:64] for key in payload.changes}
+            # A field this save sets is settled by it; new clashes are added.
+            kept = [c for c in (row.conflicts if isinstance(row.conflicts, list) else []) if c.get("field") not in touched]
+            row.payload = merged
+            row.conflicts = (kept + found)[-MAX_CONFLICTS:]
+        if scout_profile:
+            row.scout_profile = scout_profile
         try:
             db.commit()
         except IntegrityError:
@@ -282,6 +346,7 @@ def upload_pit_photo(payload: PitPhotoUploadRequest, request: Request, db: Sessi
             scout_profile=str(payload.scout_profile or "").strip()[:40] or actor.member.display_name,
             payload={},
             photos=[],
+            conflicts=[],
         )
         db.add(row)
         db.flush()

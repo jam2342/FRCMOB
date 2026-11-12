@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SegmentedTabs } from '../../components/ui/SegmentedTabs';
 import { Button, FieldText } from '../../components/ui/primitives';
-import { CameraIcon, CheckIcon, CloudSyncIcon, PenIcon, UsersIcon, WifiOffIcon } from '../../components/ui/Icons';
+import { AlertTriangleIcon, CameraIcon, CheckIcon, CloudSyncIcon, PenIcon, UsersIcon, WifiOffIcon } from '../../components/ui/Icons';
 import { PitAutoSplit, PitReassign } from './PitLeaderTools';
 import { PIT_STATUS_LABEL, pitUpdatedAgo, queueRowLabel, rowsForTab, searchQueueRows, tabCounts, teamNumber } from './pitTeams';
 import type { PitQueueRow, PitStatus, PitTab } from './pitTeams';
@@ -199,6 +199,7 @@ export function PitQueue({ rows, selectedTeam, disabled, assignments, isLeader, 
                     <strong className={styles.number}>{teamNumber(row.team.team_key)}</strong>
                     {row.team.nickname ? <span className={styles.name} title={row.team.nickname}>{row.team.nickname}</span> : null}
                     {row.hasPhotos ? <CameraIcon className={styles.mark} /> : null}
+                    {row.conflicts ? <AlertTriangleIcon className={styles.mark} data-tone="warn" /> : null}
                   </span>
                   <span className={styles.meta}>
                     <span className={styles.status} data-status={row.status}>

@@ -16,7 +16,9 @@ import { asRecord, parseNumber } from '../../pages/centerUtils';
 import { listQueuedMutations } from '../../utils/offlineQueue';
 import { hapticSuccess } from '../../utils/haptics';
 import { useWorkspace } from '../workspace/useWorkspace';
-import { readPitDraft, readPitDraftSavedAt, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../offline/pitDrafts';
+import { readPitDraft, readPitDraftBase, readPitDraftSavedAt, savePitDraft, clearConfirmedPitDraft, readPitSelection, rememberPitSelection, pitDraftPersisted } from '../offline/pitDrafts';
+import { buildChanges, fieldLabel, mergeTeammate } from './pitMerge';
+import type { Answers } from './pitMerge';
 import { deleteQueuedPitPhoto, enqueuePitPhoto, retryRefusedPitPhoto } from '../offline/pitPhotoQueue';
 import type { PitPhotoUploadedDetail } from '../offline/pitPhotoQueue';
 import { compressPhoto, isPhotoNetworkFailure, uploadPhotoBlob } from './pitPhotoFiles';
@@ -67,6 +69,9 @@ export function usePitScouting() {
   const carriedNoteRef = useRef<StatusNote | null>(null);
   const editVersionRef = useRef(0);
   const formRef = useRef<Record<string, unknown>>({});
+  // The server's answers when this scout started on the open team: a save sends only
+  // what changed since, and the server merges it with what teammates saved.
+  const baseRef = useRef<Answers>({});
   const contextRef = useRef({ eventKey, selectedTeam });
   contextRef.current = { eventKey, selectedTeam };
   const entriesRef = useRef(entriesByTeam);
@@ -116,18 +121,32 @@ export function usePitScouting() {
   useEffect(() => {
     if (!selectedTeam) return;
     const draft = readPitDraft(workspaceId, eventKey, selectedTeam);
-    const payload = draft ?? entriesByTeam.get(selectedTeam)?.payload ?? {};
-    formRef.current = { ...payload }; setForm(formRef.current);
-    setFormDirty(Boolean(draft)); setDraftStored(pitDraftPersisted(workspaceId, eventKey, selectedTeam));
-    editVersionRef.current = 0;
-    // A teammate saved after this draft was written: say so before a save replaces theirs.
-    const serverUpdated = Date.parse(entriesByTeam.get(selectedTeam)?.updated_at ?? '');
-    const draftSavedAt = draft ? readPitDraftSavedAt(workspaceId, eventKey, selectedTeam) : null;
+    const draftBase = draft ? readPitDraftBase(workspaceId, eventKey, selectedTeam) : null;
+    const server = entriesByTeam.get(selectedTeam)?.payload ?? {};
     const carried = carriedNoteRef.current;
     carriedNoteRef.current = null;
-    setNote(draftSavedAt !== null && Number.isFinite(serverUpdated) && serverUpdated > draftSavedAt
-      ? { tone: 'warn', text: "A teammate saved newer notes for this team after your draft. You're seeing your draft; saving it replaces their notes." }
-      : carried);
+    let start: Answers = draft ?? server;
+    let base: Answers = draft ? draftBase ?? server : server;
+    let opened: StatusNote | null = carried;
+    if (draft && draftBase) {
+      // Teammates' answers since the draft come in; this scout's own changes stay.
+      const merged = mergeTeammate(draftBase, draft, server);
+      start = merged.form;
+      base = merged.base;
+      if (JSON.stringify(server) !== JSON.stringify(draftBase)) opened = teammateNote(selectedTeam, merged.clashes, entriesByTeam.get(selectedTeam)?.scout_profile ?? null);
+    } else if (draft) {
+      // A draft from before drafts kept their base: say so before a save overwrites a teammate.
+      const serverUpdated = Date.parse(entriesByTeam.get(selectedTeam)?.updated_at ?? '');
+      const draftSavedAt = readPitDraftSavedAt(workspaceId, eventKey, selectedTeam);
+      if (draftSavedAt !== null && Number.isFinite(serverUpdated) && serverUpdated > draftSavedAt) {
+        opened = { tone: 'warn', text: "A teammate saved newer notes for this team after your draft. You're seeing your draft; saving it replaces their answers where they differ." };
+      }
+    }
+    baseRef.current = { ...base };
+    formRef.current = { ...start }; setForm(formRef.current);
+    setFormDirty(Boolean(draft)); setDraftStored(pitDraftPersisted(workspaceId, eventKey, selectedTeam));
+    editVersionRef.current = 0;
+    setNote(opened);
     // Entries are loaded before team selection; updates must not overwrite edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTeam, eventKey, workspaceId]);
@@ -163,16 +182,25 @@ export function usePitScouting() {
       setEntriesByTeam(fresh);
       const theirs = JSON.stringify(after?.payload ?? {});
       // Same as the form shows: this phone's own save arriving, not a teammate's.
-      if (team && after && hasPitEntry(after) && theirs !== JSON.stringify(before?.payload ?? {}) && theirs !== JSON.stringify(formRef.current)) {
-        const ownSaveWaiting = queuedSaveRef.current?.eventKey === forEvent && queuedSaveRef.current.team === team;
-        if (!formDirtyRef.current && !ownSaveWaiting) {
-          // Nothing typed here yet: show their notes, so a save builds on them instead of replacing them.
+      const ownSaveWaiting = queuedSaveRef.current?.eventKey === forEvent && queuedSaveRef.current.team === team;
+      if (team && after && hasPitEntry(after) && theirs !== JSON.stringify(before?.payload ?? {}) && theirs !== JSON.stringify(formRef.current) && !ownSaveWaiting) {
+        if (!formDirtyRef.current) {
+          // Nothing typed here yet: show their notes.
           formRef.current = { ...after.payload };
+          baseRef.current = { ...after.payload };
           setForm(formRef.current);
           setNote({ tone: 'saved', text: `A teammate just saved notes for #${teamNumber(team)}. You're seeing them now.` });
         } else {
-          setNote({ tone: 'warn', text: "A teammate just saved notes for this team. Saving yours replaces theirs." });
+          // Edits open: their answers fill every field this scout hasn't touched.
+          const merged = mergeTeammate(baseRef.current, formRef.current, after.payload);
+          baseRef.current = merged.base;
+          formRef.current = merged.form;
+          setForm(merged.form);
+          setDraftStored(savePitDraft(workspaceId, forEvent, team, merged.form, merged.base));
+          setNote(teammateNote(team, merged.clashes, after.scout_profile));
         }
+      } else if (team && after && !formDirtyRef.current && !ownSaveWaiting) {
+        baseRef.current = { ...after.payload };
       }
       return true;
     } catch {
@@ -187,6 +215,12 @@ export function usePitScouting() {
     run: pollEntries,
   });
 
+  function teammateNote(team: string, clashes: string[], by: string | null): StatusNote {
+    const who = by?.trim() || 'A teammate';
+    if (clashes.length === 0) return { tone: 'saved', text: `${who} just saved notes for #${teamNumber(team)}. Their answers are in; yours are still here.` };
+    return { tone: 'warn', text: `${who} also changed ${clashes.map(fieldLabel).join(', ')}. Saving keeps yours and keeps theirs for your team to pick.` };
+  }
+
   /* ---- Stats ------------------------------------------------------ */
 
   const completion = useMemo(() => ({
@@ -200,7 +234,7 @@ export function usePitScouting() {
     const next = { ...formRef.current, [key]: value };
     if (value === undefined) delete next[key];
     formRef.current = next; setForm(next);
-    const stored = savePitDraft(workspaceId, eventKey, selectedTeam, next);
+    const stored = savePitDraft(workspaceId, eventKey, selectedTeam, next, baseRef.current);
     setDraftStored(stored);
     if (!stored) setErrorText('This device could not save your draft. Keep this page open and use Save before leaving.');
     setFormDirty(true);
@@ -220,7 +254,8 @@ export function usePitScouting() {
     openTeam(teamKey);
   }
 
-  async function save(): Promise<SaveOutcome> {
+  // `force`: fields to send even if unchanged, with the server value they replace (picking an answer in a conflict).
+  async function save(force: Answers = {}): Promise<SaveOutcome> {
     if (!eventKey || !selectedTeam) return 'failed';
     if (savingForm || !serverNotesReady) return 'failed';
     const invalid = PIT_FORM_SECTIONS.flatMap(section => section.fields).find(field => field.type === 'number' && typeof formRef.current[field.key] === 'number' && Number(formRef.current[field.key]) < 0);
@@ -230,19 +265,32 @@ export function usePitScouting() {
     const saveStarted = Date.now();
     const savedEditVersion = editVersionRef.current;
     const savedForm = { ...formRef.current };
+    const conflictsBefore = new Set((selectedEntry?.conflicts ?? []).map((conflict) => conflict.field));
     try {
       const result = await upsertPitEntry({
         event_key: eventKey,
         team_key: selectedTeam,
         scout_profile: scoutName,
         payload: savedForm,
+        changes: buildChanges(baseRef.current, savedForm, force),
       });
       if (contextRef.current.eventKey !== eventKey) return 'failed';
       putEntry(result.entry);
       clearConfirmedPitDraft(workspaceId, eventKey, selectedTeam, savedForm);
-      if (contextRef.current.selectedTeam === selectedTeam && editVersionRef.current === savedEditVersion) { setFormDirty(false); setDraftStored(false); }
+      const merged = result.entry.payload ?? {};
+      if (contextRef.current.selectedTeam === selectedTeam) {
+        baseRef.current = { ...merged };
+        if (editVersionRef.current === savedEditVersion) {
+          // The merged answers, teammates' fields included.
+          formRef.current = { ...merged }; setForm(formRef.current);
+          setFormDirty(false); setDraftStored(false);
+        }
+      }
       hapticSuccess();
-      setNote({ tone: 'saved', text: `Saved pit entry for #${teamNumber(selectedTeam)}.` });
+      const clashed = (result.entry.conflicts ?? []).filter((conflict) => !conflictsBefore.has(conflict.field));
+      setNote(clashed.length
+        ? { tone: 'warn', text: `Saved #${teamNumber(selectedTeam)}. ${clashed[0].other_by?.trim() || 'A teammate'} had a different answer for ${clashed.map((conflict) => fieldLabel(conflict.field)).join(', ')}; pick one above.` }
+        : { tone: 'saved', text: `Saved pit entry for #${teamNumber(selectedTeam)}.` });
       return 'saved';
     } catch (err) {
       if (err instanceof QueuedForSyncError) {
@@ -256,6 +304,8 @@ export function usePitScouting() {
           } catch { return false; }
         }).at(-1);
         queuedSaveRef.current = queued ? { id: queued.id, workspaceId, eventKey, team: selectedTeam, form: savedForm, editVersion: savedEditVersion } : null;
+        // Later edits are changes on top of this queued one.
+        if (contextRef.current.selectedTeam === selectedTeam) baseRef.current = { ...savedForm };
         // The queue holds this save now, so nothing is unsaved; the draft note
         // ("Save shares it") contradicted the save the scout just made.
         // The stored draft stays as a backup until the queue confirms.
@@ -268,6 +318,13 @@ export function usePitScouting() {
     } finally {
       setSavingForm(false);
     }
+  }
+
+  // Settles a conflict: `value` becomes the answer, replacing whatever the server holds now.
+  async function resolveConflict(field: string, value: unknown) {
+    const current = selectedEntry?.payload?.[field];
+    setField(field, value);
+    await save({ [field]: current });
   }
 
   async function saveAndNext() {
@@ -443,6 +500,7 @@ export function usePitScouting() {
     teams, entriesByTeam, selectedTeam, selectedEntry, form,
     formDirty, draftStored, serverNotesReady, loading, savingForm, uploadingPhoto,
     errorText, completion, saveStatus,
+    conflicts: selectedEntry?.conflicts ?? [], resolveConflict,
     setField, selectTeamForEditing, save, saveAndNext, addPhoto, deletePhoto, waitingPhotos, deleteWaitingPhoto, retryWaitingPhotos,
   };
 }

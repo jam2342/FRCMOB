@@ -7,6 +7,7 @@ import { SurfaceCard } from '../components/ui/SurfaceCard';
 import { useEventNames } from '../hooks/useEventNames';
 import { useMobileLayout } from '../hooks/useMobileLayout';
 import { WorkspaceGate } from '../features/workspace/WorkspaceGate';
+import { PitConflicts } from '../features/pit/PitConflicts';
 import { PitForm } from '../features/pit/PitForm';
 import { PitPhotos } from '../features/pit/PitPhotos';
 import { PitSaveBar } from '../features/pit/PitSaveBar';
@@ -105,6 +106,12 @@ function PitScoutingWorkspacePage() {
 
         {selectedTeam ? (
           <>
+            <PitConflicts
+              conflicts={pit.conflicts}
+              saved={pit.selectedEntry?.payload ?? {}}
+              disabled={busy || !pit.serverNotesReady}
+              onResolve={(field, value) => void pit.resolveConflict(field, value)}
+            />
             <PitForm
               teamKey={selectedTeam}
               nickname={pit.teams.find(team => team.team_key === selectedTeam)?.nickname ?? null}
