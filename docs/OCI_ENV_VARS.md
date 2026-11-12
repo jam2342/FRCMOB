@@ -20,7 +20,7 @@ Upstash credentials, the Roboflow key) should be treated as compromised and rota
 | `APP_ENV` | `production` |
 | `STRICT_STARTUP_ENV_VALIDATION` | `true` |
 | `ENFORCE_ADMIN_AUTH_FOR_WRITES` | `true` |
-| `UVICORN_WORKERS` | `2` |
+| `UVICORN_WORKERS` | `4` (one per core; load test 2026-11-12) |
 | `MODEL_FILES_TOKEN` | `<from .env>`: the folder under `/home/ubuntu/frcmob-model-files` served at `frcmob.com/models/` |
 | `TURNSTILE_ALLOWED_HOSTNAMES` | `scouting-app-iryg.vercel.app,frcmob.com` |
 | `VAPID_SUBJECT` | `https://frcmob.com` |
