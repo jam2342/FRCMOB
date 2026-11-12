@@ -54,8 +54,10 @@ services:
       STRICT_STARTUP_ENV_VALIDATION: ${STRICT_STARTUP_ENV_VALIDATION:-true}
       ENFORCE_ADMIN_AUTH_FOR_WRITES: ${ENFORCE_ADMIN_AUTH_FOR_WRITES:-true}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?CORS_ALLOW_ORIGINS is required}
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
-      # Per process; 2 web workers stay well under max_connections=200.
+      # 4 on the 4-core VM (load test 2026-11-12): 2 saturated between 600 and 1,200
+      # devices; 4 kept a ratings request at p50 45 ms / p95 166 ms with 2,000.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+      # Per process; 4 web workers × (10 + 20 overflow) = 120, under max_connections=200.
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
     depends_on:
