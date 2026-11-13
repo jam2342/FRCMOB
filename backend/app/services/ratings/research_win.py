@@ -18,7 +18,8 @@ from app.services.ratings.research_fit import ScheduledModel, SeasonInputs
 
 MIN_FIT = 150  # fewer earlier decided matches than this: keep the centre
 X0 = 3.0  # an average alliance, in units of the mean share
-CONTEXTS = ("first match here", "1-2 here", "3+ here", "playoffs")
+# By the fewest earlier matches here among the six (so context 0 = someone's first match).
+CONTEXTS = ("someone's first match here", "1-2 here", "3+ here", "playoffs")
 # Prior SDs. Score calibration: each context's intercept (units) and slope change around
 # the centre, composition terms around it too. Temperatures: pooled, then each context
 # around it. Correction weights: one SD for every weight (features are O(1) by design).
@@ -39,6 +40,7 @@ class _Recording:
         self.inner = inner
         self.name = inner.name
         self.extra: dict[str, tuple] = {}
+        self.played_here: dict[tuple[str, str], int] = defaultdict(int)
 
     def predict(self, card: MatchCard) -> Prediction:
         p = self.inner.predict(card)
@@ -51,15 +53,19 @@ class _Recording:
             sds = [math.sqrt(max(float(block.cov[i, i]), 0.0)) for i in idx]
             return max(means), min(means), max(sds)
 
-        self.extra[card.match_key] = (*side(card.red), *side(card.blue), f.unit.value())
+        most_here = max(self.played_here[(t, card.event_key)] for t in card.red + card.blue)
+        self.extra[card.match_key] = (*side(card.red), *side(card.blue), f.unit.value(), most_here)
         return p
 
     def observe(self, result: MatchResult) -> None:
         self.inner.observe(result)
+        for team in result.card.red + result.card.blue:
+            self.played_here[(team, result.card.event_key)] += 1
 
 
 def _thirds(rows) -> list[int]:
     # 0/1/2: which third of the event's quals a match is in, by playing order; 3: playoffs.
+    # Uses the event's final quals count, so it's an evaluation slice, never an input.
     total = Counter(r.event_key for r in rows if r.comp_level == "qm")
     seen: dict[str, int] = defaultdict(int)
     out = []
@@ -80,17 +86,19 @@ def side_probs(inputs: SeasonInputs, model) -> dict[str, float]:
 
 
 def bundle_table(inputs: SeasonInputs, plan: list[tuple[int, object]], side: dict[str, dict[str, float]] | None = None) -> dict[str, np.ndarray]:
-    # One row per match (ties kept: y = 0.5), everything known before it was played.
+    # One row per match (ties kept: y = 0.5). Inputs are known before the match; "third"
+    # and "holdout" are labels for slicing results and never reach a fit.
     rec = _Recording(ScheduledModel(inputs, plan, name="bundle"))
     rows = collect_rows(inputs.research, rec, keep_ties=True)
     p_bucket, _, _ = walk_forward_probs(rows)
+    event_start = {r.card.event_key: r.card.event_start for r in inputs.research.season.results}
     season_start: int | None = None
     t: dict[str, list] = defaultdict(list)
     for r, pb, third in zip(rows, p_bucket, _thirds(rows)):
-        card_start = _event_start(inputs, r.event_key)
+        card_start = event_start[r.event_key]
         season_start = card_start if season_start is None else min(season_start, card_start)
         p = r.prediction
-        best_r, worst_r, sd_r, best_b, worst_b, sd_b, u = rec.extra[r.match_key]
+        best_r, worst_r, sd_r, best_b, worst_b, sd_b, u, most_here = rec.extra[r.match_key]
         t["key"].append(r.match_key)
         t["event"].append(r.event_key)
         t["week"].append(r.week)
@@ -98,6 +106,7 @@ def bundle_table(inputs: SeasonInputs, plan: list[tuple[int, object]], side: dic
         t["event_type"].append(-1 if r.event_type is None else r.event_type)
         t["playoff"].append(float(r.comp_level != "qm"))
         t["min_here"].append(r.min_here)
+        t["max_here"].append(most_here)
         t["min_before"].append(r.min_before)
         t["y"].append(r.y)
         t["holdout"].append(r.holdout)
@@ -121,16 +130,6 @@ def bundle_table(inputs: SeasonInputs, plan: list[tuple[int, object]], side: dic
         for name, probs in (side or {}).items():
             t[f"p_{name}"].append(probs[r.match_key])
     return {k: np.array(v) for k, v in t.items()}
-
-
-_EVENT_STARTS: dict[int, dict[str, int]] = {}
-
-
-def _event_start(inputs: SeasonInputs, event_key: str) -> int:
-    key = id(inputs.research)
-    if key not in _EVENT_STARTS:
-        _EVENT_STARTS[key] = {r.card.event_key: r.card.event_start for r in inputs.research.season.results}
-    return _EVENT_STARTS[key][event_key]
 
 
 def context(t: dict[str, np.ndarray]) -> np.ndarray:

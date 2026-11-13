@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import subprocess
 import sys
 import time
@@ -55,6 +56,7 @@ DEV = p2.DEV
 BLIND = p2.BLIND
 
 SCORE_VARIANTS = ("score_none", "score_cal", "score_cal_past", "score_terms", "score_terms_past")
+SCORE_RECIPES = {"score_cal": (False, False), "score_cal_past": (False, True), "score_terms": (True, False), "score_terms_past": (True, True)}  # (terms, past)
 WIN_VARIANTS: dict[str, WinRecipe] = {
     "temp": WinRecipe(),
     "temp_logistic": WinRecipe(base="logistic"),
@@ -95,6 +97,12 @@ SCORE_PAIRS = (
 # scale-free logistic correction, both started from earlier seasons. The network tied the
 # logistic and stacking missed the add bar in dev: they run as comparators only.
 PHASE3_BUNDLE = {"score": "score_terms_past", "win": "logit_past_logistic"}
+# The earlier-seasons chain for the blind run starts at 2023: 2022 has no earlier season,
+# so its in-season predictions start from a stand-in built from 2026's mean score.
+BLIND_CHAIN = (2023, 2024, *BLIND)
+BLIND_SCORE = ("score_none", "score_cal_past", "score_terms_past")
+BLIND_SCORE_PAIRS = (("score_terms_past", "score_none"), ("score_cal_past", "score_none"), ("score_terms_past", "score_cal_past"))
+BLIND_FIXED = ("bucket",)
 BLIND_WIN = ("temp_logistic", "logit_logistic", "logit_past_logistic", "net_past_logistic", "stack_logistic")
 BLIND_PAIRS = (
     ("temp_logistic", "bucket"), ("logit_past_logistic", "temp_logistic"), ("logit_past_logistic", "logit_logistic"),
@@ -160,8 +168,12 @@ def score_centre(fits: list[ScoreCalibration]) -> ScoreCalibration | None:
     return ScoreCalibration(np.mean([f.coef for f in fits], axis=0), fits[0].terms)
 
 
-def run_seasons(seasons: list[int], tables: dict[int, dict], win_names: tuple[str, ...] = tuple(WIN_VARIANTS)) -> dict:
+def run_seasons(
+    seasons: list[int], tables: dict[int, dict], win_names: tuple[str, ...] = tuple(WIN_VARIANTS),
+    score_names: tuple[str, ...] = SCORE_VARIANTS, fixed: tuple[str, ...] = FIXED,
+) -> dict:
     # In season order, so each season's "past" variants start from the seasons before it.
+    # Only the named variants are computed.
     out: dict = {"score": {}, "win": {}, "score_fits": {}, "win_fits": {}}
     score_history: dict[bool, list[ScoreCalibration]] = {False: [], True: []}
     win_history: dict[str, list] = {name: [] for name in win_names}
@@ -171,16 +183,18 @@ def run_seasons(seasons: list[int], tables: dict[int, dict], win_names: tuple[st
         none = (t["rm"].copy(), t["bm"].copy())
         out["score"][year] = {"score_none": none}
         out["score_fits"][year] = {}
-        for name, terms, past in (("score_cal", False, False), ("score_cal_past", False, True), ("score_terms", True, False), ("score_terms_past", True, True)):
+        for name in score_names[1:]:
+            terms, past = SCORE_RECIPES[name]
             red, blue, fits = walk_forward_scores(t, score_centre(score_history[terms]) if past else None, terms=terms)
             out["score"][year][name] = (red, blue)
             out["score_fits"][year][name] = fits
         for terms in (False, True):
             score_history[terms].append(fit_score_calibration(side_arrays(t), terms=terms))
-        probs = {"bucket": t["p_bucket"], "phi": 1.0 / (1.0 + np.exp(-logit_phi(zscore(t))))}
+        probs = {"bucket": t["p_bucket"]}
+        if "phi" in fixed:
+            probs["phi"] = 1.0 / (1.0 + np.exp(-logit_phi(zscore(t))))
         out["win_fits"][year] = {}
-        red, blue = out["score"][year]["score_terms_past"]
-        calibrated = {**t, "rm": red, "bm": blue}
+        calibrated = {**t, "rm": out["score"][year]["score_terms_past"][0], "bm": out["score"][year]["score_terms_past"][1]} if any(n in ON_CALIBRATED for n in win_names) else t
         for name in win_names:
             p, fits, season_fit = walk_forward_win(calibrated if name in ON_CALIBRATED else t, WIN_VARIANTS[name], win_history[name])
             probs[name] = p
@@ -206,7 +220,8 @@ WIN_SLICES = {
     "DCMP + Championship": lambda t: np.isin(t["event_type"], (2, 3, 4, 5)),
     "quals": lambda t: t["playoff"] == 0,
     "playoffs": lambda t: t["playoff"] > 0,
-    "nobody has played here yet": lambda t: t["min_here"] <= 0,
+    "someone's first match here": lambda t: t["min_here"] <= 0,
+    "nobody has played here yet": lambda t: t["max_here"] <= 0,
     "first third of an event": lambda t: t["third"] == 0,
     "newest 20% of events": lambda t: t["holdout"],
 }
@@ -267,15 +282,19 @@ def win_compare(ts: list[dict], pa: list[np.ndarray], pb: list[np.ndarray], slic
 
 
 def score_summary(t, red, blue, mask) -> dict:
+    # decile_bias_pct: deciles of this variant's own predictions (what a reader of the
+    # prediction sees); decile_bias_fixed_pct: deciles of the uncalibrated predictions, so
+    # every variant is judged on the same alliances.
     rows = np.flatnonzero(mask)
     sides = side_arrays(t, rows)
     if not len(sides["actual"]):
         return {"n": 0}
     mu = np.concatenate([red[rows], blue[rows]])
+    base = np.concatenate([t["rm"][rows], t["bm"][rows]])
     a = np.concatenate([t["ra"][rows], t["ba"][rows]])
     v = np.concatenate([t["rv"][rows], t["bv"][rows]])
     ok = np.isfinite(a) & (v > 0)
-    mu, a, v = mu[ok], a[ok], v[ok]
+    mu, base, a, v = mu[ok], base[ok], a[ok], v[ok]
     nu = a - mu
     return {
         "sides": int(ok.sum()),
@@ -284,13 +303,15 @@ def score_summary(t, red, blue, mask) -> dict:
         "coverage_80": round(float(np.mean(np.abs(nu) <= Z80 * np.sqrt(v))), 4),
         "mean_bias_pct": round(float(100 * nu.sum() / mu.sum()), 2),
         "decile_bias_pct": decile_bias(mu, a),
+        "decile_bias_fixed_pct": decile_bias(mu, a, by=base),
     }
 
 
-def decile_bias(mu: np.ndarray, actual: np.ndarray, deciles: int = 10) -> list[float]:
-    # sum(actual - predicted) / sum(predicted) per decile of the variant's own predictions.
-    edges = np.quantile(mu, np.linspace(0, 1, deciles + 1))
-    which = np.clip(np.searchsorted(edges, mu, side="right") - 1, 0, deciles - 1)
+def decile_bias(mu: np.ndarray, actual: np.ndarray, deciles: int = 10, by: np.ndarray | None = None) -> list[float]:
+    # sum(actual - predicted) / sum(predicted) per decile of `by` (default: mu itself).
+    by = mu if by is None else by
+    edges = np.quantile(by, np.linspace(0, 1, deciles + 1))
+    which = np.clip(np.searchsorted(edges, by, side="right") - 1, 0, deciles - 1)
     return [round(float(100 * (actual[which == d] - mu[which == d]).sum() / max(mu[which == d].sum(), 1e-9)), 2) for d in range(deciles)]
 
 
@@ -298,7 +319,7 @@ SCORE_SLICES = {
     "all": lambda t: np.ones(len(t["y"]), bool),
     "quals": lambda t: t["playoff"] == 0,
     "playoffs": lambda t: t["playoff"] > 0,
-    "first match here": lambda t: (t["min_here"] <= 0) & (t["playoff"] == 0),
+    "someone's first match here": lambda t: (t["min_here"] <= 0) & (t["playoff"] == 0),
     "DCMP + Championship": lambda t: np.isin(t["event_type"], (2, 3, 4, 5)),
     "Championship": lambda t: np.isin(t["event_type"], (3, 4)),
     "FRC weeks 1-2": lambda t: t["week"] <= 1,
@@ -328,16 +349,23 @@ def score_compare(ts, pa, pb, slice_fn) -> dict:
     return {k: paired_cluster_bootstrap(la[k], lb[k], n=2000, seed=7) for k in la}
 
 
-def report(seasons: list[int], tables: dict[int, dict], runs: dict, win_pairs, score_pairs, win_names: tuple[str, ...] = tuple(WIN_VARIANTS)) -> dict:
+def report(
+    seasons: list[int], tables: dict[int, dict], runs: dict, win_pairs, score_pairs,
+    win_names: tuple[str, ...] = tuple(WIN_VARIANTS), score_names: tuple[str, ...] = SCORE_VARIANTS, fixed: tuple[str, ...] = FIXED,
+) -> dict:
     out: dict = {"seasons": seasons, "score": {"summaries": {}, "comparisons": {}, "gates": {}}, "win": {"summaries": {}, "comparisons": {}, "gates": {}}}
     # Score calibration.
-    for name in SCORE_VARIANTS:
+    via_bucket: dict = {}
+    for name in score_names:
         for y in seasons:
             red, blue = runs["score"][y][name]
             out["score"]["summaries"][f"{name} {y}"] = {s: score_summary(tables[y], red, blue, f(tables[y])) for s, f in SCORE_SLICES.items()}
             # The win probability these means give through the harness's bucket logistic.
-            z = (red - blue) / np.sqrt(tables[y]["mv"])
-            out["score"]["summaries"][f"{name} {y}"]["all"]["brier_via_bucket_logistic"] = win_summary(tables[y], bucket_probs(tables[y], z), np.ones(len(z), bool))["brier"]
+            t = tables[y]
+            p = bucket_probs(t, (red - blue) / np.sqrt(t["mv"]))
+            decided = t["y"] != 0.5
+            via_bucket[(name, y)] = (p[decided] - t["y"][decided]) ** 2
+            out["score"]["summaries"][f"{name} {y}"]["all"]["brier_via_bucket_logistic"] = round(float(via_bucket[(name, y)].mean()), 5)
     for a, b in score_pairs:
         key = f"{a} vs {b}"
         out["score"]["comparisons"][key] = {}
@@ -346,12 +374,16 @@ def report(seasons: list[int], tables: dict[int, dict], runs: dict, win_pairs, s
             out["score"]["comparisons"][key][str(y)] = {
                 s: score_compare([tables[yy] for yy in ys], [runs["score"][yy][a] for yy in ys], [runs["score"][yy][b] for yy in ys], f) for s, f in SCORE_SLICES.items()
             }
-        out["score"]["gates"][key] = score_gates(out["score"], a, b, seasons)
+        pooled_diff = float(np.concatenate([via_bucket[(a, y)] - via_bucket[(b, y)] for y in seasons]).mean())
+        out["score"].setdefault("brier_via_bucket_logistic_pooled_diff", {})[key] = pooled_diff
+        out["score"]["gates"][key] = score_gates(out["score"], a, b, seasons, pooled_diff)
     # Win layer.
-    names = [*FIXED, *win_names]
+    names = [*fixed, *win_names]
     for name in names:
         for y in seasons:
             out["win"]["summaries"][f"{name} {y}"] = {s: win_summary(tables[y], runs["win"][y][name], f(tables[y])) for s, f in WIN_SLICES.items()}
+        # Pooled over the seasons, match by match.
+        out["win"]["summaries"][f"{name} pooled"] = {"all": _pooled_summary([tables[y] for y in seasons], [runs["win"][y][name] for y in seasons])}
     for a, b in win_pairs:
         key = f"{a} vs {b}"
         out["win"]["comparisons"][key] = {}
@@ -368,17 +400,30 @@ def report(seasons: list[int], tables: dict[int, dict], runs: dict, win_pairs, s
     return out
 
 
-def score_gates(rep: dict, a: str, b: str, seasons: list[int]) -> dict:
+def _pooled_summary(ts: list[dict], ps: list[np.ndarray]) -> dict:
+    keys = ("key", "event", "y")
+    t = {k: np.concatenate([x[k] for x in ts]) for k in keys}
+    return win_summary(t, np.concatenate(ps), np.ones(len(t["y"]), bool))
+
+
+def score_gates(rep: dict, a: str, b: str, seasons: list[int], brier_diff: float) -> dict:
     c = rep["comparisons"][f"{a} vs {b}"]
-    top = {y: (rep["summaries"][f"{a} {y}"]["all"]["decile_bias_pct"][-1], rep["summaries"][f"{b} {y}"]["all"]["decile_bias_pct"][-1]) for y in seasons}
-    big = {y: (rep["summaries"][f"{a} {y}"]["DCMP + Championship"]["decile_bias_pct"][-1], rep["summaries"][f"{b} {y}"]["DCMP + Championship"]["decile_bias_pct"][-1]) for y in seasons}
+
+    def halved(slice_name, column):
+        return all(
+            abs(rep["summaries"][f"{a} {y}"][slice_name][column][-1]) <= 0.5 * abs(rep["summaries"][f"{b} {y}"][slice_name][column][-1])
+            for y in seasons
+        )
+
     return {
-        "top-decile bias halved every season": all(abs(ta) <= 0.5 * abs(tb) for ta, tb in top.values()),
-        "top-decile bias halved at DCMP + Championship every season": all(abs(ta) <= 0.5 * abs(tb) for ta, tb in big.values()),
+        "top-decile bias halved every season (own deciles)": halved("all", "decile_bias_pct"),
+        "top-decile bias halved every season (fixed deciles)": halved("all", "decile_bias_fixed_pct"),
+        "top-decile bias halved at DCMP + Championship every season (own deciles)": halved("DCMP + Championship", "decile_bias_pct"),
+        "top-decile bias halved at DCMP + Championship every season (fixed deciles)": halved("DCMP + Championship", "decile_bias_fixed_pct"),
         "points MAE better (pooled interval < 0)": c["pooled"]["all"]["abs_error"]["hi90"] < 0,
         "score loglik better (pooled interval < 0)": c["pooled"]["all"]["neg_loglik"]["hi90"] < 0,
         "no season's MAE worse (point)": all(c[str(y)]["all"]["abs_error"]["mean_diff"] <= 0 for y in seasons),
-        "Brier via the bucket logistic not worse than 0.0005 (pooled mean)": float(np.mean([rep["summaries"][f"{a} {y}"]["all"]["brier_via_bucket_logistic"] - rep["summaries"][f"{b} {y}"]["all"]["brier_via_bucket_logistic"] for y in seasons])) <= 0.0005,
+        "Brier via the bucket logistic not worse (pooled, match level)": brier_diff <= 0.0,
     }
 
 
@@ -392,15 +437,22 @@ def win_gates(rep: dict, a: str, b: str, seasons: list[int]) -> dict:
             and all(c[str(y)][slice_name]["brier"]["mean_diff"] <= 0.0005 for y in seasons)
         )
 
-    ece_a = np.mean([rep["summaries"][f"{a} {y}"]["all"]["ece"] for y in seasons])
-    ece_b = np.mean([rep["summaries"][f"{b} {y}"]["all"]["ece"] for y in seasons])
+    sa, sb = rep["summaries"][f"{a} pooled"]["all"], rep["summaries"][f"{b} pooled"]["all"]
+    cal = pooled["all"]["calibration"]
     return {
         "add rule (all)": add("all"),
         "add rule (FRC weeks 1-3)": add("FRC weeks 1-3"),
+        "add rule (someone's first match here)": add("someone's first match here"),
         "add rule (nobody has played here yet)": add("nobody has played here yet"),
         "add rule (first third of an event)": add("first third of an event"),
         "simplify rule: pooled Brier not worse by > 0.0005": pooled["all"]["brier"]["mean_diff"] <= 0.0005,
-        "calibration rule: ECE halved, interval < 0, Brier not worse": bool(ece_a <= 0.5 * ece_b and pooled["all"]["calibration"].get("ece", {}).get("hi90", 1) < 0 and pooled["all"]["brier"]["mean_diff"] <= 0),
+        # Calibration-only rule, in the bins it is meant to fix (0.9+ favourites) and overall.
+        "calibration rule: 0.9+ gap halved, interval < 0, Brier not worse": bool(
+            sa.get("gap_0.9", 1) <= 0.5 * sb.get("gap_0.9", 0) and cal.get("gap_0.9", {}).get("hi90", 1) < 0 and pooled["all"]["brier"]["mean_diff"] <= 0
+        ),
+        "calibration rule: ECE halved, interval < 0, Brier not worse": bool(
+            sa["ece"] <= 0.5 * sb["ece"] and cal.get("ece", {}).get("hi90", 1) < 0 and pooled["all"]["brier"]["mean_diff"] <= 0
+        ),
     }
 
 
@@ -414,7 +466,7 @@ def print_report(rep: dict, seasons: list[int]) -> None:
     s = rep["score"]
     print("\nScore calibration: bias by decile of each variant's own predicted alliance score (% of predicted; + = under-predicted)")
     for key, v in s["summaries"].items():
-        for sl in ("all", "DCMP + Championship", "playoffs", "first match here"):
+        for sl in ("all", "DCMP + Championship", "playoffs", "someone's first match here"):
             x = v[sl]
             if x.get("sides"):
                 extra = f"  Brier(bucket) {v['all']['brier_via_bucket_logistic']:.4f}" if sl == "all" else ""
@@ -422,8 +474,9 @@ def print_report(rep: dict, seasons: list[int]) -> None:
     for key, by in s["comparisons"].items():
         print(f"\n  {key}")
         for y, sl in by.items():
-            for name in ("all", "DCMP + Championship", "playoffs", "first match here"):
+            for name in ("all", "DCMP + Championship", "playoffs", "someone's first match here"):
                 print(f"    {y:7} {name:22} MAE {_fmt(sl[name]['abs_error']):28} -loglik {_fmt(sl[name]['neg_loglik'])}")
+        print(f"    Brier via the bucket logistic, pooled match-level diff {s['brier_via_bucket_logistic_pooled_diff'][key]:+.5f}")
         for g, ok in s["gates"][key].items():
             print(f"    gate: {g}: {'pass' if ok else 'FAIL'}")
     w = rep["win"]
@@ -431,13 +484,13 @@ def print_report(rep: dict, seasons: list[int]) -> None:
     print(f"  {'run':22} {'slice':28} {'n':>6} {'brier':>7} {'logloss':>8} {'acc':>6} {'slope':>6} {'ECE':>6} {'gap.9':>6}")
     for key, v in w["summaries"].items():
         for sl, x in v.items():
-            if x.get("n") and sl in ("all", "FRC weeks 1-3", "DCMP + Championship", "nobody has played here yet", "first third of an event", "playoffs", "newest 20% of events"):
+            if x.get("n") and sl in ("all", "FRC weeks 1-3", "DCMP + Championship", "someone's first match here", "nobody has played here yet", "first third of an event", "playoffs", "newest 20% of events"):
                 print(f"  {key:22} {sl:28} {x['n']:>6} {x['brier']:>7.4f} {x['log_loss']:>8.4f} {x['accuracy']:>6.3f} {str(x['calibration_slope']):>6} {x['ece']:>6.4f} {str(x.get('gap_0.9')):>6}")
     print("\nPaired differences a - b (negative = a better), 90% event-cluster bootstrap")
     for key, by in w["comparisons"].items():
         print(f"\n  {key}")
         for y, sl in by.items():
-            for name in ("all", "FRC week 1", "FRC week 2", "FRC weeks 1-3", "FRC week 4", "FRC weeks 4-7", "FRC week 8+", "DCMP + Championship", "nobody has played here yet", "first third of an event", "playoffs"):
+            for name in ("all", "FRC week 1", "FRC week 2", "FRC weeks 1-3", "FRC week 4", "FRC weeks 4-7", "FRC week 8+", "DCMP + Championship", "someone's first match here", "nobody has played here yet", "first third of an event", "playoffs"):
                 c = sl[name]
                 cal = c.get("calibration", {}).get("ece", {}) if name == "all" else {}
                 print(f"    {y:7} {name:28} Brier {_fmt(c['brier']):28} logloss {_fmt(c['log_loss']):28}" + (f" ECE {_fmt(cal)}" if cal else ""))
@@ -462,21 +515,55 @@ def save(name: str, payload) -> Path:
     return path
 
 
-# ── Production's 2026 network, reproduced (blind step only) ──────────────
+# ── Production's 2026 network, reproduced ────────────────────────────────
+
+PROD = BACKEND_ROOT.parents[1] / "research-data" / "prod"
+TBA_ALL = BACKEND_ROOT.parents[1] / "research-data" / "tba-all"
+CORRECTION_WEIGHTS = BACKEND_ROOT / "app" / "services" / "ratings" / "data" / "win_correction_2026.json"
+
+
+def production_priors() -> dict[str, float]:
+    # Production's own 2025 prior strengths (team_prior_strengths, read-only export).
+    out = {}
+    for line in (PROD / "team_prior_strengths_2025.csv").read_text().splitlines():
+        parts = line.split(",")
+        if len(parts) == 3 and parts[0].startswith("frc"):
+            out[parts[0].lower()] = float(parts[1])
+    return out
+
 
 def production_2026() -> dict[str, tuple[float, float]]:
-    # What users see: the live team model (hub + tower, duds, 2026 settings), production's
-    # bucket scales and the 14-input network trained on 2026 (in-sample on every 2026
-    # event), through the same replay order as team_model_service._compute.
-    from evaluate_rating_research import build_model
-
+    # What users see, as closely as the research data allows: the live team model (hub +
+    # tower, duds, 2026 settings) with production's stored priors, replayed over every
+    # 2026 event TBA has (offseason and week-0 events too, as production's database does)
+    # with disqualified alliances kept (production keeps them), then production's bucket
+    # scales and the 14-input network. The network was trained on every 2026 event, so it
+    # is in-sample here. Returns (base, corrected) per match.
     from app.services.events.win_probability import red_win_prob
+    from app.services.ratings.constants import season_baseline
+    from app.services.ratings.research_data import load_cached_season
+    from app.services.ratings.team_model import SeasonTeamModel
     from app.services.ratings.team_model_service import correction_features
-    from app.services.ratings.win_correction import corrected
+    from app.services.ratings.win_correction import active, corrected
 
-    research = p2.research(2026)
-    previous = p2.research(2025)
-    model, _alt = build_model("team_model", 2026, research, previous, mean_share(research.season.results))
+    if not CORRECTION_WEIGHTS.exists() or not active(2026):
+        raise SystemExit("production's 2026 correction weights are missing or switched off")
+    research = load_cached_season(TBA_ALL, 2026, exclude_dq=False)
+    baseline = season_baseline(2026)
+    z = production_priors()
+    beta = float(baseline.get("prior_beta", 0.0))
+    rookie = float(baseline.get("rookie_multiplier", 1.0))
+    multipliers = {team: math.exp(beta * value) for team, value in z.items()}
+    for team, year in research.rookie_year.items():
+        if year == 2026:
+            multipliers.setdefault(team, rookie)
+    model = SeasonTeamModel(
+        dict(baseline["team_model_priors"]),
+        baseline["team_model_params"],
+        team_multipliers=multipliers,
+        team_var_multipliers={team: float(baseline.get("prior_known_var_multiplier", 1.0)) for team in z},
+        week_multipliers=list(baseline.get("week_multipliers") or []),
+    )
     here: dict = {}
     total: dict = {}
     out = {}
@@ -498,63 +585,143 @@ def production_2026() -> dict[str, tuple[float, float]]:
     return out
 
 
+def step_parity() -> dict:
+    # Probabilities only, no outcomes: the reproduction against what the live API served
+    # for the events saved in research-data/prod/served_<event>.json.
+    prod = production_2026()
+    out = {}
+    for path in sorted(PROD.glob("served_*.json")):
+        served = json.loads(path.read_text())
+        gaps_base, gaps_net = [], []
+        for m in served["matches"]:
+            pred = m.get("prediction") or {}
+            key = m["match_key"].lower()
+            if key in prod and pred.get("red_win_prob") is not None and pred.get("red_win_prob_team_model") is not None:
+                gaps_base.append(abs(prod[key][0] - pred["red_win_prob_team_model"]))
+                gaps_net.append(abs(prod[key][1] - pred["red_win_prob"]))
+        out[served["event_key"]] = {
+            "matches": len(gaps_net),
+            "base_mean_abs_gap": round(float(np.mean(gaps_base)), 5) if gaps_base else None,
+            "base_max_abs_gap": round(float(np.max(gaps_base)), 5) if gaps_base else None,
+            "network_mean_abs_gap": round(float(np.mean(gaps_net)), 5) if gaps_net else None,
+            "network_max_abs_gap": round(float(np.max(gaps_net)), 5) if gaps_net else None,
+        }
+        print(served["event_key"], out[served["event_key"]])
+    return out
+
+
 # ── Blind seasons: once per frozen phase 3 bundle ────────────────────────
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
 
 def manifest() -> dict:
     def git(*args):
         return subprocess.run(["git", *args], cwd=BACKEND_ROOT, capture_output=True, text=True).stdout.strip()
 
     digest = hashlib.sha256()
-    for year in (*DEV, *BLIND):
-        for path in sorted((p2.DATA / str(year)).glob("*.json")):
-            digest.update(path.name.encode())
-            digest.update(path.read_bytes())
-    runs = {f"{p2.BUNDLE}-{y}.json": hashlib.sha256((p2.REPORTS / "runs" / f"{p2.BUNDLE}-{y}.json").read_bytes()).hexdigest() for y in (*DEV, *BLIND)}
+    for folder, years in ((p2.DATA, (*DEV, *BLIND)), (TBA_ALL, (2026,))):
+        for year in years:
+            for path in sorted((folder / str(year)).glob("*.json")):
+                digest.update(path.name.encode())
+                digest.update(path.read_bytes())
     return {
         "commit": git("rev-parse", "HEAD"),
         "uncommitted_changes": bool(git("status", "--porcelain", "--", ".")),
         "data_sha256": digest.hexdigest(),
-        "phase2_bundle_runs_sha256": runs,
-        "phase2_hindsight_sha256": hashlib.sha256((p2.REPORTS / "hindsight.json").read_bytes()).hexdigest(),
+        "phase2_bundle_runs_sha256": {f"{p2.BUNDLE}-{y}.json": _sha(p2.REPORTS / "runs" / f"{p2.BUNDLE}-{y}.json") for y in (*DEV, *BLIND)},
+        "phase2_hindsight_sha256": _sha(p2.REPORTS / "hindsight.json"),
+        "production_weights_sha256": _sha(CORRECTION_WEIGHTS),
+        "production_priors_sha256": _sha(PROD / "team_prior_strengths_2025.csv"),
         "bundle": PHASE3_BUNDLE,
+        "chain": BLIND_CHAIN,
+        "score_variants": BLIND_SCORE,
+        "score_pairs": BLIND_SCORE_PAIRS,
         "win_variants": {n: asdict(WIN_VARIANTS[n]) for n in BLIND_WIN},
+        "fixed": BLIND_FIXED,
         "pairs": BLIND_PAIRS,
-        "note": "2025 and 2026 were already run blind for phase 2's state model; this is weaker evidence than phase 2's blind run. 2027 is the only untouched test.",
+        "note": (
+            "2025 and 2026 were already run blind once for phase 2's state model and their results were seen: weaker "
+            "evidence than phase 2's blind run; 2027 is the only untouched test. The chain starts at 2023 because 2022's "
+            "predictions start from a stand-in built from 2026's mean score. Development choices (2022-2024) did use 2022."
+        ),
         "started": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
+CLAIM = REPORTS / "blind" / "CLAIMED"
+
+
 def step_blind() -> None:
-    record = manifest()
+    # Checks first, then an exclusive claim (a second run, even after a crash, is
+    # refused), then everything rebuilt from the committed code: tables for the whole chain,
+    # only the frozen variants and pairs.
     if not PHASE3_BUNDLE:
         raise SystemExit("freeze PHASE3_BUNDLE first")
+    record = manifest()
     if record["uncommitted_changes"]:
         raise SystemExit("commit first: the manifest must name the code that ran")
-    folder = REPORTS / "blind"
-    if folder.exists() and any(folder.iterdir()):
-        raise SystemExit(f"a phase 3 blind run exists ({sorted(p.name for p in folder.iterdir())}): 2025/2026 run once")
+    # Everything that can fail and shows no result goes before the claim: the tables
+    # (features and the replay check) and production's own predictions.
+    tables = {y: build_table(y) for y in BLIND_CHAIN}
+    prod = production_2026()
+    missing = [k for k in tables[2026]["key"] if k not in prod]
+    if missing:
+        raise SystemExit(f"production replay lacks {len(missing)} official 2026 matches, e.g. {missing[:3]}")
+    CLAIM.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(CLAIM, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        raise SystemExit(f"{CLAIM} exists: the phase 3 blind run has been claimed ({CLAIM.read_text().strip()}); 2025/2026 run once") from None
+    with os.fdopen(fd, "w") as handle:
+        handle.write(f"{record['commit']} {record['started']}\n")
     save(f"blind/{record['commit']}/manifest", {**record, "status": "started"})
-    tables = {y: load_table(y) for y in DEV}
+    rebuilt = {}
+    for y in BLIND_CHAIN:
+        if y in DEV and table_path(y).exists():
+            saved = load_table(y)
+            rebuilt[str(y)] = all(np.array_equal(saved[k], tables[y][k]) for k in tables[y]) and set(saved) == set(tables[y])
     for y in BLIND:
-        tables[y] = build_table(y)
         save_table(y, tables[y])
-    seasons = [*DEV, *BLIND]
-    runs = run_seasons(seasons, tables, BLIND_WIN)
-    rep = report(list(BLIND), tables, runs, BLIND_PAIRS, SCORE_PAIRS, BLIND_WIN)
-    rep["production_2026"] = production_comparison(tables[2026], runs["win"][2026])
+    rep = frozen_pipeline(list(BLIND_CHAIN), list(BLIND), tables)
+    rep["production_2026"] = production_comparison(tables[2026], rep.pop("_win_probs")[2026], prod)
     save(f"blind/{record['commit']}/report", rep)
     print_report(rep, list(BLIND))
     print_production(rep["production_2026"])
-    outputs = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((REPORTS / "tables").glob("*.npz"))}
-    save(f"blind/{record['commit']}/manifest", {**record, "status": "finished", "finished": time.strftime("%Y-%m-%d %H:%M:%S"), "table_sha256": outputs})
+    outputs = {f"{y}.npz": _sha(table_path(y)) for y in BLIND}
+    save(f"blind/{record['commit']}/manifest", {
+        **record, "status": "finished", "finished": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "dev_tables_identical_to_saved": rebuilt, "blind_table_sha256": outputs,
+    })
 
 
-def production_comparison(t: dict, probs: dict[str, np.ndarray]) -> dict:
-    prod = production_2026()
+def frozen_pipeline(chain: list[int], evaluated: list[int], tables: dict[int, dict]) -> dict:
+    # Exactly what the blind step runs: the frozen variants and pairs only.
+    runs = run_seasons(chain, tables, BLIND_WIN, BLIND_SCORE, BLIND_FIXED)
+    rep = report(evaluated, tables, runs, BLIND_PAIRS, BLIND_SCORE_PAIRS, BLIND_WIN, BLIND_SCORE, BLIND_FIXED)
+    rep["_win_probs"] = runs["win"]
+    return rep
+
+
+def step_rehearse() -> None:
+    # The blind pipeline on development seasons (2024 plays "blind"), to catch crashes
+    # before the one real run. Writes nothing under blind/.
+    tables = {y: build_table(y) for y in (2023, 2024)}
+    rep = frozen_pipeline([2023, 2024], [2024], tables)
+    rep.pop("_win_probs")
+    print_report(rep, [2024])
+    save("rehearsal-2024", rep)
+
+
+def production_comparison(t: dict, probs: dict[str, np.ndarray], prod: dict[str, tuple[float, float]]) -> dict:
     base = np.array([prod[k][0] for k in t["key"]])
     net = np.array([prod[k][1] for k in t["key"]])
     best = probs[PHASE3_BUNDLE["win"]]
-    out: dict = {"note": "production network trained on every 2026 event: in-sample here. Official events only (production also replays offseason events).", "slices": {}}
+    out: dict = {
+        "note": "production's network was trained on every 2026 event: in-sample here. Scored on official events; the reproduction replays offseason events too and matched served probabilities to 5e-5 on three events.",
+        "slices": {},
+    }
     for sl in ("all", "newest 20% of events", "FRC weeks 1-3", "DCMP + Championship", "nobody has played here yet", "first third of an event"):
         mask = WIN_SLICES[sl](t)
         out["slices"][sl] = {
@@ -577,7 +744,7 @@ def print_production(rep: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--step", required=True, choices=["tables", "dev", "blind"])
+    parser.add_argument("--step", required=True, choices=["tables", "dev", "parity", "rehearse", "blind"])
     parser.add_argument("--seasons", default=",".join(map(str, DEV)))
     parser.add_argument("--label", default="dev")
     parser.add_argument("--blind-set", action="store_true", help="dev: only the frozen blind variants and pairs")
@@ -598,6 +765,10 @@ def main() -> int:
             rep = report(seasons, tables, runs, WIN_PAIRS, SCORE_PAIRS)
         print_report(rep, seasons)
         print(f"\nreport: {save(args.label, rep)}", file=sys.stderr)
+    if args.step == "parity":
+        save("parity", step_parity())
+    if args.step == "rehearse":
+        step_rehearse()
     if args.step == "blind":
         step_blind()
     return 0

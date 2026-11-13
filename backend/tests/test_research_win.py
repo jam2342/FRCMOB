@@ -1,6 +1,9 @@
 import random
 from dataclasses import replace
 
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -24,6 +27,8 @@ from app.services.ratings.research_win import (
 from tests.test_research_fit import _league
 from tests.test_research_harness import _match, _write_event
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
 RECIPES = {
     "temperatures": WinRecipe(base="logistic"),
     "phi temperatures": WinRecipe(),
@@ -33,9 +38,11 @@ RECIPES = {
 }
 
 
-def _table(*, weeks=6, per_week=400, seed=0, flip_from_time=None, scale=1.0):
+def _table(*, weeks=6, per_week=400, seed=0, flip_from_time=None, scale=1.0, late_label=True):
     # A synthetic season table: alliances of three latent robots, a weekly schedule of
     # events, sides scored with diminishing returns so the layers have something to fit.
+    # late_label: the last week's first event carries week label 0 (TBA labels aren't
+    # playing order), so a fit cut by label instead of time would see it early.
     rng = np.random.default_rng(seed)
     n = weeks * per_week
     week = np.repeat(np.arange(weeks), per_week)
@@ -50,11 +57,14 @@ def _table(*, weeks=6, per_week=400, seed=0, flip_from_time=None, scale=1.0):
         ra[later], ba[later] = ba[later] + 7, ra[later]
     y = np.where(ra > ba, 1.0, np.where(ra < ba, 0.0, 0.5))
     min_here = np.tile(np.arange(per_week) % 12, weeks)
+    if late_label:
+        week = week.copy()
+        week[(week == weeks - 1) & (np.tile(np.arange(per_week), weeks) < per_week // 4)] = 0
     return {
         "key": np.array([f"m{i}" for i in range(n)]),
         "event": np.array([f"e{w}_{i % 4}" for w, i in zip(week, range(n))]),
         "week": week, "time": time, "event_type": np.zeros(n, int), "playoff": (min_here == 11).astype(float),
-        "min_here": min_here, "min_before": np.minimum(week * 10, 40), "y": y, "holdout": week == weeks - 1,
+        "min_here": min_here, "max_here": min_here, "min_before": np.minimum(week * 10, 40), "y": y, "holdout": week == weeks - 1,
         "third": np.minimum(min_here // 4, 3), "rm": rm * 30 * scale, "bm": bm * 30 * scale,
         "rv": np.full(n, 900.0) * scale**2, "bv": np.full(n, 900.0) * scale**2, "mv": np.full(n, 1800.0) * scale**2,
         "u": np.full(n, 30.0 * scale), "ra": ra, "ba": ba, "best_r": red.max(1), "best_b": blue.max(1),
@@ -69,9 +79,9 @@ def _cut(t, k=3):
 
 
 def _as_of_holds(run, k=3) -> bool:
-    # Flip every result from week k's start on: every forecast for weeks up to k (all
-    # made before k began) must not move, and something later must, or the test proves
-    # nothing.
+    # Flip every result played from week k's start on: every forecast made before that
+    # time (weeks up to k, and the late event labelled week 0, which is forecast from
+    # week 0's fit) must not move, and something later must, or the test proves nothing.
     base = _table()
     cut = _cut(base, k)
     flipped = _table(flip_from_time=cut)
@@ -89,31 +99,43 @@ def _leaky_weekly(t):
     return [(w, int(t["time"].max()) + 1, idx) for w, _start, idx in _WEEKLY(t)]
 
 
+def _label_weekly(t):
+    # The week-label leak: each week's fit sees every row labelled earlier, whenever it
+    # was played.
+    out = []
+    for w, start, idx in _WEEKLY(t):
+        lower = t["time"][t["week"] < w]
+        out.append((w, max(start, int(lower.max()) + 1) if len(lower) else start, idx))
+    return out
+
+
 @pytest.fixture
 def plant_leak(monkeypatch):
-    def plant():
-        monkeypatch.setattr(research_win, "weekly", _leaky_weekly)
+    def plant(kind="season"):
+        monkeypatch.setattr(research_win, "weekly", _leaky_weekly if kind == "season" else _label_weekly)
     return plant
 
 
+@pytest.mark.parametrize("leak", ["season", "label"])
 @pytest.mark.parametrize("terms", [False, True])
-def test_score_calibration_never_sees_a_later_result(plant_leak, terms):
+def test_score_calibration_never_sees_a_later_result(plant_leak, terms, leak):
     def run(t):
         red, blue, _ = walk_forward_scores(t, terms=terms)
         return np.column_stack([red, blue])
 
     assert _as_of_holds(run)
-    plant_leak()
+    plant_leak(leak)
     assert not _as_of_holds(run)
 
 
+@pytest.mark.parametrize("leak", ["season", "label"])
 @pytest.mark.parametrize("name", list(RECIPES))
-def test_win_layer_never_sees_a_later_result(plant_leak, name):
+def test_win_layer_never_sees_a_later_result(plant_leak, name, leak):
     def run(t):
         return walk_forward_win(t, RECIPES[name])[0]
 
     assert _as_of_holds(run)
-    plant_leak()
+    plant_leak(leak)
     assert not _as_of_holds(run)
 
 
@@ -238,3 +260,39 @@ def test_margin_elo_predicts_before_it_learns(tmp_path):
     probs, _, _ = walk_forward_probs(rows_a)
     late = [(p, r.y) for p, r in zip(probs, rows_a) if r.week == 3]
     assert np.mean([(p > 0.5) == (y > 0.5) for p, y in late]) > 0.7
+
+
+def test_a_season_chain_only_runs_forward():
+    # Changing a later season leaves every earlier one alone; changing an earlier one
+    # reaches the later season's "past" variants and nothing else of it.
+    p3 = pytest.importorskip("evaluate_rating_phase3")
+
+    def run(t23, t24):
+        return p3.run_seasons([2023, 2024], {2023: t23, 2024: t24}, p3.BLIND_WIN, p3.BLIND_SCORE, p3.BLIND_FIXED)
+
+    a = run(_table(seed=1), _table(seed=2))
+    b = run(_table(seed=1), _table(seed=2, flip_from_time=0))
+    for name in p3.BLIND_WIN:
+        assert np.array_equal(a["win"][2023][name], b["win"][2023][name])
+    for name in p3.BLIND_SCORE:
+        assert all(np.array_equal(x, y) for x, y in zip(a["score"][2023][name], b["score"][2023][name]))
+    c = run(_table(seed=3), _table(seed=2))
+    for name in p3.BLIND_WIN:
+        same = np.array_equal(a["win"][2024][name], c["win"][2024][name])
+        assert same == (not p3.WIN_VARIANTS[name].past), name
+    assert not np.array_equal(a["score"][2024]["score_terms_past"][0], c["score"][2024]["score_terms_past"][0])
+    assert np.array_equal(a["score"][2024]["score_none"][0], c["score"][2024]["score_none"][0])
+
+
+def test_features_come_from_the_settings_in_use(tmp_path):
+    # A plan that switches settings mid-season: every row's features come from the filter
+    # serving it, the same as a filter run on those settings alone.
+    inputs = season_inputs(_league(tmp_path), None)
+    switch = min(t for t, w in zip(inputs.times, inputs.weeks) if w == 2)
+    first, second = ScaleFreeParams(), replace(ScaleFreeParams(), noise=0.5, event=0.6)
+    mixed = bundle_table(inputs, [(0, first), (switch, second)])
+    for params, keep in ((first, mixed["time"] < switch), (second, mixed["time"] >= switch)):
+        alone = bundle_table(inputs, [(0, params)])
+        assert keep.any()
+        for column in ("rm", "mv", "best_r", "worst_b", "sd_r", "u"):
+            assert np.array_equal(mixed[column][keep], alone[column][keep]), column
