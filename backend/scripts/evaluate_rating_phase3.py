@@ -626,6 +626,11 @@ def step_parity() -> dict:
 
 # ── Blind seasons: once per frozen phase 3 bundle ────────────────────────
 
+def _same(a: np.ndarray, b: np.ndarray) -> bool:
+    # Unplayed sides are NaN in both: equal.
+    return bool(np.array_equal(a, b, equal_nan=a.dtype.kind == "f" and b.dtype.kind == "f"))
+
+
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -685,7 +690,7 @@ def step_blind() -> None:
             saved = load_table(y)
             shared = set(saved) & set(tables[y])
             rebuilt[str(y)] = {
-                "same_values_on_shared_columns": all(np.array_equal(saved[k], tables[y][k]) for k in shared),
+                "same_values_on_shared_columns": all(_same(saved[k], tables[y][k]) for k in shared),
                 "only_in_saved": sorted(set(saved) - shared), "only_in_rebuilt": sorted(set(tables[y]) - shared),
             }
     prod = production_2026()
@@ -709,7 +714,7 @@ def step_blind() -> None:
     print_production(rep["production_2026"])
     outputs = {f"{y}.npz": _sha(table_path(y)) for y in BLIND}
     save(f"blind/{record['commit']}/manifest", {
-        **record, "status": "finished", "finished": time.strftime("%Y-%m-%d %H:%M:%S"),
+        **record, "dev_tables_vs_saved": rebuilt, "status": "finished", "finished": time.strftime("%Y-%m-%d %H:%M:%S"),
         "dev_tables_identical_to_saved": rebuilt, "blind_table_sha256": outputs,
     })
 
