@@ -336,9 +336,9 @@ def weekly_job(db, season, *, now, code_sha):
     if db.get(models.FrozenSeason, season):
         return {"status": "season_frozen"}
     safety = safety_check(db, season, now=now)
-    if bundle.frozen:
+    if bundle.frozen or safety["status"] == "rolled_back":
         db.commit()
-        return {"status": "frozen", "safety": safety}
+        return {"status": "frozen" if bundle.frozen else "rolled_back", "safety": safety}
     result = fit_week(db, season, monday(now), code_sha)
     versions = db.query(models.RatingCalibration).filter_by(season=season, recipe=RECIPE).filter(models.RatingCalibration.status != "rejected").all()
     for version in versions:

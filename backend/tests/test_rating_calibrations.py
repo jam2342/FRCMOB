@@ -420,7 +420,8 @@ def test_safety_baseline_rolls_back_bad_active_fit(migrated, enabled):
     bundle.calibration_id, bundle.bundle_version = cal.id, 1
     db.commit()
     snapshot = db.execute(text("SELECT first, final, features, locked_at FROM match_prediction_log ORDER BY match_key")).all()
-    result = c.safety_check(db, 2027, now=NOW+timedelta(days=18))
+    result = c.weekly_job(db, 2027, now=NOW+timedelta(days=18), code_sha="test")
     assert result["status"] == "rolled_back"
     assert bundle.calibration_id is None and bundle.bundle_version == 2
+    assert db.query(models.RatingCalibration).count() == 1
     assert snapshot == db.execute(text("SELECT first, final, features, locked_at FROM match_prediction_log ORDER BY match_key")).all()
