@@ -233,3 +233,48 @@ class RidgePriorOpr:
 
     def team_points(self, team_key: str, event_key: str) -> float:
         return self._estimate(team_key, event_key)
+
+
+# ── Margin Elo (phase 3 stacking input) ─────────────────────────────────
+
+class MarginElo:
+    # Elo on the full score margin, fouls included (Sykes-style: what a points model can't
+    # see, such as fouls drawn and opponents held down). Ratings are in units of the as-of
+    # mean share, so k carries across games. Each side's three teams share the error; the
+    # K ramp is EPA's (0.5 -> 0.3 over matches 6-12) times k_scale. No spread: the harness
+    # fits a logistic on the margin.
+    def __init__(self, multipliers: dict[str, float], previous_unit: float | None, *, k_scale: float = 0.5, name: str = "margin_elo"):
+        self.name = name
+        self.multipliers = multipliers
+        self.unit = RunningUnit(previous_unit)
+        self.k_scale = k_scale
+        self.rating: dict[str, float] = {}
+        self.played: dict[str, int] = defaultdict(int)
+
+    def _value(self, team: str) -> float:
+        if team not in self.rating:
+            self.rating[team] = self.multipliers.get(team, 1.0)
+        return self.rating[team]
+
+    def predict(self, card: MatchCard) -> Prediction:
+        u = self.unit.value()
+        # Only the difference means anything; the level is the ratings' sum in points.
+        return Prediction(u * sum(self._value(t) for t in card.red), u * sum(self._value(t) for t in card.blue))
+
+    def observe(self, result: MatchResult) -> None:
+        card = result.card
+        u = self.unit.value()
+        if result.red_score is not None and result.blue_score is not None:
+            expected = sum(self._value(t) for t in card.red) - sum(self._value(t) for t in card.blue)
+            error = (result.red_score - result.blue_score) / u - expected
+            for teams, sign in ((card.red, 1.0), (card.blue, -1.0)):
+                for team in teams:
+                    k = self.k_scale * _ramp(self.played[team], 6, 12, 0.5, 0.3)
+                    self.rating[team] += sign * k * error / 3.0
+        for team in _seen_teams(card):
+            self.played[team] += 1
+        self.unit.add(result.red_points)
+        self.unit.add(result.blue_points)
+
+    def team_points(self, team_key: str, event_key: str) -> float:
+        return self._value(team_key) * self.unit.value()
