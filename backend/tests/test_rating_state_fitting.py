@@ -319,3 +319,29 @@ def test_disqualified_observations_do_not_break_same_information_check(db_sessio
     assert results_digest(strict) == results_digest(served_inputs)
     assert len(strict) == 160 and skipped["no_eligible_observations"] == 1
     assert strict[0].red_points is None
+
+
+def test_export_fingerprint_ignores_unselected_future_seasons(tmp_path,monkeypatch):
+    import json
+    import sys
+    import build_rating_state_bootstrap as export
+    from tests.test_research_win import _table
+
+    reports, tables, output = tmp_path/"reports", tmp_path/"tables", tmp_path/"output"
+    (reports/"runs").mkdir(parents=True)
+    tables.mkdir()
+    mle = asdict(PARAMS)
+    mle["noise_count"] = 0.0
+    fits = {str(year):{"mle":mle} for year in (2025,2026)}
+    (reports/"hindsight.json").write_text(json.dumps(fits))
+    (reports/"runs/e3_noise_count_zstatic-2026.json").write_text(json.dumps({"season":2026,"plan":[{"params":asdict(PARAMS)}]}))
+    for year in (2025,2026):
+        np.savez(tables/f"{year}.npz",**_table(weeks=2,per_week=100))
+    monkeypatch.setattr(sys,"argv",["export","--season","2027","--reports",str(reports),"--win-tables",str(tables),"--out",str(output)])
+    export.main()
+    before = {p.name:p.read_bytes() for p in output.glob("*.json")}
+    fits["2028"] = {"mle":{**mle,"prior":999}}
+    (reports/"hindsight.json").write_text(json.dumps(fits))
+    (reports/"runs/e3_noise_count_zstatic-2028.json").write_text("unreadable future data must not be opened")
+    export.main()
+    assert before == {p.name:p.read_bytes() for p in output.glob("*.json")}

@@ -27,9 +27,14 @@ def main():
     all_fits = json.loads(path.read_text())
     fits = {year: data for year,data in all_fits.items() if int(year) < args.season}
     paths = sorted((args.reports / "runs").glob("e3_noise_count_zstatic-*.json"))
-    runs, hashes = [], {path.name: hashlib.sha256(path.read_bytes()).hexdigest()}
+    runs, hashes = [], {f"hindsight-before-{args.season}": hashlib.sha256(json.dumps(fits,sort_keys=True,allow_nan=False).encode()).hexdigest()}
     for path in paths:
+        source_year = int(path.stem.rsplit("-",1)[1])
+        if source_year >= args.season:
+            continue
         run = json.loads(path.read_text())
+        if run["season"] != source_year:
+            raise SystemExit("State report filename and season differ")
         if run["season"] < args.season:
             runs.append(run)
             hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
