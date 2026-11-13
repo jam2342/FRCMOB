@@ -29,6 +29,12 @@ def feature_rows(db, season, event_key, matches, details, predictions, *, run=No
             if team.alliance in ("red", "blue"):
                 grouped[team.match_key][team.alliance].append(team.team_key.lower())
         sides = {key: (teams["red"], teams["blue"]) for key, teams in grouped.items()}
+    from app.services.ratings.state_inputs import results_digest
+    source_data = None
+    if settings.rating_state_fit_enabled:
+        if run.state_results_sha256 is None:
+            run.state_results_sha256 = results_digest(run.results)
+        source_data = run.state_results_sha256
     rows = {}
     for match in matches:
         key = match.match_key.lower()
@@ -46,7 +52,9 @@ def feature_rows(db, season, event_key, matches, details, predictions, *, run=No
         best_r, worst_r, sd_r = side(red)
         best_b, worst_b, sd_b = side(blue)
         before = min(run.played_total.get(t, 0) - run.played_here.get((t, event_key), 0) for t in red + blue)
-        rows[key] = {"schema": calibrations.SCHEMA, "row": {
+        rows[key] = {"schema": calibrations.SCHEMA, "results_sha256": source_data,
+                     "red_teams":list(red), "blue_teams":list(blue), "event_start":event_start,
+                     "scheduled_start":match.predicted_time or match.time, "row": {
             "rm": p.red_mean, "bm": p.blue_mean, "red_fouls": p.red_fouls, "blue_fouls": p.blue_fouls,
             "rv": max(p.red_var or 0, 1e-6), "bv": max(p.blue_var or 0, 1e-6),
             "mv": max((p.red_var or 0) + (p.blue_var or 0) + p.red_fouls_var + p.blue_fouls_var, 1e-6),

@@ -18,6 +18,8 @@ from app.services.ratings.research_win import (
 
 RECIPE = "live-forecast-logistic-v1"
 SCHEMA = "live-forecast-v1"
+SCORE_LIMITS = np.array([1.2] * 4 + [0.4] * 4 + [0.6] * 3)
+SCORE_STEP = 0.15
 
 
 def utc(value):
@@ -38,12 +40,12 @@ def validate_params(params, previous=None):
     if set(params) != set(identity()) or params["schema"] != SCHEMA:
         raise ValueError("unsupported calibration schema")
     json.dumps(params, allow_nan=False)
-    limits = {"score_coef": np.array([1.2] * 4 + [0.4] * 4 + [0.6] * 3), "weights": np.ones(12)}
+    limits = {"score_coef": SCORE_LIMITS, "weights": np.ones(12)}
     for name, limit in limits.items():
         value = np.asarray(params[name], dtype=float)
         if value.shape != limit.shape or not np.isfinite(value).all() or np.any(np.abs(value) > limit):
             raise ValueError(f"{name} outside hard bounds")
-        if previous is not None and np.any(np.abs(value - previous[name]) > (0.15 if name == "score_coef" else 0.25) + 1e-12):
+        if previous is not None and np.any(np.abs(value - previous[name]) > (SCORE_STEP if name == "score_coef" else 0.25) + 1e-12):
             raise ValueError(f"{name} exceeds weekly step limit")
     temp = np.r_[params["temperatures"], params["pooled_temperature"]]
     if temp.shape != (5,) or not np.isfinite(temp).all() or np.any((temp < 0.25) | (temp > 4)):
@@ -255,6 +257,8 @@ def activate(db, calibration_id, *, now=None):
     if not settings.rating_autotune or not settings.rating_prediction_log_enabled:
         raise ValueError("RATING_AUTOTUNE is off; active bundle is pinned")
     row = db.get(models.RatingCalibration, calibration_id)
+    if row is not None and row.recipe.startswith("state-map-total-"):
+        raise ValueError("state candidates cannot activate before the component adapter, rating-impact gate and full rehearsal")
     if row is None or row.recipe != RECIPE or row.status == "rejected":
         raise ValueError("unknown or rejected calibration")
     bundle = ensure_bundle(db, row.season)

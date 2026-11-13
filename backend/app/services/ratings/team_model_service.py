@@ -40,6 +40,7 @@ class SeasonRun:
     # on from here when new results only add matches at the end (see _compute).
     results: list[MatchResult] = field(default_factory=list)
     setup: tuple = ()
+    state_results_sha256: str | None = None
 
 
 _cache: dict[int, tuple[tuple, SeasonRun]] = {}

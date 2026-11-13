@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, replace
 from statistics import median
 
@@ -263,15 +264,19 @@ def fit_likelihood(
     df: float | None = None,
     max_evals: int = 400,
     restarts: int = 3,
+    max_seconds: float | None = None,
 ) -> dict:
     # Maximum likelihood (pull=None) or MAP over matches played before `until`, in logs.
     # Nelder-Mead restarts from its best point until a restart stops improving, so a fit
     # that ran out of evaluations doesn't pass for a converged one.
+    started = time.monotonic()
     names = fittable(inputs, names)
     x0, _bounds, to_params = _search_space(start, names, pull)
     x0 = np.array([min(max(v, lo), hi) for v, (lo, hi) in zip(x0, _bounds)])
 
     def value_of(params: ScaleFreeParams, x=None) -> float:
+        if max_seconds is not None and time.monotonic()-started >= max_seconds:
+            raise TimeoutError("state optimizer exceeded its wall-time budget")
         nu, s = innovations(inputs, params, until)
         value = -loglik(nu, s, df)
         if pull is not None:
