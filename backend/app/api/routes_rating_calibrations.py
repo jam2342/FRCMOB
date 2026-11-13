@@ -5,8 +5,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin_access
+from app.core.config import settings
+from app.api.schemas import RatingStatePreview
 from app.db import models
-from app.db.session import get_db
+from app.db.session import close_db_before_response, get_db
 from app.services.ratings import calibrations
 
 router = APIRouter(prefix="/admin/rating", tags=["rating settings"])
@@ -15,6 +17,19 @@ router = APIRouter(prefix="/admin/rating", tags=["rating settings"])
 class SeasonAction(BaseModel):
     season: int = Field(ge=1992, le=2100)
     frozen: bool = True
+
+
+@router.get("/calibrations/{calibration_id}/preview", response_model=RatingStatePreview)
+@close_db_before_response
+def preview(request: Request, calibration_id: int, event_key: str, db: Session = Depends(get_db)):
+    require_admin_access(request, "Rating state preview")
+    if not settings.rating_state_adapter_enabled:
+        raise HTTPException(status_code=409, detail="RATING_STATE_ADAPTER_ENABLED is off")
+    from app.services.ratings.state_preview import build_preview
+    try:
+        return build_preview(db, calibration_id, event_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/calibrations")

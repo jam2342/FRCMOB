@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "seasons": [
+    {
+      "season": 2022,
+      "tier": "A",
+      "version": 1,
+      "components": [
+        {
+          "name": "total",
+          "source": [
+            "score_without_fouls"
+          ],
+          "level": "alliance",
+          "kind": "points"
+        }
+      ]
+    },
+    {
+      "season": 2023,
+      "tier": "A",
+      "version": 1,
+      "components": [
+        {
+          "name": "total",
+          "source": [
+            "score_without_fouls"
+          ],
+          "level": "alliance",
+          "kind": "points"
+        }
+      ]
+    },
+    {
+      "season": 2024,
+      "tier": "A",
+      "version": 1,
+      "components": [
+        {
+          "name": "total",
+          "source": [
+            "score_without_fouls"
+          ],
+          "level": "alliance",
+          "kind": "points"
+        }
+      ]
+    },
+    {
+      "season": 2025,
+      "tier": "A",
+      "version": 1,
+      "components": [
+        {
+          "name": "total",
+          "source": [
+            "score_without_fouls"
+          ],
+          "level": "alliance",
+          "kind": "points"
+        }
+      ]
+    },
+    {
+      "season": 2026,
+      "tier": "A",
+      "version": 1,
+      "components": [
+        {
+          "name": "total",
+          "source": [
+            "score_without_fouls"
+          ],
+          "level": "alliance",
+          "kind": "points"
+        }
+      ]
+    }
+  ]
+}

@@ -7,7 +7,7 @@ three calibration layers together in `rating_calibrations`.
 
 This is a candidate pipeline. It does not replace `SeasonTeamModel`, alter team
 ratings, or serve candidate probabilities. Admin activation explicitly rejects
-state candidates until the total-state component adapter, rating-impact gate and
+state candidates until serving component integration, the rating-impact gate and
 full rehearsal exist. The late-event accuracy problem remains a release blocker.
 
 ## Bootstrap
@@ -102,6 +102,41 @@ These prospective summaries appear in each version's admin metrics. They are not
 activation verdict: rating impact and the full rehearsal remain unverified.
 
 ## Development verification
+
+### Total-state preview
+
+`RATING_STATE_ADAPTER_ENABLED=false` separately gates an admin-only, read-only
+endpoint:
+
+```text
+GET /admin/rating/calibrations/{id}/preview?event_key=2026example
+```
+
+It replays actual results available at request time with the selected candidate's
+state parameters and frozen bootstrap context. The response uses the app's rating
+row schema, includes the as-of time and input/settings hashes, and never writes
+ratings, forecasts or activation state. It is current-state inspection, not a
+historical prediction or accuracy test. Public rating and forecast routes continue
+to use the existing model even when this preview switch is on.
+
+`ratings/data/component_specs.json` explicitly declares Tier A (total without fouls)
+for 2022–2026. An undeclared season fails closed; 2027 must be declared after its
+scoring inputs are known. The spec parser supports explicit alliance or ordered
+robot point sources for future split models and retains an `other` residual. Missing,
+boolean and nonfinite values stay unknown; negative residuals remain visible as
+closure errors. The state adapter itself only accepts Tier A.
+
+The adapter retains covariance when summing alliance uncertainty and isolates
+hypothetical forecasts from the replay state. Team rows expose total points and
+latent contribution uncertainty, with auto, teleop, climb, driver and ranking-point
+estimates unavailable. No alliance score calibration is allocated to individual
+teams. Points stay hidden until 24 eligible current-season alliance scores exist;
+bootstrap-only estimates remain provisional. Ratings use the same declared season
+anchors as the live model, never candidate-specific anchors. Without anchors,
+0–100 ratings and ranges stay unavailable. This preview does not complete serving
+integration, the rating-impact comparison or the release rehearsal.
+
+### Cached state-fit check
 
 A repeatable scratch-database command is available for cached 2023/2024 prefixes:
 
