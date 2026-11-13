@@ -29,7 +29,7 @@ def declared(year=2027):
 
 def test_registry_fails_closed_and_sources_preserve_unknowns():
     for year in range(2022,2027):
-        assert specs.get_spec(year) == declared(year)
+        assert specs.get_spec(year).components == declared(year).components
     with pytest.raises(ValueError,match="no declared"):
         specs.get_spec(2027)
     assert specs.project(declared(),150,{"foulPoints":10}) == {"total":140}

@@ -134,6 +134,7 @@ class RatingStatePreview(RatingsResponse):
     provisional: bool
     rating_scale: dict[str, Any] | None = None
     limitations: list[str]
+    bonus_rp_preview: dict[str, Any] | None = None
 
 # ── GET /teams/search ───────────────────────────────────────────
 

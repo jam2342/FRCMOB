@@ -136,6 +136,11 @@ anchors as the live model, never candidate-specific anchors. Without anchors,
 0–100 ratings and ranges stay unavailable. This preview does not complete serving
 integration, the rating-impact comparison or the release rehearsal.
 
+A separate provisional flag-only RP model can appear in `bonus_rp_preview` for
+future qualifying matches. It uses declared boolean flags and has not earned an
+accuracy gate. See [component discovery and bonus RP](RATING_COMPONENTS.md) for its
+inputs, uncertainty, development defaults and verification command.
+
 ### Cached state-fit check
 
 A repeatable scratch-database command is available for cached 2023/2024 prefixes:
