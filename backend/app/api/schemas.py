@@ -124,6 +124,17 @@ class RatingsResponse(OkEnvelope):
     ratings: list[RatingRow]
     last_updated_at: str | None = None
 
+class RatingStatePreview(RatingsResponse):
+    calibration_id: int
+    as_of: str
+    serving_eligible: bool = False
+    component_spec: dict[str, Any]
+    provenance: dict[str, Any]
+    points_ready: bool
+    provisional: bool
+    rating_scale: dict[str, Any] | None = None
+    limitations: list[str]
+
 # ── GET /teams/search ───────────────────────────────────────────
 
 class TeamSearchResult(BaseModel):
