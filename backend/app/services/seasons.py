@@ -93,6 +93,9 @@ def freeze_season(db: Session, season: int, *, allow_current: bool = False, note
             ))
             archived += 1
         db.commit()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    db.query(models.MatchPredictionLog).filter_by(season=season).filter(models.MatchPredictionLog.locked_at.is_(None)).update({"locked_at": now})
     db.merge(models.FrozenSeason(season=season, note=note))
     db.commit()
     return {"ok": True, "season": season, "status": "frozen", "events": len(event_keys), "archived_predictions": archived}

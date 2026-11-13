@@ -98,6 +98,15 @@ def ingest_events_in_play(db: Session, tba: Any, *, now: float | None = None, ma
             rebuilt.append(event_key)
         else:
             errors.append(event_key)
+    if settings.rating_prediction_log_enabled:
+        from app.api.routes_events import get_event_schedule_with_synergy
+        for event_key in events:
+            try:
+                get_event_schedule_with_synergy(event_key=event_key, db=db)
+            except Exception:
+                db.rollback()
+                logger.exception("prediction_log.capture_failed event=%s", event_key)
+                errors.append(event_key)
     return {
         "events": events,
         "skipped_over_limit": skipped,

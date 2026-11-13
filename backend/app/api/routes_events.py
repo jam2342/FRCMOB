@@ -1139,7 +1139,12 @@ def get_event_schedule_with_synergy(
 
     # The team model replays the season in playing order, so a postponed match played
     # later never feeds the prediction of one listed after it.
-    points_details = {} if not live_predictions else match_predictions(
+    capture_context = {}
+    locked_keys = set()
+    if settings.rating_prediction_log_enabled:
+        locked_keys = {key for (key,) in db.query(models.MatchPredictionLog.match_key).filter(
+            models.MatchPredictionLog.event_key == event_key, models.MatchPredictionLog.locked_at.is_not(None))}
+    points_details = {} if not live_predictions or not any(m.match_key not in locked_keys for m in matches) else match_predictions(
         db,
         event_key,
         [
@@ -1148,8 +1153,9 @@ def get_event_schedule_with_synergy(
                 [str(item.get("team_key") or "") for item in teams_by_match.get(match.match_key, {}).get("red", [])],
                 [str(item.get("team_key") or "") for item in teams_by_match.get(match.match_key, {}).get("blue", [])],
             )
-            for match in matches
+            for match in matches if match.match_key not in locked_keys
         ],
+        **({"capture_context": capture_context} if settings.rating_prediction_log_enabled else {}),
         comp_levels={str(match.match_key).lower(): str(match.comp_level or "qm").lower() for match in matches},
     )
     uncorrected_prob_by_match: dict[str, float] = {}
@@ -1261,6 +1267,10 @@ def get_event_schedule_with_synergy(
             "edge_confidence_0_1": round(abs(final_prob - 0.5) * 2.0, 4),
         }
 
+    if settings.rating_prediction_log_enabled and not season["frozen"]:
+        from app.services.ratings.prediction_log import schedule
+        schedule(db, season_year, event_key, matches, points_details, schedule_rows, run=capture_context.get("run"), event_start=capture_context.get("event_start"))
+
     if season["frozen"]:
         archived = {
             row.match_key.lower(): row.prediction
@@ -1276,8 +1286,8 @@ def get_event_schedule_with_synergy(
         "event_key": event_key,
         "event_name": event.name,
         "season": season,
-        "deterministic_prediction_count": len(deterministic_prob_by_match),
-        "points_prediction_count": len(points_margin_by_match),
+        "deterministic_prediction_count": sum(bool(r.get("prediction", {}).get("available")) for r in schedule_rows) if settings.rating_prediction_log_enabled else len(deterministic_prob_by_match),
+        "points_prediction_count": sum(r.get("prediction", {}).get("red_points") is not None for r in schedule_rows) if settings.rating_prediction_log_enabled else len(points_margin_by_match),
         "count": len(schedule_rows),
         "matches": schedule_rows,
     }

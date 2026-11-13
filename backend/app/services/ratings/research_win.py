@@ -3,7 +3,7 @@
 # win layer (Phi(z), a temperature per context pulled toward 1, then a scale-free
 # logistic correction or a small network) and stacked side models. Every fit used for a
 # week sees only matches played before that week's first match (a week label isn't
-# playing order). Research only: nothing in production reads this.
+# playing order). Pure fit/apply helpers are shared with the opt-in live calibration service.
 from __future__ import annotations
 
 import math
@@ -181,6 +181,7 @@ SCORE_TERMS = ("weakest robot vs alliance average", "best robot vs alliance aver
 
 def _ridge(x: np.ndarray, r: np.ndarray, centre: np.ndarray, sd: np.ndarray, s2: float) -> np.ndarray:
     # Posterior mean of r = x @ b + noise(s2) under the prior N(centre, diag(sd^2)).
+    s2 = max(float(s2), 1e-9)
     precision = np.diag(1.0 / sd**2)
     if len(r) == 0:
         return centre.copy()

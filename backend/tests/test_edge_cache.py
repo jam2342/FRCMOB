@@ -28,6 +28,7 @@ PUBLIC_ROUTES = {
     "/tracks/heatmap/{team_key}", "/tracks/shift-play/{team_key}",
 }
 PRIVATE_ROUTES = {
+    "/admin/rating/calibrations",
     "/", "/health", "/health/deep", "/automation/regional/season/{season}/status", "/maintenance/ops/dashboard",
     "/picklists", "/picklists/{picklist_id}", "/strategy-boards/{match_key}", "/pit-scouting", "/pit-scouting/assignments", "/push/public-key",
     "/scouting/auto-drafts/{event_key}/{match_key}/{team_key}", "/scouting/insights/coverage",

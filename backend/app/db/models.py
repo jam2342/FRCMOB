@@ -805,3 +805,60 @@ class PushSubscription(Base):
         UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
         Index("ix_push_subscriptions_event_enabled", "event_key", "enabled"),
     )
+
+
+class RatingCalibration(Base):
+    __tablename__ = "rating_calibrations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, index=True)
+    recipe: Mapped[str] = mapped_column(String)
+    version: Mapped[int] = mapped_column(Integer)
+    # The three fitted layers travel together so activation is atomic.
+    params: Mapped[dict] = mapped_column(JSON)
+    fitted_through: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    matches: Mapped[int] = mapped_column(Integer)
+    fit_metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String, default="candidate")
+    code_sha: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (UniqueConstraint("season", "recipe", "version"),)
+
+
+class RatingActiveBundle(Base):
+    __tablename__ = "rating_active_bundle"
+
+    season: Mapped[int] = mapped_column(Integer, primary_key=True)
+    calibration_id: Mapped[int | None] = mapped_column(ForeignKey("rating_calibrations.id"), nullable=True)
+    previous_id: Mapped[int | None] = mapped_column(ForeignKey("rating_calibrations.id"), nullable=True)
+    bundle_version: Mapped[int] = mapped_column(Integer, default=0)
+    frozen: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class RatingGateScore(Base):
+    __tablename__ = "rating_gate_scores"
+
+    calibration_id: Mapped[int] = mapped_column(ForeignKey("rating_calibrations.id"), primary_key=True)
+    week_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    slice: Mapped[str] = mapped_column(String, primary_key=True)
+    n: Mapped[int] = mapped_column(Integer)
+    metrics: Mapped[dict] = mapped_column(JSON)
+    per_event: Mapped[dict] = mapped_column(JSON)
+
+
+class MatchPredictionLog(Base):
+    __tablename__ = "match_prediction_log"
+
+    match_key: Mapped[str] = mapped_column(String, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String, index=True)
+    season: Mapped[int] = mapped_column(Integer, index=True)
+    first_shown_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    first: Mapped[dict] = mapped_column(JSON)
+    final_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    final: Mapped[dict] = mapped_column(JSON)
+    features: Mapped[dict] = mapped_column(JSON, default=dict)
+    bundle_version: Mapped[int] = mapped_column(Integer, default=0)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    backfilled: Mapped[bool] = mapped_column(Boolean, default=False)
