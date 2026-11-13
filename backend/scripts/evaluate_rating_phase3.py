@@ -546,7 +546,7 @@ def production_priors() -> dict[str, float]:
     return out
 
 
-def production_2026() -> dict[str, tuple[float, float]]:
+def production_2026(*, training_rows: list | None = None) -> dict[str, tuple[float, float]]:
     # What users see, as closely as the research data allows: the live team model (hub +
     # tower, duds, 2026 settings) with production's stored priors, replayed over every
     # 2026 event TBA has (offseason and week-0 events too, as production's database does)
@@ -592,6 +592,9 @@ def production_2026() -> dict[str, tuple[float, float]]:
         sd = math.sqrt(max((prediction.red_var or 0) + (prediction.blue_var or 0) + prediction.red_fouls_var + prediction.blue_fouls_var, 1e-6))
         base = red_win_prob(margin, sd, seen, playoff=card.comp_level != "qm")
         out[card.match_key] = (base, corrected(2026, base, feats))
+        if training_rows is not None:
+            training_rows.append({"key": card.match_key, "event": card.event_key, "time": card.time,
+                                  "x": feats, "y": 0.5 if result.red_score == result.blue_score else float(result.red_score > result.blue_score)})
         model.observe(result)
         for t in teams:
             here[(t, card.event_key)] = here.get((t, card.event_key), 0) + 1
