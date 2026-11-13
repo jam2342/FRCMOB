@@ -140,8 +140,9 @@ def _bucket(min_here: int) -> str:
 
 def default_scale_for(rows: list[Row]) -> float:
     # With no earlier matches to fit on: the normal CDF for a model that knows its spread;
-    # for a margin model, 1.702 over a typical margin SD (about 0.42 of an alliance's mean).
-    sample = rows[:200]
+    # for a margin model, 1.702 over a typical margin SD (about 0.42 of an alliance's mean),
+    # from the season's first prediction only: later ones already carry results.
+    sample = rows[:1]
     if sample and sample[0].knows_spread:
         return NORMAL_LOGISTIC_SCALE
     means = [m for r in sample for m in (r.prediction.red_mean, r.prediction.blue_mean) if m > 0]

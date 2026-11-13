@@ -151,7 +151,8 @@ def insample_brier(rows) -> float:
 
 
 def walk_forward_brier(rows) -> float:
-    # Brier exactly as reported: per-week scales from earlier matches only.
+    # Brier exactly as reported: per-week scales from earlier matches only (ties stay in
+    # the rows, as when reporting, and only leave the average).
     probs, _, _ = walk_forward_probs(rows)
     pairs = [(p, r.y) for p, r in zip(probs, rows) if r.y != 0.5]
     return float(np.mean([(p - y) ** 2 for p, y in pairs])) if pairs else 0.25
@@ -284,6 +285,7 @@ def fit_likelihood(
 
     x, value, evals, converged = nelder_mead(objective, x0, max_evals=max_evals)
     runs = 1
+    stable = False
     while runs <= restarts:
         x2, value2, more, converged = nelder_mead(objective, x, step=0.15, max_evals=max_evals)
         evals += more
@@ -291,7 +293,9 @@ def fit_likelihood(
         improved = value - value2
         if value2 < value:
             x, value = x2, value2
-        if converged and improved < 0.5:
+        # Converged means a restart from the best point converged and found nothing better.
+        stable = converged and improved < 0.5
+        if stable:
             break
     params, _ = to_params(x)
     # A level term can't reach 0 in logs: try it switched off exactly, keep the better.
@@ -308,7 +312,7 @@ def fit_likelihood(
         "objective": value_of(params),
         "evals": evals,
         "runs": runs,
-        "converged": converged,
+        "converged": stable,
         "zeroed": zeroed,
         "n_obs": len(nu),
         "loglik_per_obs_units": loglik(nu, s) / max(len(nu), 1),
@@ -339,7 +343,7 @@ def fit_brier(
     def brier(params: ScaleFreeParams) -> float:
         nonlocal evals
         evals += 1
-        return score_rows(collect_rows(research, inputs.model(params)))
+        return score_rows(collect_rows(research, inputs.model(params), keep_ties=True))
 
     best = start
     best_value = brier(best)

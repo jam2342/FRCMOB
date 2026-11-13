@@ -47,6 +47,7 @@ from app.services.ratings.research_fit import (
     fit_brier,
     fit_likelihood,
     level_diagnosis,
+    scale_free_z,
     season_inputs,
     side_records,
 )
@@ -210,6 +211,7 @@ VARIANTS: dict[str, dict] = {
     "p1_standin": {"kind": "fixed", "params": "standin", "z": "phase1", "margin_cov": False},  # phase 1's team_model_total
     "e1_standin": {"kind": "fixed", "params": "standin"},  # 2026 ratios, scale-free z
     "e1_prior": {"kind": "fixed", "params": "prior"},  # earlier seasons' fits, never re-fitted
+    "e1_prior_zstatic": {"kind": "fixed", "params": "prior", "z": "static"},
     "hindsight": {"kind": "fixed", "params": "hindsight_brier"},
     "hindsight_mle": {"kind": "fixed", "params": "hindsight_mle"},
     "e2_map": {"kind": "schedule", "method": "map"},
@@ -219,16 +221,25 @@ VARIANTS: dict[str, dict] = {
     "e2_map_t": {"kind": "schedule", "method": "map", "df": 5.0},
     "e3_noise": {"kind": "schedule", "method": "map", "extra": {"noise_count": 0.005, "noise_prop": 0.05}},
     "e3_noise_count": {"kind": "schedule", "method": "map", "extra": {"noise_count": 0.005}},
+    "e3_noise_count_zstatic": {"kind": "schedule", "method": "map", "extra": {"noise_count": 0.005}, "z": "static"},
     "e3_noise_count_nocov": {"kind": "schedule", "method": "map", "extra": {"noise_count": 0.005}, "margin_cov": False},
     "e3_drift": {"kind": "schedule", "method": "map", "extra": {"drift_level": True}},
     "e3_prior": {"kind": "schedule", "method": "map", "extra": {"prior_level": 0.05}},
 }
 
-# Frozen before any 2025/2026 run (decided on 2022-2024). See notes for the verdicts.
-BLIND_VARIANTS = ("p1_standin", "e1_standin", "e1_prior", "hindsight", "hindsight_mle", "e2_map", "e2_brier", "e3_noise_count", "e3_noise")
+# Frozen before any 2025/2026 run, decided on 2022-2024 only (notes/HISTORY.md,
+# 2026-11-13). The bundle: MAP fits + noise variance growing with the predicted total +
+# last season's average strength as the start. The rest are its parts and comparators;
+# p1_standin and e1_standin use 2026's mean, so on 2026 they are in-sample, not blind.
+BUNDLE = "e3_noise_count_zstatic"
+BLIND_VARIANTS = (
+    "p1_standin", "e1_standin", "e1_prior", "e1_prior_zstatic", "hindsight", "hindsight_mle",
+    "e2_map", "e2_brier", "e3_noise_count", BUNDLE,
+)
 BLIND_PAIRS = (
-    ("e1_standin", "hindsight"), ("e1_prior", "hindsight"), ("e2_map", "e2_brier"), ("e3_noise_count", "e2_map"),
-    ("e3_noise", "e2_map"), ("e3_noise_count", "hindsight"), ("e3_noise_count", "p1_standin"),
+    ("e1_standin", "hindsight"), ("e1_prior", "hindsight"), ("e1_prior_zstatic", "hindsight"),
+    ("e2_map", "e2_brier"), ("e3_noise_count", "e2_map"), (BUNDLE, "e2_map"), (BUNDLE, "e3_noise_count"),
+    (BUNDLE, "e2_brier"), (BUNDLE, "hindsight"), (BUNDLE, "p1_standin"),
 )
 
 
@@ -263,9 +274,13 @@ def run_variant(job: tuple[int, str]) -> dict:
     spec = VARIANTS[name]
     started = time.perf_counter()
     inputs = inputs_for(year)
+    prev = research(year - 1)
     if spec.get("z") == "phase1":
-        prev = research(year - 1)
         inputs = replace(inputs, z_previous=last_season_z(prev.season.results) if prev else {})
+    if spec.get("z") == "static" and prev is not None:
+        # Last season's average strength, not its end state: its own fit with no drift.
+        fit = params_from(hindsight_fits()[str(year - 1)]["mle"])
+        inputs = replace(inputs, z_previous=scale_free_z(prev.season.results, replace(fit, match=1e-6, event=1e-6)))
     cov = {"margin_cov": spec.get("margin_cov", True)}
     if spec["kind"] == "fixed":
         plan = [{"from_time": 0, "label": "all season", "params": replace(_fixed_params(year, spec["params"]), **cov), "fit": spec["params"]}]
@@ -426,12 +441,14 @@ def calibration_compare(a: list[dict], b: list[dict], *, n: int = 1000, seed: in
         return np.abs(sf - sw).sum(axis=1) / cnt.sum(axis=1)
 
     def top_gap(t):
+        # Undefined (NaN), not perfect, in a resample with no 0.9+ match.
         cnt, sf, sw = (weights @ x for x in t)
-        return np.abs(sf[:, -1] - sw[:, -1]) / np.maximum(cnt[:, -1], 1.0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(cnt[:, -1] > 0, np.abs(sf[:, -1] - sw[:, -1]) / cnt[:, -1], np.nan)
 
     out = {}
     for name, diff in (("ece", ece(own_a) - ece(own_b)), ("gap_0.9", top_gap(own_a) - top_gap(own_b)), ("ece_in_b_bins", ece(ref_a) - ece(own_b))):
-        out[name] = {"n": len(keys), "mean_diff": float(diff[0]), "lo90": float(np.quantile(diff[1:], 0.05)), "hi90": float(np.quantile(diff[1:], 0.95))}
+        out[name] = {"n": len(keys), "mean_diff": float(diff[0]), "lo90": float(np.nanquantile(diff[1:], 0.05)), "hi90": float(np.nanquantile(diff[1:], 0.95))}
     return out
 
 
@@ -556,18 +573,30 @@ def manifest() -> dict:
 
 
 def step_blind(force: bool) -> None:
-    path = REPORTS / "blind-manifest.json"
-    if path.exists() and not force:
-        raise SystemExit(f"{path} exists: the blind seasons have been run for a bundle. Pass --force only for a new, frozen bundle, and say so.")
+    # One run per committed bundle: its outputs go under blind/<commit> and a second run
+    # of the same commit is refused. A new bundle (new commit) may run with --force, which
+    # keeps the earlier ones; say so whenever it's used.
     record = manifest()
     if record["uncommitted_changes"]:
         raise SystemExit("commit first: the manifest must name the code that ran")
-    save("blind-manifest", {**record, "status": "started"})
+    folder = REPORTS / "blind" / record["commit"]
+    if folder.exists():
+        raise SystemExit(f"{folder} exists: this bundle has had its blind run.")
+    earlier = sorted(p.name for p in (REPORTS / "blind").glob("*")) if (REPORTS / "blind").exists() else []
+    if earlier and not force:
+        raise SystemExit(f"blind runs already exist for {earlier}; pass --force for a new bundle and report it as such")
+    save(f"blind/{record['commit']}/manifest", {**record, "earlier_bundles": earlier, "status": "started"})
     # Hindsight first: 2026's MAP centre includes 2025's fit.
-    step_hindsight(list(BLIND))
+    fits = step_hindsight(list(BLIND))
     step_run(list(BLIND), list(BLIND_VARIANTS))
-    save("blind", step_report(list(BLIND), list(BLIND_PAIRS)))
-    save("blind-manifest", {**record, "status": "finished", "finished": time.strftime("%Y-%m-%d %H:%M:%S")})
+    save(f"blind/{record['commit']}/report", step_report(list(BLIND), list(BLIND_PAIRS)))
+    outputs = {}
+    for path in sorted([REPORTS / "hindsight.json", *(REPORTS / "runs").glob("*-2025.json"), *(REPORTS / "runs").glob("*-2026.json")]):
+        outputs[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    save(f"blind/{record['commit']}/manifest", {
+        **record, "earlier_bundles": earlier, "status": "finished", "finished": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "blind_hindsight": {y: fits.get(str(y)) for y in BLIND}, "output_sha256": outputs,
+    })
 
 
 def main() -> int:
