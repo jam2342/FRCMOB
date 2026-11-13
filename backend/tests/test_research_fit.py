@@ -1,5 +1,6 @@
 import math
 import random
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -214,3 +215,20 @@ def test_innovations_stop_at_the_week_asked(tmp_path):
     assert len(nu1) == 2 * week0 and len(nu_all) == 2 * len(inputs.weeks)
     assert np.allclose(nu1, nu_all[: len(nu1)])
     assert math.isfinite(loglik(nu_all, np.ones(len(nu_all))))
+
+
+def test_a_margin_model_s_first_week_probabilities_ignore_later_results(tmp_path):
+    from app.services.ratings.research_models import EpaClone
+
+    # Week 0 has no earlier matches, so each match falls back to a default scale; that
+    # default must come from the match's own prediction, not from later ones.
+    research = _league(tmp_path, n_weeks=1, per_week=120)
+    results = research.season.results
+    half = len(results) // 2
+    swapped = [replace(r, red_points=r.blue_points, blue_points=r.red_points, red_score=r.blue_score, blue_score=r.red_score) if i >= half else r for i, r in enumerate(results)]
+    flipped = replace(research, season=replace(research.season, results=swapped))
+    a, _, _ = walk_forward_probs(collect_rows(research, EpaClone({}, 50.0)))
+    b, _, _ = walk_forward_probs(collect_rows(flipped, EpaClone({}, 50.0)))
+    rows = collect_rows(research, EpaClone({}, 50.0))
+    early = [i for i, r in enumerate(rows) if r.time < results[half].card.time]
+    assert early and all(a[i] == b[i] for i in early)

@@ -138,14 +138,14 @@ def _bucket(min_here: int) -> str:
     return "0" if min_here <= 0 else "1-2" if min_here < 3 else "3+"
 
 
-def default_scale_for(rows: list[Row]) -> float:
+def row_default_scale(row: Row) -> float:
     # With no earlier matches to fit on: the normal CDF for a model that knows its spread;
-    # for a margin model, 1.702 over a typical margin SD (about 0.42 of an alliance's mean),
-    # from the season's first prediction only: later ones already carry results.
-    sample = rows[:1]
-    if sample and sample[0].knows_spread:
+    # for a margin model, 1.702 over a typical margin SD (about 0.42 of an alliance's
+    # mean), from this match's own pre-match prediction, so it's as-of and in this
+    # season's points.
+    if row.knows_spread:
         return NORMAL_LOGISTIC_SCALE
-    means = [m for r in sample for m in (r.prediction.red_mean, r.prediction.blue_mean) if m > 0]
+    means = [m for m in (row.prediction.red_mean, row.prediction.blue_mean) if m > 0]
     return NORMAL_LOGISTIC_SCALE / (0.42 * (sum(means) / len(means))) if means else 0.03
 
 
@@ -154,7 +154,7 @@ def walk_forward_probs(rows: list[Row], *, default_scale: float | None = None) -
     # (per matches-seen-here bucket) for week w comes only from matches played before
     # week w's first match: a week label isn't playing order (late events, and 2026's
     # Championship sits after its June "week 16-18" events). Ties never enter a fit.
-    fallback = default_scale if default_scale is not None else default_scale_for(rows)
+    # Where nothing can be fitted yet, each match uses default_scale or its own default.
     by_week: dict[int, list[int]] = defaultdict(list)
     for i, row in enumerate(rows):
         by_week[row.week].append(i)
@@ -171,21 +171,21 @@ def walk_forward_probs(rows: list[Row], *, default_scale: float | None = None) -
         start = int(times[weeks == week].min())
         earlier = (times < start) & decided
         n_earlier = int(earlier.sum())
+        single: float | None = default_scale
         if n_earlier >= MIN_FIT_MATCHES:
-            single = fit_scale(xs[earlier], ys[earlier])
-            if single <= 0:
-                single = fallback
-        else:
-            single = fallback
-        per_bucket = {}
+            fitted = fit_scale(xs[earlier], ys[earlier])
+            if fitted > 0:
+                single = fitted
+        per_bucket: dict[str, float | None] = {}
         for b in ("0", "1-2", "3+"):
             mask = earlier & (buckets == b)
-            per_bucket[b] = fit_scale(xs[mask], ys[mask]) if int(mask.sum()) >= MIN_BUCKET_MATCHES and n_earlier >= MIN_FIT_MATCHES else single
-            if per_bucket[b] <= 0:
-                per_bucket[b] = single
-        scales[week] = {"fitted_on": n_earlier, **{b: round(k, 5) for b, k in per_bucket.items()}}
+            k = fit_scale(xs[mask], ys[mask]) if int(mask.sum()) >= MIN_BUCKET_MATCHES and n_earlier >= MIN_FIT_MATCHES else None
+            per_bucket[b] = k if k is not None and k > 0 else single
+        scales[week] = {"fitted_on": n_earlier, **{b: (round(k, 5) if k is not None else "per match") for b, k in per_bucket.items()}}
         for i in by_week[week]:
             k = per_bucket[_bucket(rows[i].min_here)]
+            if k is None:
+                k = row_default_scale(rows[i])
             probs[i] = float(_sigmoid(k * rows[i].x))
             if rows[i].alt is not None:
                 alt_probs[i] = float(_sigmoid(k * rows[i].alt_x))
