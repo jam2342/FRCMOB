@@ -294,7 +294,7 @@ def fit_likelihood(
         if value2 < value:
             x, value = x2, value2
         # Converged means a restart from the best point converged and found nothing better.
-        stable = converged and improved < 0.5
+        stable = bool(converged and improved < 0.5)
         if stable:
             break
     params, _ = to_params(x)
