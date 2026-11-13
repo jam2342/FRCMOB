@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db import models
 from app.services.ratings.constants import season_baseline
 from app.services.ratings.replay import MatchResult, Prediction, load_season
@@ -63,8 +64,12 @@ def _fingerprint(db: Session, season: int) -> tuple:
         .one()
     )
     rookies = db.query(func.count(models.Team.team_key)).filter(models.Team.rookie_year == season).scalar()
+    bundle_version = 0
+    if settings.rating_prediction_log_enabled:
+        bundle = db.get(models.RatingActiveBundle, season)
+        bundle_version = bundle.bundle_version if bundle else 0
     # The engine too: a process talking to two databases (tests) must not share a run.
-    return id(db.get_bind()), int(count or 0), str(latest), int(findings or 0), int(priors[0] or 0), str(priors[1]), int(rookies or 0)
+    return id(db.get_bind()), int(count or 0), str(latest), int(findings or 0), int(priors[0] or 0), str(priors[1]), int(rookies or 0), bundle_version
 
 
 # Serve the last run while a fresh one is built (STALE_READS): a cold run takes ~13 s on
@@ -170,6 +175,25 @@ def _fork(run: SeasonRun) -> SeasonRun:
 
 
 def _compute(db: Session, season: int, fingerprint: tuple) -> SeasonRun:
+    if not settings.rating_prediction_log_enabled:
+        return _compute_unlocked(db, season, fingerprint)
+    from app.services.ratings.locks import rating_lock
+    from redis import RedisError
+    from fastapi import HTTPException
+    try:
+        with rating_lock(f"rebuild:{season}") as acquired:
+            if acquired:
+                return _compute_unlocked(db, season, fingerprint)
+    except RedisError:
+        logger.warning("team_model.rebuild_lock_unavailable season=%s", season)
+    with _lock:
+        cached = _cache.get(season)
+    if cached is not None:
+        return cached[1]
+    raise HTTPException(status_code=503, detail="Season ratings are rebuilding; retry shortly.", headers={"Retry-After": "3"})
+
+
+def _compute_unlocked(db: Session, season: int, fingerprint: tuple) -> SeasonRun:
     # A full replay takes ~10 s for a season, and during an event every new result
     # would redo it. New results almost always come after every replayed match, so the
     # previous run is extended with just those; anything else (a corrected score, new

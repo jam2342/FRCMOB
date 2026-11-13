@@ -49,6 +49,7 @@ def match_predictions(
     event_key: str,
     matches: Iterable[MatchSides],
     comp_levels: dict[str, str] | None = None,
+    *, capture_context: dict | None = None,
 ) -> dict[str, tuple[float, float, int, object, list[float]]]:
     # match_key -> (red-minus-blue expected points, its standard deviation, fewest
     # earlier matches here among the six teams, the full Prediction, the learned
@@ -57,9 +58,13 @@ def match_predictions(
     from app.services.ratings.team_model_service import correction_features
     # A page request: serve the last run while a newer one builds (team_model_service).
     run = season_run(db, int(str(event_key)[:4]), allow_stale=True)
+    if capture_context is not None:
+        capture_context["run"] = run
     event_start = db.query(
         func.min(func.coalesce(models.Match.actual_time, models.Match.time, models.Match.predicted_time))
     ).filter(models.Match.event_key == event_key).scalar()
+    if capture_context is not None:
+        capture_context["event_start"] = event_start
     out: dict[str, tuple[float, float, int]] = {}
     for match_key, red, blue in matches:
         key = match_key.lower()
@@ -135,19 +140,38 @@ def custom_matchup(db: Session, event_key: str, red: list[str], blue: list[str],
         raise ValueError("Pick three different teams from this event for each alliance.")
 
     match_key = f"{event_key}_matchup"
-    details = match_predictions(db, event_key, [(match_key, red_keys, blue_keys)], comp_levels={match_key: "sf" if playoff else "qm"})
+    capture_context = {}
+    details = match_predictions(db, event_key, [(match_key, red_keys, blue_keys)], comp_levels={match_key: "sf" if playoff else "qm"}, capture_context=capture_context)
     if match_key not in details:
         return {"ok": True, "event_key": event_key, "red": red_keys, "blue": blue_keys, "unavailable": "no_prediction"}
     margin, sd, seen, prediction, feature_row = details[match_key]
     red_prob = max(0.0, min(1.0, corrected(season, red_win_prob(margin, sd, matches_seen=seen, playoff=playoff), feature_row)))
+    red_points, blue_points = prediction.red_mean + prediction.red_fouls, prediction.blue_mean + prediction.blue_fouls
+    from app.core.config import settings
+    if settings.rating_prediction_log_enabled:
+        from types import SimpleNamespace
+        import numpy as np
+        from app.services.ratings import calibrations
+        from app.services.ratings.prediction_log import feature_rows
+        bundle = calibrations.active_bundle(db, season)
+        if bundle and bundle.calibration_id:
+            active = db.get(models.RatingCalibration, bundle.calibration_id)
+            match = SimpleNamespace(match_key=match_key, comp_level="sf" if playoff else "qm", actual_time=None,
+                                    time=capture_context["event_start"], predicted_time=None)
+            features = feature_rows(db, season, event_key, [match], details, {match_key: {"red_win_prob": red_prob}},
+                                    run=capture_context["run"], sides={match_key: (red_keys, blue_keys)}, event_start=capture_context["event_start"])
+            table = {key: np.array([value]) for key, value in features[match_key]["row"].items()}
+            table["y"] = np.array([0.5])
+            r, b, prob = calibrations.apply(table, active.params)
+            red_points, blue_points, red_prob = float(r[0]) + prediction.red_fouls, float(b[0]) + prediction.blue_fouls, float(prob[0])
     return {
         "ok": True,
         "event_key": event_key,
         "red": red_keys,
         "blue": blue_keys,
         "playoff": playoff,
-        "red_points": round(prediction.red_mean + prediction.red_fouls, 1),
-        "blue_points": round(prediction.blue_mean + prediction.blue_fouls, 1),
+        "red_points": round(red_points, 1),
+        "blue_points": round(blue_points, 1),
         "margin_sd": round(sd, 1),
         "red_win_prob": round(red_prob, 4),
         "blue_win_prob": round(1.0 - red_prob, 4),

@@ -1,8 +1,8 @@
 # Rating research follow-up
 
-This is an offline prerequisite to the phase 4 settings service, not the completed
-phase 4 scheduler, database, admin API, promotion job, or full phase 7 rehearsal.
-Production continues using its existing model.
+This is the offline comparison and export tool. The opt-in database service, weekly
+job, admin controls and prediction log are documented in [RATING_SETTINGS.md](RATING_SETTINGS.md).
+The full phase 7 rehearsal remains open. Production continues using its existing model.
 
 From `backend/`, with the cached phase 3 tables and production replay inputs available:
 

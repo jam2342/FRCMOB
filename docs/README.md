@@ -10,6 +10,8 @@ Living documents: keep these true when the thing they describe changes. Dated re
 - [OCI_ENV_VARS.md](OCI_ENV_VARS.md): backend environment variables
 
 ## Ratings and the season
+- [RATING_SETTINGS.md](RATING_SETTINGS.md): opt-in calibration service, weekly job, evidence gates and prediction history
+- [RATING_REHEARSAL.md](RATING_REHEARSAL.md): offline held-out comparisons and research settings exports
 - [RATING_ROADMAP.md](RATING_ROADMAP.md): the rating model, phase by phase, with results
 - [REBUILT_PLAUSIBILITY.md](REBUILT_PLAUSIBILITY.md): real 2026 ranges; check before calling a number wrong
 - [SEASON_TRANSITION.md](SEASON_TRANSITION.md): what to change for a new game, kickoff timeline
