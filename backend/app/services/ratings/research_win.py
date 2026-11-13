@@ -280,7 +280,7 @@ def walk_forward_scores(t: dict[str, np.ndarray], centre: ScoreCalibration | Non
         rows = all_sides(t, idx)
         out = rows["u"] * cal.apply(rows)
         red[idx], blue[idx] = out[: len(idx)], out[len(idx):]
-        fits.append({"week": week, "fitted_on_sides": int(earlier.sum()), "coef": np.round(cal.coef, 4).tolist()})
+        fits.append({"week": week, "before_time": start, "fitted_on_sides": int(earlier.sum()), "coef": cal.coef.tolist()})
     return red, blue, fits
 
 
@@ -348,7 +348,7 @@ FEATURES = (
 )
 
 
-def correction_features(t: dict[str, np.ndarray], stack: tuple[str, ...] = ()) -> np.ndarray:
+def correction_features(t: dict[str, np.ndarray], stack: tuple[str, ...] = (), *, late: bool = False) -> np.ndarray:
     # Scale-free: gaps in units of the as-of mean share, z = margin / its own SD, counts
     # and season time as fractions. Swapping red and blue flips every column but the two
     # intercepts. stack: side models whose logits join as inputs.
@@ -369,6 +369,8 @@ def correction_features(t: dict[str, np.ndarray], stack: tuple[str, ...] = ()) -
         z * np.abs(z) / 4.0,
         z * t["playoff"],
     ]
+    if late:
+        cols.append(z * np.maximum(t["season_frac"] - 0.35, 0.0))
     for name in stack:
         p = np.clip(t[f"p_{name}"], 1e-4, 1 - 1e-4)
         cols.append(np.log(p / (1 - p)))
@@ -425,6 +427,7 @@ class WinRecipe:
     correction: str = "none"  # "none", "logistic", "network"
     past: bool = False  # start temperatures and correction from earlier seasons
     stack: tuple[str, ...] = ()
+    late: bool = False
 
 
 def base_logit(t: dict[str, np.ndarray], base: str) -> np.ndarray:
@@ -448,7 +451,7 @@ def walk_forward_win(t: dict[str, np.ndarray], recipe: WinRecipe, past: list[Sea
     base = base_logit(t, recipe.base)
     y = t["y"]
     decided = y != 0.5
-    f = correction_features(t, recipe.stack) if recipe.correction != "none" else None
+    f = correction_features(t, recipe.stack, late=recipe.late) if recipe.correction != "none" else None
     t_centre = _pooled_temperatures(past) if past else None
     w_centre = _pooled_weights(past, recipe) if past and recipe.correction == "logistic" else None
     probs = np.full(len(y), 0.5)
@@ -483,7 +486,7 @@ def walk_forward_win(t: dict[str, np.ndarray], recipe: WinRecipe, past: list[Sea
         if net is not None:
             logit = net.logit(_net_inputs(logit, f[idx]))
         probs[idx] = sigmoid(logit)
-        fits.append({"week": week, "fitted_on": int(mask.sum()), "temperatures": np.round(temps.by_context, 4).tolist(), "weights": None if weights is None else np.round(weights, 4).tolist(), "network": net is not None})
+        fits.append({"week": week, "before_time": start, "pooled_temperature": temps.pooled, "fitted_on": int(mask.sum()), "temperatures": temps.by_context.tolist(), "weights": None if weights is None else weights.tolist(), "network": net is not None})
     # End of season (every decided match), for the seasons after this one.
     temps, weights, _net = fit_on(decided)
     offset = temps.apply(base[decided], ctx[decided])
