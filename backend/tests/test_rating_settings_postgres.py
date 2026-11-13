@@ -35,10 +35,16 @@ def postgres():
     try:
         Base.metadata.create_all(engine)
         with engine.begin() as conn:
-            for name in ("match_prediction_log", "rating_gate_scores", "rating_active_bundle", "rating_calibrations"):
+            for name in ("rating_state_predictions", "match_prediction_log", "rating_gate_scores", "rating_active_bundle", "rating_calibrations"):
                 models.Base.metadata.tables[name].drop(conn)
             path = Path(__file__).resolve().parents[1] / "alembic/versions/20261113_0031_rating_settings_log.py"
             spec = importlib.util.spec_from_file_location("rating_pg_migration", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            with Operations.context(MigrationContext.configure(conn)):
+                module.upgrade()
+            path = Path(__file__).resolve().parents[1] / "alembic/versions/20261113_0032_state_predictions.py"
+            spec = importlib.util.spec_from_file_location("state_prediction_migration", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             with Operations.context(MigrationContext.configure(conn)):
@@ -135,3 +141,20 @@ def test_postgres_fit_parameters_are_immutable(postgres):
         row.fit_metrics = {"gate": "pending"}
         db.commit()
         assert row.fit_metrics == {"gate": "pending"}
+
+
+def test_postgres_state_forecasts_are_immutable(postgres):
+    from app.services.ratings.state_bootstrap import RECIPE
+
+    with postgres() as db:
+        version = models.RatingCalibration(season=2027,recipe=RECIPE,version=1,params={"fixture":True},
+            fitted_through=NOW,matches=1500,code_sha="test",status="candidate",created_at=NOW)
+        db.add(version)
+        db.flush()
+        db.add(models.RatingStatePrediction(calibration_id=version.id,match_key="2027test_qm1",event_key="2027test",
+            season=2027,captured_at=NOW,expected_start=int(NOW.timestamp())+3600,prediction={"p":.6}))
+        db.commit()
+        for sql in ("UPDATE rating_state_predictions SET prediction='{}'", "DELETE FROM rating_state_predictions"):
+            with pytest.raises(DatabaseError,match="immutable"):
+                db.execute(text(sql))
+            db.rollback()

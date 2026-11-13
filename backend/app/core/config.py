@@ -261,6 +261,7 @@ class Settings(BaseSettings):
     first_live_results_enabled: bool = True
     # Events in play are re-ingested this often, so ratings and the forecast follow each
     # match (services/events/live_ingest.py). Off: only the 12 h job ingests, after events end.
+    rating_state_fit_enabled: bool = False
     rating_autotune: bool = False
     rating_prediction_log_enabled: bool = False
 

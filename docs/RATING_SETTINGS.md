@@ -1,6 +1,6 @@
 # Versioned prediction settings and history
 
-Both features ship disabled:
+The settings and log features ship disabled:
 
 - `RATING_PREDICTION_LOG_ENABLED=false` keeps the current request and ingest paths.
 - `RATING_AUTOTUNE=false` prevents fitting and activation. If an active bundle already
@@ -21,8 +21,8 @@ bundle version, which joins the season-run cache fingerprint.
 The recipe is named `live-forecast-logistic-v1`: it fits the production state's captured
 forecasts. It is **not** the phase 2 research state model, and the research candidate's
 measured gains do not transfer automatically. This change leaves team-state settings,
-team ratings and priors unchanged. State MAP fitting and the phase 6 component/RP work
-are separate follow-ups. Rating impact from these prediction-only layers is zero.
+team ratings and priors unchanged. The state MAP candidate pipeline is documented in [RATING_STATE_FITTING.md](RATING_STATE_FITTING.md);
+its serving adapter and the phase 6 component/RP work remain follow-ups. Rating impact from these prediction-only layers is zero.
 
 Win chances use raw score means plus expected fouls and the raw margin variance.
 Score calibration changes displayed alliance points, excluding fouls. The custom matchup

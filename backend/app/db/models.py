@@ -862,3 +862,15 @@ class MatchPredictionLog(Base):
     bundle_version: Mapped[int] = mapped_column(Integer, default=0)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     backfilled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RatingStatePrediction(Base):
+    __tablename__ = "rating_state_predictions"
+
+    calibration_id: Mapped[int] = mapped_column(ForeignKey("rating_calibrations.id"), primary_key=True)
+    match_key: Mapped[str] = mapped_column(String, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String, index=True)
+    season: Mapped[int] = mapped_column(Integer, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expected_start: Mapped[int] = mapped_column(Integer)
+    prediction: Mapped[dict] = mapped_column(JSON)

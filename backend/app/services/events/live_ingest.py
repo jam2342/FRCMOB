@@ -107,7 +107,19 @@ def ingest_events_in_play(db: Session, tba: Any, *, now: float | None = None, ma
                 db.rollback()
                 logger.exception("prediction_log.capture_failed event=%s", event_key)
                 errors.append(event_key)
+    state_capture = []
+    if settings.rating_state_fit_enabled and settings.rating_prediction_log_enabled:
+        from app.services.ratings.state_predictions import capture
+        for season in sorted({int(key[:4]) for key in events}):
+            try:
+                state_capture.append({"season":season, **capture(db, season, [key for key in events if int(key[:4]) == season], now=datetime.fromtimestamp(now, timezone.utc))})
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("state_prediction.capture_failed season=%s", season)
+                errors.extend(key for key in events if int(key[:4]) == season)
     return {
+        **({"state_capture":state_capture} if settings.rating_state_fit_enabled else {}),
         "events": events,
         "skipped_over_limit": skipped,
         "changed": changed,
