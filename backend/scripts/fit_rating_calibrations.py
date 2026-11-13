@@ -32,7 +32,7 @@ def main():
     os.nice(10)
     if hasattr(os, "sched_getaffinity"):
         os.sched_setaffinity(0, {min(os.sched_getaffinity(0))})
-    code_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() if (Path(__file__).resolve().parents[2] / ".git").exists() else os.environ.get("APP_COMMIT_SHA", "")
+    code_sha = subprocess.check_output(["git", "-C", str(Path(__file__).resolve().parents[2]), "rev-parse", "HEAD"], text=True).strip() if (Path(__file__).resolve().parents[2] / ".git").exists() else os.environ.get("APP_COMMIT_SHA", "")
     build_sha = Path(__file__).resolve().parents[1] / "BUILD_SHA"
     if not code_sha and build_sha.exists():
         code_sha = build_sha.read_text().strip()
