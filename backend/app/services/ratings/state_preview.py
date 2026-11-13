@@ -10,6 +10,7 @@ from sqlalchemy import func
 from app.db import models
 from app.services.ratings import calibrations as layers
 from app.services.ratings.component_spec import get_spec
+from app.services.ratings.flag_rp_inputs import preview as rp_preview
 from app.services.ratings.constants import SEASON_BASELINES
 from app.services.ratings.state_bootstrap import BOOTSTRAP_RECIPE, RECIPE, validate_bootstrap, validate_params
 from app.services.ratings.state_inputs import digest, inputs_for
@@ -78,12 +79,13 @@ def build_preview(db, calibration_id, event_key, *, now=None):
         "as_of": now.isoformat(), "last_updated_at": now.isoformat(), "serving_eligible": False,
         "component_spec": {**asdict(spec), "sha256": spec.fingerprint}, "points_ready": ready,
         "provisional": version.recipe == BOOTSTRAP_RECIPE or not ready, "rating_scale": scale,
+        "bonus_rp_preview": rp_preview(db,spec,event_key,now.timestamp()),
         "provenance": {"calibration_sha256": digest(version.params), "bootstrap_id": bootstrap.id,
             "bootstrap_sha256": digest(bootstrap.params), "data_sha256": data_sha,
             "fitted_through": layers.utc(version.fitted_through).isoformat(), "observed_alliances": observed,
             "skipped_inputs": skipped},
         "limitations": ["Current-state preview, not prospective accuracy evidence",
-            "Auto, teleop, climb, driver and ranking-point estimates are unavailable",
+            "Auto, teleop, climb and driver estimates are unavailable; bonus RP preview is separate and provisional",
             "Total points exclude fouls; no alliance score calibration is allocated to individual teams",
             "Points require 24 observed alliance scores; 0–100 ratings also require declared season anchors",
             "Serving integration, rating-impact gate and full rehearsal remain required"]}

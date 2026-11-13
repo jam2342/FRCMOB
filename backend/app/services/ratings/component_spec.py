@@ -20,11 +20,18 @@ class Component:
 
 
 @dataclass(frozen=True)
+class BonusRp:
+    name: str
+    flag: str
+
+
+@dataclass(frozen=True)
 class ComponentSpec:
     season: int
     tier: str
     version: int
     components: tuple[Component, ...]
+    bonus_rps: tuple[BonusRp, ...] = ()
 
     def __post_init__(self):
         if type(self.season) is not int or not 1992 <= self.season <= 2100 or type(self.version) is not int or self.version < 1:
@@ -46,6 +53,12 @@ class ComponentSpec:
             raise ValueError("Tier A is exactly score without fouls")
         if self.tier != "A" and any(c.name == "total" for c in self.components):
             raise ValueError("split components must not count the total again")
+        names = [rp.name for rp in self.bonus_rps]
+        flags = [rp.flag for rp in self.bonus_rps]
+        if len(set(names)) != len(names) or len(set(flags)) != len(flags) or any(not n.isidentifier() for n in names):
+            raise ValueError("bonus RP names and flags must be unique")
+        if any(not path or any(not key for key in path.split(".")) for path in flags):
+            raise ValueError("bonus RPs need explicit flag paths")
 
     @property
     def fingerprint(self):
@@ -58,7 +71,8 @@ def get_spec(season, *, registry=None):
         raise ValueError("unsupported component registry schema")
     specs = {}
     for entry in raw["seasons"]:
-        value = {**entry, "components": tuple(Component(**{**c, "source": tuple(c["source"])}) for c in entry["components"])}
+        value = {**entry, "components": tuple(Component(**{**c, "source": tuple(c["source"])}) for c in entry["components"]),
+                 "bonus_rps": tuple(BonusRp(**rp) for rp in entry.get("bonus_rps", []))}
         spec = ComponentSpec(**value)
         if spec.season in specs:
             raise ValueError("duplicate season component declaration")
@@ -75,12 +89,20 @@ def number(value):
 
 
 def field(breakdown, path):
+    return number(raw_field(breakdown,path))
+
+
+def raw_field(breakdown, path):
     value = breakdown
     for key in path.split("."):
         if not isinstance(value, dict):
             return None
         value = value.get(key)
-    return number(value)
+    return value
+
+
+def bonus_flags(spec, breakdown):
+    return {rp.name: value if type(value := raw_field(breakdown,rp.flag)) is bool else None for rp in spec.bonus_rps}
 
 
 def project(spec, score, breakdown):
