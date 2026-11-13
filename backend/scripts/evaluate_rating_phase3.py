@@ -123,7 +123,7 @@ def season_inputs_static(year: int):
     return inputs
 
 
-def build_table(year: int) -> dict[str, np.ndarray]:
+def build_table(year: int, side_models: tuple[str, ...] = ("epa", "elo", "ridge")) -> dict[str, np.ndarray]:
     started = time.perf_counter()
     saved = json.loads((p2.REPORTS / "runs" / f"{p2.BUNDLE}-{year}.json").read_text())
     plan = [(p["from_time"], p2.params_from(p["params"])) for p in saved["plan"]]
@@ -131,11 +131,8 @@ def build_table(year: int) -> dict[str, np.ndarray]:
     prev = p2.research(year - 1)
     previous_unit = mean_share(prev.season.results) if prev else None
     multipliers = start_multipliers(inputs.z_previous, inputs.rookies)
-    side = {
-        "epa": side_probs(inputs, EpaClone(multipliers, previous_unit)),
-        "elo": side_probs(inputs, MarginElo(multipliers, previous_unit)),
-        "ridge": side_probs(inputs, RidgePriorOpr(multipliers, previous_unit)),
-    }
+    makers = {"epa": EpaClone, "elo": MarginElo, "ridge": RidgePriorOpr}
+    side = {name: side_probs(inputs, makers[name](multipliers, previous_unit)) for name in side_models}
     table = bundle_table(inputs, plan, side)
     # The replay must give the saved bundle's predictions (to the saved settings' rounding).
     saved_rm = np.array([m[9] for m in saved["matches"]])
@@ -246,8 +243,25 @@ def win_summary(t, p, mask) -> dict:
         "log_loss": round(float(-np.mean(y * np.log(q) + (1 - y) * np.log(1 - q))), 5),
         "accuracy": round(float(np.mean((q > 0.5) == (y > 0.5))), 4),
         "calibration_slope": round(float(fit_scale(lg, y)), 3) if m.sum() >= 30 else None,
-        **p2.calibration(_matches(t, p, m)),
+        **calibration_raw(q, y),
     }
+
+
+def calibration_raw(p: np.ndarray, y: np.ndarray) -> dict:
+    # p2.calibration (favourite's chance in fixed bins) at full precision, for the gates.
+    fav = np.maximum(p, 1 - p)
+    won = np.where(p >= 0.5, y, 1 - y)
+    which = np.clip(np.searchsorted(FAV_BINS, fav, side="right") - 1, 0, len(FAV_BINS) - 2)
+    out = {"ece": 0.0}
+    for b in range(len(FAV_BINS) - 1):
+        m = which == b
+        if m.any():
+            gap = abs(float(fav[m].mean() - won[m].mean()))
+            out["ece"] += gap * m.sum() / len(fav)
+            if b >= 3:
+                out[f"gap_{FAV_BINS[b]:.1f}"] = gap
+                out[f"n_{FAV_BINS[b]:.1f}"] = int(m.sum())
+    return out
 
 
 def _losses(t, p, mask) -> dict[str, dict]:
@@ -312,7 +326,7 @@ def decile_bias(mu: np.ndarray, actual: np.ndarray, deciles: int = 10, by: np.nd
     by = mu if by is None else by
     edges = np.quantile(by, np.linspace(0, 1, deciles + 1))
     which = np.clip(np.searchsorted(edges, by, side="right") - 1, 0, deciles - 1)
-    return [round(float(100 * (actual[which == d] - mu[which == d]).sum() / max(mu[which == d].sum(), 1e-9)), 2) for d in range(deciles)]
+    return [float(100 * (actual[which == d] - mu[which == d]).sum() / max(mu[which == d].sum(), 1e-9)) for d in range(deciles)]
 
 
 SCORE_SLICES = {
@@ -485,7 +499,7 @@ def print_report(rep: dict, seasons: list[int]) -> None:
     for key, v in w["summaries"].items():
         for sl, x in v.items():
             if x.get("n") and sl in ("all", "FRC weeks 1-3", "DCMP + Championship", "someone's first match here", "nobody has played here yet", "first third of an event", "playoffs", "newest 20% of events"):
-                print(f"  {key:22} {sl:28} {x['n']:>6} {x['brier']:>7.4f} {x['log_loss']:>8.4f} {x['accuracy']:>6.3f} {str(x['calibration_slope']):>6} {x['ece']:>6.4f} {str(x.get('gap_0.9')):>6}")
+                print(f"  {key:22} {sl:28} {x['n']:>6} {x['brier']:>7.4f} {x['log_loss']:>8.4f} {x['accuracy']:>6.3f} {str(x['calibration_slope']):>6} {x['ece']:>6.4f} {x.get('gap_0.9', float('nan')):>6.4f}")
     print("\nPaired differences a - b (negative = a better), 90% event-cluster bootstrap")
     for key, by in w["comparisons"].items():
         print(f"\n  {key}")
@@ -664,7 +678,16 @@ def step_blind() -> None:
         raise SystemExit("commit first: the manifest must name the code that ran")
     # Everything that can fail and shows no result goes before the claim: the tables
     # (features and the replay check) and production's own predictions.
-    tables = {y: build_table(y) for y in BLIND_CHAIN}
+    tables = {y: build_table(y, ("epa", "elo")) for y in BLIND_CHAIN}
+    rebuilt = {}
+    for y in BLIND_CHAIN:
+        if y in DEV and table_path(y).exists():
+            saved = load_table(y)
+            shared = set(saved) & set(tables[y])
+            rebuilt[str(y)] = {
+                "same_values_on_shared_columns": all(np.array_equal(saved[k], tables[y][k]) for k in shared),
+                "only_in_saved": sorted(set(saved) - shared), "only_in_rebuilt": sorted(set(tables[y]) - shared),
+            }
     prod = production_2026()
     missing = [k for k in tables[2026]["key"] if k not in prod]
     if missing:
@@ -676,12 +699,7 @@ def step_blind() -> None:
         raise SystemExit(f"{CLAIM} exists: the phase 3 blind run has been claimed ({CLAIM.read_text().strip()}); 2025/2026 run once") from None
     with os.fdopen(fd, "w") as handle:
         handle.write(f"{record['commit']} {record['started']}\n")
-    save(f"blind/{record['commit']}/manifest", {**record, "status": "started"})
-    rebuilt = {}
-    for y in BLIND_CHAIN:
-        if y in DEV and table_path(y).exists():
-            saved = load_table(y)
-            rebuilt[str(y)] = all(np.array_equal(saved[k], tables[y][k]) for k in tables[y]) and set(saved) == set(tables[y])
+    save(f"blind/{record['commit']}/manifest", {**record, "status": "started", "dev_tables_vs_saved": rebuilt})
     for y in BLIND:
         save_table(y, tables[y])
     rep = frozen_pipeline(list(BLIND_CHAIN), list(BLIND), tables)
@@ -707,7 +725,7 @@ def frozen_pipeline(chain: list[int], evaluated: list[int], tables: dict[int, di
 def step_rehearse() -> None:
     # The blind pipeline on development seasons (2024 plays "blind"), to catch crashes
     # before the one real run. Writes nothing under blind/.
-    tables = {y: build_table(y) for y in (2023, 2024)}
+    tables = {y: build_table(y, ("epa", "elo")) for y in (2023, 2024)}
     rep = frozen_pipeline([2023, 2024], [2024], tables)
     rep.pop("_win_probs")
     print_report(rep, [2024])
