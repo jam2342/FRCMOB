@@ -36,6 +36,7 @@ class Row:
     holdout: bool
     # forecast() path (production serves it for upcoming matches), when the model has one.
     alt: Prediction | None = None
+    time: int = 0  # when it was played: what "earlier" means for every fit
 
     @property
     def margin(self) -> float:
@@ -61,15 +62,20 @@ def _margin(p: Prediction) -> float:
 
 def _x(p: Prediction) -> float:
     # The logistic's input: the margin in standard deviations when the model knows its
-    # spread, else the plain margin.
+    # spread, else the plain margin. A model that tracks the covariance between the two
+    # alliances' beliefs gives the margin's own variance (margin_var).
+    margin_var = getattr(p, "margin_var", None)
+    if margin_var is not None and margin_var > 0:
+        return _margin(p) / math.sqrt(margin_var + p.red_fouls_var + p.blue_fouls_var)
     if p.red_var is not None and p.blue_var is not None and p.red_var + p.blue_var > 0:
         return _margin(p) / math.sqrt(p.red_var + p.blue_var + p.red_fouls_var + p.blue_fouls_var)
     return _margin(p)
 
 
-def collect_rows(research: ResearchSeason, model: TeamModel, *, alt: Callable[[object], Prediction | None] | None = None) -> list[Row]:
+def collect_rows(research: ResearchSeason, model: TeamModel, *, alt: Callable[[object], Prediction | None] | None = None, keep_ties: bool = False) -> list[Row]:
     # One as-of pass. `alt(card)` may return a second prediction for the same match, made
-    # just before predict(), from the model's forecast() path.
+    # just before predict(), from the model's forecast() path. keep_ties: a tie stays as
+    # y = 0.5 (score metrics use it; win fits and scores skip it).
     played_here: dict[tuple[str, str], int] = defaultdict(int)
     played_total: dict[str, int] = defaultdict(int)
     before_event: dict[tuple[str, str], int] = {}
@@ -82,7 +88,7 @@ def collect_rows(research: ResearchSeason, model: TeamModel, *, alt: Callable[[o
             before_event.setdefault((team, card.event_key), played_total[team] - played_here[(team, card.event_key)])
         alternative = alt(card) if alt else None
         prediction = model.predict(card)
-        if result.red_score != result.blue_score:
+        if keep_ties or result.red_score != result.blue_score:
             rows.append(Row(
                 match_key=card.match_key,
                 event_key=card.event_key,
@@ -91,12 +97,13 @@ def collect_rows(research: ResearchSeason, model: TeamModel, *, alt: Callable[[o
                 event_type=research.events.get(card.event_key, {}).get("event_type"),
                 min_here=min(played_here[(team, card.event_key)] for team in teams),
                 min_before=min(before_event[(team, card.event_key)] for team in teams),
-                y=1.0 if result.red_score > result.blue_score else 0.0,
+                y=1.0 if result.red_score > result.blue_score else 0.0 if result.red_score < result.blue_score else 0.5,
                 prediction=prediction,
                 red_actual=result.red_points,
                 blue_actual=result.blue_points,
                 holdout=card.event_key in season.holdout_events,
                 alt=alternative,
+                time=card.time,
             ))
         model.observe(result)
         for team in teams:
@@ -143,7 +150,9 @@ def default_scale_for(rows: list[Row]) -> float:
 
 def walk_forward_probs(rows: list[Row], *, default_scale: float | None = None) -> tuple[list[float], list[float | None], dict]:
     # P(red wins) per row, and for the forecast() path where there is one. The scale
-    # (per matches-seen-here bucket) for week w comes only from weeks before w.
+    # (per matches-seen-here bucket) for week w comes only from matches played before
+    # week w's first match: a week label isn't playing order (late events, and 2026's
+    # Championship sits after its June "week 16-18" events). Ties never enter a fit.
     fallback = default_scale if default_scale is not None else default_scale_for(rows)
     by_week: dict[int, list[int]] = defaultdict(list)
     for i, row in enumerate(rows):
@@ -152,11 +161,14 @@ def walk_forward_probs(rows: list[Row], *, default_scale: float | None = None) -
     ys = np.array([r.y for r in rows])
     buckets = np.array([_bucket(r.min_here) for r in rows])
     weeks = np.array([r.week for r in rows])
+    times = np.array([r.time for r in rows])
+    decided = ys != 0.5
     probs = [0.5] * len(rows)
     alt_probs: list[float | None] = [None] * len(rows)
     scales: dict[int, dict] = {}
     for week in sorted(by_week):
-        earlier = weeks < week
+        start = int(times[weeks == week].min())
+        earlier = (times < start) & decided
         n_earlier = int(earlier.sum())
         if n_earlier >= MIN_FIT_MATCHES:
             single = fit_scale(xs[earlier], ys[earlier])

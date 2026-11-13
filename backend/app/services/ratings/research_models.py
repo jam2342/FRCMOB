@@ -65,9 +65,9 @@ class RunningUnit:
     def value(self) -> float:
         n0 = UNIT_PSEUDO_SCORES if self.previous else 0
         denominator = n0 + self.count
-        if denominator == 0:
-            return 30.0  # the very first match only
-        return ((self.previous or 0.0) * n0 + self.total) / denominator
+        value = ((self.previous or 0.0) * n0 + self.total) / denominator if denominator else 0.0
+        # The very first match, or only shutouts so far: something positive to divide by.
+        return value if value > 0 else 30.0
 
     def add(self, points: float | None) -> None:
         if points is not None:

@@ -34,6 +34,9 @@ class ScaleFreeParams:
     drift_level: bool = False
     # Prior SD grows with the start value: prior^2 + prior_level^2 * m0^2.
     prior_level: float = 0.0
+    # Win chances from the margin's own variance, including the covariance between the
+    # two alliances' beliefs (phase 1's harness used red + blue variance only).
+    margin_cov: bool = True
 
     @classmethod
     def from_points(cls, params: ComponentParams, unit: float, **extra) -> ScaleFreeParams:
@@ -44,6 +47,11 @@ class ScaleFreeParams:
             noise=math.sqrt(params.noise_var) / unit,
             **extra,
         )
+
+
+@dataclass(frozen=True)
+class MarginPrediction(Prediction):
+    margin_var: float | None = None
 
 
 class _Block:
@@ -139,6 +147,11 @@ class ScaleFreeFilter:
         return block, red, blue
 
     @staticmethod
+    def _cross(block: _Block, red: tuple[int, ...], blue: tuple[int, ...]) -> float:
+        c = block.cov
+        return float(sum(c[a, b] for a in red for b in blue))
+
+    @staticmethod
     def _side(block: _Block, idx: tuple[int, ...]) -> tuple[float, float]:
         m, c = block.mean, block.cov
         mean = 0.0
@@ -157,7 +170,10 @@ class ScaleFreeFilter:
         rr, br = self.noise_var(rm), self.noise_var(bm)
         if self.record:
             self.detail[card.match_key] = ((rm, rb, rr), (bm, bb, br), u)
-        return Prediction(rm * u, bm * u, (rb + rr) * u * u, (bb + br) * u * u)
+        if not self.params.margin_cov:
+            return Prediction(rm * u, bm * u, (rb + rr) * u * u, (bb + br) * u * u)
+        margin_var = rb + bb - 2.0 * self._cross(block, red, blue) + rr + br
+        return MarginPrediction(rm * u, bm * u, (rb + rr) * u * u, (bb + br) * u * u, margin_var=margin_var * u * u)
 
     @staticmethod
     def _update(block: _Block, idx: tuple[int, ...], y: float, noise: float) -> tuple[float, float]:
