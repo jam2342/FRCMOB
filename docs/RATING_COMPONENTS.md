@@ -82,3 +82,39 @@ CLI only accepts the already examined 2022–2026 seasons. These are development
 checks, not fresh blind evidence. Comparison with the live threshold model, parameter
 fitting/versioning, prospective RP capture, component-tier evaluation and the release
 rehearsal remain required before adoption.
+
+## Compare with the current RP recipe
+
+```sh
+python scripts/compare_flag_rp.py --cache /private/tba-all \
+  --priors-2025 /private/prod/team_prior_strengths_2025.csv \
+  --snapshots /private/prod
+```
+
+This separate 2026-only check first reproduces saved `served_2026*.json` RP values
+using the live hub/tower model, stored prior-season strengths, existing calibration,
+and retrospective event thresholds. The API rounds bonus chances to three decimals;
+reproduction must match within 0.00055 with no missing values. Failed or absent parity
+evidence stops the command before the outcome comparison.
+
+The actual comparison then replays both fixed recipes on the same earlier history,
+including cached nonofficial events. It requires actual playing times, forecasts all
+same-time matches before observing their outcomes, and derives event thresholds from
+earlier results only. Current-match, later-match and retrospective thresholds cannot
+enter a forecast. The live recipe keeps its existing DQ observation behavior; flag
+updates exclude DQ sides and nonboolean flags. Only common, eligible official
+qualifying alliance/RP labels are scored.
+
+Reports include per-RP and pooled Brier/log loss, paired 90% event-bootstrap intervals,
+first 7/21 playing-time days, newest fifth of official events, first matches at an
+event and championship events. Comparators are the calibrated live threshold recipe,
+the uncalibrated threshold recipe and the as-of season rate. Source, settings,
+prior-strength and forecast hashes identify the run. It writes nothing itself and
+makes no network calls; redirect reports outside git.
+
+These are examined-season development results. The production baseline retains its
+2026-derived starting means and calibration coefficients; it is not an out-of-sample
+fit. Saved historical API values use event-wide thresholds and are reproduction
+checks, not prospective evidence. Score correction publication times are unavailable
+in the cache. Neither reproduction nor a favorable development comparison permits
+activation; prospective capture and the remaining release checks still apply.
