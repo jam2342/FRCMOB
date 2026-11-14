@@ -39,7 +39,10 @@ def load_inputs(cache):
             valid = len(teams) == len(set(teams)) == 6 and all(len(sides.get(c,{}).get("team_keys",[])) == 3 for c in ("red","blue"))
             flags = {c:bonus_flags(spec,{} if sides.get(c,{}).get("dq_team_keys") else breakdown.get(c)) for c in ("red","blue")}
             when = number(match.get("actual_time"))
-            metadata[key] = {"flags":flags,"actual_time":int(when) if when is not None and when > 0 else None,"valid_lineup":valid}
+            posted = number(match.get("post_result_time"))
+            metadata[key] = {"flags":flags,"actual_time":int(when) if when is not None and when > 0 else None,
+                             "post_result_time":int(posted) if posted is not None and when is not None and posted > when > 0 else None,
+                             "valid_lineup":valid}
     if not hashes:
         raise ValueError("missing 2026 comparison cache")
     research = load_cached_season(cache,2026,exclude_dq=False)
@@ -135,11 +138,28 @@ def replay_comparison(research, metadata, model):
     results, skipped = actual_results(research,metadata)
     candidate = FlagRpModel(get_spec(2026))
     lowest, forecasts, here = {}, {}, Counter()
+    pending = sorted((metadata[r.card.match_key]["post_result_time"],r.card.match_key,r) for r in results
+                     if metadata[r.card.match_key]["post_result_time"] is not None)
+    applied = 0
     for _, group in groupby(results,key=lambda r:r.card.time):
         batch = list(group)
+        while applied < len(pending) and pending[applied][0] < batch[0].card.time:
+            result = pending[applied][2]
+            card = result.card
+            model.observe(result)
+            candidate.observe(card,metadata[card.match_key]["flags"])
+            for team in card.red+card.blue:
+                here[(team,card.event_key)] += 1
+            for comp in (result.red_components,result.blue_components):
+                for rp,(_,_,source) in BONUS_RPS[2026].items():
+                    value = number(comp.get(source))
+                    if comp.get(f"{rp}_rp") and value is not None:
+                        key = (card.event_key,rp)
+                        lowest[key] = min(lowest.get(key,value),value)
+            applied += 1
         for result in batch:
             card = result.card
-            # Both models see the same earlier history. Predictions precede all tied starts.
+            # Both models see only results posted strictly before this start.
             prediction = model.predict(card)
             if card.comp_level != "qm":
                 continue
@@ -158,20 +178,9 @@ def replay_comparison(research, metadata, model):
                         "base":estimate["base_rate"],"threshold":thresholds[name],
                         "first_match":min(here[(t,card.event_key)] for t in card.red+card.blue) == 0,
                         "championship":research.events[card.event_key].get("event_type") in (2,3,4,5)}
-        for result in batch:
-            card = result.card
-            model.observe(result)
-            candidate.observe(card,metadata[card.match_key]["flags"])
-            for team in card.red+card.blue:
-                here[(team,card.event_key)] += 1
-            # Match results can inform thresholds only after that match's forecast.
-            for comp in (result.red_components,result.blue_components):
-                for rp,(_,_,source) in BONUS_RPS[2026].items():
-                    value = number(comp.get(source))
-                    if comp.get(f"{rp}_rp") and value is not None:
-                        key = (card.event_key,rp)
-                        lowest[key] = min(lowest.get(key,value),value)
-    return forecasts,{"history_matches":len(results),"excluded_history":skipped,"candidate_settings_sha256":candidate.settings_sha256}
+    return forecasts,{"history_matches":len(results),"excluded_history":skipped,
+        "missing_or_invalid_publication_time":len(results)-len(pending),"updates_available":len(pending),
+        "updates_applied_before_last_start":applied,"candidate_settings_sha256":candidate.settings_sha256}
 
 
 def summarize(forecasts):

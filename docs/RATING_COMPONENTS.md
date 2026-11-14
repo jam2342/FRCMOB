@@ -98,9 +98,10 @@ reproduction must match within 0.00055 with no missing values. Failed or absent 
 evidence stops the command before the outcome comparison.
 
 The actual comparison then replays both fixed recipes on the same earlier history,
-including cached nonofficial events. It requires actual playing times, forecasts all
-same-time matches before observing their outcomes, and derives event thresholds from
-earlier results only. Current-match, later-match and retrospective thresholds cannot
+including cached nonofficial events. It requires actual playing times and updates
+both models only from results whose `post_result_time` is strictly before the current
+start. Missing or invalid publication times cannot supply updates. Event thresholds
+use that same earlier published history. Current-match, later-match and retrospective thresholds cannot
 enter a forecast. The live recipe keeps its existing DQ observation behavior; flag
 updates exclude DQ sides and nonboolean flags. Only common, eligible official
 qualifying alliance/RP labels are scored.

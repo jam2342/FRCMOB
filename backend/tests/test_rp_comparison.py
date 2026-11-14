@@ -15,7 +15,7 @@ def sample():
         card = MatchCard(f"2026test_qm{i+1}","2026test",time,"qm",100,("frc1","frc2","frc3"),("frc4","frc5","frc6"))
         components = {"energized_rp":True,"hub_fuel_count":150-i*10}
         results.append(MatchResult(card,100,90,100,90,red_components=components,blue_components=components.copy()))
-        metadata[card.match_key] = {"actual_time":time,"valid_lineup":True,
+        metadata[card.match_key] = {"actual_time":time,"post_result_time":time+5,"valid_lineup":True,
             "flags":{color:{"energized":True,"supercharged":False,"traversal":False} for color in ("red","blue")}}
     return ResearchSeason(Season(2026,results,set(),{}),{"2026test":{"event_type":0}}),metadata
 
@@ -69,7 +69,7 @@ def test_playoffs_inform_live_state_but_are_not_rp_labels():
     research.season.results[0] = replace(first,card=replace(first.card,comp_level="sf"))
     model = Model()
     rows,_ = comp.replay_comparison(research,meta,model)
-    assert len(rows) == 18 and len(model.seen) == 4
+    assert len(rows) == 18 and len(model.seen) == 3
     assert not any(k.startswith(first.card.match_key+"/") for k in rows)
 
 
@@ -129,3 +129,18 @@ def test_cached_loader_preserves_unknown_flags_and_fails_closed_without_actual_t
     assert len(results) == 1 and skipped == {"missing_actual_time":1}
     assert meta["2026test_qm1"]["flags"]["red"]["energized"] is None
     assert meta["2026test_qm1"]["flags"]["blue"] == {"energized":False,"supercharged":None,"traversal":None}
+
+
+def test_unpublished_and_same_time_posted_results_cannot_update_either_model():
+    research,meta = sample()
+    for key in ("2026test_qm1","2026test_qm2"):
+        meta[key]["post_result_time"] = 200
+    meta["2026test_qm3"]["post_result_time"] = None
+    rows,coverage = comp.replay_comparison(research,meta,Model())
+    early = rows["2026test_qm1/red/energized"]
+    tied = rows["2026test_qm3/red/energized"]
+    assert early["threshold"] == tied["threshold"] == 100
+    assert early["flag"] == tied["flag"] and early["live"] == tied["live"]
+    later = rows["2026test_qm4/red/energized"]
+    assert later["threshold"] == 140
+    assert coverage["missing_or_invalid_publication_time"] == 1

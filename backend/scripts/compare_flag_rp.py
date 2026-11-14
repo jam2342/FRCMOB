@@ -32,8 +32,8 @@ def main():
         "limitations":["Examined 2026 development evidence; no release verdict or hyperparameter selection",
             "The live recipe keeps its existing 2026-derived priors and RP calibration; these are not out-of-sample fits",
             "Reproduction uses retrospective event thresholds and scheduled-time fallbacks, like the current historical API",
-            "Comparison uses actual times, strict earlier-result thresholds, same-time batching and common eligible official qual labels",
-            "Historical data does not record when a score correction became available; prospective capture remains required"]}
+            "Comparison updates both models only when post_result_time is strictly before the actual start; absent/invalid publication times cannot update either model",
+            "Scored labels are common eligible official qual flags; historical correction publication times remain unavailable, so prospective capture is still required"]}
     if parity["passed"]:
         rows,coverage = comparison.replay_comparison(research,metadata,comparison.live_model(research,priors))
         out.update(status="development_comparison",coverage=coverage,summaries=comparison.summarize(rows),forecast_sha256=digest(rows))
