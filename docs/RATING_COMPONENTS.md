@@ -129,3 +129,55 @@ fit. Saved historical API values use event-wide thresholds and are reproduction
 checks, not prospective evidence. Score correction publication times are unavailable
 in the cache. Neither reproduction nor a favorable development comparison permits
 activation; prospective capture and the remaining release checks still apply.
+
+## Fit an older-season candidate
+
+```sh
+python scripts/fit_flag_rp.py --cache /private/tba --out /private/rp-fits
+```
+
+Training opens only 2022 and 2023. A deterministic search of at most 13 parameter
+sets fits shared prior/match/event variances against publication-aware, read-only
+forecasts. The objective weights seasons and their RP types equally. Bounds are
+prior variance 0.1–4, match variance 0.0001–0.1 and event variance 0.001–1. The two
+coordinate passes are a finite search, not a claim of a global likelihood optimum.
+
+A shared two-parameter correction then fits log loss with a small penalty toward
+the identity:
+
+```text
+logit(calibrated) = logit(as-of season rate)
+                 + intercept + slope × (logit(raw) − logit(as-of season rate))
+```
+
+This learns how strongly to depart from the as-of rate without requiring matching
+RP names or a known point threshold in the new game. Intercept is bounded to ±2 and
+slope to 0.25–4. It uses only the training forecasts/labels, with no 2026 coefficients
+or evaluation-year fitting. Result publication must be strictly before the predicted
+start; unknown flags and DQ sides never supply observations.
+
+The candidate is saved before opening 2024. That check requires pooled log-loss
+non-regression at the upper 90% event-bootstrap bound, and per-RP mean regressions
+no larger than 0.0005 Brier or 0.002 log loss. These are development-screen rules,
+not release approval. The output includes candidate, validation and frozen-manifest
+files named by their content hashes. Parameters, policy, source/spec hashes and an
+implementation hash identify the fit. Files must be outside the repository and an
+existing artifact cannot be overwritten with different contents.
+
+Only a successful frozen check can open the later examined seasons:
+
+```sh
+python scripts/evaluate_rp_fit.py --frozen /private/rp-fits/HASH.json \
+  --season 2025 --cache /private/tba
+python scripts/evaluate_rp_fit.py --frozen /private/rp-fits/HASH.json \
+  --season 2026 --cache /private/tba-all \
+  --priors-2025 /private/prod/team_prior_strengths_2025.csv --snapshots /private/prod
+```
+
+This compares the fitted state and calibrated probabilities with the original flag
+recipe, and on 2026 with the reproduced live threshold recipe. Hash checks and the
+2024 verdict run before evaluation data are read. The candidate stays fixed, including
+when a later RP or slice loses. These seasons have already been examined and remain
+development evidence; 2027 is still the clean test. The artifact is not imported into
+active settings or the private preview. Weekly RP fitting, prospective capture,
+serving integration and release validation remain separate work.
