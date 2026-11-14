@@ -415,7 +415,8 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                 events = [(int((week+timedelta(hours=POLICY["job_hour_utc"])).timestamp()),0,None),
                           (int((week+timedelta(hours=POLICY["publication_hour_utc"])).timestamp()),1,None)]
                 events += [(r["result"].card.time,2,r) for r in data.records if week.timestamp() <= r["result"].card.time < end.timestamp()]
-                events.sort(key=lambda e:(e[0],e[1],e[2]["result"].card.match_key if e[2] else ""))
+                # A forecast immediately before a start cannot see a simultaneous publication.
+                events.sort(key=lambda e:(e[0],0 if e[1] == 2 else e[1]+1,e[2]["result"].card.match_key if e[2] else ""))
                 pending,job,week_frames = None,{},[]
                 for time,kind,record in events:
                     replay.advance(time)
