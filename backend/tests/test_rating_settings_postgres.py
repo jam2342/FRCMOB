@@ -35,7 +35,7 @@ def postgres():
     try:
         Base.metadata.create_all(engine)
         with engine.begin() as conn:
-            for name in ("rating_state_predictions", "match_prediction_log", "rating_gate_scores", "rating_active_bundle", "rating_calibrations"):
+            for name in ("rating_rp_fit_evidence", "rating_rp_predictions", "rating_state_predictions", "match_prediction_log", "rating_gate_scores", "rating_active_bundle", "rating_calibrations"):
                 models.Base.metadata.tables[name].drop(conn)
             path = Path(__file__).resolve().parents[1] / "alembic/versions/20261113_0031_rating_settings_log.py"
             spec = importlib.util.spec_from_file_location("rating_pg_migration", path)
@@ -45,6 +45,12 @@ def postgres():
                 module.upgrade()
             path = Path(__file__).resolve().parents[1] / "alembic/versions/20261113_0032_state_predictions.py"
             spec = importlib.util.spec_from_file_location("state_prediction_migration", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            with Operations.context(MigrationContext.configure(conn)):
+                module.upgrade()
+            path = Path(__file__).resolve().parents[1] / "alembic/versions/20261114_0033_rp_predictions.py"
+            spec = importlib.util.spec_from_file_location("rp_prediction_migration", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             with Operations.context(MigrationContext.configure(conn)):
@@ -158,3 +164,37 @@ def test_postgres_state_forecasts_are_immutable(postgres):
             with pytest.raises(DatabaseError,match="immutable"):
                 db.execute(text(sql))
             db.rollback()
+
+
+def test_rp_concurrent_first_capture_and_immutable_evidence(postgres,monkeypatch):
+    from app.core.config import settings
+    from app.services.ratings import rp_predictions as rp, rp_weekly
+    from tests.test_rp_predictions import SPEC, seed
+
+    monkeypatch.setattr(settings,"rating_rp_enabled",True)
+    monkeypatch.setattr(settings,"rating_prediction_log_enabled",True)
+    monkeypatch.setattr(rp,"get_spec",lambda year:SPEC)
+    with postgres() as db:
+        db.delete(db.get(models.Match,"2027test_qm1"))
+        db.flush()
+        seed(db)
+        db.commit()
+    barrier = threading.Barrier(2)
+    def write(_):
+        with postgres() as db:
+            barrier.wait()
+            result = rp.capture(db,2027,["2027test"],event_types={"2027test":0},now=NOW)
+            db.commit()
+            return result["forecasts"]
+    with ThreadPoolExecutor(2) as pool:
+        assert sorted(pool.map(write,[0,1])) == [0,1]
+    with postgres() as db:
+        version = db.query(models.RatingCalibration).filter_by(recipe=rp_weekly.RECIPE).one()
+        assert db.query(models.RatingRpPrediction).count() == 1
+        db.add(models.RatingRpFitEvidence(calibration_id=version.id,evidence={"fixture":True}))
+        db.commit()
+        for table,column in (("rating_rp_predictions","prediction"),("rating_rp_fit_evidence","evidence")):
+            for sql in (f"UPDATE {table} SET {column}='{{}}'",f"DELETE FROM {table}"):
+                with pytest.raises(DatabaseError,match="immutable"):
+                    db.execute(text(sql))
+                db.rollback()

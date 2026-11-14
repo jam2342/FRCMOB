@@ -37,7 +37,7 @@ def enabled(monkeypatch):
 def migrated(db_engine, db_session):
     # Exercise the actual migration's trigger, not a Python imitation.
     with db_engine.begin() as conn:
-        for name in ("rating_state_predictions", "match_prediction_log", "rating_gate_scores", "rating_active_bundle", "rating_calibrations"):
+        for name in ("rating_rp_fit_evidence", "rating_rp_predictions", "rating_state_predictions", "match_prediction_log", "rating_gate_scores", "rating_active_bundle", "rating_calibrations"):
             models.Base.metadata.tables[name].drop(conn)
         path = Path(__file__).resolve().parents[1] / "alembic/versions/20261113_0031_rating_settings_log.py"
         spec = importlib.util.spec_from_file_location("rating_migration", path)
@@ -47,6 +47,12 @@ def migrated(db_engine, db_session):
             module.upgrade()
         path = Path(__file__).resolve().parents[1] / "alembic/versions/20261113_0032_state_predictions.py"
         spec = importlib.util.spec_from_file_location("state_prediction_migration", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with Operations.context(MigrationContext.configure(conn)):
+            module.upgrade()
+        path = Path(__file__).resolve().parents[1] / "alembic/versions/20261114_0033_rp_predictions.py"
+        spec = importlib.util.spec_from_file_location("rp_prediction_migration", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with Operations.context(MigrationContext.configure(conn)):

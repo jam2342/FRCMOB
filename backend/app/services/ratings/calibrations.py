@@ -257,6 +257,8 @@ def activate(db, calibration_id, *, now=None):
     if not settings.rating_autotune or not settings.rating_prediction_log_enabled:
         raise ValueError("RATING_AUTOTUNE is off; active bundle is pinned")
     row = db.get(models.RatingCalibration, calibration_id)
+    if row is not None and row.recipe.startswith("flag-rp-"):
+        raise ValueError("RP candidates cannot activate before prospective gates, serving integration and full rehearsal")
     if row is not None and row.recipe.startswith("state-map-total-"):
         raise ValueError("state candidates cannot activate before the component adapter, rating-impact gate and full rehearsal")
     if row is None or row.recipe != RECIPE or row.status == "rejected":

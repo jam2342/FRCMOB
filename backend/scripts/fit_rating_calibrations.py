@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
     if args.state_max_evals < 1 or args.state_max_evals > 4000:
         parser.error("state-max-evals must be between 1 and 4000")
-    if not settings.rating_state_fit_enabled and (not settings.rating_autotune or not settings.rating_prediction_log_enabled):
+    if not settings.rating_state_fit_enabled and not (settings.rating_rp_enabled and settings.rating_prediction_log_enabled) and (not settings.rating_autotune or not settings.rating_prediction_log_enabled):
         print(json.dumps({"status": "disabled"}))
         return
     os.nice(10)
@@ -60,6 +60,16 @@ def main():
                     version.fit_metrics = {**version.fit_metrics, "prospective": state_predictions.score(db, version, through=datetime.now(timezone.utc))}
                 db.commit()
                 result = {"calibration":result,"state":state}
+            if settings.rating_rp_enabled and settings.rating_prediction_log_enabled:
+                from app.services.ratings import calibrations, rp_predictions, rp_weekly
+                now = datetime.now(timezone.utc)
+                rp = rp_predictions.fit_week(db, args.season, calibrations.monday(now), code_sha, now=now)
+                versions = db.query(models.RatingCalibration).filter_by(
+                    season=args.season, recipe=rp_weekly.RECIPE, status="candidate").all()
+                for version in versions:
+                    version.fit_metrics = {**version.fit_metrics, "prospective": rp_predictions.score(db, version, through=now)}
+                db.commit()
+                result = {"existing":result,"rp":rp}
             print(json.dumps(result))
 
 
