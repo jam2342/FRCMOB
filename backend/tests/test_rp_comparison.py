@@ -7,6 +7,8 @@ import pytest
 from app.services.ratings import rp_comparison as comp
 from app.services.ratings.replay import MatchCard, MatchResult, Prediction, Season
 from app.services.ratings.research_data import ResearchSeason
+from app.services.ratings.flag_rp import FlagRpModel
+from app.services.ratings.component_spec import get_spec
 
 
 def sample():
@@ -159,3 +161,11 @@ def test_comparison_calls_upcoming_forecast_without_entering_future_teams():
             return Model.predict(self,None)
     rows,_ = comp.replay_comparison(research,meta,ForecastOnly())
     assert len(rows) == 24
+
+
+def test_optional_fitted_challenger_preserves_default_forecasts_and_common_labels():
+    research,meta = sample()
+    rows,_ = comp.replay_comparison(research,meta,Model(),challenger=FlagRpModel(get_spec(2026)))
+    assert all(r["flag"] == r["fitted_flag"] for r in rows.values())
+    with pytest.raises(ValueError,match="same component spec"):
+        comp.replay_comparison(research,meta,Model(),challenger=FlagRpModel(get_spec(2025)))

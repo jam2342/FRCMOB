@@ -134,9 +134,11 @@ def actual_results(research, metadata):
     return [replace(r,card=replace(r.card,event_start=starts[r.card.event_key])) for r in selected],dict(skipped)
 
 
-def replay_comparison(research, metadata, model):
+def replay_comparison(research, metadata, model, *, challenger=None):
     results, skipped = actual_results(research,metadata)
     candidate = FlagRpModel(get_spec(2026))
+    if challenger is not None and challenger.spec != candidate.spec:
+        raise ValueError("RP challenger must use the same component spec")
     lowest, forecasts, here = {}, {}, Counter()
     pending = sorted((metadata[r.card.match_key]["post_result_time"],r.card.match_key,r) for r in results
                      if metadata[r.card.match_key]["post_result_time"] is not None)
@@ -148,6 +150,8 @@ def replay_comparison(research, metadata, model):
             card = result.card
             model.observe(result)
             candidate.observe(card,metadata[card.match_key]["flags"])
+            if challenger is not None:
+                challenger.observe(card,metadata[card.match_key]["flags"])
             for team in card.red+card.blue:
                 here[(team,card.event_key)] += 1
             for comp in (result.red_components,result.blue_components):
@@ -165,6 +169,7 @@ def replay_comparison(research, metadata, model):
                 continue
             thresholds = {rp:lowest.get((card.event_key,rp),rule[1]) for rp,rule in BONUS_RPS[2026].items()}
             flag = candidate.forecast(card)
+            fitted = challenger.forecast(card) if challenger is not None else None
             live, raw = parts(prediction,thresholds),parts(prediction,thresholds,calibrated=False)
             official = research.events[card.event_key].get("event_type") in (0,1,2,3,4,5)
             for color in ("red","blue"):
@@ -178,6 +183,8 @@ def replay_comparison(research, metadata, model):
                         "base":estimate["base_rate"],"threshold":thresholds[name],
                         "first_match":min(here[(t,card.event_key)] for t in card.red+card.blue) == 0,
                         "championship":research.events[card.event_key].get("event_type") in (2,3,4,5)}
+                    if fitted is not None:
+                        forecasts[key]["fitted_flag"] = fitted[color][name]["probability"]
     return forecasts,{"history_matches":len(results),"excluded_history":skipped,
         "missing_or_invalid_publication_time":len(results)-len(pending),"updates_available":len(pending),
         "updates_applied_before_last_start":applied,"candidate_settings_sha256":candidate.settings_sha256}
