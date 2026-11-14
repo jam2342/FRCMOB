@@ -184,3 +184,51 @@ def test_successful_frozen_recipe_evaluates_without_refitting(tmp_path):
     assert not result["serving_eligible"] and path.read_bytes() == before
     with pytest.raises(ValueError,match="frozen examined"):
         evaluate(tmp_path,2027,path)
+
+
+def test_calibration_only_fixes_state_and_never_searches_variances(tmp_path,monkeypatch):
+    for year in (2022,2023):
+        cache_season(tmp_path,year)
+    def forbidden(*args,**kwargs):
+        raise AssertionError("calibration-only must not search state settings")
+    monkeypatch.setattr(fit,"replace",forbidden)
+    artifact = fit.fit(tmp_path,calibration_only=True)
+    assert artifact["schema"] == fit.CALIBRATION_SCHEMA
+    assert artifact["params"] == asdict(FlagRpParams())
+    assert len(artifact["trials"]) == 1 and artifact["policy"]["coordinate_rounds"] == 0
+    fit.validate_artifact(artifact)
+    artifact["params"]["match_var"] *= 2
+    with pytest.raises(ValueError,match="original state"):
+        fit.validate_artifact(artifact)
+
+
+def test_calibration_only_stays_independent_of_later_data_and_uses_same_screen(tmp_path):
+    for year in (2022,2023,2024):
+        cache_season(tmp_path,year)
+    artifact = fit.fit(tmp_path,calibration_only=True)
+    for year in (2025,2026,2027):
+        folder = tmp_path/str(year)
+        folder.mkdir()
+        (folder/f"{year}unreadable.json").write_text("not training data")
+    assert digest(fit.fit(tmp_path,calibration_only=True)) == digest(artifact)
+    validation = fit.validate_on_2024(tmp_path,artifact)
+    assert set(validation["guards"]) == {"pooled_log_loss","brier","log_loss"}
+    for name in ("validation_brier_tolerance","validation_log_loss_tolerance"):
+        assert artifact["policy"][name] == fit.POLICY[name]
+
+
+def test_calibration_only_successful_freeze_evaluates_identity_fixture(tmp_path):
+    for year in (2022,2023,2024,2025):
+        cache_season(tmp_path,year)
+    artifact = fit.fit(tmp_path,calibration_only=True)
+    artifact["calibration"] = {"intercept":0.,"slope":1.,"reference":"asof_base_logit"}
+    validation = fit.validate_on_2024(tmp_path,artifact)
+    assert validation["passed"]
+    out = tmp_path/"fits"
+    write_artifact(out,artifact)
+    write_artifact(out,validation)
+    frozen = {"schema":"flag-rp-frozen-v1","artifact_sha256":digest(artifact),"validation_sha256":digest(validation),
+              "validation_passed":True,"evaluation_seasons":[2025,2026],"serving_eligible":False}
+    result = evaluate(tmp_path,2025,write_artifact(out,frozen))
+    assert result["comparisons"]["raw_fitted_minus_default"]["pooled"]["brier"]["mean_diff"] == 0
+    assert not result["serving_eligible"]

@@ -18,10 +18,12 @@ from app.services.ratings.state_fitting import box_quadratic
 from app.services.ratings.state_inputs import digest
 
 SCHEMA = "flag-rp-fit-v1"
+CALIBRATION_SCHEMA = "flag-rp-calibration-v1"
 BOUNDS = {"prior_var":(.1,4.),"match_var":(.0001,.1),"event_var":(.001,1.)}
 POLICY = {"training_seasons":[2022,2023],"validation_season":2024,"coordinate_rounds":2,
           "coordinate_factor":2.,"calibration_ridge":.001,
           "validation_brier_tolerance":.0005,"validation_log_loss_tolerance":.002}
+CALIBRATION_POLICY = {**POLICY,"coordinate_rounds":0,"state_fit":"fixed_original_defaults"}
 
 
 def implementation_sha256():
@@ -162,8 +164,9 @@ def fit_calibration(groups):
     raise ValueError("RP calibration did not converge")
 
 
-def fit(cache, *, progress=None):
-    years = POLICY["training_seasons"]
+def fit(cache, *, progress=None, calibration_only=False):
+    policy = CALIBRATION_POLICY if calibration_only else POLICY
+    years = policy["training_seasons"]
     data = [load_published(cache,y) for y in years]
     trials, memo = [], {}
     def trial(params):
@@ -178,7 +181,7 @@ def fit(cache, *, progress=None):
         return memo[key]
     params = FlagRpParams()
     best = trial(params)
-    for _ in range(POLICY["coordinate_rounds"]):
+    for _ in range(policy["coordinate_rounds"]):
         for name,(lo,hi) in BOUNDS.items():
             current = params
             for factor in (1/POLICY["coordinate_factor"],POLICY["coordinate_factor"]):
@@ -188,17 +191,18 @@ def fit(cache, *, progress=None):
                 if score < best-1e-12:
                     params,best = candidate,score
     groups = [forecasts(d,params) for d in data]
-    return {"schema":SCHEMA,"model_recipe":RECIPE,"implementation_sha256":implementation_sha256(),
-        "policy":{**POLICY,"training_seasons":list(years)},"params":asdict(params),"calibration":fit_calibration(groups),
+    return {"schema":CALIBRATION_SCHEMA if calibration_only else SCHEMA,"model_recipe":RECIPE,"implementation_sha256":implementation_sha256(),
+        "policy":{**policy,"training_seasons":list(years)},"params":asdict(params),"calibration":fit_calibration(groups),
         "source_sha256":{str(y):d.source_sha256 for y,d in zip(years,data)},
         "spec_sha256":{str(y):d.spec.fingerprint for y,d in zip(years,data)},
         "labels":{str(y):len(r) for y,r in zip(years,groups)},"trials":trials,
-        "search":"two deterministic coordinate passes; finite search, not a global optimum",
+        "search":"fixed original state settings; calibration only" if calibration_only else "two deterministic coordinate passes; finite search, not a global optimum",
         "serving_eligible":False}
 
 
 def validate_artifact(artifact):
-    if artifact["schema"] != SCHEMA or artifact["policy"] != POLICY or artifact["serving_eligible"] is not False:
+    policies = {SCHEMA:POLICY,CALIBRATION_SCHEMA:CALIBRATION_POLICY}
+    if artifact["schema"] not in policies or artifact["policy"] != policies[artifact["schema"]] or artifact["serving_eligible"] is not False:
         raise ValueError("unsupported RP fit artifact")
     if artifact["model_recipe"] != RECIPE or artifact["implementation_sha256"] != implementation_sha256():
         raise ValueError("RP artifact belongs to another implementation")
@@ -207,6 +211,8 @@ def validate_artifact(artifact):
     if set(artifact["params"]) != set(BOUNDS):
         raise ValueError("incomplete RP parameters")
     params = FlagRpParams(**artifact["params"])
+    if artifact["schema"] == CALIBRATION_SCHEMA and params != FlagRpParams():
+        raise ValueError("calibration-only artifacts must keep the original state settings")
     if any(not lo <= getattr(params,k) <= hi for k,(lo,hi) in BOUNDS.items()):
         raise ValueError("RP parameters exceed training bounds")
     c = artifact["calibration"]

@@ -27,13 +27,14 @@ def main():
     parser = argparse.ArgumentParser(description="Fit on 2022–2023, validate on 2024; no evaluation-season reads")
     parser.add_argument("--cache",required=True,type=Path)
     parser.add_argument("--out",required=True,type=Path)
+    parser.add_argument("--calibration-only",action="store_true",help="Keep original state variances fixed and fit only probability calibration")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     if args.out.resolve().is_relative_to(repo):
         parser.error("RP artifacts must stay outside the repository")
     def progress(n,score):
         print(f"Training trial {n}: balanced log loss {score:.6f}",file=sys.stderr,flush=True)
-    artifact = rp_fitting.fit(args.cache,progress=progress)
+    artifact = rp_fitting.fit(args.cache,progress=progress,calibration_only=args.calibration_only)
     rp_fitting.validate_artifact(artifact)
     path = write_artifact(args.out,artifact)
     # The candidate is fixed and saved before opening validation data.
