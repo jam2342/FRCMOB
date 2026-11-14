@@ -36,7 +36,7 @@ from app.services.ratings.state_inputs import digest
 from app.services.ratings.strength import curve_for_anchors, points_to_rating
 
 RECIPE = "total-weekly-rehearsal-v1"
-POLICY = {"state_max_evals":400,"state_restarts":1,"fit_wall_seconds":3000,"minimum_fit_matches":150,
+POLICY = {"state_max_evals":400,"state_restarts":state.FIT_RESTARTS,"fit_wall_seconds":3000,"minimum_fit_matches":150,
           "job_hour_utc":9,"publication_hour_utc":10,"minimum_rating_matches":8,"minimum_rating_teams":20,
           "anchor_weekly_fraction":.05,"median_rating_step":1.,"maximum_rating_step":5.,
           "safety_days":14,"minimum_safety_matches":150,"early_brier_tolerance":.001,
@@ -525,7 +525,7 @@ def hindsight(root, data, run, artifact):
     packed = PackedInnovations(inputs) if POLICY["compiled"] else None
     checks = {"start":packed.verify(start)} if packed else {}
     pull = Pull(artifact["pull"]["centre"],artifact["pull"]["width"])
-    fitted = fit_likelihood(inputs,start,state.NAMES,None,pull=pull,max_evals=POLICY["state_max_evals"],restarts=1,
+    fitted = fit_likelihood(inputs,start,state.NAMES,None,pull=pull,max_evals=POLICY["state_max_evals"],restarts=POLICY["state_restarts"],
                             max_seconds=POLICY["fit_wall_seconds"],innovations_fn=packed,zero_terms=())
     if packed:
         checks["fitted"] = packed.verify(fitted["params"])

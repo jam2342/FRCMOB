@@ -65,7 +65,11 @@ from an earlier accepted candidate, stays within four times the bootstrap and a
 factor 1.5 weekly step, and freezes beta/rookie fitting after 28 playing-time days.
 Score calibration and logistic fits minimize their regularized objectives inside the
 existing hard bounds and weekly limits. These are bounded fits, not unconstrained
-fits clipped afterward. Nonconvergence, invalid bounds or a last-two-week in-sample
+fits clipped afterward. State fitting allows two restarts after its initial search,
+stopping early when a converged restart improves the objective by less than the
+existing stability tolerance. A converged restart that still finds a better solution
+needs that additional confirmation; it cannot be accepted just for converging.
+The per-pass evaluation budget is unchanged. Nonconvergence, invalid bounds or a last-two-week in-sample
 Brier regression over 0.001 reject the version. The optimizer has a 3,000-second wall
 time budget checked between replays, within the one-hour job lease.
 
