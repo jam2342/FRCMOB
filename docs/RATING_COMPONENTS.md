@@ -203,3 +203,60 @@ That simpler `flag-rp-slope-calibration-v1` recipe learns just the departure fro
 the as-of base rate. Its artifact rejects either changed state settings or a nonzero
 intercept. It uses the same training data, slope bounds, regularization and development
 limits. Follow-up comparisons on 2024 are development choices, not new blind tests.
+
+### Prospective RP evidence and weekly fits
+
+`RATING_RP_ENABLED` defaults to false. With it and `RATING_PREDICTION_LOG_ENABLED`
+enabled, the live ingest job captures a separate RP candidate after refreshing the
+served prediction log. This does not change served probabilities or the private
+preview. Only declared seasons and official event types 0–5 qualify; 2027 still
+requires a component/flag declaration when its rules are known.
+
+`rating_rp_predictions` keeps the first forecast for each calibration version and
+match. The database forbids updates and deletes. Capture requires an upcoming,
+unscored qualification with six distinct teams and a served log no older than
+60 seconds, matching its lineup and scheduled start. It saves the raw and corrected
+RP probabilities, served comparator, teams, official event type, timestamps and
+settings/data/source hashes. One identity bootstrap and up to two recent weekly
+candidates are captured. Changed implementation or component declarations start a
+new evidence cohort rather than reuse older raw forecasts.
+
+The external `scripts/fit_rating_calibrations.py --season YEAR` job can also fit
+`flag-rp-weekly-v1` candidates. Each RP has its own intercept and slope, starting at
+identity every season with the original flag-state settings. Its fit uses saved
+bootstrap forecasts whose actual match starts and result storage timestamps are
+strictly before Monday 00:00 UTC. Forecasts must predate the actual start, both final
+lineups must match, DQ sides are excluded, and labels must be explicit booleans.
+Missing or corrected results stored at/after the cutoff wait for a later fit.
+
+A role needs 150 alliance labels, including five of each outcome. Otherwise it
+stays at identity; a return to identity that exceeds movement bounds rejects the
+fit. Sum Bernoulli log loss uses identity-centred Gaussian prior precision `[4,16]`.
+Intercept stays within ±2 and moves at most 0.25 per weekly fit; slope stays within
+0.25–4 and changes by at most a factor of 1.5. Independent per-RP fits avoid forcing
+rare and common bonus RPs to share a correction. Cutoffs must advance; repeating a
+completed cutoff returns its existing version. Frozen seasons cannot capture or fit.
+
+`rating_rp_fit_evidence` freezes the exact labels, their result timestamps, and a
+training hash. Combined with saved forecasts, this reconstructs each fit's inputs
+even after source results change. It has the same database immutability protection.
+Prospective metrics use saved probabilities, never a retrospective rerun. A new fit
+has no prospective evidence until it is captured at future matches. Comparison with
+the served snapshot may include cached production state; raw versus corrected uses
+the same candidate capture. Neither comparison automatically grants release approval,
+and the activation API explicitly rejects RP candidates.
+
+For historical development checks, run:
+
+```sh
+python scripts/evaluate_rp_weekly.py --season 2024 --cache /private/tba
+python scripts/evaluate_rp_weekly.py --season 2026 --cache /private/tba-all \
+  --priors-2025 /private/prod/team_prior_strengths_2025.csv --snapshots /private/prod
+```
+
+This fixed policy learns only labels published strictly before each Monday, without
+parameter search. It reports whole-season, early-season, newest-event and championship
+comparisons by RP, with event-bootstrap intervals. Final cached corrections still
+lack historical publication times. Already examined 2022–2026 seasons are development
+evidence; 2027 remains the clean test. No environment switch, cron or active setting
+is enabled by adding this code. Serving integration and full release gates remain open.

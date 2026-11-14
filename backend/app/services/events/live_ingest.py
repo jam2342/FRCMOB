@@ -118,7 +118,22 @@ def ingest_events_in_play(db: Session, tba: Any, *, now: float | None = None, ma
                 db.rollback()
                 logger.exception("state_prediction.capture_failed season=%s", season)
                 errors.extend(key for key in events if int(key[:4]) == season)
+    rp_capture = []
+    if settings.rating_rp_enabled and settings.rating_prediction_log_enabled:
+        from app.services.ratings.rp_predictions import capture
+        event_types = {str(e["key"]).lower():e.get("event_type") for e in tba.events(today.year) or []}
+        for season in sorted({int(key[:4]) for key in events}):
+            try:
+                # The served log was refreshed above, after this tick's start time.
+                rp_capture.append({"season":season, **capture(db, season,
+                    [key for key in events if int(key[:4]) == season], event_types=event_types)})
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("rp_prediction.capture_failed season=%s", season)
+                errors.extend(key for key in events if int(key[:4]) == season)
     return {
+        **({"rp_capture":rp_capture} if settings.rating_rp_enabled else {}),
         **({"state_capture":state_capture} if settings.rating_state_fit_enabled else {}),
         "events": events,
         "skipped_over_limit": skipped,

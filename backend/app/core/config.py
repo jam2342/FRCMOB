@@ -263,6 +263,7 @@ class Settings(BaseSettings):
     # match (services/events/live_ingest.py). Off: only the 12 h job ingests, after events end.
     rating_state_fit_enabled: bool = False
     rating_state_adapter_enabled: bool = False
+    rating_rp_enabled: bool = False
     rating_autotune: bool = False
     rating_prediction_log_enabled: bool = False
 

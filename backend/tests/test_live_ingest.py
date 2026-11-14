@@ -68,6 +68,27 @@ class LiveIngestTests(DBTestCase):
                 scheduler.start_scheduler()
             self.assertEqual("live_event_ingest" in registered, expected)
 
+    def test_rp_capture_follows_served_capture_with_fresh_time_and_official_types(self):
+        from app.services.ratings import rp_predictions
+        from app.api import routes_events
+        calls = []
+        self.tba.events.return_value = [{**e,"event_type":0} for e in TODAY]
+        def served(**kwargs):
+            calls.append("served")
+        def capture(db,season,keys,*,event_types):
+            assert calls == ["served","served"]
+            assert season == 2026 and keys == ["2026busy","2026fresh"]
+            assert event_types["2026busy"] == 0
+            return {"status":"captured","forecasts":2}
+        with mock.patch.object(settings,"rating_rp_enabled",True), \
+                mock.patch.object(settings,"rating_prediction_log_enabled",True), \
+                mock.patch.object(live_ingest,"refresh_event",return_value={"status":"processed"}), \
+                mock.patch.object(routes_events,"get_event_schedule_with_synergy",side_effect=served), \
+                mock.patch.object(rp_predictions,"capture",side_effect=capture):
+            result = live_ingest.ingest_events_in_play(self.db,self.tba,now=NOW)
+        self.assertEqual(result["rp_capture"],[{"season":2026,"status":"captured","forecasts":2}])
+        self.assertEqual(result["errors"],[])
+
 
 def test_forecast_tolerates_a_lineup_robot_missing_from_the_team_list():
     # 2026catt on 2026-10-18: frc4414b was in lineups but not on the event's team list.
