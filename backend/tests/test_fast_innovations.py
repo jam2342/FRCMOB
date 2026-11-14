@@ -69,3 +69,18 @@ def test_fit_callback_preserves_the_reference_objective_and_fit():
     assert accelerated["params"] == reference["params"]
     expected = innovations(data,p,None)
     assert len(expected[0]) == len(PackedInnovations(data,compiled=False)(p,None)[0])
+
+
+def test_positive_counting_noise_recipe_cannot_select_the_structural_zero_trial():
+    data = inputs(30)
+    p = ScaleFreeParams(margin_cov=False,noise_count=1.)
+    # Near-zero residuals favour turning counting noise off, outside this fixed recipe.
+    def tiny_residuals(params,until):
+        return np.zeros(100),np.full(100,.1+params.noise_count)
+    options = dict(names=("noise_count",),until=None,pull=Pull.around(p,("noise_count",)),
+                   max_evals=80,restarts=1,innovations_fn=tiny_residuals)
+    exploratory = fit_likelihood(data,p,**options)
+    fixed = fit_likelihood(data,p,zero_terms=(),**options)
+    assert exploratory["params"].noise_count == 0
+    assert fixed["params"].noise_count >= .25
+    assert fixed["zeroed"] == []

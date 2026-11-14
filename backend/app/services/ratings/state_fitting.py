@@ -207,7 +207,7 @@ def fit_week(db, season, through, code_sha, *, max_evals=400, innovations_factor
     accelerated = innovations_factory(inputs,start) if innovations_factory else None
     try:
         fit = fit_likelihood(inputs, start, names, int(through.timestamp()), pull=pull, max_evals=max_evals, restarts=1,
-                             max_seconds=3000,innovations_fn=accelerated)
+                             max_seconds=3000,innovations_fn=accelerated,zero_terms=())
     except TimeoutError as exc:
         errors.append(str(exc))
         fit = {"params":start,"converged":False,"timed_out":True}

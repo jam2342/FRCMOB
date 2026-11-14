@@ -266,6 +266,7 @@ def fit_likelihood(
     restarts: int = 3,
     max_seconds: float | None = None,
     innovations_fn=None,
+    zero_terms=LEVEL_TERMS,
 ) -> dict:
     # Maximum likelihood (pull=None) or MAP over matches played before `until`, in logs.
     # Nelder-Mead restarts from its best point until a restart stops improving, so a fit
@@ -307,7 +308,7 @@ def fit_likelihood(
     # A level term can't reach 0 in logs: try it switched off exactly, keep the better.
     zeroed = []
     for name in names:
-        if name in LEVEL_TERMS:
+        if name in LEVEL_TERMS and name in zero_terms:
             off = replace(params, **{name: 0.0})
             if value_of(off) <= value_of(params):
                 params = off

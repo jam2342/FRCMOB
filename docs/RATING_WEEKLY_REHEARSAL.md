@@ -29,6 +29,11 @@ rebuild in actual playing order, matching the state service's replay order. Upco
 forecasts clone the event state and pointer map; reading a future matchup cannot move
 teams between events or change running statistics.
 
+Eight bounded rewind snapshots avoid replaying the entire season after every delayed
+arrival. Snapshots at or after an insertion are discarded; older insertions fall back
+to a full rebuild. Changing the tracked version set clears the rewind cache. Tests
+compare the resulting state arrays and EPA values exactly against full replay.
+
 Monday fits use results whose actual starts and stored-result timestamps are strictly
 before 00:00 UTC. The simulated job starts at 09:00 and publishes at 10:00, with a
 one-hour wall-time publication budget. The service keeps its existing optimizer,
@@ -36,6 +41,10 @@ one-hour wall-time publication budget. The service keeps its existing optimizer,
 late-season freeze of prior coefficients, convergence rejection and recent in-sample
 Brier sanity check. Calibration training recomputes historical features under the
 refitted prefix state; future evaluation always uses the saved original forecast.
+
+The fixed positive-counting-noise recipe skips the research optimizer's structural
+zero trials. Those trials remain available to exploratory callers, but choosing zero
+would violate this recipe's existing positive hard bounds and discard a valid bounded fit.
 
 The state service's fitting inputs now exclude results stored at or after its cutoff.
 This also prevents a delayed Sunday result arriving on Monday morning from entering a

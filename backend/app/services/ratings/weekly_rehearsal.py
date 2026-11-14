@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from bisect import bisect_right
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -194,6 +195,7 @@ class Replay:
         self.last = (-1,"")
         self.chain = digest([])
         self.epa = self.new_epa()
+        self.ordered,self.keys,self.snapshots = [],[],[]
 
     def new_epa(self):
         return EpaClone(start_multipliers(self.context["z_previous"],self.data.rookies,
@@ -201,9 +203,15 @@ class Replay:
 
     def add_model(self, identifier, params):
         model = self.new_model(params)
-        for record in sorted(self.known,key=lambda r:(r["result"].card.time,r["result"].card.match_key)):
+        for record in self.ordered:
             model.observe(record["result"])
         self.models[identifier] = model
+        self.snapshots = []
+
+    def retain(self, identifiers):
+        if set(self.models) != identifiers:
+            self.models = {i:m for i,m in self.models.items() if i in identifiers}
+            self.snapshots = []
 
     def new_model(self, params):
         from app.services.ratings.research_filter import ScaleFreeFilter
@@ -224,11 +232,22 @@ class Replay:
                 pair = (team,card.event_key)
                 self.here[pair] = self.here.get(pair,0)+1
             key = (card.time,card.match_key)
+            position = bisect_right(self.keys,key)
+            self.keys.insert(position,key)
+            self.ordered.insert(position,record)
             if key < self.last:
-                for identifier,model in list(self.models.items()):
-                    self.add_model(identifier,model.params)
-                self.epa = self.new_epa()
-                for known in sorted(self.known,key=lambda q:(q["result"].card.time,q["result"].card.match_key)):
+                self.snapshots = [s for s in self.snapshots if s["key"] < key]
+                start = 0
+                if self.snapshots:
+                    snapshot = self.snapshots[-1]
+                    self.models,self.epa = copy.deepcopy((snapshot["models"],snapshot["epa"]))
+                    start = snapshot["count"]
+                else:
+                    self.models = {i:self.new_model(m.params) for i,m in self.models.items()}
+                    self.epa = self.new_epa()
+                for known in self.ordered[start:]:
+                    for model in self.models.values():
+                        model.observe(known["result"])
                     self.epa.observe(known["result"])
             else:
                 for model in self.models.values():
@@ -236,6 +255,10 @@ class Replay:
                 self.epa.observe(r)
             self.last = max(self.last,key)
             self.applied += 1
+            if not self.snapshots or len(self.ordered)-self.snapshots[-1]["count"] >= 100:
+                saved_models,saved_epa = copy.deepcopy((self.models,self.epa))
+                self.snapshots.append({"key":self.last,"count":len(self.ordered),"models":saved_models,"epa":saved_epa})
+                self.snapshots = self.snapshots[-8:]
 
     def capture(self, record, fitted, active, bootstrap, challenger, epa_scale):
         card = record["result"].card
@@ -399,6 +422,11 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                         raise ValueError("checkpoint calibration changed")
             context = bootstrap.params["context"]
             replay = Replay(data,context,ScaleFreeParams(**artifact["params"]))
+            fitted_cache = {}
+            def saved_version(identifier):
+                if identifier not in fitted_cache:
+                    fitted_cache[identifier] = version(db,identifier)
+                return fitted_cache[identifier]
             first = layers.monday(datetime.fromtimestamp(data.records[0]["result"].card.time,timezone.utc))
             final = layers.monday(datetime.fromtimestamp(data.records[-1]["result"].card.time,timezone.utc))+timedelta(days=7)
             week = datetime.fromisoformat(checkpoint["next_week"]) if checkpoint else first
@@ -406,7 +434,7 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
             if checkpoint and replay.chain != checkpoint["history_chain_sha256"]:
                 raise ValueError("checkpoint history changed")
             for identifier in {bootstrap.id,active,latest}:
-                replay.add_model(identifier,version(db,identifier)[0])
+                replay.add_model(identifier,saved_version(identifier)[0])
             source = {r["result"].card.match_key:r for r in data.records}
             completed = 0
             while week <= final and (max_weeks is None or completed < max_weeks):
@@ -442,7 +470,7 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                         if pending is not None:
                             latest = pending
                         if latest not in replay.models:
-                            replay.add_model(latest,version(db,latest)[0])
+                            replay.add_model(latest,saved_version(latest)[0])
                         proposed = pending if pending is not None else active
                         impact,anchors = rating_impact(replay.models[active],replay.models[proposed],replay.total,anchors)
                         job["impact"] = impact
@@ -459,9 +487,9 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                             fitted = fit_scale(np.array([f["forecasts"]["epa"]["x"] for f in decided]),
                                 np.array([float(source[f["key"]]["result"].red_score > source[f["key"]]["result"].blue_score) for f in decided]))
                             epa_scale = fitted if fitted > 0 else None
-                        replay.models = {i:m for i,m in replay.models.items() if i in {bootstrap.id,active,latest}}
+                        replay.retain({bootstrap.id,active,latest})
                     else:
-                        fitted = {identifier:version(db,identifier) for identifier in {bootstrap.id,active,latest}}
+                        fitted = {identifier:saved_version(identifier) for identifier in {bootstrap.id,active,latest}}
                         week_frames.append(replay.capture(record,fitted,active,bootstrap.id,latest,epa_scale))
                 replay.advance(end.timestamp())
                 if before != journal_hashes(root,journals):
@@ -498,7 +526,7 @@ def hindsight(root, data, run, artifact):
     checks = {"start":packed.verify(start)} if packed else {}
     pull = Pull(artifact["pull"]["centre"],artifact["pull"]["width"])
     fitted = fit_likelihood(inputs,start,state.NAMES,None,pull=pull,max_evals=POLICY["state_max_evals"],restarts=1,
-                            max_seconds=POLICY["fit_wall_seconds"],innovations_fn=packed)
+                            max_seconds=POLICY["fit_wall_seconds"],innovations_fn=packed,zero_terms=())
     if packed:
         checks["fitted"] = packed.verify(fitted["params"])
     errors = []

@@ -183,3 +183,41 @@ def test_new_challenger_is_invisible_before_publication(tmp_path,fake_fitter):
     assert frames["2024early_before"]["forecasts"]["challenger"]["version"] == result["bootstrap_id"]
     assert frames["2024early_exactly"]["forecasts"]["challenger"]["version"] == result["bootstrap_id"]
     assert frames["2024early_after"]["forecasts"]["challenger"]["version"] != result["bootstrap_id"]
+
+
+def test_rewind_snapshots_match_full_replay_after_late_results_and_version_changes():
+    current = data(2024,1)
+    from dataclasses import replace
+    # More than eight snapshots, plus arrivals older than the entire retained window.
+    original = current.records
+    records = []
+    for i in range(1000):
+        rec = copy.deepcopy(original[i%len(original)])
+        rec["result"] = replace(rec["result"],card=replace(rec["result"].card,match_key=f"2024m{i:04d}",time=100+i*10))
+        rec["posted"] = rec["result"].card.time+(9000 if i in (0,10,100) else 20 if i%5 else 80)
+        records.append(rec)
+    current.records = records
+    context = {"z_previous":{},"previous_unit":20.}
+    replay = w.Replay(current,context,PARAMS)
+    replay.add_model(1,PARAMS)
+    for moment in (2000,4000,8000,12000):
+        replay.advance(moment)
+        if moment == 4000:
+            replay.add_model(2,replace(PARAMS,noise=.7))
+        for identifier,actual in replay.models.items():
+            expected = replay.new_model(actual.params)
+            epa = replay.new_epa()
+            for rec in sorted(replay.known,key=lambda r:(r["result"].card.time,r["result"].card.match_key)):
+                expected.observe(rec["result"])
+                epa.observe(rec["result"])
+            assert actual.latest == expected.latest
+            assert actual.unit.total == expected.unit.total
+            assert actual.unit.count == expected.unit.count
+            for event,block in actual.blocks.items():
+                assert block.index == expected.blocks[event].index
+                assert block.mean.tolist() == expected.blocks[event].mean.tolist()
+                assert block.cov.tolist() == expected.blocks[event].cov.tolist()
+            assert replay.epa.epa == epa.epa and replay.epa.played == epa.played
+        assert len(replay.snapshots) <= 8
+    replay.retain({1})
+    assert replay.snapshots == [] and set(replay.models) == {1}
