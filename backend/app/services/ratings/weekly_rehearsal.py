@@ -436,8 +436,10 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                                 job["fit_seconds"] = row.fit_metrics.get("rehearsal_seconds")
                                 job["parity"] = row.fit_metrics.get("rehearsal_parity")
                                 if row.status == "candidate":
-                                    latest = pending = identifier
+                                    pending = identifier
                     elif kind == 1:
+                        if pending is not None:
+                            latest = pending
                         if latest not in replay.models:
                             replay.add_model(latest,version(db,latest)[0])
                         proposed = pending if pending is not None else active

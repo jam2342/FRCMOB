@@ -164,3 +164,21 @@ def test_partial_run_cannot_claim_full_rehearsal_or_hindsight(tmp_path,fake_fitt
     report = w.summarize(tmp_path/"partial",data(2024),partial,artifact(),include_hindsight=False)
     assert not report["checks"]["full_season"] and not report["release_passed"]
     assert not report["checks"]["week4_within_hindsight"]
+
+
+def test_new_challenger_is_invisible_before_publication(tmp_path,fake_fitter):
+    current = data(2024)
+    # Two matches on the first Monday with enough previous data: one before 10, one after.
+    monday = int(datetime(2024,3,11,tzinfo=timezone.utc).timestamp())
+    from dataclasses import replace
+    for label,hour in (("before",9.5),("after",10.5)):
+        original = current.records[0]["result"]
+        time = monday+int(hour*3600)
+        r = replace(original,card=replace(original.card,match_key=f"2024early_{label}",time=time))
+        current.records.append({"result":r,"posted":time+60,"type":0})
+    current.records.sort(key=lambda r:(r["result"].card.time,r["result"].card.match_key))
+    current.source_sha256 = digest([asdict(r["result"]) for r in current.records])
+    result = w.rehearse(tmp_path/"publication",current,data(2023,1),artifact(),"p"*64,"test")
+    frames = {f["key"]:f for f in result["frames"]}
+    assert frames["2024early_before"]["forecasts"]["challenger"]["version"] == result["bootstrap_id"]
+    assert frames["2024early_after"]["forecasts"]["challenger"]["version"] != result["bootstrap_id"]
