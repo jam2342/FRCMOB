@@ -17,7 +17,7 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()).hexdigest()
 
 
-def load_results(db, season, through):
+def load_results(db, season, through, *, updated_before=None):
     # No scheduled-time fallback: it cannot prove a result was available before a fit.
     matches = db.query(models.Match).join(models.Event).filter(
         models.Event.year == season, models.Match.actual_time.is_not(None),
@@ -33,6 +33,11 @@ def load_results(db, season, through):
         rows = sides.get(match.match_key, {})
         if set(rows) != {"red", "blue"} or any(r.total_score is None or r.total_score < 0 for r in rows.values()):
             skipped["incomplete_score"] += 1
+            continue
+        if updated_before is not None and any(r.updated_at is None or
+                (r.updated_at.replace(tzinfo=timezone.utc) if r.updated_at.tzinfo is None else r.updated_at).timestamp() >= updated_before
+                for r in rows.values()):
+            skipped["unavailable_at_cutoff"] += 1
             continue
         teams = [str(t).lower() for color in ("red", "blue") for t in rows[color].team_keys or []]
         if len(teams) != 6 or len(set(teams)) != 6:
@@ -66,8 +71,8 @@ def results_digest(results):
                     r.blue_components.get("source_total_points",r.blue_points)) for r in results])
 
 
-def inputs_for(db, season, through, context):
-    results, skipped = load_results(db, season, through)
+def inputs_for(db, season, through, context, *, updated_before=None):
+    results, skipped = load_results(db, season, through, updated_before=updated_before)
     rookies = sorted(t.lower() for (t,) in db.query(models.Team.team_key).filter(models.Team.rookie_year == season))
     first = results[0].card.time if results else 0
     research = ResearchSeason(Season(season, results, set(), {}))

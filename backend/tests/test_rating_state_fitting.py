@@ -113,6 +113,23 @@ def test_actual_playing_time_is_required_and_future_labels_do_not_reach_fit(db_s
     assert len(load_results(db,2027,CUTOFF.timestamp())[0]) == 159
 
 
+def test_results_stored_at_or_after_the_fit_cutoff_cannot_train(db_session):
+    db = db_session
+    seed(db,2026,n=30)
+    seed(db,2027)
+    state.install_bootstrap(db,artifact(),"test")
+    for r in db.query(models.MatchAllianceResult).filter_by(season_year=2027):
+        r.updated_at = CUTOFF
+    db.commit()
+    result = state.fit_week(db,2027,CUTOFF,"test",max_evals=1)
+    assert result["status"] == "insufficient_actual_matches"
+    for r in db.query(models.MatchAllianceResult).filter_by(season_year=2027):
+        r.updated_at = CUTOFF-timedelta(microseconds=1)
+    db.commit()
+    result = state.fit_week(db,2027,CUTOFF,"test",max_evals=1)
+    assert result["matches"] == 160
+
+
 def test_state_fit_budget_failure_is_rejected_and_cutoff_is_idempotent(db_session,state_on):
     db = db_session
     seed(db,2026,n=30)

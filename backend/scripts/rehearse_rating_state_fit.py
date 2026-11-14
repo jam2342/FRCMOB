@@ -59,7 +59,8 @@ def main():
                     set_number=1,match_number=1,time=card.time,actual_time=card.time))
                 for color,teams,score,points in (("red",card.red,result.red_score,result.red_points),("blue",card.blue,result.blue_score,result.blue_points)):
                     db.add(models.MatchAllianceResult(match_key=card.match_key,event_key=card.event_key,season_year=season,
-                        alliance=color,team_keys=list(teams),total_score=score,score_without_fouls=points))
+                        alliance=color,team_keys=list(teams),total_score=score,score_without_fouls=points,
+                        updated_at=datetime.fromtimestamp(card.time+1,timezone.utc)))
         db.commit()
         bootstrap = state.install_bootstrap(db,json.loads(args.bootstrap.read_text()),"development-rehearsal")
         result = state.fit_week(db,args.season,cutoff,"development-rehearsal",max_evals=args.max_evals)
