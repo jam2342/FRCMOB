@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -20,13 +21,24 @@ def load_frozen(path):
         raise ValueError("unsupported frozen RP recipe")
     if path.stem != digest(frozen):
         raise ValueError("frozen RP content hash mismatch")
-    artifact = json.loads((path.parent/f"{frozen['artifact_sha256']}.json").read_text())
-    validation = json.loads((path.parent/f"{frozen['validation_sha256']}.json").read_text())
+    references = []
+    for key in ("artifact_sha256","validation_sha256"):
+        value = frozen[key]
+        if not isinstance(value,str) or not re.fullmatch(r"[0-9a-f]{64}",value):
+            raise ValueError("invalid RP artifact hash reference")
+        reference = path.parent/f"{value}.json"
+        if reference.resolve().parent != path.parent.resolve():
+            raise ValueError("RP artifact reference leaves its folder")
+        references.append(json.loads(reference.read_text()))
+    artifact,validation = references
     if digest(artifact) != frozen["artifact_sha256"] or digest(validation) != frozen["validation_sha256"] or validation["artifact_sha256"] != digest(artifact):
         raise ValueError("RP artifact/validation hash mismatch")
     fitting.validate_artifact(artifact)
-    if frozen["validation_passed"] is not True or validation["passed"] is not True or validation["season"] != 2024 or not all(validation["guards"].values()):
+    if frozen["validation_passed"] is not True or validation["passed"] is not True or validation["season"] != 2024 or set(validation["guards"]) != {"pooled_log_loss","brier","log_loss"} or not all(v is True for v in validation["guards"].values()):
         raise ValueError("2024 validation failed; later-season evaluation is blocked")
+    comparison = validation["comparison"]
+    if comparison["pooled"]["log_loss"]["hi90"] > 1e-12 or any(v["brier"]["mean_diff"] > fitting.POLICY["validation_brier_tolerance"] or v["log_loss"]["mean_diff"] > fitting.POLICY["validation_log_loss_tolerance"] for v in comparison.values()):
+        raise ValueError("2024 validation metrics fail the frozen policy")
     return artifact,validation
 
 

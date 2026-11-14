@@ -9,13 +9,13 @@ from app.services.ratings import rp_fitting as fit
 from app.services.ratings.flag_rp import FlagRpParams
 from app.services.ratings.state_inputs import digest
 from scripts.fit_flag_rp import write_artifact
-from scripts.evaluate_rp_fit import load_frozen
+from scripts.evaluate_rp_fit import evaluate, load_frozen
 
 
 def cache_season(root,year):
     folder = root/str(year)
     folder.mkdir(parents=True,exist_ok=True)
-    names = {2022:"cargoBonusRankingPoint",2023:"activationBonusAchieved",2024:"melodyBonusAchieved"}
+    names = {2022:"cargoBonusRankingPoint",2023:"activationBonusAchieved",2024:"melodyBonusAchieved",2025:"autoBonusAchieved"}
     matches = []
     for i in range(8):
         time = 100+i*20
@@ -153,3 +153,34 @@ def test_comparisons_reject_unmatched_or_duplicate_labels():
         fit.compare(rows,[])
     with pytest.raises(ValueError,match="identical"):
         fit.compare(rows,rows*2)
+
+
+def test_frozen_manifest_cannot_reference_an_arbitrary_path(tmp_path):
+    frozen = {"schema":"flag-rp-frozen-v1","artifact_sha256":"../future-data",
+        "validation_sha256":"a"*64,"validation_passed":True,"evaluation_seasons":[2025,2026],"serving_eligible":False}
+    path = write_artifact(tmp_path,frozen)
+    with pytest.raises(ValueError,match="hash reference"):
+        load_frozen(path)
+
+
+def test_successful_frozen_recipe_evaluates_without_refitting(tmp_path):
+    for year in (2022,2023,2024,2025):
+        cache_season(tmp_path,year)
+    artifact = fit.fit(tmp_path)
+    # An identity candidate should tie the default exactly on separate synthetic data.
+    artifact["params"] = asdict(FlagRpParams())
+    artifact["calibration"] = {"intercept":0.,"slope":1.,"reference":"asof_base_logit"}
+    validation = fit.validate_on_2024(tmp_path,artifact)
+    assert validation["passed"]
+    out = tmp_path/"fits"
+    write_artifact(out,artifact)
+    write_artifact(out,validation)
+    frozen = {"schema":"flag-rp-frozen-v1","artifact_sha256":digest(artifact),"validation_sha256":digest(validation),
+              "validation_passed":True,"evaluation_seasons":[2025,2026],"serving_eligible":False}
+    path = write_artifact(out,frozen)
+    before = path.read_bytes()
+    result = evaluate(tmp_path,2025,path)
+    assert result["comparisons"]["calibrated_minus_default"]["pooled"]["log_loss"]["mean_diff"] == pytest.approx(0,abs=1e-12)
+    assert not result["serving_eligible"] and path.read_bytes() == before
+    with pytest.raises(ValueError,match="frozen examined"):
+        evaluate(tmp_path,2027,path)
