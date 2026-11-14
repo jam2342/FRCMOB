@@ -125,6 +125,21 @@ def test_tampered_journal_and_changed_inputs_block_resume(tmp_path,fake_fitter):
         w.rehearse(tmp_path/"identity",changed,data(2023,1),artifact(),"p"*64,"test")
 
 
+def test_changed_previous_season_scratch_data_cannot_replace_frozen_bootstrap(tmp_path,fake_fitter):
+    root = tmp_path/"previous-tamper"
+    run(root,max_weeks=1)
+    engine = w.prepare_database(root/"scratch.sqlite")
+    with Session(engine) as db:
+        result = db.query(models.MatchAllianceResult).filter_by(season_year=2023).first()
+        result.score_without_fouls += 10
+        db.commit()
+    with pytest.raises(ValueError,match="checkpoint bootstrap changed"):
+        run(root)
+    with Session(engine) as db:
+        assert db.query(models.RatingCalibration).filter_by(recipe=state.BOOTSTRAP_RECIPE).count() == 1
+    engine.dispose()
+
+
 def test_read_only_forecast_matches_deepcopy_without_changing_recorded_model():
     model = ScaleFreeFilter(PARAMS,record=True)
     records = data(2024,1).records

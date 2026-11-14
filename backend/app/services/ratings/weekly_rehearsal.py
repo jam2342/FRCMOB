@@ -411,6 +411,8 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                 boundary = datetime(data.year,1,1,tzinfo=timezone.utc).timestamp()
                 ingest(db,[r for r in previous.records if r["posted"] is not None and r["posted"] < boundary],data.year-1)
             bootstrap = state.install_bootstrap(db,artifact,code_sha)
+            if checkpoint and str(bootstrap.id) not in checkpoint["versions"]:
+                raise ValueError("checkpoint bootstrap changed; earlier-season scratch inputs differ")
             db.commit()
             active = checkpoint["active"] if checkpoint else bootstrap.id
             latest = checkpoint["latest"] if checkpoint else bootstrap.id

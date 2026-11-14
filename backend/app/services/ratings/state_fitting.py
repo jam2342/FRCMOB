@@ -118,8 +118,8 @@ def box_quadratic(a, b, lo, hi, initial):
     raise ValueError("bounded quadratic optimizer did not converge")
 
 
-def bounded_logistic(f, y, offset, centre, precision, lo, hi):
-    w = np.clip(np.array(centre,dtype=float),lo,hi)
+def bounded_logistic(f, y, offset, centre, precision, lo, hi, *, initial=None):
+    w = np.clip(np.array(centre if initial is None else initial,dtype=float),lo,hi)
     def objective(weights):
         logits = offset+f@weights
         delta = weights-centre
@@ -142,7 +142,9 @@ def bounded_logistic(f, y, offset, centre, precision, lo, hi):
     raise ValueError("bounded logistic optimizer did not converge")
 
 
-def bounded_score_fit(table, centre):
+# The active centre sets movement limits; an optional fixed prior sets the MAP target.
+def bounded_score_fit(table, centre, *, prior=None):
+    prior = centre if prior is None else prior
     sides = side_arrays(table)
     x = score_design(sides, True)
     residual = sides["y"]-sides["x"]
@@ -150,31 +152,36 @@ def bounded_score_fit(table, centre):
     precision = 1/_score_sd(True)**2
     a = x.T@x/noise+np.diag(precision)
     initial = np.array(centre["score_coef"])
-    b = x.T@residual/noise+precision*initial
+    b = x.T@residual/noise+precision*np.array(prior["score_coef"])
     lo = np.maximum(-layers.SCORE_LIMITS,initial-layers.SCORE_STEP)
     hi = np.minimum(layers.SCORE_LIMITS,initial+layers.SCORE_STEP)
     return ScoreCalibration(box_quadratic(a,b,lo,hi,initial),True)
 
 
-def fit_win_layers(table, centre):
+def fit_win_layers(table, centre, *, prior=None):
+    separate_prior = prior is not None
+    if separate_prior:
+        layers.validate_params(prior)
+    prior = centre if prior is None else prior
     decided = (table["y"] != .5) & np.isfinite(table["ra"]) & np.isfinite(table["ba"])
     base, y, ctx = layers.win_base(table)[decided], table["y"][decided], context(table)[decided]
     def temperature(mask, mean, prior_sd, previous):
         return float(bounded_logistic(base[mask,None],y[mask],np.zeros(int(mask.sum())),np.array([mean]),
-            np.array([1/prior_sd**2]),np.array([max(.25,previous/1.5)]),np.array([min(4,previous*1.5)]))[0])
-    pooled = temperature(np.ones(len(y),bool),centre["pooled_temperature"],TEMP_POOLED_SD,centre["pooled_temperature"])
-    temps = np.array([temperature(ctx==c,pooled+centre["temperatures"][c]-centre["pooled_temperature"],
+            np.array([1/prior_sd**2]),np.array([max(.25,previous/1.5)]),np.array([min(4,previous*1.5)]),
+            initial=np.array([previous]) if separate_prior else None)[0])
+    pooled = temperature(np.ones(len(y),bool),prior["pooled_temperature"],TEMP_POOLED_SD,centre["pooled_temperature"])
+    temps = np.array([temperature(ctx==c,pooled+prior["temperatures"][c]-prior["pooled_temperature"],
                                   TEMP_CONTEXT_SD,centre["temperatures"][c]) for c in range(4)])
     weights = np.array(centre["weights"])
-    weights = bounded_logistic(correction_features(table)[decided],y,temps[ctx]*base,weights,np.full(len(weights),1/WEIGHT_SD**2),
-                              np.maximum(-1,weights-.25),np.minimum(1,weights+.25))
+    weights = bounded_logistic(correction_features(table)[decided],y,temps[ctx]*base,np.array(prior["weights"]),np.full(len(weights),1/WEIGHT_SD**2),
+                              np.maximum(-1,weights-.25),np.minimum(1,weights+.25),initial=weights if separate_prior else None)
     return {"schema": layers.SCHEMA, "score_coef": list(centre["score_coef"]), "temperatures": temps.tolist(),
             "pooled_temperature": pooled, "weights": weights.tolist(), "blend": centre["blend"]}
 
 
-def fit_layers(table, centre):
-    score = bounded_score_fit(table, centre)
-    fitted = fit_win_layers(table, centre)
+def fit_layers(table, centre, *, prior=None):
+    score = bounded_score_fit(table, centre, prior=prior)
+    fitted = fit_win_layers(table, centre, prior=prior)
     return {**fitted, "score_coef": score.coef.tolist()}
 
 
