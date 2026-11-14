@@ -154,9 +154,8 @@ def bounded_score_fit(table, centre):
     return ScoreCalibration(box_quadratic(a,b,lo,hi,initial),True)
 
 
-def fit_layers(table, centre):
+def fit_win_layers(table, centre):
     decided = (table["y"] != .5) & np.isfinite(table["ra"]) & np.isfinite(table["ba"])
-    score = bounded_score_fit(table, centre)
     base, y, ctx = layers.win_base(table)[decided], table["y"][decided], context(table)[decided]
     def temperature(mask, mean, prior_sd, previous):
         return float(bounded_logistic(base[mask,None],y[mask],np.zeros(int(mask.sum())),np.array([mean]),
@@ -167,8 +166,14 @@ def fit_layers(table, centre):
     weights = np.array(centre["weights"])
     weights = bounded_logistic(correction_features(table)[decided],y,temps[ctx]*base,weights,np.full(len(weights),1/WEIGHT_SD**2),
                               np.maximum(-1,weights-.25),np.minimum(1,weights+.25))
-    return {"schema": layers.SCHEMA, "score_coef": score.coef.tolist(), "temperatures": temps.tolist(),
+    return {"schema": layers.SCHEMA, "score_coef": list(centre["score_coef"]), "temperatures": temps.tolist(),
             "pooled_temperature": pooled, "weights": weights.tolist(), "blend": centre["blend"]}
+
+
+def fit_layers(table, centre):
+    score = bounded_score_fit(table, centre)
+    fitted = fit_win_layers(table, centre)
+    return {**fitted, "score_coef": score.coef.tolist()}
 
 
 def fit_week(db, season, through, code_sha, *, max_evals=400, innovations_factory=None):
