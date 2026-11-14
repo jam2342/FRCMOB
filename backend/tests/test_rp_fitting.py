@@ -232,3 +232,27 @@ def test_calibration_only_successful_freeze_evaluates_identity_fixture(tmp_path)
     result = evaluate(tmp_path,2025,write_artifact(out,frozen))
     assert result["comparisons"]["raw_fitted_minus_default"]["pooled"]["brier"]["mean_diff"] == 0
     assert not result["serving_eligible"]
+
+
+def test_slope_only_fit_fixes_both_state_and_intercept(tmp_path):
+    for year in (2022,2023):
+        cache_season(tmp_path,year)
+    with pytest.raises(ValueError,match="fixed state"):
+        fit.fit(tmp_path,slope_only=True)
+    artifact = fit.fit(tmp_path,calibration_only=True,slope_only=True)
+    assert artifact["schema"] == fit.SLOPE_SCHEMA
+    assert artifact["params"] == asdict(FlagRpParams()) and len(artifact["trials"]) == 1
+    assert artifact["calibration"]["intercept"] == 0
+    fit.validate_artifact(artifact)
+    artifact["calibration"]["intercept"] = .1
+    with pytest.raises(ValueError,match="zero intercept"):
+        fit.validate_artifact(artifact)
+
+
+def test_slope_fit_stays_bounded_and_improves_overconfident_synthetic_predictions():
+    rows = []
+    for p,successes in ((.99,8),(.01,2)):
+        rows.extend({"rp":"bonus","p":p,"base":.5,"y":i<successes} for i in range(10))
+    c = fit.fit_calibration([rows],zero_intercept=True)
+    assert c["intercept"] == 0 and .25 <= c["slope"] < 1
+    assert fit.calibrated(.99,.5,c) == pytest.approx(.8,abs=.02)

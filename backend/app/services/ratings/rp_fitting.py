@@ -19,11 +19,13 @@ from app.services.ratings.state_inputs import digest
 
 SCHEMA = "flag-rp-fit-v1"
 CALIBRATION_SCHEMA = "flag-rp-calibration-v1"
+SLOPE_SCHEMA = "flag-rp-slope-calibration-v1"
 BOUNDS = {"prior_var":(.1,4.),"match_var":(.0001,.1),"event_var":(.001,1.)}
 POLICY = {"training_seasons":[2022,2023],"validation_season":2024,"coordinate_rounds":2,
           "coordinate_factor":2.,"calibration_ridge":.001,
           "validation_brier_tolerance":.0005,"validation_log_loss_tolerance":.002}
 CALIBRATION_POLICY = {**POLICY,"coordinate_rounds":0,"state_fit":"fixed_original_defaults"}
+SLOPE_POLICY = {**CALIBRATION_POLICY,"calibration_intercept":0.}
 
 
 def implementation_sha256():
@@ -133,7 +135,7 @@ def objective(groups):
     return float(weights(groups)@(-y*np.log(np.clip(p,1e-9,1))-(1-y)*np.log(np.clip(1-p,1e-9,1))))
 
 
-def fit_calibration(groups):
+def fit_calibration(groups, *, zero_intercept=False):
     rows = [r for group in groups for r in group]
     offset = logit(np.array([r["base"] for r in rows]))
     x = np.column_stack((np.ones(len(rows)),logit(np.array([r["p"] for r in rows]))-offset))
@@ -142,6 +144,8 @@ def fit_calibration(groups):
     centre, coef = np.array([0.,1.]),np.array([0.,1.])
     precision = POLICY["calibration_ridge"]*np.array([1.,4.])
     lo, hi = np.array([-2.,.25]),np.array([2.,4.])
+    if zero_intercept:
+        lo[0] = hi[0] = 0.
     def loss(c):
         z = offset+x@c
         return float(w@(np.logaddexp(0,z)-y*z)+.5*np.sum(precision*(c-centre)**2))
@@ -164,8 +168,10 @@ def fit_calibration(groups):
     raise ValueError("RP calibration did not converge")
 
 
-def fit(cache, *, progress=None, calibration_only=False):
-    policy = CALIBRATION_POLICY if calibration_only else POLICY
+def fit(cache, *, progress=None, calibration_only=False, slope_only=False):
+    if slope_only and not calibration_only:
+        raise ValueError("slope-only calibration requires fixed state settings")
+    policy = SLOPE_POLICY if slope_only else CALIBRATION_POLICY if calibration_only else POLICY
     years = policy["training_seasons"]
     data = [load_published(cache,y) for y in years]
     trials, memo = [], {}
@@ -191,8 +197,8 @@ def fit(cache, *, progress=None, calibration_only=False):
                 if score < best-1e-12:
                     params,best = candidate,score
     groups = [forecasts(d,params) for d in data]
-    return {"schema":CALIBRATION_SCHEMA if calibration_only else SCHEMA,"model_recipe":RECIPE,"implementation_sha256":implementation_sha256(),
-        "policy":{**policy,"training_seasons":list(years)},"params":asdict(params),"calibration":fit_calibration(groups),
+    return {"schema":SLOPE_SCHEMA if slope_only else CALIBRATION_SCHEMA if calibration_only else SCHEMA,"model_recipe":RECIPE,"implementation_sha256":implementation_sha256(),
+        "policy":{**policy,"training_seasons":list(years)},"params":asdict(params),"calibration":fit_calibration(groups,zero_intercept=slope_only),
         "source_sha256":{str(y):d.source_sha256 for y,d in zip(years,data)},
         "spec_sha256":{str(y):d.spec.fingerprint for y,d in zip(years,data)},
         "labels":{str(y):len(r) for y,r in zip(years,groups)},"trials":trials,
@@ -201,7 +207,7 @@ def fit(cache, *, progress=None, calibration_only=False):
 
 
 def validate_artifact(artifact):
-    policies = {SCHEMA:POLICY,CALIBRATION_SCHEMA:CALIBRATION_POLICY}
+    policies = {SCHEMA:POLICY,CALIBRATION_SCHEMA:CALIBRATION_POLICY,SLOPE_SCHEMA:SLOPE_POLICY}
     if artifact["schema"] not in policies or artifact["policy"] != policies[artifact["schema"]] or artifact["serving_eligible"] is not False:
         raise ValueError("unsupported RP fit artifact")
     if artifact["model_recipe"] != RECIPE or artifact["implementation_sha256"] != implementation_sha256():
@@ -211,11 +217,13 @@ def validate_artifact(artifact):
     if set(artifact["params"]) != set(BOUNDS):
         raise ValueError("incomplete RP parameters")
     params = FlagRpParams(**artifact["params"])
-    if artifact["schema"] == CALIBRATION_SCHEMA and params != FlagRpParams():
+    if artifact["schema"] in (CALIBRATION_SCHEMA,SLOPE_SCHEMA) and params != FlagRpParams():
         raise ValueError("calibration-only artifacts must keep the original state settings")
     if any(not lo <= getattr(params,k) <= hi for k,(lo,hi) in BOUNDS.items()):
         raise ValueError("RP parameters exceed training bounds")
     c = artifact["calibration"]
+    if artifact["schema"] == SLOPE_SCHEMA and c.get("intercept") != 0:
+        raise ValueError("slope-only artifacts must keep a zero intercept")
     if set(c) != {"intercept","slope","reference"} or c["reference"] != "asof_base_logit":
         raise ValueError("unsupported RP calibration")
     if number(c["intercept"]) is None or number(c["slope"]) is None or not -2 <= c["intercept"] <= 2 or not .25 <= c["slope"] <= 4:

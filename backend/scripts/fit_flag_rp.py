@@ -28,13 +28,16 @@ def main():
     parser.add_argument("--cache",required=True,type=Path)
     parser.add_argument("--out",required=True,type=Path)
     parser.add_argument("--calibration-only",action="store_true",help="Keep original state variances fixed and fit only probability calibration")
+    parser.add_argument("--slope-only",action="store_true",help="With --calibration-only, fix the calibration intercept at zero")
     args = parser.parse_args()
+    if args.slope_only and not args.calibration_only:
+        parser.error("--slope-only requires --calibration-only")
     repo = Path(__file__).resolve().parents[2]
     if args.out.resolve().is_relative_to(repo):
         parser.error("RP artifacts must stay outside the repository")
     def progress(n,score):
         print(f"Training trial {n}: balanced log loss {score:.6f}",file=sys.stderr,flush=True)
-    artifact = rp_fitting.fit(args.cache,progress=progress,calibration_only=args.calibration_only)
+    artifact = rp_fitting.fit(args.cache,progress=progress,calibration_only=args.calibration_only,slope_only=args.slope_only)
     rp_fitting.validate_artifact(artifact)
     path = write_artifact(args.out,artifact)
     # The candidate is fixed and saved before opening validation data.

@@ -197,3 +197,9 @@ the same as above. This isolates the correction from the rejected joint state fi
 it does not imply a successful result. Since 2024 has already informed this follow-up,
 it is a reused development screen. Later examined seasons are also development
 evidence, and serving remains disabled regardless of those results.
+
+Adding `--slope-only` to this command also fixes the correction intercept at zero.
+That simpler `flag-rp-slope-calibration-v1` recipe learns just the departure from
+the as-of base rate. Its artifact rejects either changed state settings or a nonzero
+intercept. It uses the same training data, slope bounds, regularization and development
+limits. Follow-up comparisons on 2024 are development choices, not new blind tests.
