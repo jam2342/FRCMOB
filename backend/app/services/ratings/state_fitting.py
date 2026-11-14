@@ -171,7 +171,7 @@ def fit_layers(table, centre):
             "pooled_temperature": pooled, "weights": weights.tolist(), "blend": centre["blend"]}
 
 
-def fit_week(db, season, through, code_sha, *, max_evals=400):
+def fit_week(db, season, through, code_sha, *, max_evals=400, innovations_factory=None):
     through = layers.utc(through)
     if through != layers.monday(through):
         raise ValueError("state fit cutoff must be Monday 00:00 UTC")
@@ -188,7 +188,7 @@ def fit_week(db, season, through, code_sha, *, max_evals=400):
     bootstrap_payload = copy.deepcopy(bootstrap.params)
     artifact = bootstrap_payload["artifact"]
     validate_bootstrap(artifact, season)
-    inputs, data_sha, skipped = inputs_for(db, season, through.timestamp(), bootstrap_payload["context"])
+    inputs, data_sha, skipped = inputs_for(db, season, through.timestamp(), bootstrap_payload["context"],updated_before=through.timestamp())
     eligible = sum(r.red_points is not None and r.blue_points is not None for r in inputs.research.season.results)
     if eligible < 150:
         return {"status": "insufficient_actual_matches"}
@@ -204,8 +204,10 @@ def fit_week(db, season, through, code_sha, *, max_evals=400):
     previous_id = previous.id if previous else None
     db.commit()  # Release the season lock before the expensive optimizer; recheck before publishing.
     errors = []
+    accelerated = innovations_factory(inputs,start) if innovations_factory else None
     try:
-        fit = fit_likelihood(inputs, start, names, int(through.timestamp()), pull=pull, max_evals=max_evals, restarts=1, max_seconds=3000)
+        fit = fit_likelihood(inputs, start, names, int(through.timestamp()), pull=pull, max_evals=max_evals, restarts=1,
+                             max_seconds=3000,innovations_fn=accelerated)
     except TimeoutError as exc:
         errors.append(str(exc))
         fit = {"params":start,"converged":False,"timed_out":True}
@@ -254,7 +256,7 @@ def fit_week(db, season, through, code_sha, *, max_evals=400):
         return {"status":"already_fitted","id":existing.id}
     if current_bootstrap.id != bootstrap_id or (current_previous.id if current_previous else None) != previous_id:
         return {"status": "superseded_during_fit"}
-    _, current_sha, _ = inputs_for(db, season, through.timestamp(), bootstrap_payload["context"])
+    _, current_sha, _ = inputs_for(db, season, through.timestamp(), bootstrap_payload["context"],updated_before=through.timestamp())
     if current_sha != data_sha:
         return {"status": "inputs_changed_during_fit"}
     payload = {"schema": RECIPE, "bootstrap_id": bootstrap_id, "state": asdict(params), "layers": fitted_layers,

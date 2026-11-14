@@ -1,0 +1,2 @@
+# Optional CPU acceleration for the offline weekly rehearsal, outside the server image.
+numba==0.68.1
