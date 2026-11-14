@@ -37,7 +37,8 @@ compare the resulting state arrays and EPA values exactly against full replay.
 Monday fits use results whose actual starts and stored-result timestamps are strictly
 before 00:00 UTC. The simulated job starts at 09:00 and publishes at 10:00, with a
 one-hour wall-time publication budget. The service keeps its existing optimizer,
-400 evaluations per restart, hard bounds, weekly movement limits, context/weight fits,
+400 evaluations per pass and up to two restarts after the initial search, hard bounds,
+weekly movement limits, context/weight fits,
 late-season freeze of prior coefficients, convergence rejection and recent in-sample
 Brier sanity check. Calibration training recomputes historical features under the
 refitted prefix state; future evaluation always uses the saved original forecast.

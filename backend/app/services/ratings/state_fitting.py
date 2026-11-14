@@ -22,6 +22,8 @@ from app.services.ratings.research_win import (
 from app.services.ratings.state_bootstrap import BOOTSTRAP_RECIPE, NAMES, RECIPE, validate_bootstrap, validate_params
 from app.services.ratings.state_inputs import digest, inputs_for, load_results, season_boundary
 
+FIT_RESTARTS = 2
+
 
 class WeeklyPull(Pull):
     def __init__(self, bootstrap, previous):
@@ -211,7 +213,7 @@ def fit_week(db, season, through, code_sha, *, max_evals=400, innovations_factor
     errors = []
     accelerated = innovations_factory(inputs,start) if innovations_factory else None
     try:
-        fit = fit_likelihood(inputs, start, names, int(through.timestamp()), pull=pull, max_evals=max_evals, restarts=1,
+        fit = fit_likelihood(inputs, start, names, int(through.timestamp()), pull=pull, max_evals=max_evals, restarts=FIT_RESTARTS,
                              max_seconds=3000,innovations_fn=accelerated,zero_terms=())
     except TimeoutError as exc:
         errors.append(str(exc))
