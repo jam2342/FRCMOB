@@ -160,11 +160,11 @@ def replay_comparison(research, metadata, model):
         for result in batch:
             card = result.card
             # Both models see only results posted strictly before this start.
-            prediction = model.predict(card)
+            prediction = model.forecast(card.event_key,card.red,card.blue,card.event_start)
             if card.comp_level != "qm":
                 continue
             thresholds = {rp:lowest.get((card.event_key,rp),rule[1]) for rp,rule in BONUS_RPS[2026].items()}
-            flag = candidate.predict(card)
+            flag = candidate.forecast(card)
             live, raw = parts(prediction,thresholds),parts(prediction,thresholds,calibrated=False)
             official = research.events[card.event_key].get("event_type") in (0,1,2,3,4,5)
             for color in ("red","blue"):

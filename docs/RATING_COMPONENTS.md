@@ -106,6 +106,16 @@ enter a forecast. The live recipe keeps its existing DQ observation behavior; fl
 updates exclude DQ sides and nonboolean flags. Only common, eligible official
 qualifying alliance/RP labels are scored.
 
+The comparison calls both models' read-only `forecast()` methods, as for upcoming
+matches in the live API and candidate preview. The played-match `predict()` path has
+a different covariance calculation in the current model; it is used only for the
+separate historical snapshot reproduction.
+
+Updates in this online comparison follow publication order. Production rebuilds can
+reorder available history by actual playing time. Snapshot reproduction verifies the
+played-history recipe, not historical upcoming probabilities; prospective captures
+are still needed to validate the served path end to end.
+
 Reports include per-RP and pooled Brier/log loss, paired 90% event-bootstrap intervals,
 first 7/21 playing-time days, newest fifth of official events, first matches at an
 event and championship events. Comparators are the calibrated live threshold recipe,

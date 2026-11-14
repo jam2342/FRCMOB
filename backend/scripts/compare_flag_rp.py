@@ -33,6 +33,8 @@ def main():
             "The live recipe keeps its existing 2026-derived priors and RP calibration; these are not out-of-sample fits",
             "Reproduction uses retrospective event thresholds and scheduled-time fallbacks, like the current historical API",
             "Comparison updates both models only when post_result_time is strictly before the actual start; absent/invalid publication times cannot update either model",
+            "Comparison uses both models' read-only upcoming-match forecast paths, not the played-match predict path used for snapshot reproduction",
+            "Online comparison updates in publication order; archived snapshots do not validate historical upcoming probabilities or production rebuild ordering",
             "Scored labels are common eligible official qual flags; historical correction publication times remain unavailable, so prospective capture is still required"]}
     if parity["passed"]:
         rows,coverage = comparison.replay_comparison(research,metadata,comparison.live_model(research,priors))

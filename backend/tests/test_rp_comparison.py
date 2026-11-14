@@ -28,6 +28,9 @@ class Model:
         # Counts make same-time result leakage visible in the predicted means.
         return Prediction(0,0,red_hub=(100+10*len(self.seen),100),blue_hub=(100,100),red_tower=(0,10),blue_tower=(0,10))
 
+    def forecast(self,event,red,blue,event_start):
+        return self.predict(None)
+
     def observe(self,result):
         self.seen.append(result.card.match_key)
 
@@ -144,3 +147,15 @@ def test_unpublished_and_same_time_posted_results_cannot_update_either_model():
     later = rows["2026test_qm4/red/energized"]
     assert later["threshold"] == 140
     assert coverage["missing_or_invalid_publication_time"] == 1
+
+
+def test_comparison_calls_upcoming_forecast_without_entering_future_teams():
+    research,meta = sample()
+    class ForecastOnly(Model):
+        def predict(self,card):
+            raise AssertionError("played-match path is not a live upcoming prediction")
+
+        def forecast(self,event,red,blue,event_start):
+            return Model.predict(self,None)
+    rows,_ = comp.replay_comparison(research,meta,ForecastOnly())
+    assert len(rows) == 24
