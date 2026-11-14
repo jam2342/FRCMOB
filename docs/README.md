@@ -14,6 +14,7 @@ Living documents: keep these true when the thing they describe changes. Dated re
 - [RATING_SETTINGS.md](RATING_SETTINGS.md): opt-in calibration service, weekly job, evidence gates and prediction history
 - [RATING_REHEARSAL.md](RATING_REHEARSAL.md): offline held-out comparisons and research settings exports
 - [RATING_WEEKLY_REHEARSAL.md](RATING_WEEKLY_REHEARSAL.md): resumable virtual-clock total-state fits, preserved forecasts and rating-impact checks
+- [RATING_GRADUAL_REHEARSAL.md](RATING_GRADUAL_REHEARSAL.md): bounded state steps from the active model with corresponding layer fits
 - [RATING_PROBABILITY_REHEARSAL.md](RATING_PROBABILITY_REHEARSAL.md): weekly probability-only fits on frozen state forecasts
 - [RATING_ROADMAP.md](RATING_ROADMAP.md): the rating model, phase by phase, with results
 - [REBUILT_PLAUSIBILITY.md](REBUILT_PLAUSIBILITY.md): real 2026 ranges; check before calling a number wrong

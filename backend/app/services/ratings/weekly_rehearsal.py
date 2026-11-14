@@ -371,7 +371,7 @@ def fit_job(db, year, cutoff, code_sha):
     return result
 
 
-def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_weeks=None, progress=None):
+def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_weeks=None, progress=None, fit_callback=None):
     root = Path(root)
     root.mkdir(parents=True,exist_ok=True)
     for child in ("journals","checkpoints","supplements","reports"):
@@ -452,11 +452,12 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                         decision = safety(frames+week_frames,source,active,time)
                         job = {"cutoff":week.isoformat(),"safety":decision,"active_before":active}
                         if decision["rollback"]:
+                            job["rollback_impact_preview"],_ = rating_impact(replay.models[active],replay.models[bootstrap.id],replay.total,anchors)
                             active = bootstrap.id
                             job["fit"] = {"status":"skipped_after_rollback"}
                         else:
                             ingest(db,replay.known,data.year)
-                            job["fit"] = fit_job(db,data.year,week,code_sha)
+                            job["fit"] = fit_job(db,data.year,week,code_sha) if fit_callback is None else fit_callback(db,data.year,week,code_sha,replay,active,anchors)
                             identifier = job["fit"].get("id")
                             if identifier:
                                 row = db.get(models.RatingCalibration,identifier)
@@ -464,6 +465,9 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                                 job["fit_errors"] = row.fit_metrics.get("errors",[])
                                 job["fit_seconds"] = row.fit_metrics.get("rehearsal_seconds")
                                 job["parity"] = row.fit_metrics.get("rehearsal_parity")
+                                if "fraction" in row.params:
+                                    job.update(state_fraction=row.params["fraction"],parent_active=row.params["parent_active"],
+                                        selection=row.fit_metrics["selection"],goal_converged=row.fit_metrics["goal_fit"]["converged"])
                                 if row.status == "candidate":
                                     pending = identifier
                     elif kind == 1:
