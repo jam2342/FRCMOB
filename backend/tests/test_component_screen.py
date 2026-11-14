@@ -12,6 +12,7 @@ from app.services.ratings import component_screen as screen
 from app.services.ratings.replay import MatchCard, MatchResult
 from app.services.ratings.research_filter import ScaleFreeFilter, ScaleFreeParams
 from app.services.ratings.research_rehearsal import write_settings
+from app.services.ratings.state_inputs import digest
 from scripts.evaluate_component_tiers import evaluate, protocol
 
 
@@ -157,3 +158,67 @@ def test_numeric_robot_observations_update_the_named_robots():
     model.observe(r,{"red":{"endgame":[20.,0.,0.],"other":30.},"blue":{"endgame":[0.,0.,0.],"other":100.}})
     block = model.blocks["endgame"][r.card.event_key]
     assert block.mean[block.index[r.card.red[0]]] > block.mean[block.index[r.card.red[1]]]
+
+
+def test_earlier_bootstrap_never_opens_future_fit_files(tmp_path):
+    runs = tmp_path/"runs"
+    runs.mkdir()
+    params = asdict(ScaleFreeParams(margin_cov=False,noise_count=.2))
+    for variant in ("hindsight_mle","e3_noise_count_zstatic"):
+        (runs/f"{variant}-2022.json").write_text(json.dumps({"season":2022,"variant":variant,"plan":[{"params":params}]}))
+    before = screen.bootstrap(tmp_path,2023)
+    for year in range(2023,2028):
+        for variant in ("hindsight_mle","e3_noise_count_zstatic"):
+            (runs/f"{variant}-{year}.json").write_text("unreadable future data")
+    assert screen.bootstrap(tmp_path,2023) == before
+    path = runs/"hindsight_mle-2022.json"
+    raw = json.loads(path.read_text())
+    raw["season"] = 2026
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError,match="provenance"):
+        screen.bootstrap(tmp_path,2023)
+
+
+def test_a_result_posted_exactly_at_start_cannot_enter_that_forecast(tmp_path,monkeypatch):
+    monkeypatch.setitem(screen.POLICY,"bootstrap_draws",10)
+    path,raw = cache(tmp_path)
+    raw["matches"][0]["post_result_time"] = raw["matches"][1]["actual_time"]
+    path.write_text(json.dumps(raw))
+    snapshots = {}
+    original = ComponentFilter.predict
+    def record(model,card):
+        if model.spec.tier == "A":
+            snapshots[card.match_key] = dict(model.latest)
+        return original(model,card)
+    monkeypatch.setattr(ComponentFilter,"predict",record)
+    screen.evaluate(screen.load(tmp_path,2024),ScaleFreeParams(margin_cov=False))
+    assert snapshots["2024test_qm2"] == {}
+    assert len(snapshots["2024test_qm3"]) == 6
+
+
+def test_a_result_posted_exactly_at_monday_cannot_enter_the_gate(tmp_path,monkeypatch):
+    monkeypatch.setitem(screen.POLICY,"bootstrap_draws",10)
+    path,raw = cache(tmp_path)
+    cutoff = datetime(2024,3,4,tzinfo=timezone.utc)
+    raw["matches"][0]["post_result_time"] = int(cutoff.timestamp())
+    path.write_text(json.dumps(raw))
+    report = screen.evaluate(screen.load(tmp_path,2024),ScaleFreeParams(margin_cov=False))
+    check = next(w for w in report["weekly_checks"] if w["cutoff"] == cutoff.isoformat())
+    assert check["training_forecasts_sha256"] == digest([])
+    assert check["pairs"]["B_minus_A"]["metrics"]["nll"]["n"] == 0
+
+
+def test_rating_impact_keeps_baseline_anchors_when_the_candidate_changes():
+    class Model:
+        def __init__(self,factor):
+            self.factor = factor
+        def team_points(self,team):
+            return int(team)*self.factor
+    played = {str(i):8 for i in range(1,31)}
+    models = {"A":Model(1.),"B":Model(1.01)}
+    small = screen.impact(models,played,"B","A")
+    assert small["passed"]
+    models["B"] = Model(2.)
+    large = screen.impact(models,played,"B","A")
+    assert not large["passed"] and large["max"] > 5
+    assert (small["anchor_median"],small["anchor_p99"]) == (large["anchor_median"],large["anchor_p99"])
