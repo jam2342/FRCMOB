@@ -260,3 +260,58 @@ comparisons by RP, with event-bootstrap intervals. Final cached corrections stil
 lack historical publication times. Already examined 2022–2026 seasons are development
 evidence; 2027 remains the clean test. No environment switch, cron or active setting
 is enabled by adding this code. Serving integration and full release gates remain open.
+
+## Component representation screen
+
+`scripts/evaluate_component_tiers.py` compares total-only Tier A with an auto/teleop
+Tier B and a declared numeric alliance split for Tier C. These research declarations
+are separate from the serving registry. The 2026 generic split uses `totalAutoPoints`
+and `totalTeleopPoints`; older seasons use `autoPoints` and `teleopPoints`. A signed
+residual closes every complete split. Missing values, booleans in numeric fields and
+DQ sides are excluded from observations, rather than filled with zero.
+
+This is a fixed-recipe representation screen. All tiers share the same earlier-season
+total-state bootstrap, previous-season strength priors and as-of total scoring unit.
+Their initial prior, drift and constant-noise variance budgets sum to the total model's
+budget. Counting noise applies separately to each component's predicted mean. Starting
+component shares use earlier complete observations, with equal shares before any result.
+With constant noise and complete alliance observations, the split reduces to the total
+filter; tests verify this identity as well as single-component parity with the existing
+filter. Upcoming forecasts do not mutate team/event pointers or running statistics.
+
+The screen does not independently fit component hyperparameters, model categorical
+robot outcomes, or apply the production win correction. Tier C uses numeric alliance
+point fields. The raw win link is fixed for every model. These limits matter: a poor
+result rejects this recipe and does not establish that finer components cannot help.
+
+Freeze the protocol before evaluating, with private output directories:
+
+```sh
+python scripts/evaluate_component_tiers.py --step freeze --out /private/component-protocols
+python scripts/evaluate_component_tiers.py --step evaluate --season 2024 \
+  --protocol /private/component-protocols/HASH.json --cache /private/tba \
+  --reports /private/phase2 --out /private/component-runs
+```
+
+Protocol and implementation hashes are checked before cache reads. Bootstrap fits are
+read only from earlier-year files. The 2022 reference uses the pre-existing stand-in
+ratios derived from 2026 and cannot count as an earlier-only bootstrap test. All five
+seasons were already examined; this work does not restore blind status. The command
+rejects 2027 and refuses report output inside the public repository.
+
+Replay updates only when publication time is strictly before the forecast. Monday
+checks use only saved forecasts whose outcomes were published strictly before that
+cutoff. The likelihood comparison scores the same **alliance totals**, not component
+likelihoods of different dimensions. The screen requires 1,500 common matches over
+two calendar weeks, lower total-score negative log likelihood with a 90% event-bootstrap
+interval excluding zero, and the plan's closure, log-loss, points-error, context-Brier,
+coverage and rating-impact guards. Both models use the same as-of Tier A median/p99
+rating anchors, preventing candidate re-anchoring from hiding rating changes.
+
+Reports include weekly checks and the first screen-eligible Monday for B vs A, C vs A
+and C vs B, plus early, newest-event, championship, playoff and first-match slices.
+Those dates are counterfactual eligibility checks, not simulated promotions. Missing
+context or impact evidence blocks eligibility. Full per-component MAP, prospective
+capture, persisted scale anchors and the phase 7 late-event/live-model checks are still
+required before any tier can serve. Historical result-correction timestamps remain
+unavailable. This script writes no database or active settings.
