@@ -16,10 +16,26 @@ from app.services.ratings.research_fit import fit_likelihood, fittable, innovati
 from app.services.ratings.state_inputs import digest
 
 RECIPE = "state-map-gradual-rehearsal-v1"
+RECIPES = {"previous":RECIPE,"bootstrap":"state-map-gradual-fixed-prior-v1"}
 POLICY = {"fractions":[1.,.5,.25,.125,.0625,.03125,.015625],"likelihood_tolerance":1e-9,
           "parent":"actually active version","selection_clock":"09:00 UTC; recheck impact at 10:00 publication",
           "layer_fit":"once for chosen state; failure rejects update","newest_brier_tolerance":0.,
-          "first_match_brier_tolerance":.001,"serving_eligible":False}
+          "first_match_brier_tolerance":.001,"first_score_bias_limit_pct":3.,"serving_eligible":False}
+
+
+def first_score_bias(frames, source, variant="active"):
+    actual = predicted = 0.
+    sides = 0
+    for frame in frames:
+        if not frame["first_here"] or frame["playoff"]:
+            continue
+        result,p = source[frame["key"]]["result"],frame["forecasts"][variant]
+        for score,mean,variance in ((result.red_points,p["rm"],p["rv"]),(result.blue_points,p["bm"],p["bv"])):
+            if score is not None and variance > 0:
+                actual += score
+                predicted += mean
+                sides += 1
+    return {"sides":sides,"mean_bias_pct":100*(actual-predicted)/predicted if predicted > 0 else None}
 
 
 def interpolate(start, goal, fraction):
@@ -48,16 +64,19 @@ def choose_step(start, goal, objective, impact):
     return None,{"fraction":0.,"start_objective":baseline,"trials":trials}
 
 
-def fit_job(db, year, cutoff, code_sha, replay, active, anchors):
+def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_prior="previous"):
     started = perf_counter()
+    if calibration_prior not in RECIPES:
+        raise ValueError("unknown calibration prior policy")
+    recipe = RECIPES[calibration_prior]
     cutoff = state.layers.utc(cutoff)
     if cutoff != state.layers.monday(cutoff):
         raise ValueError("gradual fit cutoff must be Monday 00:00 UTC")
     parent = db.get(models.RatingCalibration,active)
-    if parent is None or parent.season != year or parent.recipe not in (state.BOOTSTRAP_RECIPE,RECIPE):
+    if parent is None or parent.season != year or parent.recipe not in (state.BOOTSTRAP_RECIPE,recipe):
         raise ValueError("gradual fitting needs its actual active parent")
     parent_sha = digest(parent.params)
-    existing = db.query(models.RatingCalibration).filter_by(season=year,recipe=RECIPE,fitted_through=cutoff).first()
+    existing = db.query(models.RatingCalibration).filter_by(season=year,recipe=recipe,fitted_through=cutoff).first()
     if existing:
         if existing.params["parent_active"] != active or existing.params["parent_sha256"] != parent_sha:
             raise ValueError("committed gradual fit has another active parent")
@@ -139,7 +158,7 @@ def fit_job(db, year, cutoff, code_sha, replay, active, anchors):
         try:
             deadline()
             _,table,_,_ = state.replay(inputs,selected)
-            fitted_layers = state.fit_layers(table,centre)
+            fitted_layers = state.fit_layers(table,centre,prior=artifact["layers"]) if calibration_prior == "bootstrap" else state.fit_layers(table,centre)
             state.layers.validate_params(fitted_layers,centre)
             _,old,_,_ = state.replay(inputs,start)
             mask = table["time"] >= cutoff.timestamp()-14*86400
@@ -159,15 +178,17 @@ def fit_job(db, year, cutoff, code_sha, replay, active, anchors):
     metrics = {"kind":"offline_gradual_state_fit","goal_fit":{k:v for k,v in goal_fit.items() if k != "params"},
         "selection":selection,"errors":errors,"skipped":skipped,"recent_insample_brier_change":recent_change,
         "rehearsal_parity":parity,"rehearsal_seconds":perf_counter()-started,"serving_eligible":False}
-    payload = {"schema":RECIPE,"state":asdict(params),"layers":fitted_layers,"goal_state":asdict(goal),
+    payload = {"schema":recipe,"state":asdict(params),"layers":fitted_layers,"goal_state":asdict(goal),
         "parent_active":active,"parent_sha256":parent_sha,"bootstrap_id":bootstrap.id,
         "bootstrap_sha256":digest(bootstrap.params),"data_sha256":data_sha,
         "fraction":selection["fraction"] if selection and not errors else 0.}
+    if calibration_prior == "bootstrap":
+        payload.update(calibration_prior=calibration_prior,calibration_prior_sha256=digest(artifact["layers"]))
     digest(payload)
     if digest(parent.params) != parent_sha:
         raise ValueError("gradual fitting rewrote its active parent")
-    version = (db.query(func.max(models.RatingCalibration.version)).filter_by(season=year,recipe=RECIPE).scalar() or 0)+1
-    row = models.RatingCalibration(season=year,recipe=RECIPE,version=version,params=payload,
+    version = (db.query(func.max(models.RatingCalibration.version)).filter_by(season=year,recipe=recipe).scalar() or 0)+1
+    row = models.RatingCalibration(season=year,recipe=recipe,version=version,params=payload,
         fitted_through=cutoff,matches=len(inputs.times),code_sha=code_sha,fit_metrics=metrics,status="rejected" if errors else "candidate")
     db.add(row)
     db.commit()

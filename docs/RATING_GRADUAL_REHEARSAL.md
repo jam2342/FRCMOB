@@ -19,6 +19,32 @@ The default application remains `direct`. Source, policy or environment changes
 require a fresh protocol and directory. Old frozen runs require their original code.
 The same command resumes; `--max-weeks` produces an explicitly incomplete report.
 
+## Fixed calibration prior experiment
+
+Add `--calibration-prior bootstrap` to both freeze and run commands to keep the
+score/temperature/logistic prior anchored to the earlier-season bootstrap. The
+default `previous` retains the original behavior. Fixed priors require gradual mode
+and use a separate scratch recipe and protocol, so the two policies cannot share a run.
+
+The prior supplies regularization means. The active version supplies solver starting
+points, weekly bounds, blend and the recent-fit comparison. Pooled temperature has
+the fixed bootstrap prior; context offsets retain their bootstrap differences while
+centering on the newly fitted pooled temperature. Score and correction coefficients
+keep the same prior widths. Stored versions include the fixed layer-prior hash.
+Rollback restores bootstrap and the next fit still uses that same prior.
+
+This tests whether repeatedly centering the prior on an earlier fit weakens the
+earlier-season anchor when the same prefix is reused. A fixed prior does not imply
+identical fits on empty weeks: the state can change and binding weekly bounds can
+allow further progress toward the same objective. It changes no acceptance limit,
+state MAP prior, step fractions, publication rule or operational fitting default.
+
+Gradual reports now calculate the existing ±3% first-qualification score-bias
+requirement directly, separately from the first-match win-probability check. The
+metric is 100×sum(actual−predicted)/sum(predicted), using known alliance sides with
+positive variance. Playoffs are excluded. Missing first-match evidence fails the
+check; passing this historical point estimate does not supply clean 2027 evidence.
+
 At Monday 09:00 UTC, the goal fit uses results started and published strictly before
 00:00. It needs 150 complete matches and retains the MAP prior, two confirmation
 restarts, 400-evaluation pass budget, 3,000-second wall limit, hard bounds, factor-1.5
