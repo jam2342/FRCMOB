@@ -181,3 +181,25 @@ when a later RP or slice loses. These seasons have already been examined and rem
 development evidence; 2027 is still the clean test. The artifact is not imported into
 active settings or the private preview. Weekly RP fitting, prospective capture,
 serving integration and release validation remain separate work.
+
+### Isolate probability calibration
+
+```sh
+python scripts/fit_flag_rp.py --calibration-only --cache /private/tba \
+  --out /private/rp-calibration-only
+```
+
+This mode fits the same shared correction on 2022–2023 while fixing every state
+variance to the original flag model's defaults. It performs no state search. Its
+separate `flag-rp-calibration-v1` artifact type rejects changed state settings.
+The 2024 screen, limits, frozen-file checks and later-season evaluation command are
+the same as above. This isolates the correction from the rejected joint state fit;
+it does not imply a successful result. Since 2024 has already informed this follow-up,
+it is a reused development screen. Later examined seasons are also development
+evidence, and serving remains disabled regardless of those results.
+
+Adding `--slope-only` to this command also fixes the correction intercept at zero.
+That simpler `flag-rp-slope-calibration-v1` recipe learns just the departure from
+the as-of base rate. Its artifact rejects either changed state settings or a nonzero
+intercept. It uses the same training data, slope bounds, regularization and development
+limits. Follow-up comparisons on 2024 are development choices, not new blind tests.
