@@ -66,13 +66,24 @@ def match_predictions(
     if capture_context is not None:
         capture_context["event_start"] = event_start
     out: dict[str, tuple[float, float, int]] = {}
+    state = getattr(run, "engine", None) == "state"
     for match_key, red, blue in matches:
         key = match_key.lower()
         red_keys, blue_keys = tuple(t.lower() for t in red), tuple(t.lower() for t in blue)
         if not red_keys or not blue_keys:
             continue
         played = run.before_match.get(key)
-        if played is not None:
+        if state:
+            # The frozen state recipe: its feature row and v2 layers stand in for the 2026 network.
+            from app.services.ratings.state_serving import StateFeatures, forecast_row
+            if played is not None:
+                prediction, seen, row = played
+                feature_row = StateFeatures(row, run.layers, run.version_id)
+            else:
+                card = MatchCard(key, event_key, 0, (comp_levels or {}).get(key, "qm"), event_start or 0, red_keys, blue_keys)
+                prediction, feature_row = forecast_row(run, card)
+                seen = min(run.played_here.get((t, event_key), 0) for t in red_keys + blue_keys)
+        elif played is not None:
             prediction, seen, feature_row = played
         else:
             prediction = run.model.forecast(event_key, red_keys, blue_keys, event_start)
@@ -147,8 +158,11 @@ def custom_matchup(db: Session, event_key: str, red: list[str], blue: list[str],
     margin, sd, seen, prediction, feature_row = details[match_key]
     red_prob = max(0.0, min(1.0, corrected(season, red_win_prob(margin, sd, matches_seen=seen, playoff=playoff), feature_row)))
     red_points, blue_points = prediction.red_mean + prediction.red_fouls, prediction.blue_mean + prediction.blue_fouls
+    state = hasattr(feature_row, "win_prob")
+    if state:
+        red_points, blue_points = feature_row.red_points + prediction.red_fouls, feature_row.blue_points + prediction.blue_fouls
     from app.core.config import settings
-    if settings.rating_prediction_log_enabled:
+    if settings.rating_prediction_log_enabled and not state:
         from types import SimpleNamespace
         import numpy as np
         from app.services.ratings import calibrations

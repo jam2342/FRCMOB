@@ -44,6 +44,13 @@ def feature_rows(db, season, event_key, matches, details, predictions, *, run=No
         red, blue = sides.get(key, ([], []))
         if len(red) != 3 or len(blue) != 3:
             continue
+        if hasattr(_old_features, "win_prob"):
+            # A state-served season logs the exact row and version the recipe used.
+            from app.services.ratings.state_serving import STATE_FEATURE_SCHEMA
+            rows[key] = {"schema": STATE_FEATURE_SCHEMA, "version": _old_features.version_id, "red_teams": list(red),
+                         "blue_teams": list(blue), "event_start": event_start, "scheduled_start": match.predicted_time or match.time,
+                         "row": dict(_old_features.row)}
+            continue
         def side(keys):
             beliefs = [run.model.belief(t, event_key, event_start) for t in keys]
             means = [sum(b.mean for b in v.values()) / unit for v in beliefs]
@@ -120,6 +127,8 @@ def schedule(db, season, event_key, matches, details, schedule_rows, *, now=None
     bundle = calibrations.active_bundle(db, season)
     version = bundle.bundle_version if bundle else 0
     active = db.get(models.RatingCalibration, bundle.calibration_id) if bundle and bundle.calibration_id else None
+    if getattr(run, "engine", None) == "state":
+        active = None  # rows already carry the state recipe's v2 prediction; the pointer names a state version
     results = {}
     for result in db.query(models.MatchAllianceResult).filter_by(event_key=event_key):
         if result.total_score is not None and result.total_score >= 0:
