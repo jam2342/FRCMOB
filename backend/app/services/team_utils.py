@@ -16,16 +16,12 @@ def _region_label(state_prov: str | None, country: str | None) -> str:
     return "Unknown"
 
 def _team_number_from_team_key(team_key: str) -> int:
-    # Parse the numeric team number from a key like 'frc254'.
-    #
-    # Handles both normalised and raw input.  Returns 0 on parse failure.
+    # The team number in a key like 'frc254' or a B team's 'frc254B' (254). 0 if it isn't one.
     normalized = (team_key or "").strip().lower()
     if normalized.startswith("frc"):
         normalized = normalized[3:]
-    try:
-        return int(normalized)
-    except ValueError:
-        return 0
+    match = re.fullmatch(r"(\d{1,5})[a-z]?", normalized)
+    return int(match.group(1)) if match else 0
 
 _STORED_TEAM_KEY_RE = re.compile(r"^frc(\d{1,5})([A-Za-z]?)$")
 

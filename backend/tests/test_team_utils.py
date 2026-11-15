@@ -64,6 +64,14 @@ class TeamNumberFromKeyTests(unittest.TestCase):
     def test_whitespace(self):
         self.assertEqual(_team_number_from_team_key(" frc1 "), 1)
 
+    def test_b_team_keys_keep_their_number(self):
+        # TBA lowercases B-team keys (frc100b); the teams table stores frc100B.
+        self.assertEqual(_team_number_from_team_key("frc2403B"), 2403)
+        self.assertEqual(_team_number_from_team_key("frc100b"), 100)
+
+    def test_more_than_one_suffix_letter_is_not_a_team(self):
+        self.assertEqual(_team_number_from_team_key("frc254bc"), 0)
+
     def test_leading_zeros(self):
         self.assertEqual(_team_number_from_team_key("frc0254"), 254)
 
