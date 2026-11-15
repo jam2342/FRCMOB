@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { hasPointsSplit } from './centerUtils';
 import { ratingFromIntel } from './teamIntel';
 
 describe('ratingFromIntel', () => {
@@ -30,6 +31,28 @@ describe('ratingFromIntel', () => {
     expect(rating?.subscores.consistency).toBeNull();
     expect(rating?.subscores.results_anchor).toBeNull();
     expect(rating?.subscores.endgame).toBe(0);
+  });
+
+  it('keeps a total-only rating total-only: no split, never a made-up 0', () => {
+    const rating = ratingFromIntel(
+      {
+        rating: {
+          available: true,
+          rating_0_100: 58.2,
+          subscores: { throughput: null, auto_contribution: null, endgame: null, consistency: null },
+          expected_points: { total: 41.7, teleop: null, auto: null, climb: null },
+          basis: 'last_season',
+        },
+      },
+      'frc1678',
+      1678,
+      null,
+      true,
+    );
+    expect(rating?.expected_points).toEqual({ total: 41.7, teleop: null, auto: null, climb: null });
+    expect(rating?.subscores.throughput).toBeNull();
+    expect(rating?.subscores.endgame).toBeNull();
+    expect(hasPointsSplit(rating?.expected_points)).toBe(false);
   });
 
   it('reads an older rating without points', () => {

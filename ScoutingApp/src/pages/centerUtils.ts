@@ -260,3 +260,9 @@ export function isTransientAbortLikeError(error: unknown): boolean {
   );
 }
 
+
+/* Whether a rating has a points split (teleop/auto/climb). A total-only rating (a new game
+   before its score parser exists) has none, and the split is hidden rather than shown as 0. */
+export function hasPointsSplit(points: { teleop: number | null; auto: number | null; climb: number | null } | null | undefined): boolean {
+  return Boolean(points) && [points?.teleop, points?.auto, points?.climb].some((v) => v !== null && v !== undefined);
+}
