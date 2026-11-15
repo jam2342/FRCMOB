@@ -26,14 +26,15 @@ FIT_RESTARTS = 2
 
 
 class WeeklyPull(Pull):
-    def __init__(self, bootstrap, previous):
+    def __init__(self, bootstrap, previous, step=math.log(1.5)):
         super().__init__(bootstrap["pull"]["centre"], bootstrap["pull"]["width"])
         self.previous = previous
+        self.step = step
 
     def bounds(self, name):
         lo, hi = super().bounds(name)
         centre = math.log(getattr(self.previous, name))
-        return max(lo, centre-math.log(1.5)), min(hi, centre+math.log(1.5))
+        return max(lo, centre-self.step), min(hi, centre+self.step)
 
 
 def latest(db, season, recipe):

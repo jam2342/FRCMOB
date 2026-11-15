@@ -84,8 +84,8 @@ def test_publication_refusal_cannot_become_next_parent(tmp_path,goals,monkeypatc
     original = w.rating_impact
     in_fit = False
     denied = []
-    def impact(old,new,played,anchors):
-        value,updated = original(old,new,played,anchors)
+    def impact(old,new,played,anchors,limits=None):
+        value,updated = original(old,new,played,anchors,limits)
         if not in_fit and old.params != new.params and not denied:
             value["passed"] = False
             denied.append(True)

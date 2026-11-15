@@ -133,7 +133,7 @@ def source_run(root):
             transitions.append(((cutoff+timedelta(hours=weekly.POLICY["job_hour_utc"])).timestamp(),active))
         if job["applied"]:
             p = versions[job["fit"]["id"]]
-            if p["schema"] != gradual.RECIPES["bootstrap"] or p["calibration_prior_sha256"] != digest(artifact["layers"]):
+            if p["schema"] not in (gradual.RECIPES["bootstrap"],gradual.EARLY_FAST["recipe"]) or p["calibration_prior_sha256"] != digest(artifact["layers"]):
                 raise ValueError("source fit has another calibration prior")
             if p["parent_active"] != active or p["parent_sha256"] != digest(versions[active]):
                 raise ValueError("source fit parent differs")

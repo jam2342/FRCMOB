@@ -17,6 +17,19 @@ from app.services.ratings.state_inputs import digest
 
 RECIPE = "state-map-gradual-rehearsal-v1"
 RECIPES = {"previous":RECIPE,"bootstrap":"state-map-gradual-fixed-prior-v1"}
+# Faster adaptation while ratings are provisional (weeks 1-4 from the first result), and
+# beta/rookie refitted all season. Frozen before any run (Jamal, 2026-11-15).
+EARLY_FAST = {"recipe":"state-map-gradual-early-fast-v1","early_days":28,"early_step":math.log(3.),
+              "early_impact":[3.,15.],"late_step":math.log(1.5),"late_impact":None,"refit_beta_all_season":True}
+
+
+def schedule_limits(schedule, cutoff, first):
+    if schedule is None:
+        return math.log(1.5),None,cutoff < first+28*86400
+    early = cutoff < first+schedule["early_days"]*86400
+    return (schedule["early_step"] if early else schedule["late_step"],
+            schedule["early_impact"] if early else schedule["late_impact"],
+            early or schedule["refit_beta_all_season"])
 POLICY = {"fractions":[1.,.5,.25,.125,.0625,.03125,.015625],"likelihood_tolerance":1e-9,
           "parent":"actually active version","selection_clock":"09:00 UTC; recheck impact at 10:00 publication",
           "layer_fit":"once for chosen state; failure rejects update","newest_brier_tolerance":0.,
@@ -64,11 +77,13 @@ def choose_step(start, goal, objective, impact):
     return None,{"fraction":0.,"start_objective":baseline,"trials":trials}
 
 
-def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_prior="previous"):
+def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_prior="previous", schedule=None):
     started = perf_counter()
     if calibration_prior not in RECIPES:
         raise ValueError("unknown calibration prior policy")
-    recipe = RECIPES[calibration_prior]
+    if schedule is not None and calibration_prior != "bootstrap":
+        raise ValueError("an adaptation schedule needs the fixed calibration prior")
+    recipe = RECIPES[calibration_prior] if schedule is None else schedule["recipe"]
     cutoff = state.layers.utc(cutoff)
     if cutoff != state.layers.monday(cutoff):
         raise ValueError("gradual fit cutoff must be Monday 00:00 UTC")
@@ -92,8 +107,9 @@ def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_
     eligible = sum(r.red_points is not None and r.blue_points is not None for r in inputs.research.season.results)
     if eligible < weekly.POLICY["minimum_fit_matches"]:
         return {"status":"insufficient_actual_matches"}
-    pull = state.WeeklyPull(artifact,start)
-    names = state.NAMES if cutoff.timestamp() < inputs.times[0]+28*86400 else tuple(n for n in state.NAMES if n not in ("beta","rookie"))
+    step,limits,refit_beta = schedule_limits(schedule,cutoff.timestamp(),inputs.times[0])
+    pull = state.WeeklyPull(artifact,start,step)
+    names = state.NAMES if refit_beta else tuple(n for n in state.NAMES if n not in ("beta","rookie"))
     names = fittable(inputs,names)
     packed = PackedInnovations(inputs) if weekly.POLICY["compiled"] else None
     parity = {"start":packed.verify(start)} if packed else {}
@@ -143,7 +159,7 @@ def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_
             model.observe(record["result"])
         deadline()
         # The original anchors are reused for every trial; previews never advance them.
-        return weekly.rating_impact(replay.models[active],model,replay.total,anchors)[0]
+        return weekly.rating_impact(replay.models[active],model,replay.total,anchors,limits)[0]
 
     if not errors:
         try:
@@ -184,6 +200,8 @@ def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_
         "fraction":selection["fraction"] if selection and not errors else 0.}
     if calibration_prior == "bootstrap":
         payload.update(calibration_prior=calibration_prior,calibration_prior_sha256=digest(artifact["layers"]))
+    if schedule is not None:
+        payload.update(schedule=schedule,impact_limits=limits,state_step=step)
     digest(payload)
     if digest(parent.params) != parent_sha:
         raise ValueError("gradual fitting rewrote its active parent")
