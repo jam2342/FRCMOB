@@ -19,6 +19,7 @@ from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from app.api.routes_automation import router as automation_router
 from app.api.routes_auto_scouting import router as auto_scouting_router
 from app.api.routes_rating_calibrations import router as rating_calibrations_router
+from app.api.routes_seasons import router as seasons_router
 from app.api.routes_events import router as events_router
 from app.api.routes_maintenance import router as maintenance_router
 from app.api.routes_matches import router as matches_router
@@ -480,6 +481,7 @@ async def dbapi_error_handler(request: Request, exc: DBAPIError):
     return response
 
 app.include_router(rating_calibrations_router)
+app.include_router(seasons_router)
 app.include_router(events_router)
 app.include_router(matches_router)
 app.include_router(automation_router)

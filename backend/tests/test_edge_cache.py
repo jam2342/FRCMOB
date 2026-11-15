@@ -15,6 +15,7 @@ from app.core.config import settings
 # Every GET route the app serves must be in exactly one of these. A new route that
 # isn't fails test_every_get_route_is_classified, so nothing is cached by accident.
 PUBLIC_ROUTES = {
+    "/seasons/{season}/accuracy",
     "/events/search", "/events/suggested", "/events/{event_key}/awards", "/events/{event_key}/predictions",
     "/events/{event_key}/rankings", "/events/{event_key}/schedule-with-synergy",
     "/events/{event_key}/pick-values", "/events/{event_key}/forecast",
@@ -38,7 +39,7 @@ PRIVATE_ROUTES = {
     "/tracks/on-device-sessions", "/workspaces/admin/list", "/workspaces/me",
     "/workspaces/signup-policy",
 }
-SAMPLES = {"event_key": "2026arc", "team_key": "frc254", "match_key": "2026arc_qm1"}
+SAMPLES = {"season": "2027", "event_key": "2026arc", "team_key": "frc254", "match_key": "2026arc_qm1"}
 
 
 def _get_routes(app: FastAPI):

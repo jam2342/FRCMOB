@@ -58,7 +58,22 @@ def season_info(db: Session, season: int | None) -> dict[str, Any]:
         "current": season == current,
         "rated": is_rated(season),
         "frozen": is_frozen(db, season),
+        "model": _model_note(db, season),
     }
+
+
+def _model_note(db: Session, season: int | None) -> dict[str, Any] | None:
+    # "Model updated 9 Mar, tuned on 6,214 matches" for a season rated by the state recipe.
+    from app.services.ratings.state_serving import active_version, declared
+    if season is None or not declared(season):
+        return None
+    row = active_version(db, season)
+    if row is None:
+        return None
+    updated = row.activated_at or row.created_at
+    return {"version": row.id, "updated_at": updated.isoformat() if updated else None,
+            "fitted_through": row.fitted_through.isoformat() if row.fitted_through else None,
+            "matches": row.matches, "provisional": row.recipe == "state-map-total-bootstrap-v1"}
 
 
 def live_model_allowed(db: Session, season: int | None) -> bool:
