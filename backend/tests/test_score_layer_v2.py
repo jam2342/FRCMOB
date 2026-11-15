@@ -126,3 +126,14 @@ def test_rehearsal_with_v2_layers_and_early_fast_state_serves_positive_scores(tm
             fitted = db.get(models.RatingCalibration,identifier).params["layers"]
             assert fitted["schema"] == layers.SCHEMA_V2 and fitted["positive"] is True
     engine.dispose()
+
+
+def test_bootstrap_priors_are_projected_onto_hard_bounds_only_when_outside():
+    inside = layers.identity(v2=True)
+    assert w.project_to_bounds(inside) == {} and inside == layers.identity(v2=True)
+    outside = {**layers.identity(v2=True), "weights": [0.]*4+[-1.65]+[0.]*7, "score_coef": [1.5]+[0.]*10,
+               "temperatures": [.1, 1., 1., 5.], "pooled_temperature": 9., "debut_intercept": -2.}
+    changed = w.project_to_bounds(outside)
+    assert changed == {"weights[4]": [-1.65, -1.], "score_coef[0]": [1.5, 1.2], "temperatures[0]": [.1, .25],
+                       "temperatures[3]": [5., 4.], "pooled_temperature": [9., 4.], "debut_intercept": [-2., -1.2]}
+    layers.validate_params(outside)
