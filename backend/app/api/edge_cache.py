@@ -72,6 +72,7 @@ _RULES: list[tuple[re.Pattern[str], str, str | None]] = [
     (re.compile(r"^/teams/[^/]+/(?:logo|robot-image)$"), "static", None),
     (re.compile(r"^/teams/[^/]+/(?:rating-history|head-to-head|season-story)$"), "event", None),
     (re.compile(r"^/tracks/(?:heatmap|shift-play)/[^/]+$"), "event", "query"),
+    (re.compile(r"^/seasons/[0-9]{4}/accuracy$"), "event", None),
 ]
 
 _settled: set[str] = set()
