@@ -92,3 +92,17 @@ def test_log_rows_carry_the_bootstrap_comparator_for_the_safety_check(rehearsed,
     assert boot.version_id != built.version_id and row["bootstrap"]["version"] == boot.version_id
     card = MatchCard(key, event, 0, "qm", built.first, tuple(teams[:3]), tuple(teams[3:]))
     assert row["bootstrap"]["p"] == serving.forecast_row(boot, card)[1].win_prob
+
+
+def test_a_forecast_before_any_result_starts_the_season_clock_at_the_match(rehearsed, monkeypatch):  # noqa: F811
+    engine, run = rehearsed
+    built = served_run(engine, run, monkeypatch)
+    opening = built.results[0].card
+    with Session(engine) as db:
+        empty = serving.build(db, 2024, db.get(models.RatingCalibration, built.version_id), now=opening.time)
+    assert empty.results == [] and empty.first == 0
+    card = MatchCard(opening.match_key, opening.event_key, opening.time, "qm", opening.time, opening.red, opening.blue)
+    _prediction, features = serving.forecast_row(empty, card)
+    assert features.row["season_frac"] == 0.0  # not (start - 0) / 120 days, a season 170 periods old
+    later = MatchCard("x_qm1", opening.event_key, opening.time+86400, "qm", opening.time+86400, opening.red, opening.blue)
+    assert serving.forecast_row(empty, later)[1].row["season_frac"] == 0.0

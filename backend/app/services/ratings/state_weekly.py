@@ -146,6 +146,8 @@ def publish(db, season, *, now):
     bundle.previous_id, bundle.calibration_id = active.id, candidate.id
     bundle.bundle_version += 1
     bundle.updated_at = now
+    if active.recipe != BOOTSTRAP_RECIPE:
+        active.status = "retired"  # the bootstrap stays as it is: the safety baseline and rollback target
     candidate.status, candidate.activated_at = "active", now
     db.flush()
     return {"status": "published", "id": candidate.id, "impact": impact, "bundle_version": bundle.bundle_version}
