@@ -16,13 +16,14 @@ from app.services.ratings.research_filter import ScaleFreeParams
 from app.services.ratings.research_fit import Pull, fit_likelihood, scale_free_z
 from app.services.ratings.research_models import mean_share
 from app.services.ratings.research_win import (
-    ScoreCalibration, context, correction_features, side_arrays, score_design, _score_sd,
+    context, correction_features, side_arrays, score_design, _score_sd,
     sigmoid, TEMP_POOLED_SD, TEMP_CONTEXT_SD, WEIGHT_SD,
 )
 from app.services.ratings.state_bootstrap import BOOTSTRAP_RECIPE, NAMES, RECIPE, validate_bootstrap, validate_params
 from app.services.ratings.state_inputs import digest, inputs_for, load_results, season_boundary
 
 FIT_RESTARTS = 2
+SCORE_SD_DEBUT = 0.3  # the all-new end's prior SD, as the other intercepts (and #157)
 
 
 class WeeklyPull(Pull):
@@ -82,7 +83,9 @@ def feature(model, card, prediction, here, total, first):
         "u": model.unit.value(), "best_r": best_r, "worst_r": worst_r, "best_b": best_b, "worst_b": worst_b,
         "sd_r": sd_r, "sd_b": sd_b, "min_here": min(here.get((t,card.event_key),0) for t in teams),
         "min_before": min(total.get(t,0)-here.get((t,card.event_key),0) for t in teams),
-        "playoff": float(card.comp_level != "qm"), "season_frac": max(card.event_start-first,0)/(86400*120), "p_live": .5}
+        "playoff": float(card.comp_level != "qm"), "season_frac": max(card.event_start-first,0)/(86400*120), "p_live": .5,
+        # Teams with no season result known yet: replay order in a replay, posted-before-start in a forecast.
+        "new_r": float(sum(total.get(t,0) == 0 for t in card.red)), "new_b": float(sum(total.get(t,0) == 0 for t in card.blue))}
 
 
 def replay(inputs, params, *, record=True):
@@ -143,20 +146,38 @@ def bounded_logistic(f, y, offset, centre, precision, lo, hi, *, initial=None):
     raise ValueError("bounded logistic optimizer did not converge")
 
 
+def debut_design(table, sides):
+    # v2: the first-match column splits into a season-experienced end and an all-new end.
+    x = score_design(sides, True)
+    share = layers.debut_share({k: np.asarray(table[k])[sides["row"]] for k in ("new_r","new_b")}, sides["red"])
+    first = (sides["ctx"] == 0).astype(float)
+    x[:,0] = first*(1-share)
+    return np.column_stack([x, first*share])
+
+
+def score_vector(params):
+    return np.r_[params["score_coef"], [params["debut_intercept"]]] if layers.is_v2(params) else np.array(params["score_coef"])
+
+
 # The active centre sets movement limits; an optional fixed prior sets the MAP target.
 def bounded_score_fit(table, centre, *, prior=None):
     prior = centre if prior is None else prior
+    v2 = layers.is_v2(centre)
+    if layers.is_v2(prior) != v2:
+        raise ValueError("score prior and centre use different schemas")
     sides = side_arrays(table)
-    x = score_design(sides, True)
+    x = debut_design(table, sides) if v2 else score_design(sides, True)
     residual = sides["y"]-sides["x"]
     noise = max(float(np.var(residual)), 1e-9)
-    precision = 1/_score_sd(True)**2
+    sd = _score_sd(True)
+    precision = 1/np.r_[sd, [SCORE_SD_DEBUT]]**2 if v2 else 1/sd**2
+    limits = np.r_[layers.SCORE_LIMITS, [layers.DEBUT_LIMIT]] if v2 else layers.SCORE_LIMITS
     a = x.T@x/noise+np.diag(precision)
-    initial = np.array(centre["score_coef"])
-    b = x.T@residual/noise+precision*np.array(prior["score_coef"])
-    lo = np.maximum(-layers.SCORE_LIMITS,initial-layers.SCORE_STEP)
-    hi = np.minimum(layers.SCORE_LIMITS,initial+layers.SCORE_STEP)
-    return ScoreCalibration(box_quadratic(a,b,lo,hi,initial),True)
+    initial = score_vector(centre)
+    b = x.T@residual/noise+precision*score_vector(prior)
+    lo = np.maximum(-limits,initial-layers.SCORE_STEP)
+    hi = np.minimum(limits,initial+layers.SCORE_STEP)
+    return box_quadratic(a,b,lo,hi,initial)
 
 
 def fit_win_layers(table, centre, *, prior=None):
@@ -182,8 +203,10 @@ def fit_win_layers(table, centre, *, prior=None):
 
 def fit_layers(table, centre, *, prior=None):
     score = bounded_score_fit(table, centre, prior=prior)
-    fitted = fit_win_layers(table, centre, prior=prior)
-    return {**fitted, "score_coef": score.coef.tolist()}
+    fitted = {**fit_win_layers(table, centre, prior=prior), "score_coef": score[:11].tolist()}
+    if layers.is_v2(centre):
+        fitted.update(schema=layers.SCHEMA_V2, debut_intercept=float(score[11]), positive=centre["positive"])
+    return fitted
 
 
 def fit_week(db, season, through, code_sha, *, max_evals=400, innovations_factory=None):
