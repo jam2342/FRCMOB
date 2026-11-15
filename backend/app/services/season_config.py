@@ -35,6 +35,10 @@ class UnsupportedSeasonRulesError(RuntimeError):
     pass
 
 
+def has_rules_adapter(season_year: int) -> bool:
+    return int(season_year) <= REBUILT_SEASON_YEAR
+
+
 def require_known_season_rules(season_year: int, *, feature: str) -> None:
     """Fail closed when future games have not received an explicit rules adapter."""
     year = int(season_year)
