@@ -30,4 +30,15 @@ def test_current_season_is_ready(capsys):
 def test_next_season_lists_what_is_missing(capsys):
     assert _run(CURRENT_SEASON_YEAR + 1) == 1
     out = capsys.readouterr().out
-    assert "MISSING" in out and "SEASON_BASELINES" in out
+    assert "MISSING" in out
+
+
+def test_a_state_season_needs_the_recipe_not_a_baseline_and_parsers_come_later(capsys):
+    # 2027 on: the self-tuning recipe rates the season, so a hand-entered baseline is the thing to
+    # avoid, and the game's breakdown parsers are built from its first real payloads.
+    assert _run(2027) == 1
+    needed, after = capsys.readouterr().out.split("AFTER EVENTS")
+    assert "ok       no hand-entered rating baseline" in needed
+    assert "MISSING  Tier A component declaration" in needed and "MISSING  rating switches on" in needed
+    assert "TBA breakdown → alliance components parser" in after and "parser" not in needed
+    assert "learned win correction weights" not in needed + after

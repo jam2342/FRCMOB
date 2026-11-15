@@ -106,11 +106,18 @@ breakdown schema every year.
    against actual JSON, not mocked happy paths.
 3. Until the parser exists, **failing loud beats silently inheriting REBUILT.**
 
-The rating (`services/ratings/`) is in the same family. It reads only
-official per-robot points: `ratings/official_points.py` turns one official finding
-into teleop / auto / climb points for REBUILT, and `ratings/constants.py`
-`SEASON_BASELINES` holds the season's typical robot (what a rating of 50 means).
-A season with no baseline row raises, so ratings fail closed until both exist.
+**From 2027 the rating does not need either.** The self-tuning state recipe
+(`ratings/state_serving.py`, switch `RATING_STATE_SERVING_ENABLED`) rates a season on
+alliance totals and score without fouls, which TBA reports in the same fields every
+year. For a state-served season (2027+, the switch on, a Tier A declaration) ingest
+skips per-robot truth until the rules adapter exists, logs `no_rules_adapter`, and
+still stores those totals. Any other unknown season still fails loudly. **Do not add a
+`SEASON_BASELINES` row for such a season:** a baseline row always wins and would put it
+back on hand-tuned settings.
+
+Seasons up to 2026 keep the hand-tuned team model. It reads official per-robot points
+(`ratings/official_points.py`) and needs a `SEASON_BASELINES` row (the typical robot,
+what a rating of 50 means); without one it fails closed.
 
 ---
 
@@ -194,18 +201,20 @@ each worker rebuilds the season (measured 2026-10-18).
       breakdown (alliance totals per component, per-robot climbs), then
       `scripts/backfill_alliance_results.py --season 2027`
 - [ ] `ratings/team_model.py` `HUB_COMPONENTS`: the alliance-total components to model
+      (hand-tuned seasons only)
 - [ ] last season's strengths as the early-season prior: `scripts/build_prior_strengths.py
       --season 2026 --source db` (end of 2026), then `--season 2027 --rookies-only`
 - [ ] `ratings/ranking_points.py`: the new game's bonus RPs in `BONUS_RPS` (which part
       counts, the manual's threshold, the components key) and, once events are in,
       `BONUS_RP_CALIBRATION` from `evaluate_rating_replay.py` ("bonus_rp")
-- [ ] the learned win correction: none until the season has events (2026's weights don't
-      apply); then `scripts/train_win_correction.py --season 2027`, and re-check that the
-      report beats the team model before shipping the file
-- [ ] `ratings/constants.py`: a `SEASON_BASELINES` row (team-model priors and
-      settings, median and p99 robot points for the rating curve, typical
-      components, max climb points) and `win_probability.py` scales; all printed by
-      `scripts/evaluate_rating_replay.py --season 2027 --models team_model --grid-team`
+- [ ] the self-tuning rating (2027+; no `SEASON_BASELINES` row and no
+      `train_win_correction.py`): declare the season **Tier A** (total score) in the
+      component registry; after freezing the old season, turn on
+      `RATING_STATE_SERVING_ENABLED`, `RATING_AUTOTUNE` and `RATING_PREDICTION_LOG_ENABLED`;
+      then `scripts/fit_rating_calibrations.py --season 2027 --step install
+      --state-bootstrap <private file>`. The VM cron runs the Monday fit (09:00 UTC) and
+      publish (10:00). Build the bootstrap with `scripts/build_rating_state_bootstrap.py
+      --season 2027 --score-layer debut-positive` (fitted settings stay out of git)
 - [ ] grep for stray `\b2026\b` literals in `backend/app`
 - [ ] retrain detector + lock a new holdout (`docs/TRAINING.md`)
 - [ ] production `.env` on the VM: `AUTOMATION_REGIONAL_HALFDAY_SEASON=2026` pins the

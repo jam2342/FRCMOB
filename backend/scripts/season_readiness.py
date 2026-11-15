@@ -59,11 +59,28 @@ def main() -> int:
         rules_ok = True
     except UnsupportedSeasonRulesError:
         rules_ok = False
-    need(rules_ok, "scoring rules adapter accepted (require_known_season_rules)", "season_config.py: allow the season once breakdown.py/truth.py parse its TBA payload")
-    need(season in COMPONENT_PARSERS, "TBA breakdown → alliance components parser", "scoring/alliance_results.py COMPONENT_PARSERS, then scripts/backfill_alliance_results.py")
-    need(season in COPR_METRICS_BY_SEASON, "component OPR names for Team Center official stats", "scoring/official_team_stats.py COPR_METRICS_BY_SEASON")
+    from app.services.ratings import state_serving
+    from app.services.ratings.component_spec import get_spec
+    # From FIRST_STATE_SEASON the self-tuning state recipe rates the season on alliance totals, which
+    # ingest stores without a rules adapter; the game's parsers come from its first real payloads.
+    state_season = season >= state_serving.FIRST_STATE_SEASON
+    parser_check = later if state_season else need
+    parser_check(rules_ok, "scoring rules adapter accepted (require_known_season_rules)", "season_config.py: allow the season once breakdown.py/truth.py parse its TBA payload")
+    parser_check(season in COMPONENT_PARSERS, "TBA breakdown → alliance components parser", "scoring/alliance_results.py COMPONENT_PARSERS, then scripts/backfill_alliance_results.py")
+    parser_check(season in COPR_METRICS_BY_SEASON, "component OPR names for Team Center official stats", "scoring/official_team_stats.py COPR_METRICS_BY_SEASON")
     need(season in BONUS_RPS, "bonus ranking points (which part, threshold, key)", "ratings/ranking_points.py BONUS_RPS")
-    need(season in SEASON_BASELINES, "rating baseline row (provisional from week 1)", "ratings/constants.py SEASON_BASELINES; evaluate_rating_replay.py prints it")
+    if state_season:
+        need(season not in SEASON_BASELINES, "no hand-entered rating baseline (a SEASON_BASELINES row would override the self-tuning recipe)", "ratings/constants.py: remove the row")
+        try:
+            tier_a = get_spec(season).tier == "A"
+        except ValueError:
+            tier_a = False
+        need(tier_a, "Tier A component declaration (total score; Tier B/C only after week-0 payloads)", "component registry (component_spec.REGISTRY): add the season as Tier A")
+        switches = ("rating_state_serving_enabled", "rating_autotune", "rating_prediction_log_enabled")
+        off = [name.upper() for name in switches if not getattr(settings, name)]
+        need(not off, "rating switches on" + (f" (off: {', '.join(off)})" if off else ""), "VM .env, after the old season is frozen; then recreate the containers")
+    else:
+        need(season in SEASON_BASELINES, "rating baseline row (provisional from week 1)", "ratings/constants.py SEASON_BASELINES; evaluate_rating_replay.py prints it")
     need(season in SEASON_GAMES, "game name for labels", "services/seasons.py SEASON_GAMES")
     by_season = {name: getattr(specs, name) for name in dir(specs) if name.endswith("_BY_SEASON") and isinstance(getattr(specs, name), dict)}
     missing_specs = sorted(name for name, table in by_season.items() if season not in table)
@@ -76,8 +93,9 @@ def main() -> int:
     need(pinned in (0, season), f"regional automation follows the season (AUTOMATION_REGIONAL_HALFDAY_SEASON={pinned or 'unset'})", "VM .env: bump only after the rules above land, then recreate the containers")
 
     later(season in BONUS_RP_CALIBRATION, "bonus RP calibration", "evaluate_rating_replay.py \"bonus_rp\" → BONUS_RP_CALIBRATION")
-    weights = REPO / "backend" / "app" / "services" / "ratings" / "data" / f"win_correction_{season}.json"
-    later(weights.exists(), "learned win correction weights", f"scripts/train_win_correction.py --season {season}")
+    if not state_season:  # a state season's win layer is in its weekly versions, not a network file
+        weights = REPO / "backend" / "app" / "services" / "ratings" / "data" / f"win_correction_{season}.json"
+        later(weights.exists(), "learned win correction weights", f"scripts/train_win_correction.py --season {season}")
 
     if args.db:
         from sqlalchemy import func, select
@@ -94,6 +112,10 @@ def main() -> int:
                 select(func.count()).select_from(models.MatchAllianceResult).where(models.MatchAllianceResult.match_key.like(f"{season}%"))
             ).scalar() or 0
             later(results > 0, f"{season} alliance results ingested ({results})", f"scripts/backfill_alliance_results.py --season {season}")
+            if state_season:
+                active = state_serving.active_version(db, season)
+                need(active is not None, "state bootstrap installed and active" + (f" (version {active.id})" if active else ""),
+                     f"fit_rating_calibrations.py --season {season} --step install --state-bootstrap <private file> (needs the switches and the Tier A declaration)")
 
     blocking = 0
     for kind in ("needed", "after events"):

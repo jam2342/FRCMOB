@@ -27,7 +27,7 @@ from app.services.scoring.truth import (
 from app.services.scoring.official_team_stats import COPR_METRICS_BY_SEASON
 from app.services.utils import _as_float
 from app.services.analysis.runs import RUN_KIND_OFFICIAL_TRUTH
-from app.services.season_config import REBUILT_SEASON_YEAR, require_known_season_rules
+from app.services.season_config import REBUILT_SEASON_YEAR, has_rules_adapter, require_known_season_rules
 from app.tba.client import TBAClient
 
 logger = logging.getLogger(__name__)
@@ -639,13 +639,23 @@ def ingest_event(
     )
 
 
-    score_breakdown_truth = upsert_score_breakdown_truth(
-        db,
-        event_key=event_key,
-        season_year=int(event.get("year") or 0),
-        matches=[match for match in matches if isinstance(match, dict)],
-        auto_fuel_copr_by_team=auto_fuel_copr_by_team,
-    )
+    season_year = int(event.get("year") or 0)
+    from app.services.ratings.state_serving import declared as state_served
+    if not has_rules_adapter(season_year) and state_served(season_year):
+        # A season rated by the state recipe before its rules adapter exists. Per-robot truth
+        # would be REBUILT's, so none is written; the alliance totals below (score, fouls) are the
+        # same TBA fields every year and are all the recipe rates on. Any other unknown season
+        # still fails loudly here.
+        logger.warning("event_ingest.no_rules_adapter event=%s season=%s: alliance totals only", event_key, season_year)
+        score_breakdown_truth = {"skipped": "no_rules_adapter"}
+    else:
+        score_breakdown_truth = upsert_score_breakdown_truth(
+            db,
+            event_key=event_key,
+            season_year=season_year,
+            matches=[match for match in matches if isinstance(match, dict)],
+            auto_fuel_copr_by_team=auto_fuel_copr_by_team,
+        )
     alliance_results = upsert_alliance_results(
         db,
         event_key=event_key,
