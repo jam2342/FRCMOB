@@ -66,9 +66,9 @@ def _fingerprint(db: Session, season: int) -> tuple:
     )
     rookies = db.query(func.count(models.Team.team_key)).filter(models.Team.rookie_year == season).scalar()
     bundle_version = 0
-    if settings.rating_prediction_log_enabled:
+    if settings.rating_prediction_log_enabled or settings.rating_state_serving_enabled:
         bundle = db.get(models.RatingActiveBundle, season)
-        bundle_version = bundle.bundle_version if bundle else 0
+        bundle_version = (bundle.bundle_version, bundle.calibration_id) if bundle else 0
     # The engine too: a process talking to two databases (tests) must not share a run.
     return id(db.get_bind()), int(count or 0), str(latest), int(findings or 0), int(priors[0] or 0), str(priors[1]), int(rookies or 0), bundle_version
 
@@ -200,6 +200,17 @@ def _compute_unlocked(db: Session, season: int, fingerprint: tuple) -> SeasonRun
     # previous run is extended with just those; anything else (a corrected score, new
     # priors) replays the season from the start.
     started = time.perf_counter()
+    from app.services.ratings import state_serving
+    served = state_serving.active_version(db, season)
+    if served is not None:
+        run = state_serving.build(db, season, served)
+        logger.info("team_model.state_run season=%s version=%s matches=%d seconds=%.2f", season, served.id, len(run.before_match), run.seconds)
+        with _lock:
+            _cache[season] = (fingerprint, run)
+        return run
+    if state_serving.declared(season):
+        # A declared state season with no installed version is not rated yet; never fall back to 2026 constants.
+        raise ValueError(f"Season {season} has no active state rating version yet.")
     baseline = season_baseline(season)
     setup = season_prior_multipliers(db, season, baseline)
     results = load_season(db, season, evaluation_split=False).results

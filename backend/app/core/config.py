@@ -266,6 +266,7 @@ class Settings(BaseSettings):
     rating_rp_enabled: bool = False
     rating_autotune: bool = False
     rating_prediction_log_enabled: bool = False
+    rating_state_serving_enabled: bool = False
 
     live_event_ingest_enabled: bool = True
     live_event_ingest_interval_minutes: int = 3
