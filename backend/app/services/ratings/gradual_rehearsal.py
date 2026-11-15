@@ -77,7 +77,7 @@ def choose_step(start, goal, objective, impact):
     return None,{"fraction":0.,"start_objective":baseline,"trials":trials}
 
 
-def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_prior="previous", schedule=None):
+def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_prior="previous", schedule=None, store_anchors=None):
     started = perf_counter()
     if calibration_prior not in RECIPES:
         raise ValueError("unknown calibration prior policy")
@@ -202,6 +202,8 @@ def fit_job(db, year, cutoff, code_sha, replay, active, anchors, *, calibration_
         payload.update(calibration_prior=calibration_prior,calibration_prior_sha256=digest(artifact["layers"]))
     if schedule is not None:
         payload.update(schedule=schedule,impact_limits=limits,state_step=step)
+    if store_anchors is not None:
+        payload["anchors"] = [float(v) for v in store_anchors]
     digest(payload)
     if digest(parent.params) != parent_sha:
         raise ValueError("gradual fitting rewrote its active parent")

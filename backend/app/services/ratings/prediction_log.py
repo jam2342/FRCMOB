@@ -46,10 +46,12 @@ def feature_rows(db, season, event_key, matches, details, predictions, *, run=No
             continue
         if hasattr(_old_features, "win_prob"):
             # A state-served season logs the exact row and version the recipe used.
-            from app.services.ratings.state_serving import STATE_FEATURE_SCHEMA
+            from app.services.ratings.replay import MatchCard
+            from app.services.ratings.state_serving import STATE_FEATURE_SCHEMA, comparator, comparator_forecast
+            card = MatchCard(key, event_key, 0, match.comp_level or "qm", event_start or 0, tuple(red), tuple(blue))
             rows[key] = {"schema": STATE_FEATURE_SCHEMA, "version": _old_features.version_id, "red_teams": list(red),
                          "blue_teams": list(blue), "event_start": event_start, "scheduled_start": match.predicted_time or match.time,
-                         "row": dict(_old_features.row)}
+                         "row": dict(_old_features.row), "bootstrap": comparator_forecast(comparator(db, run), card)}
             continue
         def side(keys):
             beliefs = [run.model.belief(t, event_key, event_start) for t in keys]
