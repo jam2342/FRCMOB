@@ -85,6 +85,7 @@ def test_fit_then_publish_moves_the_pointer_under_the_candidates_own_limits(prod
         assert published["status"] == "published"
         assert published["impact"]["limits"] == candidate.params["impact_limits"] == [3., 15.]  # week 3: early limits
         assert serving.active_version(db, 2024).id == candidate.id and candidate.status == "active"
+        assert db.get(models.RatingCalibration, boot).status != "retired"  # the safety baseline is never retired
         assert job.publish(db, 2024, now=week+timedelta(hours=11))["status"] == "no_candidate"
 
 

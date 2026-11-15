@@ -153,7 +153,10 @@ def forecast_row(run, card):
     shadow.latest = inner.latest.copy()
     shadow.record = False
     prediction = shadow.predict(card)
-    row = feature(shadow, card, prediction, run.played_here, run.played_total, run.first)
+    # Season age counts from the first known result; before any, from this match (as rehearsed),
+    # never from 0, which would read as a season 170 periods old.
+    first = min(run.first or card.event_start, card.event_start) if card.event_start else run.first
+    row = feature(shadow, card, prediction, run.played_here, run.played_total, first)
     return prediction, StateFeatures(row, run.layers, run.version_id)
 
 
@@ -197,7 +200,8 @@ def build(db, season, row, *, now=None):
     started = time.perf_counter()
     params, fitted, bootstrap = resolve(db, row)
     built_at = int(now if now is not None else time.time())
-    inputs, _, _ = inputs_for(db, int(season), built_at, bootstrap.params["context"])
+    # Only results ingested before the build: identical live, and as-of correct in a replay.
+    inputs, _, _ = inputs_for(db, int(season), built_at, bootstrap.params["context"], updated_before=built_at)
     adapter = ServingAdapter(inputs.model(params), get_spec(int(season)))
     stored = row.params.get("anchors") if row.recipe != BOOTSTRAP_RECIPE else None
     run = StateSeasonRun(int(season), adapter, row.id, fitted, setup=("state", row.id), stored_anchors=tuple(stored) if stored else None)
