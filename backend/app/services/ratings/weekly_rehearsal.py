@@ -94,11 +94,36 @@ def debut_prior(table, cards):
     return _ridge(state.debut_design(table,sides),r,np.zeros(12),sd,float(np.var(r)) if len(r) >= 30 else 1.)
 
 
+def project_to_bounds(fitted):
+    changed = {}
+    for name,limit in (("score_coef",layers.SCORE_LIMITS),("weights",np.ones(12))):
+        raw = np.asarray(fitted[name],dtype=float)
+        clipped = np.clip(raw,-limit,limit)
+        for i in np.flatnonzero(clipped != raw):
+            changed[f"{name}[{i}]"] = [float(raw[i]),float(clipped[i])]
+        fitted[name] = clipped.tolist()
+    for i,value in enumerate(fitted["temperatures"]):
+        bounded = min(4.,max(.25,value))
+        if bounded != value:
+            changed[f"temperatures[{i}]"] = [value,bounded]
+            fitted["temperatures"][i] = bounded
+    if not .25 <= fitted["pooled_temperature"] <= 4:
+        bounded = min(4.,max(.25,fitted["pooled_temperature"]))
+        changed["pooled_temperature"] = [fitted["pooled_temperature"],bounded]
+        fitted["pooled_temperature"] = bounded
+    if layers.is_v2(fitted) and abs(fitted["debut_intercept"]) > layers.DEBUT_LIMIT:
+        bounded = max(-layers.DEBUT_LIMIT,min(layers.DEBUT_LIMIT,fitted["debut_intercept"]))
+        changed["debut_intercept"] = [fitted["debut_intercept"],bounded]
+        fitted["debut_intercept"] = bounded
+    return changed
+
+
 def make_bootstrap(year, reports, tables, *, score_layer=None, cards_for=None):
     if score_layer not in (None,"debut-positive") or (score_layer is not None and cards_for is None):
         raise ValueError("the v2 score layer needs earlier-season lineups")
-    if year not in range(2023,2027):
-        raise ValueError("weekly rehearsal needs examined 2023–2026 and an earlier season")
+    # 2023-2026 are rehearsed; 2027 is the served season, built by the same procedure from 2022-2026.
+    if year not in range(2023,2028):
+        raise ValueError("weekly bootstrap needs 2023-2027 and an earlier season")
     fits,runs,hashes = {},[],{}
     for earlier in range(2022,year):
         for variant in ("hindsight_mle","e3_noise_count_zstatic"):
@@ -130,6 +155,11 @@ def make_bootstrap(year, reports, tables, *, score_layer=None, cards_for=None):
                       pooled_temperature=temps.pooled,weights=_pooled_weights(wins,recipe).tolist())
         if score_layer:
             fitted["debut_intercept"] = float(mean[11])
+        projection = project_to_bounds(fitted)
+        if projection:
+            # An earlier-season prior outside the layers' hard bounds is unreachable by any weekly
+            # fit; it starts at the bound instead, and the projection is kept with the artifact.
+            hashes["layer-bound-projection"] = json.dumps(projection,sort_keys=True)
     artifact = build_bootstrap(year,fits,runs,hashes,layer_params=fitted,layer_years=years)
     validate_bootstrap(artifact,year)
     return artifact

@@ -22,7 +22,24 @@ def main():
     parser.add_argument("--reports", required=True, type=Path)
     parser.add_argument("--win-tables", required=True, type=Path, help="Earlier-season phase 3 feature tables")
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--score-layer", choices=("debut-positive",),
+                        help="the frozen 2027 recipe: the rehearsal's bootstrap procedure with v2 score layers")
+    parser.add_argument("--cache", type=Path, help="TBA research cache, for earlier-season lineups (with --score-layer)")
     args = parser.parse_args()
+    if args.out.resolve().is_relative_to(Path(__file__).resolve().parents[2]):
+        parser.error("fitted settings stay outside the public repository")
+    if args.score_layer:
+        if args.cache is None:
+            parser.error("--score-layer needs --cache")
+        from app.services.ratings.component_screen import load
+        from app.services.ratings.weekly_rehearsal import make_bootstrap
+        def lineups(year):
+            return {r["result"].card.match_key: r["result"].card for r in load(args.cache, year).records}
+        artifact = make_bootstrap(args.season, args.reports, args.win_tables, score_layer=args.score_layer, cards_for=lineups)
+        result = write_settings(args.out, artifact)
+        assert json.loads(result.read_text()) == artifact
+        print(result)
+        return
     path = args.reports / "hindsight.json"
     all_fits = json.loads(path.read_text())
     fits = {year: data for year,data in all_fits.items() if int(year) < args.season}
