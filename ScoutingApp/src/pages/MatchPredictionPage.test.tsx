@@ -8,8 +8,8 @@ vi.mock('../components/EventPicker', () => ({ EventPicker: ({ onSelect, value }:
 </> }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 import { MatchPredictionPage } from './MatchPredictionPage';
-import { getEventSchedule, getEventPredictionSchedule } from '../api';
-vi.mock('../api', () => ({ getEventSchedule: vi.fn(), getEventPredictionSchedule: vi.fn(), getEventPredictions: vi.fn(async () => ({ predictions: null })) }));
+import { getEventSchedule, getEventPredictionSchedule, getSeasonAccuracy } from '../api';
+vi.mock('../api', () => ({ getEventSchedule: vi.fn(), getEventPredictionSchedule: vi.fn(), getEventPredictions: vi.fn(async () => ({ predictions: null })), getSeasonAccuracy: vi.fn() }));
 it('uses unknown match status when schedule fails and offers retry', async () => {
   const alliance = { teams: [] };
   vi.mocked(getEventPredictionSchedule).mockResolvedValue({ matches: [{ match_key: '2026old_qm1', comp_level: 'qm', match_number: 1, set_number: 1, red: alliance, blue: alliance }] } as never);
@@ -84,4 +84,31 @@ it('uses plain copy when predictions fail', async () => {
   render(<MemoryRouter initialEntries={['/?event=2026old']}><MatchPredictionPage /></MemoryRouter>);
   expect(await screen.findByText("Predictions didn't load. Try again in a moment.")).toHaveAttribute('title', 'internal server detail');
   expect(screen.queryByText('internal server detail')).not.toBeInTheDocument();
+});
+
+it('shows the self-tuning model note and its season record, and nothing for hand-tuned seasons', async () => {
+  const alliance = { teams: [{ team_key: 'frc1' }, { team_key: 'frc2' }, { team_key: 'frc3' }] };
+  const model = { version: 7, updated_at: '2027-03-08T10:00:00', fitted_through: '2027-03-08T00:00:00', matches: 6214, provisional: false };
+  vi.mocked(getEventPredictionSchedule).mockResolvedValue({ season: { season: 2027, game: null, current: true, rated: true, frozen: false, model },
+    matches: [{ match_key: '2027new_qm1', comp_level: 'qm', match_number: 1, set_number: 1, red: alliance, blue: alliance }] } as never);
+  vi.mocked(getEventSchedule).mockResolvedValue({ matches: [{ match_key: '2027new_qm1', is_completed: false }] } as never);
+  vi.mocked(getSeasonAccuracy).mockResolvedValue({ ok: true, season: 2027, available: true,
+    overall: { matches: 400, decided: 398, accuracy: 0.752, points_mae: 21.37 }, qualifications: { matches: 0 }, playoffs: { matches: 0 },
+    calibration: [{ favourite_from: 0.6, favourite_to: 0.7, matches: 120, predicted: 0.65, won: 0.66 }], by_week: [], source: 'log' } as never);
+  render(<MemoryRouter initialEntries={['/match-center/predictions?event=2027new']}><MatchPredictionPage /></MemoryRouter>);
+  expect(await screen.findByText(/^Model updated .+ · tuned on 6,214 matches$/)).toBeTruthy();  // date in the viewer's locale
+  expect(await screen.findByText('Season Record')).toBeTruthy();
+  expect(screen.getByText('75.2%')).toBeTruthy();
+  expect(screen.getByText('60–70%')).toBeTruthy();
+  expect(getSeasonAccuracy).toHaveBeenCalledWith(2027);
+  cleanup();
+  vi.mocked(getSeasonAccuracy).mockClear();
+  vi.mocked(getEventPredictionSchedule).mockResolvedValue({ season: { season: 2026, game: 'REBUILT', current: false, rated: true, frozen: true, model: null },
+    matches: [{ match_key: '2026old_qm1', comp_level: 'qm', match_number: 1, set_number: 1, red: alliance, blue: alliance }] } as never);
+  vi.mocked(getEventSchedule).mockResolvedValue({ matches: [{ match_key: '2026old_qm1', is_completed: false }] } as never);
+  render(<MemoryRouter initialEntries={['/match-center/predictions?event=2026old']}><MatchPredictionPage /></MemoryRouter>);
+  await screen.findByText('Matches');
+  expect(screen.queryByText('Season Record')).toBeNull();
+  expect(screen.queryByText(/Model updated/)).toBeNull();
+  expect(getSeasonAccuracy).not.toHaveBeenCalled();
 });
