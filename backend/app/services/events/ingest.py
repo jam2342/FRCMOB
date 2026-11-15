@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import models
 from app.services.analysis.evidence import evidence_rejection_reason
+from app.services.team_utils import team_number_from_team_key
 from app.services.events.match_times import match_times_from_payload
 from app.services.events.match_lineups import write_match_lineups
 from app.services.scoring.alliance_results import upsert_alliance_results
@@ -602,12 +603,9 @@ def ingest_event(
 
     extra_team_keys = team_keys_from_matches - team_keys_from_event
     for team_key in sorted(extra_team_keys):
-        team_number: int
-        try:
-            team_number = int(team_key.replace("frc", "", 1))
-        except ValueError:
-            team_number = 0
-        db.merge(models.Team(team_key=team_key, team_number=team_number, nickname=None))
+        # B teams (frc2403B) are only in match alliances, never in TBA's team list, so they have
+        # no nickname to fetch; their number is the key's.
+        db.merge(models.Team(team_key=team_key, team_number=team_number_from_team_key(team_key), nickname=None))
 
     db.flush()
 

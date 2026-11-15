@@ -224,13 +224,8 @@ def _station_sort_key(station: str | None) -> tuple[str, int]:
 
 
 def _team_number_from_key(team_key: str) -> int:
-    value = team_key.strip().lower()
-    if value.startswith("frc"):
-        value = value[3:]
-    try:
-        return int(value)
-    except ValueError:
-        return 0
+    from app.services.team_utils import team_number_from_team_key
+    return team_number_from_team_key(team_key)
 
 
 def _display_match_name(comp_level: str, set_number: int, match_number: int) -> str:
