@@ -124,11 +124,13 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
     if not team_rows:
         return {"ok": True, "event_key": event_key, "count": 0, "ratings": [], "duration_sec": round(time.perf_counter() - started, 4)}
 
+    run = season_run(db, season)
+    if getattr(run, "engine", None) == "state":
+        return _state_event_ratings(db, event_key, run, team_rows, started)
     baseline = season_baseline(season)
     typical = baseline["typical"]
     scale_points, shape = curve_for_anchors(baseline["median_robot_points"], baseline["p99_robot_points"])
     event_start = _event_start(db, event_key)
-    run = season_run(db, season)
 
     role_findings: dict[str, list[models.TeamMatchFinding]] = defaultdict(list)
     for finding in db.query(models.TeamMatchFinding).filter(models.TeamMatchFinding.event_key == event_key):
@@ -263,3 +265,87 @@ def recompute_event_ratings(db: Session, event_key: str) -> dict[str, Any]:
         "count": len(payload),
         "ratings": payload,
     }
+
+
+STATE_MODEL_VERSION = "rating_state_total_v1"
+
+
+def _state_event_ratings(db: Session, event_key: str, run, team_rows, started: float) -> dict[str, Any]:
+    # A season rated by the frozen state recipe on total score (Tier A): points and their
+    # range on the relative 0-100 curve. Component subscores, dud rates and per-robot
+    # breakdowns need the game's component parser, so they are null, never invented.
+    from app.services.ratings.state_serving import anchors
+    from app.services.ratings.total_adapter import rating_confidence
+
+    median, p99 = anchors(run)
+    scale_points, shape = curve_for_anchors(median, p99)
+    event_start = _event_start(db, event_key)
+    model = run.model
+    role_findings: dict[str, list[models.TeamMatchFinding]] = defaultdict(list)
+    for finding in db.query(models.TeamMatchFinding).filter(models.TeamMatchFinding.event_key == event_key):
+        role_findings[finding.team_key].append(finding)
+    now = datetime.now(timezone.utc)
+    _existing = db.query(models.EventTeamRating).filter(models.EventTeamRating.event_key == event_key).all()
+    for event_team, _team in team_rows:
+        team_key = event_team.team_key
+        lowered = str(team_key).lower()
+        belief = model.belief(lowered, event_key, event_start)["total"]
+        points, sd = max(0.0, belief.mean), math.sqrt(max(0.0, belief.var))
+        matches_here = run.played_here.get((lowered, event_key), 0)
+        matches_before = sum(n for (team, other), n in run.played_here.items() if team == lowered and other != event_key
+                             and (event_start is None or model.event_start.get(other, 0) < event_start))
+        basis = "this_event" if matches_here else "earlier_events" if matches_before else model.start_basis(lowered)
+        rating = points_to_rating(points, scale_points, shape)
+        rating_range = [round(points_to_rating(max(0.0, points - 1.2816 * sd), scale_points, shape), 2),
+                        round(points_to_rating(points + 1.2816 * sd, scale_points, shape), 2)]
+        try:
+            role_classification = RoleClassifier(db, event_key, team_key, findings=role_findings.get(team_key, [])).classify()
+        except Exception:
+            role_classification = {"primary_role": "unknown"}
+        moves = run.changes.get((lowered, event_key), [])[-12:]
+        subscores = {"throughput": None, "auto_contribution": None, "endgame": None, "consistency": None}
+        details = {
+            "algorithm_mode": "state_total_v1",
+            "expected_points": {"total": round(points, 2), "teleop": None, "auto": None, "climb": None},
+            "basis": basis,
+            "points_sd": round(sd, 2),
+            "dud_rate": None,
+            "recent_changes": [
+                {"match_key": match_key, "points_change": round(after - before, 2),
+                 "rating_change": round(points_to_rating(max(0.0, after), scale_points, shape) - points_to_rating(max(0.0, before), scale_points, shape), 2)}
+                for match_key, before, after in reversed(moves[-5:])
+            ],
+            # History is kept in points and drawn on the current curve, so a curve refresh
+            # never reads as the team changing.
+            "rating_history": [round(points_to_rating(max(0.0, value), scale_points, shape), 2)
+                               for value in ([moves[0][1]] + [after for _key, _before, after in moves] if moves else [])],
+            "rating_range_80": rating_range,
+            "matches_here": matches_here,
+            "matches_before": matches_before,
+            "match_count": matches_here,
+            "season_scale": {"median_robot_points": round(median, 3), "p99_robot_points": round(p99, 3),
+                             "scale_points": round(scale_points, 3), "shape": round(shape, 4), "typical_robot": None,
+                             "anchors": "weekly" if run.stored_anchors is not None else "provisional"},
+            "subscores": subscores,
+            "trend": None,
+            "rating_version": run.version_id,
+            "role_classification": role_classification,
+            "computed_at": now.isoformat(),
+        }
+        db.merge(models.EventTeamRating(
+            event_key=event_key, team_key=team_key, rating_0_100=round(rating, 3),
+            confidence_0_1=round(rating_confidence(model, lowered, event_key), 4), robot_level_0_100=round(rating, 3),
+            driver_skill_0_100=None, results_anchor=None, throughput=None, shift_productivity=None,
+            capacity_utilization=None, endgame=None, consistency=None, pros_json=[], cons_json=[], evidence_json=[],
+            details_json=details, model_version=STATE_MODEL_VERSION, updated_at=now))
+    db.commit()
+    persisted = (
+        db.query(models.EventTeamRating, models.Team)
+        .outerjoin(models.Team, models.Team.team_key == models.EventTeamRating.team_key)
+        .filter(models.EventTeamRating.event_key == event_key)
+        .order_by(models.EventTeamRating.rating_0_100.desc(), models.EventTeamRating.team_key.asc())
+        .all()
+    )
+    payload = build_response_payload(persisted)
+    return {"ok": True, "event_key": event_key, "model_version": STATE_MODEL_VERSION,
+            "duration_sec": round(time.perf_counter() - started, 4), "count": len(payload), "ratings": payload}

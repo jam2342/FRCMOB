@@ -20,6 +20,12 @@ from app.services.ratings.total_adapter import TotalStateAdapter
 SERVED_RECIPES = (BOOTSTRAP_RECIPE, "state-map-gradual-early-fast-v1")
 # Earlier seasons are history: they keep whatever they had and never become state-rated.
 FIRST_STATE_SEASON = 2027
+# 0-100 anchors before a season has a population: the state model's end-of-season shape,
+# averaged over 2023-2026 (median robot 0.81-1.07 x the unit, 99th percentile 2.4-6.1 x the
+# median). The measured population takes over with weight n / (n + 300) in team-events.
+ANCHOR_DEFAULT = {"median_over_unit": .981, "p99_over_median": 3.561}
+ANCHOR_POPULATION = 300
+ANCHOR_MIN_MATCHES = 5
 
 
 def declared(season) -> bool:
@@ -90,6 +96,27 @@ class StateSeasonRun:
     setup: tuple = ()
     state_results_sha256: str | None = None
     engine: str = "state"
+    # Weekly-damped anchors the Monday job stored on the version, if any (relative 0-100).
+    stored_anchors: tuple | None = None
+
+
+def anchors(run):
+    # (median, p99) robot points for the 0-100 curve: the stored weekly anchors, else the
+    # default shape blended toward this season's measured population.
+    if run.stored_anchors is not None:
+        return tuple(float(v) for v in run.stored_anchors)
+    unit = run.model.inner.unit.value()
+    median = ANCHOR_DEFAULT["median_over_unit"]*unit
+    default = (median, median*ANCHOR_DEFAULT["p99_over_median"])
+    points = sorted(run.model.belief(t, e)["total"].mean for (t, e), n in run.played_here.items() if n >= ANCHOR_MIN_MATCHES)
+    if not points:
+        return default
+    import numpy as np
+    weight = len(points)/(len(points)+ANCHOR_POPULATION)
+    measured = (float(np.median(points)), float(np.quantile(points, .99)))
+    blended = tuple(weight*m+(1-weight)*d for m, d in zip(measured, default))
+    # The curve needs p99 above the median; a degenerate early population keeps the default shape.
+    return blended if blended[0] > 0 and blended[1] > blended[0] else default
 
 
 def build(db, season, row, *, now=None):
@@ -97,7 +124,8 @@ def build(db, season, row, *, now=None):
     params, fitted, bootstrap = resolve(db, row)
     inputs, _, _ = inputs_for(db, int(season), int(now if now is not None else time.time()), bootstrap.params["context"])
     adapter = ServingAdapter(inputs.model(params), get_spec(int(season)))
-    run = StateSeasonRun(int(season), adapter, row.id, fitted, setup=("state", row.id))
+    stored = row.params.get("anchors") if row.recipe != BOOTSTRAP_RECIPE else None
+    run = StateSeasonRun(int(season), adapter, row.id, fitted, setup=("state", row.id), stored_anchors=tuple(stored) if stored else None)
     results = inputs.research.season.results
     first = min((r.card.event_start for r in results), default=0)
     for result in results:
