@@ -5,13 +5,17 @@ import {
   getEventPredictionSchedule,
   getEventPredictions,
   getEventSchedule,
+  getSeasonAccuracy,
   isClientAdminModeEnabled,
 } from '../api';
 import type {
   EventPredictionScheduleResponse,
   EventScheduleItem,
   PredictedScheduleMatch,
+  SeasonAccuracyResponse,
+  SeasonCalibrationBin,
 } from '../api';
+import { favouriteRangeLabel, modelNoteText } from './seasonModel';
 import { EventPicker } from '../components/EventPicker';
 import { PageViewBar } from '../components/PageViewBar';
 import { MATCH_HUB_VIEWS, viewTitle } from '../components/pageViewBarConfig';
@@ -394,6 +398,19 @@ export function MatchPredictionPage() {
     return predictions;
   }, [predictions, filterMode]);
 
+  /* --- Season record: every forecast shown before its match this season (self-tuning seasons) --- */
+  const seasonModel = predictionData?.season?.model ?? null;
+  const seasonYear = predictionData?.season?.season ?? null;
+  const [seasonAccuracy, setSeasonAccuracy] = useState<SeasonAccuracyResponse | null>(null);
+  useEffect(() => {
+    if (!seasonModel || seasonYear == null) return;
+    let cancelled = false;
+    getSeasonAccuracy(seasonYear)
+      .then((value) => { if (!cancelled) setSeasonAccuracy(value); })
+      .catch(() => { if (!cancelled) setSeasonAccuracy(null); });
+    return () => { cancelled = true; };
+  }, [seasonModel, seasonYear]);
+
   /* --- Stats --- */
   const stats = useMemo(() => {
     const completed = predictions.filter((p) => p.is_completed && p.red_prob != null && p.winner);
@@ -454,6 +471,7 @@ export function MatchPredictionPage() {
           />
 
           {/* No count here: the Matches card below carries it. */}
+          {seasonModel ? <p className="center-callout muted">{modelNoteText(seasonModel)}</p> : null}
 
           {scheduleError ? <p className="center-callout warning">{scheduleError} <button type="button" className="center-btn ghost" onClick={() => void fetchData(eventKey, true)}>Retry schedule</button></p> : null}
           {errorText ? <p className="center-callout warning" title={errorText}>Predictions didn't load. Try again in a moment.</p> : null}
@@ -536,6 +554,41 @@ export function MatchPredictionPage() {
             </div>
             {stats.ties > 0 ? (
               <p className="center-callout muted">{stats.ties} tied match{stats.ties === 1 ? '' : 'es'} excluded from accuracy.</p>
+            ) : null}
+          </SurfaceCard>
+        ) : null}
+
+        {/* ---- Season Record ---- */}
+        {/* Only the record of the season on screen: switching events never leaves another season's record. */}
+        {seasonModel && seasonAccuracy?.available && seasonAccuracy.season === seasonYear ? (
+          <SurfaceCard
+            title="Season Record"
+            subtitle="Every forecast this season as it was shown before its match, locked when the match started."
+          >
+            <div className="center-kpi-grid">
+              <article className="center-kpi-card">
+                <span>Called right</span>
+                <strong>{pct(seasonAccuracy.overall.accuracy ?? null, 1)}</strong>
+                <small>{seasonAccuracy.overall.decided ?? 0} decided matches</small>
+              </article>
+              <article className="center-kpi-card">
+                <span>Points off</span>
+                <strong>{metric(seasonAccuracy.overall.points_mae ?? null, 1)}</strong>
+                <small>Average per alliance</small>
+              </article>
+            </div>
+            {seasonAccuracy.calibration.length > 0 ? (
+              <Table<SeasonCalibrationBin>
+                caption="When the favourite had this chance, how often it won"
+                columns={[
+                  { key: 'chance', label: 'Favourite chance', render: (bin) => favouriteRangeLabel(bin) },
+                  { key: 'matches', label: 'Matches', numeric: true, render: (bin) => bin.matches },
+                  { key: 'predicted', label: 'Predicted', numeric: true, render: (bin) => pct(bin.predicted, 0) },
+                  { key: 'won', label: 'Won', numeric: true, render: (bin) => pct(bin.won, 0) },
+                ]}
+                rows={seasonAccuracy.calibration}
+                rowKey={(bin) => String(bin.favourite_from)}
+              />
             ) : null}
           </SurfaceCard>
         ) : null}

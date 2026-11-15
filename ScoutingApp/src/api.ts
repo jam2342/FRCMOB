@@ -562,7 +562,43 @@ export type RatingExpectedPoints = { total: number; teleop: number | null; auto:
 export type RatingBasis = 'this_event' | 'earlier_events' | 'last_season' | 'rookie' | 'season_typical';
 
 /* Where an event's season stands (backend services/seasons.py). */
-export type SeasonInfo = { season: number | null; game: string | null; current: boolean; rated: boolean; frozen: boolean };
+export type SeasonInfo = {
+  season: number | null;
+  game: string | null;
+  current: boolean;
+  rated: boolean;
+  frozen: boolean;
+  /* The self-tuning rating's active version (backend services/seasons.py); absent for hand-tuned seasons. */
+  model?: SeasonModelNote | null;
+};
+export type SeasonModelNote = {
+  version: number;
+  updated_at: string | null;
+  fitted_through: string | null;
+  matches: number;
+  provisional: boolean;
+};
+export type SeasonAccuracySummary = {
+  matches: number;
+  decided?: number;
+  accuracy?: number;
+  brier?: number;
+  log_loss?: number;
+  points_mae?: number;
+};
+export type SeasonCalibrationBin = { favourite_from: number; favourite_to: number; matches: number; predicted: number; won: number };
+/* GET /seasons/{season}/accuracy: only forecasts shown before each match, locked when it started. */
+export type SeasonAccuracyResponse = {
+  ok: boolean;
+  season: number;
+  available: boolean;
+  overall: SeasonAccuracySummary;
+  qualifications: SeasonAccuracySummary;
+  playoffs: SeasonAccuracySummary;
+  calibration: SeasonCalibrationBin[];
+  by_week: (SeasonAccuracySummary & { week: string })[];
+  source: string;
+};
 
 export type EventTeamRatingItem = {
   event_key: string;
@@ -2965,6 +3001,18 @@ export async function getMatchPractice(matchKey: string, teamKey: string): Promi
   }));
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as MatchPracticeResponse;
+}
+
+export async function getSeasonAccuracy(season: number, requestOptions?: ApiRequestOptions): Promise<SeasonAccuracyResponse> {
+  const res = await apiFetch(
+    `${API}/seasons/${encodeURIComponent(String(season))}/accuracy`,
+    _cacheRequestOptions(requestOptions, {
+      cacheTtlMs: EVENT_SCHEDULE_CACHE_TTL_MS,
+      staleWhileRevalidateMs: EVENT_SCHEDULE_CACHE_TTL_MS * 3,
+    }),
+  );
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as SeasonAccuracyResponse;
 }
 
 export async function getEventRankings(eventKey: string, requestOptions?: ApiRequestOptions): Promise<EventRankingsResponse> {
