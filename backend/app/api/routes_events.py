@@ -1065,10 +1065,13 @@ def _alliance_strength_payload(detail, scale: list[float]) -> dict:
     # Each alliance's expected points (before fouls) and where that ranks this season.
     if detail is None:
         return {}
-    prediction = detail[3]
+    prediction, features = detail[3], detail[4]
+    # A state-served season shows the recipe's calibrated, positive points; the percentile
+    # stays on raw means, like the season scale it ranks against.
+    red, blue = (features.red_points, features.blue_points) if hasattr(features, "red_points") else (prediction.red_mean, prediction.blue_mean)
     return {
-        "red_points": round(prediction.red_mean, 1),
-        "blue_points": round(prediction.blue_mean, 1),
+        "red_points": round(red, 1),
+        "blue_points": round(blue, 1),
         "red_strength_pct": strength_percentile(scale, prediction.red_mean),
         "blue_strength_pct": strength_percentile(scale, prediction.blue_mean),
     }
@@ -1232,7 +1235,8 @@ def get_event_schedule_with_synergy(
         det_prob = deterministic_prob_by_match.get(match_key)
         if det_prob is None:
             continue
-        source_label = ("team_model_corrected_v4" if correction_active(season_year) else "deterministic_team_model_v3") if match_key in points_margin_by_match else "deterministic_rating_synergy_v1"
+        source_label = (getattr(points_details[match_key][4], "source_label", None)
+                        or ("team_model_corrected_v4" if correction_active(season_year) else "deterministic_team_model_v3")) if match_key in points_margin_by_match else "deterministic_rating_synergy_v1"
 
         final_prob = max(0.0, min(1.0, float(det_prob)))
         blue_win_prob = max(0.0, min(1.0, 1.0 - final_prob))

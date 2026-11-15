@@ -3,8 +3,11 @@
 # baseline row always keep the hand-tuned team model.
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 import time
+
+import numpy as np
 
 from app.core.config import settings
 from app.db import models
@@ -98,6 +101,56 @@ class StateSeasonRun:
     engine: str = "state"
     # Weekly-damped anchors the Monday job stored on the version, if any (relative 0-100).
     stored_anchors: tuple | None = None
+    first: int = 0  # the season's first event start, for season_frac
+
+
+STATE_FEATURE_SCHEMA = "state-recipe-v1"
+
+
+@dataclass
+class StateFeatures:
+    # A match's state feature row with the version's v2 layers: the recipe's win chance and
+    # its calibrated, positive alliance points (before fouls), as the rehearsal scored them.
+    row: dict
+    layers: dict
+    version_id: int
+    source_label: str = "state_recipe_v1"
+    _out: tuple | None = field(default=None, repr=False, compare=False)
+
+    def _apply(self):
+        if self._out is None:
+            t = {k: np.array([float(v)]) for k, v in self.row.items()}
+            t["y"] = np.array([.5])
+            red, blue, p = layers.apply(t, self.layers)
+            self._out = (float(red[0]), float(blue[0]), float(p[0]))
+        return self._out
+
+    @property
+    def red_points(self):
+        return self._apply()[0]
+
+    @property
+    def blue_points(self):
+        return self._apply()[1]
+
+    @property
+    def win_prob(self):
+        return self._apply()[2]
+
+
+def forecast_row(run, card):
+    # An upcoming match on a shadow of the model: predict() only enters teams into the target
+    # event's block and moves latest-event pointers, so only those are copied (as rehearsed).
+    inner = run.model.inner
+    shadow = copy.copy(inner)
+    shadow.blocks = inner.blocks.copy()
+    if card.event_key in inner.blocks:
+        shadow.blocks[card.event_key] = copy.deepcopy(inner.blocks[card.event_key])
+    shadow.latest = inner.latest.copy()
+    shadow.record = False
+    prediction = shadow.predict(card)
+    row = feature(shadow, card, prediction, run.played_here, run.played_total, run.first)
+    return prediction, StateFeatures(row, run.layers, run.version_id)
 
 
 def anchors(run):
@@ -128,6 +181,7 @@ def build(db, season, row, *, now=None):
     run = StateSeasonRun(int(season), adapter, row.id, fitted, setup=("state", row.id), stored_anchors=tuple(stored) if stored else None)
     results = inputs.research.season.results
     first = min((r.card.event_start for r in results), default=0)
+    run.first = first
     for result in results:
         card = result.card
         teams = card.red+card.blue

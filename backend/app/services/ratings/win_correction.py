@@ -61,6 +61,8 @@ def active(season: int) -> bool:
 
 def corrected(season: int, base_prob: float, feature_row: list[float] | None) -> float:
     # The blended win probability for red; the deterministic one when there are no weights.
+    if hasattr(feature_row, "win_prob"):
+        return feature_row.win_prob  # a state-served season: the frozen recipe's v2 layers
     weights = _weights(season)
     if weights is None or feature_row is None or CORRECTION_BLEND <= 0:
         return base_prob
