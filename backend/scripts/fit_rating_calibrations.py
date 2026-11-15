@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--season", required=True, type=int)
     parser.add_argument("--state-bootstrap", type=Path, help="Import an earlier-season bootstrap for the state candidate")
     parser.add_argument("--state-max-evals", type=int, default=400)
+    parser.add_argument("--step", choices=("fit", "publish", "install"), default="fit",
+                        help="state-served seasons: install the bootstrap, Monday 09:00 fit, 10:00 publish")
     args = parser.parse_args()
     if args.state_max_evals < 1 or args.state_max_evals > 4000:
         parser.error("state-max-evals must be between 1 and 4000")
@@ -43,6 +45,28 @@ def main():
         code_sha = build_sha.read_text().strip()
     if not code_sha:
         raise SystemExit("BUILD_SHA or APP_COMMIT_SHA is required in the job container")
+    from app.services.ratings import state_serving, state_weekly
+    if state_serving.declared(args.season):
+        # A season served by the frozen state recipe: its own install/fit/publish steps.
+        with rating_lock(f"fit:{args.season}", seconds=3600) as acquired:
+            if not acquired:
+                print(json.dumps({"status": "locked"}))
+                return
+            with SessionLocal() as db:
+                now = datetime.now(timezone.utc)
+                if args.step == "install":
+                    if args.state_bootstrap is None:
+                        raise SystemExit("--step install needs --state-bootstrap")
+                    result = state_weekly.install(db, args.season, json.loads(args.state_bootstrap.read_text()), code_sha, now=now)
+                elif args.step == "fit":
+                    result = {"safety": state_weekly.safety(db, args.season, now=now)}
+                    if result["safety"]["status"] != "rolled_back":
+                        result["fit"] = state_weekly.fit(db, args.season, now=now, code_sha=code_sha)
+                else:
+                    result = state_weekly.publish(db, args.season, now=now)
+                db.commit()
+                print(json.dumps(result, default=str))
+        return
     with rating_lock(f"fit:{args.season}", seconds=3600) as acquired:
         if not acquired:
             print(json.dumps({"status": "locked"}))

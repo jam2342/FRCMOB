@@ -70,3 +70,25 @@ def test_match_predictions_and_matchup_serve_the_recipe(rehearsed, monkeypatch):
     expected = details[f"{event}_qm999"][4]
     assert matchup["red_win_prob"] == pytest.approx(expected.win_prob, abs=1e-4)
     assert matchup["red_points"] == pytest.approx(expected.red_points, abs=.06)
+
+
+def test_log_rows_carry_the_bootstrap_comparator_for_the_safety_check(rehearsed, monkeypatch):  # noqa: F811
+    from types import SimpleNamespace
+    from app.services.ratings import prediction_log
+
+    engine, run = rehearsed
+    built = served_run(engine, run, monkeypatch)
+    teams = sorted(built.played_total)[:6]
+    event = next(iter({e for _t, e in built.played_here}))
+    key = f"{event}_qm999"
+    with Session(engine) as db:
+        details = wp.match_predictions(db, event, [(key, teams[:3], teams[3:])])
+        match = SimpleNamespace(match_key=key, comp_level="qm", predicted_time=None, time=built.first)
+        rows = prediction_log.feature_rows(db, 2024, event, [match], details, {key: {"red_win_prob": .5}}, run=built,
+                                           sides={key: (teams[:3], teams[3:])}, event_start=built.first)
+        boot = serving.comparator(db, built)
+    row = rows[key]
+    assert row["schema"] == serving.STATE_FEATURE_SCHEMA and row["version"] == built.version_id
+    assert boot.version_id != built.version_id and row["bootstrap"]["version"] == boot.version_id
+    card = MatchCard(key, event, 0, "qm", built.first, tuple(teams[:3]), tuple(teams[3:]))
+    assert row["bootstrap"]["p"] == serving.forecast_row(boot, card)[1].win_prob

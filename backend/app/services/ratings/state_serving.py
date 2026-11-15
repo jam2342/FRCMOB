@@ -28,7 +28,9 @@ FIRST_STATE_SEASON = 2027
 # median). The measured population takes over with weight n / (n + 300) in team-events.
 ANCHOR_DEFAULT = {"median_over_unit": .981, "p99_over_median": 3.561}
 ANCHOR_POPULATION = 300
-ANCHOR_MIN_MATCHES = 5
+# The same population the weekly job's anchors use (weekly_rehearsal.rating_impact): teams with
+# 8+ matches this season, at their latest event.
+ANCHOR_MIN_MATCHES = 8
 
 
 def declared(season) -> bool:
@@ -102,6 +104,8 @@ class StateSeasonRun:
     # Weekly-damped anchors the Monday job stored on the version, if any (relative 0-100).
     stored_anchors: tuple | None = None
     first: int = 0  # the season's first event start, for season_frac
+    built_at: int = 0
+    _comparator: object = field(default=None, repr=False, compare=False)
 
 
 STATE_FEATURE_SCHEMA = "state-recipe-v1"
@@ -161,7 +165,8 @@ def anchors(run):
     unit = run.model.inner.unit.value()
     median = ANCHOR_DEFAULT["median_over_unit"]*unit
     default = (median, median*ANCHOR_DEFAULT["p99_over_median"])
-    points = sorted(run.model.belief(t, e)["total"].mean for (t, e), n in run.played_here.items() if n >= ANCHOR_MIN_MATCHES)
+    inner = run.model.inner
+    points = sorted(inner.team_points(t, inner.latest[t]) for t, n in run.played_total.items() if n >= ANCHOR_MIN_MATCHES)
     if not points:
         return default
     import numpy as np
@@ -172,16 +177,34 @@ def anchors(run):
     return blended if blended[0] > 0 and blended[1] > blended[0] else default
 
 
+def comparator(db, run):
+    # The frozen bootstrap's run over the same results: the safety check's comparator, logged
+    # beside each served forecast. Built once per served run.
+    if getattr(run, "_comparator", None) is None:
+        row = db.get(models.RatingCalibration, run.version_id)
+        _params, _layers, bootstrap = resolve(db, row)
+        run._comparator = run if bootstrap.id == row.id else build(db, run.season, bootstrap, now=run.built_at)
+    return run._comparator
+
+
+def comparator_forecast(boot, card):
+    played = boot.before_match.get(card.match_key)
+    features = StateFeatures(played[2], boot.layers, boot.version_id) if played else forecast_row(boot, card)[1]
+    return {"p": features.win_prob, "red_points": features.red_points, "blue_points": features.blue_points, "version": boot.version_id}
+
+
 def build(db, season, row, *, now=None):
     started = time.perf_counter()
     params, fitted, bootstrap = resolve(db, row)
-    inputs, _, _ = inputs_for(db, int(season), int(now if now is not None else time.time()), bootstrap.params["context"])
+    built_at = int(now if now is not None else time.time())
+    inputs, _, _ = inputs_for(db, int(season), built_at, bootstrap.params["context"])
     adapter = ServingAdapter(inputs.model(params), get_spec(int(season)))
     stored = row.params.get("anchors") if row.recipe != BOOTSTRAP_RECIPE else None
     run = StateSeasonRun(int(season), adapter, row.id, fitted, setup=("state", row.id), stored_anchors=tuple(stored) if stored else None)
     results = inputs.research.season.results
     first = min((r.card.event_start for r in results), default=0)
     run.first = first
+    run.built_at = built_at
     for result in results:
         card = result.card
         teams = card.red+card.blue
