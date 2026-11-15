@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildMatchCenterPath,
+  hasPointsSplit,
   eventKeyFromMatchKey,
   isTransientAbortLikeError,
   liveTimerLabel,
@@ -52,3 +53,13 @@ describe('countdowns far from the start', () => {
   });
 });
 
+
+describe('hasPointsSplit', () => {
+  it('is true only when the rating has some component split', () => {
+    expect(hasPointsSplit({ teleop: 171.2, auto: 67.2, climb: 0 })).toBe(true);
+    expect(hasPointsSplit({ teleop: null, auto: null, climb: 0 })).toBe(true);
+    expect(hasPointsSplit({ teleop: null, auto: null, climb: null })).toBe(false);
+    expect(hasPointsSplit(null)).toBe(false);
+    expect(hasPointsSplit(undefined)).toBe(false);
+  });
+});

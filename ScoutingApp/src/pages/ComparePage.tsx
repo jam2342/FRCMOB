@@ -33,6 +33,7 @@ import { useSingleFlightPolling } from '../hooks/useSingleFlightPolling';
 import {
   asRecord,
   CURRENT_SEASON_YEAR,
+  hasPointsSplit,
   metric,
   normalizeTeamKeyInput,
   parseNumber,
@@ -1245,9 +1246,13 @@ export function ComparePage() {
 
                   {row.rating?.expected_points ? (
                     <p className="center-callout muted">
-                      About {metric(row.rating.expected_points.total, 0)} points a match: teleop{' '}
-                      {metric(row.rating.expected_points.teleop, 0)} · auto {metric(row.rating.expected_points.auto, 0)} · climb{' '}
-                      {metric(row.rating.expected_points.climb, 0)}
+                      About {metric(row.rating.expected_points.total, 0)} points a match
+                      {hasPointsSplit(row.rating.expected_points) ? (
+                        <>
+                          : teleop {metric(row.rating.expected_points.teleop, 0)} · auto{' '}
+                          {metric(row.rating.expected_points.auto, 0)} · climb {metric(row.rating.expected_points.climb, 0)}
+                        </>
+                      ) : null}
                     </p>
                   ) : null}
 

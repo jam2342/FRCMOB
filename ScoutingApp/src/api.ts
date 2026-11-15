@@ -557,7 +557,8 @@ type RatingSignal = {
 };
 
 export type RatingChange = { match_key: string; points_change: number; rating_change: number };
-export type RatingExpectedPoints = { total: number; teleop: number; auto: number; climb: number };
+/* Components are null for a total-only rating (a new game before its score parser exists). */
+export type RatingExpectedPoints = { total: number; teleop: number | null; auto: number | null; climb: number | null };
 export type RatingBasis = 'this_event' | 'earlier_events' | 'last_season' | 'rookie' | 'season_typical';
 
 /* Where an event's season stands (backend services/seasons.py). */

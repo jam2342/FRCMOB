@@ -55,6 +55,7 @@ import {
   fmtDateShort,
   matchStartTime,
   meanNumber,
+  hasPointsSplit,
   metric,
   normalizeMatchKey,
   normalizeTeamKeyInput,
@@ -1723,18 +1724,22 @@ export function TeamCenterPage() {
                         <strong>{ratingRange ?? MISSING}</strong>
                         <small>80% range: narrows as matches come in</small>
                       </article>
-                      <article className="center-kpi-card">
-                        <span>Teleop</span>
-                        <strong>{metric(teamRating?.expected_points?.teleop ?? null, 0)}</strong>
-                      </article>
-                      <article className="center-kpi-card">
-                        <span>Auto</span>
-                        <strong>{metric(teamRating?.expected_points?.auto ?? null, 0)}</strong>
-                      </article>
-                      <article className="center-kpi-card">
-                        <span>Climb</span>
-                        <strong>{metric(teamRating?.expected_points?.climb ?? null, 0)}</strong>
-                      </article>
+                      {hasPointsSplit(teamRating?.expected_points) ? (
+                        <>
+                          <article className="center-kpi-card">
+                            <span>Teleop</span>
+                            <strong>{metric(teamRating?.expected_points?.teleop ?? null, 0)}</strong>
+                          </article>
+                          <article className="center-kpi-card">
+                            <span>Auto</span>
+                            <strong>{metric(teamRating?.expected_points?.auto ?? null, 0)}</strong>
+                          </article>
+                          <article className="center-kpi-card">
+                            <span>Climb</span>
+                            <strong>{metric(teamRating?.expected_points?.climb ?? null, 0)}</strong>
+                          </article>
+                        </>
+                      ) : null}
                     </div>
                     {teamRating?.recent_changes?.length ? (
                       <ul className="center-simple-list" aria-label="Recent rating changes">

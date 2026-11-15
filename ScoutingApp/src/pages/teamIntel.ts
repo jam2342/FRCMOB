@@ -137,9 +137,10 @@ export function ratingFromIntel(
       points && total !== null
         ? {
             total,
-            teleop: parseNumber(points.teleop) ?? 0,
-            auto: parseNumber(points.auto) ?? 0,
-            climb: parseNumber(points.climb) ?? 0,
+            // A total-only rating has no split; null, never a made-up 0.
+            teleop: parseNumber(points.teleop),
+            auto: parseNumber(points.auto),
+            climb: parseNumber(points.climb),
           }
         : null,
     basis:
