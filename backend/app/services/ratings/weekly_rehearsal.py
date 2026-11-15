@@ -280,7 +280,8 @@ class Replay:
                 "history_chain_sha256":self.chain,"history_matches":len(self.known),"forecasts":variants}
 
 
-def rating_impact(old, new, played, anchors):
+def rating_impact(old, new, played, anchors, limits=None):
+    median_limit,maximum_limit = limits or (POLICY["median_rating_step"],POLICY["maximum_rating_step"])
     teams = sorted(t for t,n in played.items() if n >= POLICY["minimum_rating_matches"])
     if len(teams) < POLICY["minimum_rating_teams"]:
         return {"n":len(teams),"passed":False,"reason":"insufficient rated teams"},anchors
@@ -294,7 +295,7 @@ def rating_impact(old, new, played, anchors):
     change = [abs(points_to_rating(points(new,t),*curve)-points_to_rating(points(old,t),*curve)) for t in teams]
     median,maximum = float(np.median(change)),max(change)
     return {"n":len(teams),"median":median,"max":maximum,"anchors":updated,
-            "passed":median < POLICY["median_rating_step"] and maximum <= POLICY["maximum_rating_step"]},updated
+            "limits":[median_limit,maximum_limit],"passed":median < median_limit and maximum <= maximum_limit},updated
 
 
 def row_loss(frame, source, variant, metric):
@@ -478,7 +479,9 @@ def rehearse(root, data, previous, artifact, protocol_sha, code_sha, *, max_week
                         if latest not in replay.models:
                             replay.add_model(latest,saved_version(latest)[0])
                         proposed = pending if pending is not None else active
-                        impact,anchors = rating_impact(replay.models[active],replay.models[proposed],replay.total,anchors)
+                        # A candidate selected under a schedule is published under the same limits.
+                        limits = db.get(models.RatingCalibration,pending).params.get("impact_limits") if pending is not None else None
+                        impact,anchors = rating_impact(replay.models[active],replay.models[proposed],replay.total,anchors,limits)
                         job["impact"] = impact
                         budget = job.get("fit_seconds") is None or job["fit_seconds"] <= (POLICY["publication_hour_utc"]-POLICY["job_hour_utc"])*3600
                         job["applied"] = pending is not None and impact["passed"] and budget
