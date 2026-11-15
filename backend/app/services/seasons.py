@@ -38,7 +38,12 @@ def current_season() -> int:
 def is_rated(season: int | None) -> bool:
     from app.services.ratings.constants import SEASON_BASELINES
 
-    return season is not None and int(season) in SEASON_BASELINES
+    if season is None:
+        return False
+    if int(season) in SEASON_BASELINES:
+        return True
+    from app.services.ratings.state_serving import declared
+    return declared(season)
 
 
 def is_frozen(db: Session, season: int | None) -> bool:
