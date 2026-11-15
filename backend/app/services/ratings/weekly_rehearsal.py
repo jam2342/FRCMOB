@@ -75,7 +75,28 @@ def journal_hashes(root, names):
     return result
 
 
-def make_bootstrap(year, reports, tables):
+def debut_prior(table, cards):
+    # Earlier-season v2 score fit: the same ridge as v1 with the all-new end added (centre 0).
+    from app.services.ratings.research_win import _ridge, _score_sd
+    keys = [str(k) for k in table["key"]]
+    if any(k not in cards for k in keys):
+        raise ValueError("earlier-season lineups are missing")
+    seen,new_r,new_b = set(),[],[]
+    for key in keys:
+        card = cards[key]
+        new_r.append(sum(t not in seen for t in card.red))
+        new_b.append(sum(t not in seen for t in card.blue))
+        seen.update(card.red+card.blue)
+    table = {**table,"new_r":np.array(new_r,float),"new_b":np.array(new_b,float)}
+    sides = side_arrays(table)
+    r = sides["y"]-sides["x"]
+    sd = np.r_[_score_sd(True),[state.SCORE_SD_DEBUT]]
+    return _ridge(state.debut_design(table,sides),r,np.zeros(12),sd,float(np.var(r)) if len(r) >= 30 else 1.)
+
+
+def make_bootstrap(year, reports, tables, *, score_layer=None, cards_for=None):
+    if score_layer not in (None,"debut-positive") or (score_layer is not None and cards_for is None):
+        raise ValueError("the v2 score layer needs earlier-season lineups")
     if year not in range(2023,2027):
         raise ValueError("weekly rehearsal needs examined 2023–2026 and an earlier season")
     fits,runs,hashes = {},[],{}
@@ -96,16 +117,19 @@ def make_bootstrap(year, reports, tables):
         path = Path(tables)/f"{earlier}.npz"
         with np.load(path,allow_pickle=False) as raw:
             table = {k:raw[k] for k in raw.files}
-        scores.append(fit_score_calibration(side_arrays(table),terms=True).coef)
+        scores.append(debut_prior(table,cards_for(earlier)) if score_layer else fit_score_calibration(side_arrays(table),terms=True).coef)
         _,_,fit = walk_forward_win(table,recipe,wins)
         wins.append(fit)
         years.append(earlier)
         hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    fitted = layers.identity()
+    fitted = layers.identity(v2=score_layer is not None)
     if wins:
         temps = _pooled_temperatures(wins)
-        fitted.update(score_coef=np.mean(scores,axis=0).tolist(),temperatures=temps.by_context.tolist(),
+        mean = np.mean(scores,axis=0)
+        fitted.update(score_coef=mean[:11].tolist(),temperatures=temps.by_context.tolist(),
                       pooled_temperature=temps.pooled,weights=_pooled_weights(wins,recipe).tolist())
+        if score_layer:
+            fitted["debut_intercept"] = float(mean[11])
     artifact = build_bootstrap(year,fits,runs,hashes,layer_params=fitted,layer_years=years)
     validate_bootstrap(artifact,year)
     return artifact

@@ -25,7 +25,7 @@ from app.services.ratings.research_rehearsal import write_settings  # noqa: E402
 from app.services.ratings.state_inputs import digest  # noqa: E402
 
 
-def protocol(application="direct", calibration_prior="previous", schedule=None):
+def protocol(application="direct", calibration_prior="previous", schedule=None, score_layer=None):
     if calibration_prior not in gradual.RECIPES or (application == "direct" and calibration_prior != "previous"):
         raise ValueError("fixed calibration priors require gradual application")
     if schedule is not None and calibration_prior != "bootstrap":
@@ -35,6 +35,11 @@ def protocol(application="direct", calibration_prior="previous", schedule=None):
              "research_filter.py","research_models.py","research_fit.py","research_win.py","research_eval.py",
              "calibrations.py","component_screen.py","component_spec.py","strength.py","replay.py","research_rehearsal.py","gradual_rehearsal.py")
     extra = {"schedule":gradual.EARLY_FAST} if schedule == "early-fast" else {}
+    if score_layer is not None:
+        if schedule is None:
+            raise ValueError("the v2 score layer is tested on the early-fast state")
+        extra["score_layer"] = {"name":score_layer,"schema":"live-forecast-v2","debut":"first-match intercept split by season-new share",
+                                "positive":"censored predictive mean","prior":"earlier-season ridge with cached lineups"}
     return {**extra,"schema":rehearsal.RECIPE,"policy":rehearsal.POLICY,"seasons":[2023,2024,2025,2026],"serving_eligible":False,
             "application":application,"application_policy":gradual.POLICY if application == "gradual" else None,
             "calibration_prior":calibration_prior,
@@ -57,6 +62,7 @@ def main():
     parser.add_argument("--win-tables",type=Path)
     parser.add_argument("--max-weeks",type=int)
     parser.add_argument("--schedule",choices=("early-fast",))
+    parser.add_argument("--score-layer",choices=("debut-positive",))
     args = parser.parse_args()
     if args.application == "direct" and args.calibration_prior != "previous":
         parser.error("fixed calibration priors require --application gradual")
@@ -69,14 +75,14 @@ def main():
     os.umask(0o077)
     args.out.mkdir(parents=True,exist_ok=True)
     if args.step == "freeze":
-        path = write_settings(args.out,protocol(args.application,args.calibration_prior,args.schedule))
-        assert json.loads(path.read_text()) == protocol(args.application,args.calibration_prior,args.schedule)
+        path = write_settings(args.out,protocol(args.application,args.calibration_prior,args.schedule,args.score_layer))
+        assert json.loads(path.read_text()) == protocol(args.application,args.calibration_prior,args.schedule,args.score_layer)
         print(json.dumps({"protocol":str(path),"sha256":path.stem}))
         return
     if any(v is None for v in (args.protocol,args.season,args.cache,args.reports,args.win_tables)):
         parser.error("run needs protocol, season, cache, reports and win-tables")
     frozen = json.loads(args.protocol.read_text())
-    if args.protocol.stem != digest(frozen) or frozen != protocol(args.application,args.calibration_prior,args.schedule):
+    if args.protocol.stem != digest(frozen) or frozen != protocol(args.application,args.calibration_prior,args.schedule,args.score_layer):
         raise ValueError("weekly rehearsal protocol or implementation changed")
     root = args.out/str(args.season)
     if root.is_symlink():
@@ -90,7 +96,8 @@ def main():
         except BlockingIOError:
             raise SystemExit("this season rehearsal is already running")
         os.nice(10)
-        artifact = rehearsal.make_bootstrap(args.season,args.reports,args.win_tables)
+        cards = (lambda year: {r["result"].card.match_key:r["result"].card for r in load(args.cache,year).records}) if args.score_layer else None
+        artifact = rehearsal.make_bootstrap(args.season,args.reports,args.win_tables,score_layer=args.score_layer,cards_for=cards)
         data = load(args.cache,args.season)
         previous = load(args.cache,args.season-1)
         code_sha = subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip()
@@ -120,6 +127,11 @@ def main():
                 "after_selection":sum(j["selection"] is not None and j["selection"]["fraction"] > 0 for j in rejected)}
             assert sum(report["gradual_rejections"].values()) == len(rejected)
             report["release_blockers"].append("first-match score calibration")
+            first = min(f["time"] for f in run["frames"])
+            report["first_score_bias_by_period"] = {name:{v:gradual.first_score_bias(chosen,source,v) for v in ("active","bootstrap")}
+                for name,chosen in (("early14",[f for f in run["frames"] if f["time"] < first+14*86400]),
+                                    ("after14",[f for f in run["frames"] if f["time"] >= first+14*86400]))}
+            report["negative_scores"] = {v:sum(f["forecasts"][v][k] < 0 for f in run["frames"] for k in ("rm","bm")) for v in ("active","bootstrap")}
         path = write_settings(root/"reports",report)
         saved = json.loads(path.read_text())
         assert path.stem == digest(saved)

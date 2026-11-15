@@ -18,8 +18,13 @@ from app.services.ratings.research_win import (
 
 RECIPE = "live-forecast-logistic-v1"
 SCHEMA = "live-forecast-v1"
+# v2 adds a first-match intercept for an all-season-new alliance (score_coef[0] is then the
+# season-experienced end; sides interpolate by their share of season-new teams) and an
+# optional positive score: the predictive mean of max(0, Y) under each side's own forecast.
+SCHEMA_V2 = "live-forecast-v2"
 SCORE_LIMITS = np.array([1.2] * 4 + [0.4] * 4 + [0.6] * 3)
 SCORE_STEP = 0.15
+DEBUT_LIMIT = 1.2
 
 
 def utc(value):
@@ -31,15 +36,31 @@ def monday(value):
     return (value - timedelta(days=value.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def identity():
-    return {"schema": SCHEMA, "score_coef": [0.0] * 11, "temperatures": [1.0] * 4,
+def identity(v2=False, positive=True):
+    base = {"schema": SCHEMA, "score_coef": [0.0] * 11, "temperatures": [1.0] * 4,
             "pooled_temperature": 1.0, "weights": [0.0] * 12, "blend": 1.0}
+    return {**base, "schema": SCHEMA_V2, "debut_intercept": 0.0, "positive": positive} if v2 else base
+
+
+def is_v2(params):
+    return params.get("schema") == SCHEMA_V2
 
 
 def validate_params(params, previous=None):
-    if set(params) != set(identity()) or params["schema"] != SCHEMA:
+    v2 = is_v2(params)
+    if set(params) != set(identity(v2)) or params["schema"] not in (SCHEMA, SCHEMA_V2):
         raise ValueError("unsupported calibration schema")
+    if previous is not None and is_v2(previous) != v2:
+        raise ValueError("calibration schema cannot change between versions")
     json.dumps(params, allow_nan=False)
+    if v2:
+        debut = params["debut_intercept"]
+        if isinstance(debut, bool) or not isinstance(debut, (int, float)) or not np.isfinite(debut) or abs(debut) > DEBUT_LIMIT:
+            raise ValueError("debut_intercept outside hard bounds")
+        if not isinstance(params["positive"], bool):
+            raise ValueError("positive must be a boolean")
+        if previous is not None and (abs(debut - previous["debut_intercept"]) > SCORE_STEP + 1e-12 or params["positive"] != previous["positive"]):
+            raise ValueError("debut_intercept exceeds weekly step limit or positive changed")
     limits = {"score_coef": SCORE_LIMITS, "weights": np.ones(12)}
     for name, limit in limits.items():
         value = np.asarray(params[name], dtype=float)
@@ -64,11 +85,32 @@ def win_base(t):
     return base_logit({**t, "rm": t["rm"] + t["red_fouls"], "bm": t["bm"] + t["blue_fouls"]}, "logistic")
 
 
+def debut_share(t, red):
+    # Each side's share of season-new teams, red sides first like all_sides/side_arrays.
+    new = np.where(red, np.asarray(t["new_r"], dtype=float), np.asarray(t["new_b"], dtype=float))
+    if not np.isfinite(new).all() or np.any((new < 0) | (new > 3)):
+        raise ValueError("season-new counts must be known and between 0 and 3")
+    return new / 3.0
+
+
+def positive_mean(mean, var):
+    from app.services.ratings.score_positivity import censored_mean
+    return np.array([censored_mean(float(m), float(v)) for m, v in zip(mean, var)])
+
+
 def apply(t, params):
     validate_params(params)
-    rows = all_sides(t, np.arange(len(t["y"])))
+    n = len(t["y"])
+    rows = all_sides(t, np.arange(n))
     cal = ScoreCalibration(np.array(params["score_coef"]), True)
     scores = rows["u"] * cal.apply(rows)
+    if is_v2(params):
+        index = np.r_[np.arange(n), np.arange(n)]
+        share = debut_share({k: np.asarray(t[k])[index] for k in ("new_r", "new_b")}, np.r_[np.ones(n, bool), np.zeros(n, bool)])
+        first = rows["ctx"] == 0
+        scores = scores + rows["u"] * first * share * (params["debut_intercept"] - params["score_coef"][0])
+        if params["positive"]:
+            scores = positive_mean(scores, np.r_[t["rv"], t["bv"]])
     temps = Temperatures(params["pooled_temperature"], np.array(params["temperatures"]))
     offset = temps.apply(win_base(t), context(t))
     p = sigmoid(offset + correction_features(t) @ np.array(params["weights"]))

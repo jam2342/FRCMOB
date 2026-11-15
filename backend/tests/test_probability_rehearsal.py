@@ -80,7 +80,7 @@ def test_actual_fit_is_bounded_and_preserves_scores_and_full_fit_behavior():
     assert params["weights"][0] > 0
     full = state.fit_layers(table,initial)
     assert {k:v for k,v in full.items() if k != "score_coef"} == {k:v for k,v in params.items() if k != "score_coef"}
-    assert full["score_coef"] == state.bounded_score_fit(table,initial).coef.tolist()
+    assert full["score_coef"] == state.bounded_score_fit(table,initial).tolist()
     out = p.predict(frames,params,"version")
     assert frames == fixtures()[0]
     for f in out:
